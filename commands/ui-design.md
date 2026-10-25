@@ -144,7 +144,7 @@ Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> "UI design
 ## Notes
 - Opt-in, report-only; never hard-gates `/kit:spec` or any build. The maintainer decides whether to proceed.
 - Under bypassPermissions the per-iteration `AskUserQuestion` approvals auto-resolve; the loop still terminates structurally (SOLID / RECONSIDER / max-2 cap). It delivers its full value in non-bypass mode.
-- Downstream-facing: the kit (no UI) cannot dogfood this lane; the carve-out is recorded in `docs/PHILOSOPHY.md` + `commands/kit-health.md`.
+- Downstream-facing: the kit (no UI) cannot dogfood this lane; the carve-out is recorded in `docs/reference/PHILOSOPHY.md` + `commands/kit-health.md`.
 
 ## Source
 The loop around two stations the kit already has: critique = `commands/visual-team.md`, generation = the external `frontend-design` skill (Anthropic, not vendored). Brief shape: harness `design.md` UI/Platform Impact enriched per the 2026-05-21 deep scan (`docs/research/2026-05-21-ui-design-loop-deep-scan.md`): the aesthetic-direction preamble from `frontend-design`'s own input; token ladder, states matrix, a11y bars, voice from `nextlevelbuilder/ui-ux-pro-max-skill`; the brief schema, injection-wrap, and accumulated-feedback loop shapes from `garrytan/gstack` `design/src/{brief,iterate}.ts`; named-viewport critique from the design-review/Playwright loop.

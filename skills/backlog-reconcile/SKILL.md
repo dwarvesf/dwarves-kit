@@ -8,7 +8,7 @@ disable-model-invocation: false
 
 ## Scope and triggers
 
-Also fires on "check board rows against their specs", or when a scheduled run asks for the backlog-reconcile audit of a repo. NOT for filing new items onto the board means board-registration tooling, e.g. an adopter's own intake skill. This kit's own `docs/FEATURES.md`/`docs/workflow-paths.md` pair is `topology-drift`'s territory, maintainer-only, never this skill's.
+Also fires on "check board rows against their specs", or when a scheduled run asks for the backlog-reconcile audit of a repo. NOT for filing new items onto the board means board-registration tooling, e.g. an adopter's own intake skill. This kit's own `docs/reference/FEATURES.md`/`docs/reference/workflow-paths.md` pair is `topology-drift`'s territory, maintainer-only, never this skill's.
 
 ## Overview
 

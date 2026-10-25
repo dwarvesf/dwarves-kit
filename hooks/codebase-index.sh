@@ -6,7 +6,7 @@
 # structural index (search_code / search_graph / get_architecture / trace_path)
 # instead of grepping blind. See commands/spec.md and commands/execute.md.
 #
-# Kit philosophy (docs/PHILOSOPHY.md): integrate external tools, warn when missing,
+# Kit philosophy (docs/reference/PHILOSOPHY.md): integrate external tools, warn when missing,
 # never rebuild their functionality. So this hook is opt-in and degrades cleanly:
 #   - codebase-memory-mcp not installed  -> no-op (quiet; one-line hint only in debug)
 #   - installed                          -> background index of the cwd repo

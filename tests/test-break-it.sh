@@ -235,7 +235,7 @@ assert "T4-AC2: a cleared family gets a tried: line" $?
 echo ""
 echo "--- docs wiring ---"
 grep -q '^| `break-it` ' "$KIT_DIR/docs/MANUAL.md"; assert "T5-AC1: docs/MANUAL.md carries a break-it row" $?
-grep -q '`break-it`' "$KIT_DIR/docs/architecture.md"; assert "T5-AC1: docs/architecture.md inventory carries break-it" $?
+grep -q '`break-it`' "$KIT_DIR/docs/reference/architecture.md"; assert "T5-AC1: docs/reference/architecture.md inventory carries break-it" $?
 # AC2: the three rungs appear in WORKFLOW.md's ladder paragraph, in ladder order.
 LADDER=$(sed -n '/three-rung ladder/,/^$/p' "$WF" | tr '\n' ' ')
 [ -n "$LADDER" ]; assert "T5-AC2: docs/WORKFLOW.md has a three-rung ladder paragraph" $?

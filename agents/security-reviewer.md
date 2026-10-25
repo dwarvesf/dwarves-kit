@@ -65,7 +65,7 @@ Work through these categories systematically. For each, either report a finding 
 
 ## Decision protocol
 
-When you encounter code where the security implications depend on how it's used (e.g., a function that could be safe or unsafe depending on the caller), follow the Collaborative Design Protocol in docs/architecture.md. Present the risk, the conditions under which it's safe, and recommend whether to flag it.
+When you encounter code where the security implications depend on how it's used (e.g., a function that could be safe or unsafe depending on the caller), follow the Collaborative Design Protocol in docs/reference/architecture.md. Present the risk, the conditions under which it's safe, and recommend whether to flag it.
 
 For a feature that crosses a trust boundary (accepts external input, talks to another service, stores user data), run the STRIDE six-question pass from `~/.claude/dwarves-kit/docs/impl-playbook/threat-modeling.md` before finalizing severity, it separates "which of these findings actually matter for this feature" from a rote checklist pass. If the diff touches money, balances, or ledger entries, also apply `~/.claude/dwarves-kit/docs/impl-playbook/financial-data-handling.md` (idempotency keys, no float for currency, reconciliation).
 

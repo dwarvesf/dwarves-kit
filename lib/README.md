@@ -38,7 +38,7 @@ Every `lib/` directory has one row.
 | `prose-rag/` | The `prose_rag` module: local semantic search over your own prose corpus, for prompt injection. Entry: `bin/prose-rag`. |
 | `queue/` | The overnight queue launcher, the non-LLM orchestrator (`orchestrate.sh`, one fresh session per sub-goal), harness and Orca backends. Entry: `bin/queue`. |
 | `reflect/` | The Reflect stage: reads what the harness recorded, proposes work into staging, drains and promotes it. Entry: `bin/reflect`. |
-| `registry/` | `feature-registry.sh`, the generator for `docs/FEATURES.md`, plus the id-parenthetical stripper. |
+| `registry/` | `feature-registry.sh`, the generator for `docs/reference/FEATURES.md`, plus the id-parenthetical stripper. |
 | `repohygiene/` | Tier 1 of the `kit:repo-hygiene` audit: mechanical findings on decayed files in one git repo. |
 | `session/` | `session.sh`, the verb dispatcher (`bin/session`), the shared transcript parser, `handoffs.sh`, and the sub-tools `recall/` `observe/` `intel/` `audit/`. |
 | `skill-curator/` | The skill half of the self-improvement loop: drafts a SKILL.md from a session, a promote gate, and a consolidating curator (`bin/skill-improve`, `bin/skill-review`). |
@@ -49,7 +49,7 @@ Every `lib/` directory has one row.
 | `telemetry/` | Lane telemetry, the durable log-dir resolver (`kit-log-dir.sh`), hook-log dir, ledger migration, egress-fail. |
 | `webcheck/` | Audits a live public website for agent readiness (stdlib Python, read-only HTTP). |
 | `worktree-provision/` | Provisions a fresh git worktree: links the gitignored env and runs the project install. Entry: `bin/worktree-provision`. |
-| `wrap/` | The landing step after ship: scan, apply, merge, land, start, rebase, log, adopt and more; verb table in `docs/wrap.md`. Entry: `bin/wrap`. |
+| `wrap/` | The landing step after ship: scan, apply, merge, land, start, rebase, log, adopt and more; verb table in `docs/reference/wrap.md`. Entry: `bin/wrap`. |
 | *(root)* | `adopt.sh` (the `/kit:adopt` driver), `explain.sh` (`/kit:explain` engine), `pitch.sh` (`/kit:pitch` engine), `onboard-detect.sh` (install-mode detector for `/kit:onboard`): orphans, no cluster |
 
 ## Resolution scheme (the `LIB_ROOT` anchor, no shims)

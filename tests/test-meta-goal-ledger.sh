@@ -45,8 +45,8 @@ fi
 # (d) PHILOSOPHY's multi-session boundary is reworded (the blanket "stays L5" claim is
 #     gone) and references ADR-0022, so the bend is recorded, not silent.
 TOTAL=$((TOTAL + 1))
-if ! grep -q 'multi-session coordination across machines or live operators stays L5' "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null \
-   && grep -q 'ADR-0022' "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null; then
+if ! grep -q 'multi-session coordination across machines or live operators stays L5' "$KIT_DIR/docs/reference/PHILOSOPHY.md" 2>/dev/null \
+   && grep -q 'ADR-0022' "$KIT_DIR/docs/reference/PHILOSOPHY.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} PHILOSOPHY multi-session boundary reworded + cites ADR-0022 (SPEC-036 C4)"
   PASS=$((PASS + 1))
 else
@@ -79,11 +79,11 @@ fi
 
 # (g) ADR-0022 is cross-referenced from architecture.md (the concurrency boundary).
 TOTAL=$((TOTAL + 1))
-if grep -q 'ADR-0022' "$KIT_DIR/docs/architecture.md" 2>/dev/null; then
+if grep -q 'ADR-0022' "$KIT_DIR/docs/reference/architecture.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} architecture.md cross-references ADR-0022 (SPEC-036)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} docs/architecture.md must cross-reference ADR-0022"
+  echo -e "  ${RED}FAIL${NC} docs/reference/architecture.md must cross-reference ADR-0022"
   FAIL=$((FAIL + 1))
 fi
 
@@ -104,7 +104,7 @@ fi
 
 # (b) The LIVE goal-draft contract carries no INDEX.md (the phantom is gone; only the
 #     annotated historical record in ADR-0011/ADR-0023/SPEC-005 keeps the word).
-LIVE_INDEX=$(grep -l 'INDEX\.md' "$KIT_DIR/commands/assign.md" "$KIT_DIR/commands/start.md" "$KIT_DIR/commands/next.md" "$KIT_DIR/docs/WORKFLOW.md" "$KIT_DIR/docs/architecture.md" 2>/dev/null | wc -l | tr -d ' ')
+LIVE_INDEX=$(grep -l 'INDEX\.md' "$KIT_DIR/commands/assign.md" "$KIT_DIR/commands/start.md" "$KIT_DIR/commands/next.md" "$KIT_DIR/docs/WORKFLOW.md" "$KIT_DIR/docs/reference/architecture.md" 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "no INDEX.md in the live goal-draft contract (SPEC-037 / ADR-0023)" "0" "$LIVE_INDEX"
 
 # (c) ADR-0023 exists and ADR-0011 records the supersession (supersede, not rewrite).
@@ -119,7 +119,7 @@ else
 fi
 
 # (d) The State model section names BOTH stores side by side (draft + registry).
-SM_SECTION=$(awk '/^## State model/{f=1; print; next} f && /^## /{exit} f{print}' "$KIT_DIR/docs/architecture.md" 2>/dev/null)
+SM_SECTION=$(awk '/^## State model/{f=1; print; next} f && /^## /{exit} f{print}' "$KIT_DIR/docs/reference/architecture.md" 2>/dev/null)
 TOTAL=$((TOTAL + 1))
 if { trap '' PIPE; printf '%s' "$SM_SECTION" 2>/dev/null || :; } | grep -q '\.claude/goals' && { trap '' PIPE; printf '%s' "$SM_SECTION" 2>/dev/null || :; } | grep -q 'kit-goals'; then
   echo -e "  ${GREEN}PASS${NC} architecture.md State model names both the draft store and kit-goals registry (SPEC-037)"
@@ -187,7 +187,7 @@ assert_true "hooks/ship-gate.sh exists and is executable" "$([ -x "$KIT_DIR/hook
 assert_true "ADR-0024 (gate ledger + ship enforcement) exists" "$([ -f "$KIT_DIR/docs/decisions/0024-gate-ledger-and-ship-enforcement.md" ] && echo 0 || echo 1)"
 assert_true "ship-gate registered in hooks.json (plugin path)" "$(grep -q 'hooks/ship-gate.sh' "$KIT_DIR/hooks/hooks.json" && echo 0 || echo 1)"
 assert_true "ship-gate registered in settings.json (bash-install path)" "$(grep -q 'hooks/ship-gate.sh' "$KIT_DIR/settings.json" && echo 0 || echo 1)"
-assert_true "PHILOSOPHY records the ADR-0024 ship-boundary bend" "$(grep -q 'ADR-0024' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+assert_true "PHILOSOPHY records the ADR-0024 ship-boundary bend" "$(grep -q 'ADR-0024' "$KIT_DIR/docs/reference/PHILOSOPHY.md" && echo 0 || echo 1)"
 assert_true "kit-health records the ship-gate carve-out" "$(grep -q 'ship-gate' "$KIT_DIR/commands/kit-health.md" && echo 0 || echo 1)"
 
 # The lane×phase matrix is the single source for the lane->gate map; every value

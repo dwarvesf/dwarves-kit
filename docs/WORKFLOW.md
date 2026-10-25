@@ -5,7 +5,7 @@
 > It suggests and routes; it does not block. The four hard stops, where an
 > autonomous run stops for a human, are the safety-gate hook, the push-to-main
 > blocker, the anti-rationalization Stop hook, and the verification pipeline.
-> The rules code blocks on, each with a proving test, are listed in `docs/hard-rules.tsv`.
+> The rules code blocks on, each with a proving test, are listed in `docs/reference/hard-rules.tsv`.
 > The visual flow/loop view (every flow + alt-flow, its trigger, and its
 > stop condition, with ASCII diagrams) is the `## Flow and loop reference`
 > section at the end of this file.
@@ -26,7 +26,7 @@ projection recomputed from the append-only ledger (never a persisted second sour
 is layered: `install.sh` wires the essential spine unconditionally and optional modules opt in
 via `install.sh --with <modules>`, recording the enabled set in the consumer's
 `kit.toml [modules]` manifest. Full composition + adoption model: `AGENTS.md`
-"How the kit composes" and `docs/PHILOSOPHY.md`.
+"How the kit composes" and `docs/reference/PHILOSOPHY.md`.
 
 ## Where work comes from (the board)
 
@@ -215,7 +215,7 @@ entry point (a bug-lane loop), not a linear phase between Reflect and the next c
 ## The V-model lens
 
 > The ASCII V below is the canonical rendering. For a rendered vector version, see
-> [`docs/v-model.svg`](docs/v-model.svg). (The README figure is the 10-second view of the loop; this section + the SVG are the full V.)
+> [`docs/figures/v-model.svg`](figures/v-model.svg). (The README figure is the 10-second view of the loop; this section + the SVG are the full V.)
 
 The cycle table above is the canonical phase list. This section reads it as a **V**.
 The **left arm BUILDS**: each phase produces an artifact and statically reviews it
@@ -732,9 +732,9 @@ session start
 Canonical rule. You are mid-`/kit:execute` on a `VALIDATED` spec and the work
 reveals scope that must be added now ("also do Y"). Amend the spec in place;
 do not restart the lane and do not silently mutate it. The operator card
-(`MANUAL.md` "## Operator scenarios") and `commands/execute.md` point here; they
+(`docs/MANUAL.md` "## Operator scenarios") and `commands/execute.md` point here; they
 do not restate this rule. The state-machine row (`BUILDING -> SPECIFYING ->
-BUILDING`) lives in `docs/architecture.md` "## SDLC state machine"; this section
+BUILDING`) lives in `docs/reference/architecture.md` "## SDLC state machine"; this section
 carries the operational rule, and the `## Flow and loop reference` below draws the
 amend micro-loop.
 
@@ -847,21 +847,21 @@ Per change-type, the companion docs that must move with it. This covers the enum
 
 | If a change touches | Companion docs that must update |
 |---|---|
-| `hooks/*` | `MANUAL.md` (Hooks + Troubleshooting), `docs/hooks.md`, `tests/test-hooks.sh`, `tests/test-meta.sh` |
-| `commands/*` (new) | `MANUAL.md` (a `### /kit:<name>` section), `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh` |
-| `agents/*` | `MANUAL.md` agents table, `tests/test-meta.sh` frontmatter checks |
-| `settings.json` (hook wiring) | `docs/hooks.md`, `MANUAL.md` (Troubleshooting), `install.sh` merge logic |
-| `install.sh` | README install block, `MANUAL.md` "Install options and modules", `tests/` |
-| `rules/*` | `MANUAL.md` "Path-scoped rules", `docs/architecture.md` |
-| `lib/*` | `MANUAL.md` "Project structure", `docs/architecture.md`, `tests/test-meta.sh` + `tests/test-hooks.sh` (helper unit tests) |
-| `bin/*` (stable consumer entrypoints, SPEC-184) | `MANUAL.md` "Project structure", `docs/architecture.md`, `lib/adopt.sh` (the injected CLAUDE.md block references `bin/`), `tests/test-stable-interface.sh` |
-| `skills/*` | `MANUAL.md` "Skills" table |
+| `hooks/*` | `docs/MANUAL.md` (Hooks + Troubleshooting), `docs/reference/hooks.md`, `tests/test-hooks.sh`, `tests/test-meta.sh` |
+| `commands/*` (new) | `docs/MANUAL.md` (a `### /kit:<name>` section), `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh` |
+| `agents/*` | `docs/MANUAL.md` agents table, `tests/test-meta.sh` frontmatter checks |
+| `settings.json` (hook wiring) | `docs/reference/hooks.md`, `docs/MANUAL.md` (Troubleshooting), `install.sh` merge logic |
+| `install.sh` | README install block, `docs/MANUAL.md` "Install options and modules", `tests/` |
+| `templates/rules/*` | `docs/MANUAL.md` "Path-scoped rules", `docs/reference/architecture.md` |
+| `lib/*` | `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md`, `tests/test-meta.sh` + `tests/test-hooks.sh` (helper unit tests) |
+| `bin/*` (stable consumer entrypoints, SPEC-184) | `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md`, `lib/adopt.sh` (the injected CLAUDE.md block references `bin/`), `tests/test-stable-interface.sh` |
+| `skills/*` | `docs/MANUAL.md` "Skills" table |
 | `examples/hello-spec/*` | `examples/hello-spec/README.md`, the downstream-template note |
-| a PHILOSOPHY principle | `docs/PHILOSOPHY.md`, `commands/kit-health.md` reject-list |
-| a new `docs/decisions/` ADR | `docs/architecture.md` cross-refs |
+| a PHILOSOPHY principle | `docs/reference/PHILOSOPHY.md`, `commands/kit-health.md` reject-list |
+| a new `docs/decisions/` ADR | `docs/reference/architecture.md` cross-refs |
 | a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
-| **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, `MANUAL.md` "Project structure", `docs/architecture.md` |
-| **a new top-level file under the kit root** | **this doc-impact map (WORKFLOW.md)**, `MANUAL.md` "Project structure", `docs/architecture.md` |
+| **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md` |
+| **a new top-level file under the kit root** | **this doc-impact map (WORKFLOW.md)**, `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md` |
 | `AGENTS.md` (kit root) | `CLAUDE.md` + `WORKFLOW.md` pointers (must not drift), `examples/hello-spec/AGENTS.md` (downstream template), `commands/assign.md` (the six-section projection reads its zones), `tests/test-meta.sh` |
 | any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` version, `tool.toml` version, `docs/retro/v<ver>.md` |
 
@@ -1075,7 +1075,7 @@ out of "what's active" with no filter code. This is the goal **draft** store
 ("what's active"); do not confuse it with the cross-session running-goal
 **registry** under `.git/kit-goals/` ("what's executing now", ADR-0022). The
 shared slug ties a draft to its registry claim; the two stores sit side by side
-in `docs/architecture.md` "## State model".
+in `docs/reference/architecture.md` "## State model".
 
 ## Artifact placement and concurrency (multi-spec)
 The kit's concurrency model is **worktree-per-spec**: many specs coexist
@@ -1155,15 +1155,15 @@ contract states the rules; it does not cite the spec IDs that decided them.
 
 The visual companion to the contract above: the same machine drawn as flows and
 loops. The tables above are the rules; this section is the picture. For per-command
-operator detail read `MANUAL.md`; for component fit and the SDLC state machine read
-`docs/architecture.md`. The cycle, V-model, and type loops are drawn in their own
+operator detail read `docs/MANUAL.md`; for component fit and the SDLC state machine read
+`docs/reference/architecture.md`. The cycle, V-model, and type loops are drawn in their own
 sections above ("The cycle", "The V-model lens", "Type loops"); the one-page flow map
 that used to repeat them now points here.
 
 At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
 table, above), **3** bounded loops (the engines, below), **11** opt-in side-flows,
 **7** alternate/branch flows, and **4** hard stops (where an autonomous run stops
-for a human). The rules code really blocks on are listed in `docs/hard-rules.tsv`;
+for a human). The rules code really blocks on are listed in `docs/reference/hard-rules.tsv`;
 everything else **suggests and routes; it does not block**.
 
 ### The spine (the backbone)
@@ -1208,7 +1208,7 @@ The normal and full lanes run this chain. Each step leaves one artifact the next
 ### The state stores the flows move between
 
 Three stores; nothing is re-entered between phases. (The durable/ephemeral table is
-in `docs/architecture.md` "## State model"; this is the flow view.)
+in `docs/reference/architecture.md` "## State model"; this is the flow view.)
 
 ```text
   _meta/BACKLOG.md            docs/specs/SPEC-NNN-<slug>.md      .claude/goals/<slug>.md
@@ -1364,7 +1364,7 @@ above; this only draws the loop.
 ### Opt-in side-flows (11)
 
 This table holds the original eleven. The full command roster, with each command's
-trigger class, is `docs/FEATURES.md`.
+trigger class, is `docs/reference/FEATURES.md`.
 
 Advisory, never blocking. They enrich a lane but are not required by any. All write
 **into the active spec** when the output binds to a spec (replace-not-stack), so a
@@ -1422,7 +1422,7 @@ The edges that fire when the happy path does not hold.
 These four refuse to proceed, because the cost of the mistake is irreversible. Three are
 hooks that exit 2 (anti-rationalization only while `[gate] understanding_gate` is on). The fourth is run by the command text. Other hooks block as well
 (secrets-guard, commit-format, board-row-gate, tool-policy-guard, more ship-gate rules);
-`docs/hard-rules.tsv` lists the rules code blocks on, each with the test that proves it,
+`docs/reference/hard-rules.tsv` lists the rules code blocks on, each with the test that proves it,
 and `tests/test-meta-hard-claims.sh` fails a doc that labels something a hard block without one.
 
 | Hard stop | Fires on | Mechanism |
@@ -1483,7 +1483,7 @@ What an ordinary change in this repo runs, from edit to landed.
 ```
 
 `/kit:wrap` is a git landing step here, nothing more: board flips, commit, merge own PRs,
-deploy check, worktree tidy, activity line, report. Its verbs are in `docs/wrap.md`. Its
+deploy check, worktree tidy, activity line, report. Its verbs are in `docs/reference/wrap.md`. Its
 heavier half is config. `[wrap] distill` turns the distill pass on at all; `build_candidates`
 lets step 7b wire a distilled candidate into its home repo; `drain_staged` runs only rows the
 operator staged by hand, since step 7b stages nothing; `before` and `after` hang a skill on

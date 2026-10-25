@@ -109,7 +109,7 @@ echo "=== lane-classify edit-vs-mention (SPEC-105 / ID-088) ==="
 # escalate (the over-gate metric 9 / the lane-rule audit named): a doc/research task ABOUT the
 # machinery is not an edit.
 classify_files_is "" "explain mega-merge.sh in the architecture doc" normal "mention: --files '' about mega-merge -> not full"
-classify_files_is "docs/architecture.md" "document how gate-ledger.sh works" normal "mention: editing a doc that names gate-ledger -> not full"
+classify_files_is "docs/reference/architecture.md" "document how gate-ledger.sh works" normal "mention: editing a doc that names gate-ledger -> not full"
 # An EDIT to a machinery lib (a touched file under lib/ or hooks/) DOES escalate, even when the
 # description carries no machinery basename.
 suggest_files_is "lib/goal/mega-merge.sh" "add a guard clause" normal "edit: --files lib/goal/mega-merge.sh -> full"

@@ -68,7 +68,7 @@ Write drafts to a review staging path the dispatch prompt gives you (e.g. `tests
 
 ## Rules
 
-- You (the subagent) only draft to staging. You never install, never edit `MANUAL.md` / the roster, never write into `agents/`. Promotion is the `/kit:draft-agent` command's job: by default it installs the agent (strip marker, write `agents/<name>.md`, roster-sync, `cp` to `~/.claude/agents/` for runtime); `--draft` makes the command stop at your staged draft. Keep your output a clean, install-ready draft so that promotion is mechanical.
+- You (the subagent) only draft to staging. You never install, never edit `docs/MANUAL.md` / the roster, never write into `agents/`. Promotion is the `/kit:draft-agent` command's job: by default it installs the agent (strip marker, write `agents/<name>.md`, roster-sync, `cp` to `~/.claude/agents/` for runtime); `--draft` makes the command stop at your staged draft. Keep your output a clean, install-ready draft so that promotion is mechanical.
 - A draft a human accepts with light edits, not boilerplate. Minimal tools, real sections, no filler.
 - Determine minimal tools from the role, not a copy of another agent's list.
 - Report back: the mode, the path written, the chosen tools+model with the one-line justification, and "DRAFT , review before installing".

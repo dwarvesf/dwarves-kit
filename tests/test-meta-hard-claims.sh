@@ -4,7 +4,7 @@
 # Run: bash tests/test-meta-hard-claims.sh   (standalone, or via the tests/test-meta.sh runner)
 # Harness (counters, colors, assert_eq/assert_true): tests/lib/meta-stub.sh
 #
-# docs/hard-rules.tsv lists the rules the kit's code really blocks on, each with a proving test.
+# docs/reference/hard-rules.tsv lists the rules the kit's code really blocks on, each with a proving test.
 # This suite pins two things:
 #   1. Every registry row is real: its enforcing file exists and contains the rule's literal call
 #      or message, a lib rule is wired into hooks/ship-gate.sh, its test file contains the literal
@@ -17,7 +17,7 @@
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/meta-stub.sh"
 
-REG="$KIT_DIR/docs/hard-rules.tsv"
+REG="$KIT_DIR/docs/reference/hard-rules.tsv"
 POLICY="$KIT_DIR/lib/gate/gate-policy.sh"
 TAB="$(printf '\t')"
 
@@ -78,7 +78,7 @@ registry_terms() { tail -n +2 "$1" | cut -f8 | tr ',' '\n' | sort -u; }
 # registry) or the placement test (`-> HARD hook:`) is not a claim about a rule.
 is_definition() {
   case "$1" in
-    *docs/hard-rules.tsv*)
+    *docs/reference/hard-rules.tsv*)
       case "$1" in *'HARD] = '*|*'HARD` = '*) return 0 ;; esac ;;
     *"-> HARD hook:"*) return 0 ;;
   esac
@@ -119,7 +119,7 @@ doc_files() {
 
 # ============================================================
 echo ""
-echo "=== Hard-rule registry (docs/hard-rules.tsv) ==="
+echo "=== Hard-rule registry (docs/reference/hard-rules.tsv) ==="
 # ============================================================
 
 assert_true "registry exists" "$([ -f "$REG" ]; echo $?)"
@@ -176,8 +176,8 @@ PLANT="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 printf '%s\n' \
   'Spec ------> spec exists  ------>  spec-drift-guard   [HARD]' \
   'push ------> ship-gate + push-to-main blocker  [HARD]' \
-  'see docs/hard-rules.tsv: [HARD] = enforced blocker' \
-  'spec-drift-guard [HARD] (docs/hard-rules.tsv)' \
+  'see docs/reference/hard-rules.tsv: [HARD] = enforced blocker' \
+  'spec-drift-guard [HARD] (docs/reference/hard-rules.tsv)' \
   'a plain sentence about a hard problem' > "$PLANT"
 PLANTOUT="$(scan_file "$PLANT" "$REG")"
 assert_true "NC: a HARD mark naming no rule (spec-drift-guard) is flagged" "$(printf '%s\n' "$PLANTOUT" | grep -q 'spec-drift-guard'; echo $?)"

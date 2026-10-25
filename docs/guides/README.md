@@ -1,6 +1,6 @@
 # User guides
 
-Task guides for people who use the kit on their repos. Each one answers "what do I do and what will I see", nothing else. The contracts live in `docs/WORKFLOW.md`, the rationale in `docs/PHILOSOPHY.md`, and the per-command reference in `docs/MANUAL.md`. A guide translates those; it never overrides them.
+Task guides for people who use the kit on their repos. Each one answers "what do I do and what will I see", nothing else. The contracts live in `docs/WORKFLOW.md`, the rationale in `docs/reference/PHILOSOPHY.md`, and the per-command reference in `docs/MANUAL.md`. A guide translates those; it never overrides them.
 
 ## Start here
 
@@ -33,6 +33,7 @@ Task guides for people who use the kit on their repos. Each one answers "what do
 | Guide | Read it when |
 |---|---|
 | [mega-goal.md](mega-goal.md) | your ask is one destination reached through several pieces, or several disjoint specs that should run side by side |
+| [queue-run-runbook.md](queue-run-runbook.md) | you are dispatching, monitoring and closing out an `#auto` board row through the queue |
 
 ## Reference
 

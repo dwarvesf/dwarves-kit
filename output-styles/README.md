@@ -18,7 +18,7 @@ A name the kit does not ship (`Explanatory`, a style the operator installed by h
 ## Adding a style
 
 1. `output-styles/<name>.md` with `name`, `description`, and `keep-coding-instructions` frontmatter.
-2. No tenant paths, names, or repo-specific rules (the kit contract, `docs/kit-contract.md`).
+2. No tenant paths, names, or repo-specific rules (the kit contract, `docs/reference/kit-contract.md`).
 3. A row in the table of `docs/specs/SPEC-252-output-style-config.md`.
 
 Contract: `docs/specs/SPEC-252-output-style-config.md`.

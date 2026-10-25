@@ -29,7 +29,7 @@ HERMES_PY="$HERE/../lib/sync/sweep/board-hermes"
 BRIEF="$HERE/../lib/sync/sweep/board-brief"
 SWEEP="$HERE/../lib/sync/sweep/board-sweep"
 BOARD="$HERE/../bin/board"
-SKILLS_SRC="$HERE/../adapters/hermes/skills"
+SKILLS_SRC="$HERE/../integrations/hermes/skills"
 PASS=0; FAIL=0
 
 ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }

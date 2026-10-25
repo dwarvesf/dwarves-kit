@@ -996,18 +996,18 @@ REAL_GIT_BIN="$(command -v git)"
 
 # build_remerge_reg <name> [--branch-gen] -- the registry layout on the merge fixture's
 # shape: a bare origin, a clone holding feat/union in its main worktree, both sides having
-# regenerated docs/FEATURES.md (a conflict the union driver cannot touch). The stub
+# regenerated docs/reference/FEATURES.md (a conflict the union driver cannot touch). The stub
 # generator also touches gen-ran.marker, an ignored path, so a cycle that ran it leaves the
 # marker behind even after a restore: its absence proves the generator never ran.
 # --branch-gen edits the generator on feat/union only, which must withhold it from the
 # cycle (the two sides disagree on it).
 build_remerge_reg() {
   local name="$1" bgen="${2:-}" work="$TMPD/rr-work-$1" clone="$TMPD/rr-clone-$1"
-  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs/reference"
   git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'
-    printf 'ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"\n'
+    printf 'ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"\n'
     printf 'touch "$root/gen-ran.marker"\n'
   } > "$work/lib/registry/feature-registry.sh"
   chmod +x "$work/lib/registry/feature-registry.sh"
@@ -1060,7 +1060,7 @@ chk "merge-cycle: the merge commit has both parents" \
 chk_has "merge-cycle: the merge commit carries the conventional subject" \
   "$(git -C "$RR" log --format=%s -1 feat/union)" "chore(merge): merge origin/main"
 chk "merge-cycle: FEATURES in the pushed head equals a fresh generate" \
-  "$([ "$(git -C "$RR" show feat/union:docs/FEATURES.md)" = "$(printf 'a.md\nb.md\no.md\n')" ]; echo $?)"
+  "$([ "$(git -C "$RR" show feat/union:docs/reference/FEATURES.md)" = "$(printf 'a.md\nb.md\no.md\n')" ]; echo $?)"
 chk "merge-cycle: the generator ran (its ignored marker exists)" \
   "$([ -f "$RR/gen-ran.marker" ]; echo $?)"
 
@@ -1072,7 +1072,7 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 101)" GH_STUB_PR_101="$(conflict_json 101 "$
   "$WRAP" merge --apply "$RRG" 2>&1)"; rc=$?
 chk "merge-cycle: a branch-changed generator exits 0 without merging" "$rc"
 chk_has "merge-cycle: FEATURES is refused by name" "$out" \
-  "REFUSED feat/union: conflict in docs/FEATURES.md"
+  "REFUSED feat/union: conflict in docs/reference/FEATURES.md"
 chk "merge-cycle: the generator never ran (marker absent)" \
   "$([ ! -e "$RRG/gen-ran.marker" ]; echo $?)"
 chk "merge-cycle: the branch tip is untouched" \

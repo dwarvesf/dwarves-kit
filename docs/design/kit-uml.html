@@ -422,7 +422,7 @@ edges:
 
 ## Gates and ledgers
 
-Two hooks do most of the stopping: safety-gate (always on) and ship-gate (per `[gate]` key). Other policy hooks block too; `docs/hard-rules.tsv` lists every rule code blocks on. Ship-gate composes push-refs, ship-rules, the config readers and two ledgers. Every writer appends through one substrate, `lib/ledger/ledger.sh`, which resolves the ledger root; the read plane recomputes from those files and persists nothing.
+Two hooks do most of the stopping: safety-gate (always on) and ship-gate (per `[gate]` key). Other policy hooks block too; `docs/reference/hard-rules.tsv` lists every rule code blocks on. Ship-gate composes push-refs, ship-rules, the config readers and two ledgers. Every writer appends through one substrate, `lib/ledger/ledger.sh`, which resolves the ledger root; the read plane recomputes from those files and persists nothing.
 
 ```uml
 id: c-gates
@@ -527,7 +527,7 @@ edges:
 
 ## Which plane to reach for
 
-The side-by-side table from `docs/execution-planes.md`, drawn as a sheet. Four engines run agents (orchestrator, queue, `/kit:dispatch`, gauntlet); the board is a box beside them for contrast, not an executor. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The isolation gaps it shows for the queue and the serial orchestrator are accepted trade-offs (see Risks), because neither path runs today.
+The side-by-side table from `docs/reference/execution-planes.md`, drawn as a sheet. Four engines run agents (orchestrator, queue, `/kit:dispatch`, gauntlet); the board is a box beside them for contrast, not an executor. FORMAT.md has no table type, so this borrows the ERD: each box is one plane and each row is an attribute with its value. The isolation gaps it shows for the queue and the serial orchestrator are accepted trade-offs (see Risks), because neither path runs today.
 
 ```uml
 id: planes-compare

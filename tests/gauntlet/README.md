@@ -21,7 +21,7 @@ gaps). Guide: `docs/guides/gauntlet.md` (how to run one); engine:
 
 | Input | Value |
 |---|---|
-| Surface globs | `README.md` (contributing sections), `docs/PHILOSOPHY.md`, `docs/WORKFLOW.md`, `AGENTS.md`, `tests/README*` |
+| Surface globs | `README.md` (contributing sections), `docs/reference/PHILOSOPHY.md`, `docs/WORKFLOW.md`, `AGENTS.md`, `tests/README*` |
 | Tier 1 | `bash tests/gauntlet/tier1.sh` (same suite) |
 | Clean room | same runner; the card differs, not the room |
 | Seed card | `seed-card-contributor.md` (one small kit fix through the kit's own gates) |

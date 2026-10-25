@@ -95,7 +95,7 @@ echo "TODOs/FIXMEs in hooks: $TODOS"
 # guard degrades to a no-op outside a git repo / without VERSION, never errors.
 if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)
-  # CHANGELOG resolution: docs/CHANGELOG.md wins if present, else root CHANGELOG.md.
+  # CHANGELOG resolution: docs/CHANGELOG.md wins if present (a repo with a thin root stub), else root CHANGELOG.md.
   CL=CHANGELOG.md; [ -f docs/CHANGELOG.md ] && CL=docs/CHANGELOG.md
   if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "  [WARN] release hygiene: VERSION is $VER but tag v$VER does not exist (phantom cut)"

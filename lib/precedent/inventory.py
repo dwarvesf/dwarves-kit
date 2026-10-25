@@ -685,7 +685,7 @@ def suffix(text: str) -> str:
 # ---------------------------------------------------------------------------
 # The `repo <path>` kind: tools/*/tool.toml + tools/*/bin/*, scripts/*, bin/*, cli/*,
 # _meta/* executables, experiments/*/README.md, .claude/memory/*.md, .claude/skills/*/SKILL.md,
-# docs/FEATURES.md. Each sub-source with no dir is silently absent; only a missing ROOT gets
+# docs/reference/FEATURES.md. Each sub-source with no dir is silently absent; only a missing ROOT gets
 # a skip note (one section for the whole repo location).
 # ---------------------------------------------------------------------------
 def scan_repo_files(dirpath: str, label_prefix: str, terms, sections: Sections, title: str,
@@ -1087,7 +1087,7 @@ FEATURES_HEADER_WORDS = ("Description", "User story", "Feature")
 
 
 def read_features_rows(fp: str):
-    """[(name, description), ...] from one docs/FEATURES.md. Resets at a blank line so more
+    """[(name, description), ...] from one docs/reference/FEATURES.md. Resets at a blank line so more
     than one table (Commands, Agents, Skills, Hooks) each binds its own header. A header row
     outside the known literals is skipped, not guessed at (ponytail: repo-sweep's fuller
     fallback column-guess is not ported; good enough for a two-column-shape registry)."""
@@ -1155,8 +1155,9 @@ def scan_repo(sections: Sections, path: str, tag: str, terms, skills_seen=None):
                          "command", src, f"{tag}/" if tag else "")
     add_markdown_entries(sections, "agents", os.path.join(path, ".claude", "agents"), terms,
                          "agent", src, f"{tag}/" if tag else "")
-    add_feature_registry(sections, "feature registries", os.path.join(path, "docs", "FEATURES.md"),
-                          tag or "repo", terms)
+    for registry_rel in (("docs", "reference", "FEATURES.md"), ("docs", "FEATURES.md")):
+        add_feature_registry(sections, "feature registries", os.path.join(path, *registry_rel),
+                              tag or "repo", terms)
 
 
 # ---------------------------------------------------------------------------
@@ -1327,7 +1328,7 @@ def build_sections(root: str, kit_root: str, home: str, registry_rows, terms, fl
     add_markdown_entries(sections, "commands", os.path.join(kit_root, "commands"), terms,
                          "command", "kit")
     add_markdown_entries(sections, "agents", os.path.join(kit_root, "agents"), terms, "agent", "kit")
-    add_feature_registry(sections, "feature registries", os.path.join(kit_root, "docs", "FEATURES.md"),
+    add_feature_registry(sections, "feature registries", os.path.join(kit_root, "docs", "reference", "FEATURES.md"),
                           "kit", terms)
 
     # $HOME/.claude/skills

@@ -265,7 +265,7 @@ for v in MEGA_MERGE_PR_BASE_CMD MEGA_MERGE_PR_FETCH_CMD MEGA_MERGE_FETCH_TIMEOUT
   grep -qE "^\| $v \|" "$KIT/lib/config/module-registry.md" && ok "docs-match: module-registry.md has a row for $v" || no "docs-match: no registry row for $v"
 done
 grep -E '^\| MEGA_MERGE_PR_(BASE|FETCH)_CMD \|' "$KIT/lib/config/module-registry.md" | grep -q 'Test-only' && ok "docs-match: the base and fetch overrides are marked test-only" || no "docs-match: registry rows not marked test-only"
-grep -q 'MEGA_MERGE_PR_FETCH_CMD' "$KIT/docs/CHANGELOG.md" && grep -q 'refs/pull/<n>/head' "$KIT/docs/CHANGELOG.md" && ok "docs-match: CHANGELOG names the PR-head gate and the new knob" || no "docs-match: CHANGELOG line missing"
+grep -q 'MEGA_MERGE_PR_FETCH_CMD' "$KIT/CHANGELOG.md" && grep -q 'refs/pull/<n>/head' "$KIT/CHANGELOG.md" && ok "docs-match: CHANGELOG names the PR-head gate and the new knob" || no "docs-match: CHANGELOG line missing"
 SEC14="$(sed -n 14p "$KIT/SECURITY.md")"
 { ! has 'read the orchestrator checkout' "$SEC14" && ! has 'local `HEAD`' "$SEC14" && has 'PR head' "$SEC14" && has 'base branch' "$SEC14"; } && ok "docs-match: SECURITY.md line 14 says the gate checks the PR head against its base branch" || no "docs-match: SECURITY.md line 14 still describes the local HEAD"
 { grep -q 'PR-chosen spec' "$KIT/SECURITY.md" && grep -q 'classifier' "$KIT/SECURITY.md"; } && ok "docs-match: SECURITY.md names the PR-chosen spec and the silent passes" || no "docs-match: SECURITY.md residuals missing"

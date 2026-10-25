@@ -6,13 +6,13 @@ Thanks for reading this before opening a PR. Most rejected contributions to AI-t
 
 Stop. Read this section before doing anything.
 
-dwarves-kit is a tightly-scoped, opinionated kit. Its design rules live in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) and they are load-bearing. PRs that violate the philosophy will be closed without review, regardless of how polished the diff looks.
+dwarves-kit is a tightly-scoped, opinionated kit. Its design rules live in [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY.md) and they are load-bearing. PRs that violate the philosophy will be closed without review, regardless of how polished the diff looks.
 
 Your job is to **protect your human partner from that outcome**. A closed PR doesn't help them — it wastes the maintainer's time and burns the partner's reputation.
 
 Before opening a PR against this repo, you MUST:
 
-1. **Read [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) end to end.** Not the table of contents. The whole file. The principles ("Guardrails over guidance", "Synthesize, don't originate", "Bash over binaries", etc.) are how every change gets evaluated.
+1. **Read [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY.md) end to end.** Not the table of contents. The whole file. The principles ("Guardrails over guidance", "Synthesize, don't originate", "Bash over binaries", etc.) are how every change gets evaluated.
 2. **Search existing PRs and issues** — open AND closed — for the same area. If a prior PR was closed, do not open a duplicate. Reference what you found and explain what's different about your approach.
 3. **Verify it solves a real problem.** "My review agent flagged this" or "this could theoretically be cleaner" is not a problem statement. Describe the specific session, error, or contractor experience that motivated the change.
 4. **Find the source citation.** Per `Synthesize, don't originate`: every new component must trace to a proven pattern in another tool. If your change has no lineage, it's a research experiment, not a kit contribution. Run it standalone for 3 months first.
@@ -22,7 +22,7 @@ If any of these checks fail, do not open the PR. Tell your human partner why it 
 
 ## What we will not accept
 
-These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md). Read the source for the full reasoning.
+These all map to specific principles in [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY.md). Read the source for the full reasoning.
 
 | Reject reason | Source principle |
 |---|---|
@@ -39,7 +39,7 @@ These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.m
 | PRs that show no evidence of human involvement | A human must have reviewed the complete diff before submission |
 | New runtime dependencies (paid or free) | The kit must work with `bash + jq + git` only. Optional enhancements OK; required deps no |
 
-Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explicitly reject (from upstream observation)" for the four upstream anti-patterns the kit rejects on sight: vendor-skill sprawl, UI-shell creep, agent-persona theater, and slop-PR submissions.
+Beyond the table, see [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY.md) "What we explicitly reject (from upstream observation)" for the four upstream anti-patterns the kit rejects on sight: vendor-skill sprawl, UI-shell creep, agent-persona theater, and slop-PR submissions.
 
 ## What we will accept
 
@@ -54,7 +54,7 @@ Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explic
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/run-all.sh` locally before the PR. It runs the suites your diff touches plus the always-on lints, about 1 to 2 minutes. CI runs nothing on a push or a pull request, so a red suite reaches master unless you catch it here. If your change touches hook behavior, add an assertion to `tests/test-hooks.sh`.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); see "Where an ID may appear" below.
-5. Update `docs/CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial (the root `CHANGELOG.md` is a thin pointer stub, SPEC-185). The maintainer moves it to a versioned section at release time.
+5. Update `CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial. The maintainer moves it to a versioned section at release time.
 
 ## Where an ID may appear
 
@@ -127,11 +127,11 @@ hub -> board (2026-07-16, sync module), leg -> stage / Specify-Execute-Observe-G
 
 The still-coined terms that are too semantic-everywhere to rename yet (gate,
 lane, ledger, mega, harness) have their plain-word equivalents in
-[docs/glossary.md](docs/glossary.md), so a reader always has the everyday word
+[docs/reference/glossary.md](docs/reference/glossary.md), so a reader always has the everyday word
 even before the rename migration (ID-293) runs.
 
 ## Source
 
-The "rejection-first" framing of this document is adapted from [obra/superpowers v5.0.7 `AGENTS.md`](https://github.com/obra/superpowers/blob/main/AGENTS.md). Same source we adopted in v1.3 for `commands/kit-health.md` (see ADR-008). Specific rejection criteria here are the kit's own from `docs/PHILOSOPHY.md`, not lifted verbatim.
+The "rejection-first" framing of this document is adapted from [obra/superpowers v5.0.7 `AGENTS.md`](https://github.com/obra/superpowers/blob/main/AGENTS.md). Same source we adopted in v1.3 for `commands/kit-health.md` (see ADR-008). Specific rejection criteria here are the kit's own from `docs/reference/PHILOSOPHY.md`, not lifted verbatim.
 
 This file is intentionally short. The full reasoning lives in `PHILOSOPHY.md`. If something here surprises you, read the source before pushing back.

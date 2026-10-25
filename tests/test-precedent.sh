@@ -59,7 +59,7 @@ make_fixture() {
 
   mkdir -p "$FIX_HOME/eta-repo/scripts" "$FIX_LEDGER"
   mkdir -p "$FIX_REPO/tools/alpha/bin" "$FIX_REPO/scripts" "$FIX_REPO/.claude/memory" \
-           "$FIX_REPO/.claude/skills/delta" "$FIX_REPO/docs/specs" "$FIX_REPO/docs/decisions" \
+           "$FIX_REPO/.claude/skills/delta" "$FIX_REPO/docs/specs" "$FIX_REPO/docs/decisions" "$FIX_REPO/docs/reference" \
            "$FIX_REPO/experiments/eps"
   # Restored-iterator fixtures (research records, tool helper dirs, a second experiment whose
   # subject lives only in `tech:` + the lede, a PEP-723 script, a duplicate skill dir).
@@ -101,7 +101,7 @@ description: sync notion pages
 Body mentions the payroll desk this skill supports.
 FIX
 
-  cat > "$FIX_REPO/docs/FEATURES.md" <<'FIX'
+  cat > "$FIX_REPO/docs/reference/FEATURES.md" <<'FIX'
 # Features
 
 | Command | Icon | Trigger | Description | Since | Owner |

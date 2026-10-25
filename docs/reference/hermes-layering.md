@@ -12,7 +12,7 @@ The kit holds every rule and every number. A Hermes agent only needs to know whe
                                                   ^
                                                   | the agent runs the command in a terminal turn
                                                   |
-                                           adapters/hermes/skills/
+                                           integrations/hermes/skills/
                                              kit-board       when to run board brief|health|status|sweep
                                              kit-precedent   when to run precedent find
 ```

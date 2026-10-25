@@ -44,18 +44,18 @@ two_open_pr_json() {
 # commit after it).
 _build_land_reg() {
   local name="$1" work="$TMPD/ld-work-$1" repo="$TMPD/ld-repo-$1"
-  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs"
+  mkdir -p "$work/lib/registry" "$work/specs" "$work/docs/reference"
   git -C "$work" init -q; gitc "$work"
   git -C "$work" symbolic-ref HEAD refs/heads/main
   { printf '#!/usr/bin/env bash\nroot="$(cd "$(dirname "$0")/../.." && pwd)"\n'
-    printf '%s\n' "${LGEN:-ls \"\$root/specs\" | LC_ALL=C sort > \"\$root/docs/FEATURES.md\"}"
+    printf '%s\n' "${LGEN:-ls \"\$root/specs\" | LC_ALL=C sort > \"\$root/docs/reference/FEATURES.md\"}"
   } > "$work/lib/registry/feature-registry.sh"
   chmod +x "$work/lib/registry/feature-registry.sh"
   echo base > "$work/base.txt"
   printf 'ignored.bin\n' > "$work/.gitignore"
   [ -z "${LBASE_ATTR:-}" ] || printf '%s\n' "$LBASE_ATTR" > "$work/.gitattributes"
   echo a > "$work/specs/a.md"
-  printf '# Changelog\n\n- base\n' > "$work/docs/CHANGELOG.md"
+  printf '# Changelog\n\n- base\n' > "$work/CHANGELOG.md"
   ( cd "$work" && bash lib/registry/feature-registry.sh generate )
   rm -f "$work/docs/GEN_OUT.txt"   # generator side output never enters history
   git -C "$work" add -A; git -C "$work" commit -qm base
@@ -643,7 +643,7 @@ chk "land-merge: HEAD is a merge of origin/main" \
 chk_has "land-merge: the merge commit carries a conventional subject" \
   "$(git -C "$LREPO" log -1 --format=%s HEAD)" "chore(merge): merge origin/main"
 chk "land-merge: FEATURES equals a fresh generate" \
-  "$([ "$(git -C "$LREPO" show HEAD:docs/FEATURES.md)" = $'a.md\nb.md\no.md' ]; echo $?)"
+  "$([ "$(git -C "$LREPO" show HEAD:docs/reference/FEATURES.md)" = $'a.md\nb.md\no.md' ]; echo $?)"
 chk "land-merge: the second merge pins the merged head" \
   "$(awk -v m="$LHEAD" '/^pr merge 42 /{c++; if (c==2) exit (index($0, "--match-head-commit " m) ? 0 : 1)}' "$GH_STUB_CALLS"; echo $?)"
 chk "land-merge: the old tip is an ancestor of the pushed head" \
@@ -681,10 +681,10 @@ build_land_reg clog
 LWT="$(cd "$TMPD/ld-repo-clog/wt" && pwd -P)"; LREPO="$TMPD/ld-repo-clog"
 LTIP="$(git -C "$LWT" rev-parse HEAD)"
 land_adv clog
-printf -- '- origin bullet\n' >> "$TMPD/ld-adv-clog/docs/CHANGELOG.md"
+printf -- '- origin bullet\n' >> "$TMPD/ld-adv-clog/CHANGELOG.md"
 git -C "$TMPD/ld-adv-clog" commit -qam "origin: changelog line"
 git -C "$TMPD/ld-adv-clog" push -q origin main
-printf -- '- branch bullet\n' >> "$LWT/docs/CHANGELOG.md"
+printf -- '- branch bullet\n' >> "$LWT/CHANGELOG.md"
 git -C "$LWT" commit -qam "feat: changelog line"
 LTIP="$(git -C "$LWT" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
@@ -694,7 +694,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-clog" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
-LCLOG="$(git -C "$LREPO" show HEAD:docs/CHANGELOG.md 2>/dev/null)"
+LCLOG="$(git -C "$LREPO" show HEAD:CHANGELOG.md 2>/dev/null)"
 chk "land-merge: CHANGELOG conflict exits 0" "$rc"
 chk "land-merge: both changelog bullets kept once" \
   "$([ "$(printf '%s\n' "$LCLOG" | grep -cx -- '- branch bullet')" = 1 ] \
@@ -719,7 +719,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: clean merge exits 0" "$rc"
 chk "land-merge: FEATURES in the merge commit equals a fresh generate" \
-  "$([ "$(git -C "$LREPO" show HEAD:docs/FEATURES.md)" = $'a.md\nb.md\no.md' ]; echo $?)"
+  "$([ "$(git -C "$LREPO" show HEAD:docs/reference/FEATURES.md)" = $'a.md\nb.md\no.md' ]; echo $?)"
 chk_has "land-merge: the merge reports no conflicts" "$out" "0 conflict(s) resolved"
 
 echo "--- land-merge: a real content conflict refuses and restores"
@@ -769,7 +769,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: a mixed conflict exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "land-merge: the refusal names base.txt" "$out" "conflict in base.txt"
-chk_no "land-merge: the refusal never names FEATURES" "$out" "conflict in docs/FEATURES.md"
+chk_no "land-merge: the refusal never names FEATURES" "$out" "conflict in docs/reference/FEATURES.md"
 chk "land-merge: the old tip is restored" \
   "$([ "$(git -C "$LWT" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
 
@@ -778,7 +778,7 @@ echo "--- land-merge: a no-op generator leaves markers, and the scan names the f
 # nothing leaves the conflict markers the merge wrote; the stage-set scan is the
 # last line of defense before they could be committed. The fixture regen still
 # runs (`.noop` only lands on the branch), so FEATURES exists and conflicts.
-LGEN='[ -f "$root/.noop" ] || ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"; echo note > "$root/docs/GEN_OUT.txt"' \
+LGEN='[ -f "$root/.noop" ] || ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"; echo note > "$root/docs/GEN_OUT.txt"' \
   LBRANCH='echo b > specs/b.md && bash lib/registry/feature-registry.sh generate && touch .noop && rm -f docs/GEN_OUT.txt' \
   build_land_reg markx
 LWT="$(cd "$TMPD/ld-repo-markx/wt" && pwd -P)"
@@ -792,7 +792,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-markx" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
 chk "land-merge: markers left exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
-chk_has "land-merge: MARKERS names FEATURES" "$out" "MARKERS feat/land: docs/FEATURES.md"
+chk_has "land-merge: MARKERS names FEATURES" "$out" "MARKERS feat/land: docs/reference/FEATURES.md"
 chk "land-merge: markers case restored the tip" \
   "$([ "$(git -C "$LWT" rev-parse HEAD)" = "$LTIP" ]; echo $?)"
 chk "land-merge: the generator side file was removed by the restore" \
@@ -805,8 +805,8 @@ echo "--- land-merge: a configured conflict-marker-size is honored, both 9 and 5
 # the generator no-ops only once .noop is committed on the branch, so the
 # fixture regen still writes FEATURES while the merge-time pass leaves markers.
 for LMS in 9 5; do
-  LGEN='[ -f "$root/.noop" ] && exit 0; ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"' \
-  LBASE_ATTR="docs/FEATURES.md conflict-marker-size=$LMS" \
+  LGEN='[ -f "$root/.noop" ] && exit 0; ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"' \
+  LBASE_ATTR="docs/reference/FEATURES.md conflict-marker-size=$LMS" \
   LBRANCH='echo b > specs/b.md && bash lib/registry/feature-registry.sh generate && touch .noop' \
     build_land_reg "msz$LMS"
   LWT="$(cd "$TMPD/ld-repo-msz$LMS/wt" && pwd -P)"
@@ -820,7 +820,7 @@ for LMS in 9 5; do
     GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-msz$LMS" \
     GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT" 2>&1)"; rc=$?
   chk "land-merge: marker size $LMS exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
-  chk_has "land-merge: MARKERS names FEATURES at size $LMS" "$out" "MARKERS feat/land: docs/FEATURES.md"
+  chk_has "land-merge: MARKERS names FEATURES at size $LMS" "$out" "MARKERS feat/land: docs/reference/FEATURES.md"
 done
 
 } # end sec_merge1
@@ -830,7 +830,7 @@ sec_merge2() {
 echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries (part 2 of 4) ==="
 # ===========================================================================
 echo "--- land-merge: an eight-> blockquote line stays legal at the default size"
-LGEN='{ ls "$root/specs" | LC_ALL=C sort; printf ">>>>>>>>\n"; } > "$root/docs/FEATURES.md"' \
+LGEN='{ ls "$root/specs" | LC_ALL=C sort; printf ">>>>>>>>\n"; } > "$root/docs/reference/FEATURES.md"' \
   build_land_reg bq
 LWT="$(cd "$TMPD/ld-repo-bq/wt" && pwd -P)"; LREPO="$TMPD/ld-repo-bq"
 LTIP="$(git -C "$LWT" rev-parse HEAD)"
@@ -845,7 +845,7 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
 chk "land-merge: the nested blockquote case exits 0" "$rc"
 chk_no "land-merge: no MARKERS refusal for an over-long marker run" "$out" "MARKERS"
 chk "land-merge: the eight-> line reached the merge commit" \
-  "$(git -C "$LREPO" show HEAD:docs/FEATURES.md 2>/dev/null | grep -qx '>>>>>>>>'; echo $?)"
+  "$(git -C "$LREPO" show HEAD:docs/reference/FEATURES.md 2>/dev/null | grep -qx '>>>>>>>>'; echo $?)"
 
 echo "--- land-merge: a generator side effect on an auto-merged file still aborts"
 # README.md merges cleanly on origin's side; the generator then rewrites it and
@@ -874,7 +874,7 @@ chk "land-merge: the worktree is clean after the abort" \
   "$([ -z "$(git -C "$LWT" status --porcelain)" ]; echo $?)"
 
 echo "--- land-merge: a generator failing on a conflict aborts cleanly"
-LGEN='[ -f "$root/.genfail" ] && exit 3; ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"' \
+LGEN='[ -f "$root/.genfail" ] && exit 3; ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"' \
   LBRANCH='echo b > specs/b.md && bash lib/registry/feature-registry.sh generate && touch .genfail' \
   build_land_reg genfail
 LWT="$(cd "$TMPD/ld-repo-genfail/wt" && pwd -P)"
@@ -895,7 +895,7 @@ chk "land-merge: generator failure left a clean worktree" \
   "$([ -z "$(git -C "$LWT" status --porcelain)" ]; echo $?)"
 
 echo "--- land-merge: untracked generator output lands in the merge commit"
-LGEN='ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"; echo note > "$root/docs/GEN_OUT.txt"' \
+LGEN='ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"; echo note > "$root/docs/GEN_OUT.txt"' \
   LBRANCH='echo b > specs/b.md && bash lib/registry/feature-registry.sh generate && rm -f docs/GEN_OUT.txt' \
   build_land_reg utr
 LWT="$(cd "$TMPD/ld-repo-utr/wt" && pwd -P)"; LREPO="$TMPD/ld-repo-utr"
@@ -917,7 +917,7 @@ chk "land-merge: the landed checkout is clean" \
 echo "--- land-merge: untracked output is gone after a refused conflict"
 # With base.txt unmerged the classifier refuses before the generator runs, so
 # GEN_OUT is never written; an ignored file in the worktree must be untouched.
-LGEN='ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"; echo note > "$root/docs/GEN_OUT.txt"' \
+LGEN='ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"; echo note > "$root/docs/GEN_OUT.txt"' \
   LBRANCH='echo b > specs/b.md && bash lib/registry/feature-registry.sh generate && rm -f docs/GEN_OUT.txt && echo "branch edit" > base.txt' \
   build_land_reg utref
 LWT="$(cd "$TMPD/ld-repo-utref/wt" && pwd -P)"
@@ -1047,9 +1047,9 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
   KIT_WRAP_CI_GRACE_SECS=0 KIT_WRAP_CARRY_CHECKS_SECS=0 \
   GH_STUB_LAND_REPO="$LWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-vg" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
-  "$WRAP" land "$LWT" --verify 'test -f docs/FEATURES.md' 2>&1)"; rc=$?
+  "$WRAP" land "$LWT" --verify 'test -f docs/reference/FEATURES.md' 2>&1)"; rc=$?
 chk "land-merge: verify green exits 0" "$rc"
-chk_has "land-merge: the verified line reports the command" "$out" "verified in ${LWT}: test -f docs/FEATURES.md"
+chk_has "land-merge: the verified line reports the command" "$out" "verified in ${LWT}: test -f docs/reference/FEATURES.md"
 chk "land-merge: the verified line precedes the post-push wait" \
   "$(awk '/verified in/{v=NR} /waiting for GitHub/{w=NR} END{exit !(v && w && v<w)}' <<< "$out"; echo $?)"
 
@@ -1646,7 +1646,7 @@ echo "--- land-merge: an interrupted resolver is never GENERATOR FAILED"
 # TERM's wrap while it is blocked inside the resolve, then lets the resolver finish
 # red (exit 1). An interrupt judged as a resolver failure would print GENERATOR FAILED
 # or REFUSED before the cycle's 130.
-LGEN='if [ -f "'"$TMPD"'/arm-sigres" ]; then touch "'"$TMPD"'/gen-waiting-sigres"; while [ ! -f "'"$TMPD"'/gen-go-sigres" ]; do sleep 0.05; done; exit 1; fi; ls "$root/specs" | LC_ALL=C sort > "$root/docs/FEATURES.md"'
+LGEN='if [ -f "'"$TMPD"'/arm-sigres" ]; then touch "'"$TMPD"'/gen-waiting-sigres"; while [ ! -f "'"$TMPD"'/gen-go-sigres" ]; do sleep 0.05; done; exit 1; fi; ls "$root/specs" | LC_ALL=C sort > "$root/docs/reference/FEATURES.md"'
 build_land_reg sigres
 unset LGEN
 LWT="$(cd "$TMPD/ld-repo-sigres/wt" && pwd -P)"

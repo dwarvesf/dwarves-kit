@@ -36,7 +36,7 @@
 #   - anything under a tests/ or fixtures/ directory (test input, not scattered prose)
 #   - docs/verification/gauntlet/** (proof records, never rewritten, per the gauntlet-proof-
 #     audit instance)
-#   - docs/FEATURES.md, docs/CHANGELOG.md (generated projection / release-note ledger)
+#   - docs/reference/FEATURES.md, CHANGELOG.md (generated projection / release-note ledger)
 #   - lib/board/board-run.sh's two heredoc lines that emit the literal SG-01 sub-goal:
 #     it always scaffolds exactly one sub-goal, so SG-01 there is the real generated
 #     value, not a scattered reference.
@@ -86,7 +86,7 @@ is_exempt() {  # is_exempt <path> <line-text> <id>
   case "$path" in
     */tests/*|*/fixtures/*)             return 0 ;;
     docs/verification/gauntlet/*)       return 0 ;;
-    docs/FEATURES.md|docs/CHANGELOG.md) return 0 ;;
+    docs/reference/FEATURES.md|CHANGELOG.md) return 0 ;;
     lib/lint/scattered-ids.sh)          return 0 ;;  # this guard's own doc of its exemptions quotes ids as data, not scattered prose
   esac
   own_number "$path" "$id" && return 0

@@ -36,7 +36,7 @@ The spine, step by step:
 | `/kit:wrap` | Lands the session: flips board rows, merges green PRs, tidies worktrees | a skim-first report |
 | `/kit:retro` | What worked, what did not | a note under `docs/retro/` |
 
-Some beats sit beside the spine. `/kit:think` and `/kit:design` come before the spec. `/kit:grill` interviews you when intake needs it ([grill.md](grill.md)). `/kit:test-plan` comes before execute. `/kit:verify` re-runs the checks on demand ([v-model.md](v-model.md)). The verb lookup for wrap is [docs/wrap.md](../wrap.md).
+Some beats sit beside the spine. `/kit:think` and `/kit:design` come before the spec. `/kit:grill` interviews you when intake needs it ([grill.md](grill.md)). `/kit:test-plan` comes before execute. `/kit:verify` re-runs the checks on demand ([v-model.md](v-model.md)). The verb lookup for wrap is [docs/reference/wrap.md](../reference/wrap.md).
 
 ## How lanes size the spine
 
@@ -96,7 +96,7 @@ normal
 |---|---|
 | Your one-line change got the full lane | You assigned it after a suggestion, or the diff floor caught a hard path. One line in a migration is full lane at push. |
 | You want tiny and the kit says no | Say so in the ask. The kit records it as your call. The floor check still refuses an unsafe downgrade. |
-| Your finished task is missing from the board | Shipped rows leave the board. `docs/CHANGELOG.md` is the shipped record. `/kit:start --full` adds the open queue, goal drafts and the last five commits. |
+| Your finished task is missing from the board | Shipped rows leave the board. `CHANGELOG.md` is the shipped record. `/kit:start --full` adds the open queue, goal drafts and the last five commits. |
 | `/kit:start` says the spec is ambiguous | More than one spec is live. Name the one you mean, or set it to SHIPPED or PARKED. |
 | You are not sure where you are | Run `/kit:start` again. State lives on disk, so it always answers. |
 

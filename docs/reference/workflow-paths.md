@@ -7,7 +7,7 @@ sources: docs/research/2026-07-31-feature-trigger-map.md, docs/WORKFLOW.md, hook
 
 # Workflow paths: every path through the kit
 
-GENERATED projection. This file enumerates every entry point and where each path leads. It is a rendering, not a second contract: when it disagrees with [`WORKFLOW.md`](WORKFLOW.md), WORKFLOW.md wins. Regenerate per the last section.
+GENERATED projection. This file enumerates every entry point and where each path leads. It is a rendering, not a second contract: when it disagrees with [`WORKFLOW.md`](../WORKFLOW.md), WORKFLOW.md wins. Regenerate per the last section.
 
 ## 1 · Legend
 
@@ -19,13 +19,13 @@ GENERATED projection. This file enumerates every entry point and where each path
 | lib verb | `[V]` | a lib script declares itself with a `# kit-verb:` header; commands, hooks, agents or a human call it | `board work`, `classify floor` |
 | dispatched | `[D]` | a command dispatches it as a subagent | every agent (`task-verifier`, `advisor`, ...) |
 
-Enforcement marks: `HARD` = a rule that code really blocks on (a hook or lib exits 2), listed in `docs/hard-rules.tsv` and pinned by `tests/test-meta-hard-claims.sh`; a gate that is off by default says so in that registry's `gate` column; `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are where autonomous runs stop for a human: safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline. The pipeline is run by the command text, so `ship-gate` checks only that its gate was recorded. Other hooks block too (see the registry); everything else advises.
+Enforcement marks: `HARD` = a rule that code really blocks on (a hook or lib exits 2), listed in `docs/reference/hard-rules.tsv` and pinned by `tests/test-meta-hard-claims.sh`; a gate that is off by default says so in that registry's `gate` column; `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are where autonomous runs stop for a human: safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline. The pipeline is run by the command text, so `ship-gate` checks only that its gate was recorded. Other hooks block too (see the registry); everything else advises.
 
 Stage grouping (Shape / Build / Watch / Check / Reflect) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
 
 ## 2 · Flow topology (the one big picture)
 
-Every workflow, lane, loop, side-flow, and alternate path in one connected picture: the spine, the 5 intake lanes, the 3 bounded engines plus the amend micro-loop, the side-flows at their real attach points, the type-loop intake rail, the 7 alternate flows as `alt:` branch notes, and the 4 hard stops as the bottom rail. Where the picture simplifies, it names the section that carries the detail (the per-stage maps in section 4; the flow census in [`WORKFLOW.md`](WORKFLOW.md) "Flow and loop reference"); [`WORKFLOW.md`](WORKFLOW.md) stays canonical and wins on any disagreement.
+Every workflow, lane, loop, side-flow, and alternate path in one connected picture: the spine, the 5 intake lanes, the 3 bounded engines plus the amend micro-loop, the side-flows at their real attach points, the type-loop intake rail, the 7 alternate flows as `alt:` branch notes, and the 4 hard stops as the bottom rail. Where the picture simplifies, it names the section that carries the detail (the per-stage maps in section 4; the flow census in [`WORKFLOW.md`](../WORKFLOW.md) "Flow and loop reference"); [`WORKFLOW.md`](../WORKFLOW.md) stays canonical and wins on any disagreement.
 
 ```
  LEGEND   ->  forward flow      ==>  loop-back / re-entry      alt:  an alternate flow fires here
@@ -159,7 +159,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
                              [I] topology-drift (registry vs path-index cross-check -> delta re-place -> PR gate)
                              both Tier 2 ==> [D] audit-scanner (shared read-only evidence pass)
 
-  STOP RAIL  (the four autonomy stops; the rules code blocks on, each with a test, are in docs/hard-rules.tsv):
+  STOP RAIL  (the four autonomy stops; the rules code blocks on, each with a test, are in docs/reference/hard-rules.tsv):
   ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
                               EVERY Bash call at ANY point in this picture, not only at ship
   ⚡2 push-to-main blocker ... push to main/protected branches; plus the ship-gate: no push

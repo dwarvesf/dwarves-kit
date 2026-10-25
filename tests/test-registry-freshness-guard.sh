@@ -25,7 +25,7 @@ mkkit() { # $1=dir
   local d="$1"
   git init -q -b master "$d"
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
-  mkdir -p "$d/lib/registry" "$d/commands" "$d/agents" "$d/skills/demo" "$d/hooks" "$d/docs/specs" "$d/tests"
+  mkdir -p "$d/lib/registry" "$d/commands" "$d/agents" "$d/skills/demo" "$d/hooks" "$d/docs/specs" "$d/docs/reference" "$d/tests"
   cp "$KIT/$REG" "$d/$REG"
   printf -- '---\ndescription: a stub command\n---\nbody\n' > "$d/commands/demo.md"
   printf -- '---\ndescription: a stub agent\n---\nbody\n' > "$d/agents/demo-agent.md"
@@ -33,7 +33,7 @@ mkkit() { # $1=dir
   printf '#!/bin/bash\n# demo-hook.sh -- a stub hook\n' > "$d/hooks/demo-hook.sh"
   printf '{"hooks":{}}\n' > "$d/hooks/hooks.json"
   printf '{}\n' > "$d/settings.json"
-  ( cd "$d" && bash "$REG" generate docs/FEATURES.md )
+  ( cd "$d" && bash "$REG" generate docs/reference/FEATURES.md )
   git -C "$d" add -A; git -C "$d" commit -qm init
 }
 
@@ -48,20 +48,20 @@ gate() { # $1=repo  -> echoes exit code, stderr to $2
 T1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T1="$T1/kit"; mkkit "$T1"
 
 # 1. fresh projection -> exit 0
-( cd "$T1" && bash "$REG" check docs/FEATURES.md >/dev/null 2>&1 )
+( cd "$T1" && bash "$REG" check docs/reference/FEATURES.md >/dev/null 2>&1 )
 [ $? -eq 0 ] && ok "check on a fresh projection exits 0" || no "fresh check should exit 0"
 
 # 2. stale projection -> exit 1, and the message names the file
-printf '\n| `stale` | `[X]` | hand-edited row |\n' >> "$T1/docs/FEATURES.md"
-OUT2="$( cd "$T1" && bash "$REG" check docs/FEATURES.md 2>&1 )"; RC2=$?
+printf '\n| `stale` | `[X]` | hand-edited row |\n' >> "$T1/docs/reference/FEATURES.md"
+OUT2="$( cd "$T1" && bash "$REG" check docs/reference/FEATURES.md 2>&1 )"; RC2=$?
 [ "$RC2" -eq 1 ] && ok "check on a stale projection exits 1" || no "stale check should exit 1 (got $RC2)"
-printf '%s' "$OUT2" | grep -q 'docs/FEATURES.md' \
-  && ok "the stale summary names docs/FEATURES.md" || no "stale summary should name the file"
+printf '%s' "$OUT2" | grep -q 'docs/reference/FEATURES.md' \
+  && ok "the stale summary names docs/reference/FEATURES.md" || no "stale summary should name the file"
 
 # 3. --fix regenerates in place and exits 0
-( cd "$T1" && bash "$REG" check --fix docs/FEATURES.md >/dev/null 2>&1 )
+( cd "$T1" && bash "$REG" check --fix docs/reference/FEATURES.md >/dev/null 2>&1 )
 RC3=$?
-( cd "$T1" && bash "$REG" check docs/FEATURES.md >/dev/null 2>&1 )
+( cd "$T1" && bash "$REG" check docs/reference/FEATURES.md >/dev/null 2>&1 )
 [ "$RC3" -eq 0 ] && [ $? -eq 0 ] \
   && ok "check --fix regenerates in place and leaves it fresh" || no "--fix should regenerate and exit 0"
 
@@ -80,30 +80,30 @@ RC4="$(gate "$T4" "$ERR4")"
   || no "stale input-touching push should block (got $RC4)"
 
 # 5. the refusal names the regenerate command
-grep -q 'feature-registry.sh generate docs/FEATURES.md' "$ERR4" \
+grep -q 'feature-registry.sh generate docs/reference/FEATURES.md' "$ERR4" \
   && ok "the refusal names the regenerate command" || no "refusal should name the regenerate command"
 
 # 6. the same branch, once the projection is regenerated -> passes
-( cd "$T4" && bash "$REG" generate docs/FEATURES.md )
+( cd "$T4" && bash "$REG" generate docs/reference/FEATURES.md )
 git -C "$T4" add -A; git -C "$T4" commit -qm regen
 [ "$(gate "$T4")" = 0 ] && ok "input moved + regenerated projection -> pass (exit 0)" \
   || no "regenerated branch should pass"
 
-# 7. the diff carries docs/FEATURES.md but it is STALE -> the regen is skipped,
+# 7. the diff carries docs/reference/FEATURES.md but it is STALE -> the regen is skipped,
 # so the arm passes. tests/test-meta.sh pins that case in CI instead.
 T7="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T7="$T7/kit"; mkkit "$T7"
 git -C "$T7" switch -qc feat/frg-shortcircuit
 printf '#!/usr/bin/env bash\necho demo-agent\n' > "$T7/tests/test-frg.sh"
-printf '\n| `stale` | `[X]` | hand-edited row |\n' >> "$T7/docs/FEATURES.md"
+printf '\n| `stale` | `[X]` | hand-edited row |\n' >> "$T7/docs/reference/FEATURES.md"
 git -C "$T7" add -A; git -C "$T7" commit -qm "input + a stale hand edit"
-[ "$(gate "$T7")" = 0 ] && ok "diff carries docs/FEATURES.md -> regen skipped, pass (exit 0)" \
+[ "$(gate "$T7")" = 0 ] && ok "diff carries docs/reference/FEATURES.md -> regen skipped, pass (exit 0)" \
   || no "a diff carrying FEATURES.md should skip the regen"
 
 # 8. a diff touching no input -> never gated, even with a stale projection.
 # The stale row lands on master, so the branch diff carries neither an input nor
-# docs/FEATURES.md and the arm must stay out of the way regardless.
+# docs/reference/FEATURES.md and the arm must stay out of the way regardless.
 T8="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T8="$T8/kit"; mkkit "$T8"
-printf '\n| `stale` | `[X]` | hand-edited row |\n' >> "$T8/docs/FEATURES.md"
+printf '\n| `stale` | `[X]` | hand-edited row |\n' >> "$T8/docs/reference/FEATURES.md"
 git -C "$T8" add -A; git -C "$T8" commit -qm "a stale row on master"
 git -C "$T8" switch -qc feat/frg-noinput
 printf 'notes\n' > "$T8/NOTES.txt"

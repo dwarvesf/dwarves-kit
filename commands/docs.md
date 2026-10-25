@@ -36,9 +36,9 @@ libraries and infra are exempt by that same test)
 - Does it still match what ships (what it does, how to use it, what to do
   when it breaks)?
 - Missing entirely for a user-facing product? Flag it. Template:
-  `docs/GUIDE.template.md`.
+  `templates/GUIDE.template.md`.
 
-**CHANGELOG.md** (or `docs/CHANGELOG.md` if that's the repo's convention; if exists)
+**CHANGELOG.md** (or the changelog under `docs/` if that's the repo's convention; if exists)
 - Is there an entry for the current changes?
 - Does it follow the existing format (Keep a Changelog, conventional, custom)?
 - Add an entry if missing, following the project's existing format.
@@ -53,7 +53,7 @@ libraries and infra are exempt by that same test)
 - Update status of in-progress tasks
 - Note any deviations from the original spec with rationale
 
-**ARCHITECTURE.md / docs/architecture.md** (if exists)
+**ARCHITECTURE.md / docs/reference/architecture.md** (if exists)
 - Does the described architecture match current code structure?
 - Are there new modules, services, or integrations not reflected?
 

@@ -27,7 +27,7 @@ library, an internal tool, or infra with no such user is exempt.
 
 If yes: confirm `GUIDE.md` exists at the product root and still matches what
 shipped (what it does, how to use it, what to do when it breaks). Template:
-`docs/GUIDE.template.md`.
+`templates/GUIDE.template.md`.
 
 If `GUIDE.md` is missing or stale, REPORT it to the maintainer; do NOT block
 the ship. Same voice as Step 1b / Step 4a: hard blocks stay reserved for the
@@ -80,8 +80,8 @@ Use this exact check shape (kit-health's check uses the same shape; they must no
 # Graceful degrade: no VERSION or not in a git repo => silent no-op, never error or block.
 if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)   # strip whitespace so a trailing newline cannot break the pattern
-  # CHANGELOG resolution: docs/CHANGELOG.md wins if present (the thin-root-stub
-  # convention this kit's own repo uses); else the plain root CHANGELOG.md most repos use.
+  # CHANGELOG resolution: docs/CHANGELOG.md wins if present (a repo that keeps
+  # a thin root stub); else the plain root CHANGELOG.md most repos use.
   CL=CHANGELOG.md; [ -f docs/CHANGELOG.md ] && CL=docs/CHANGELOG.md
   if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "WARN release-hygiene: phantom cut. VERSION names v$VER but no matching git tag exists."
@@ -97,7 +97,7 @@ If the phantom cut fires, surface it as a heads-up at the version step (remember
 
 ### Step 5: Generate changelog entry
 
-The target file is `docs/CHANGELOG.md` if it exists (the thin-root-stub convention),
+The target file is the changelog under `docs/` if the repo keeps one (a thin root stub),
 else the plain root `CHANGELOG.md`.
 
 If a changelog file exists (or the project follows a changelog convention):
@@ -140,7 +140,7 @@ Read `kit_config_get_root ship.confirm_commit false`. False, the default: commit
 Run the pinned diff (the merge-base of the integration branch) against the WORKFLOW doc-impact map and update every companion the map names for each change-type touched; log any companion that did not move. The map is the canonical list. The bullets below are the common cases:
 - `README.md` -- features, setup steps, env vars
 - `CLAUDE.md` -- tech stack, structure, commands
-- `CHANGELOG.md` (or `docs/CHANGELOG.md` if that's the repo's convention) -- already updated in Step 5
+- `CHANGELOG.md` (or the changelog under `docs/` if that's the repo's convention) -- already updated in Step 5
 - `docs/specs/SPEC-NNN-<slug>.md` -- mark completed tasks
 - `ARCHITECTURE.md` -- structural changes
 - API docs (openapi.yaml, docs/api.md, etc.)

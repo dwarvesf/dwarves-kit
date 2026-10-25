@@ -43,7 +43,7 @@ Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outc
    **Q6: What's the exit criteria?**
    How will you know if this worked or failed? Name a specific metric and a specific number. "More users" is not a metric. "50 weekly active users by day 30" is.
 
-   **Alignment check:** which `docs/PHILOSOPHY.md` §6 north-star criterion (N1-N7) does this idea serve, if any? Does it conflict with one? Advisory only -- note the answer in the Decision Brief, never block on it.
+   **Alignment check:** which `docs/reference/PHILOSOPHY.md` §6 north-star criterion (N1-N7) does this idea serve, if any? Does it conflict with one? Advisory only -- note the answer in the Decision Brief, never block on it.
 
 3. After all 6 questions, synthesize into a **Decision Brief**:
 

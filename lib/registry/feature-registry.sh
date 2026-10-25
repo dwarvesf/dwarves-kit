@@ -2,13 +2,13 @@
 # feature-registry.sh -- deterministic feature-inventory generator.
 #
 # Scans the four live feature kinds (commands/*.md, agents/*.md, skills/*/SKILL.md,
-# hooks/*.sh) plus the user-facing lib verbs that declare themselves, and emits docs/FEATURES.md as a GENERATED projection: one table per
+# hooks/*.sh) plus the user-facing lib verbs that declare themselves, and emits docs/reference/FEATURES.md as a GENERATED projection: one table per
 # kind, one row per feature, carrying trigger class, description, spec refs, and
 # test refs. Pure bash + grep/sed/awk/jq (all already required by tests/).
 #
 # Deterministic by construction: LC_ALL=C, sorted globs, no timestamps in the
 # output -- tests/test-meta.sh pins freshness by regenerating to a temp file and
-# diffing against the committed docs/FEATURES.md, so any nondeterministic byte
+# diffing against the committed docs/reference/FEATURES.md, so any nondeterministic byte
 # would be a permanent RED.
 #
 # Trigger classes (derivation rules, no judgment):
@@ -24,13 +24,13 @@
 #         A verb with no marker is not listed; delete the marker and the row disappears.
 #
 # `generate` also syncs the hand-maintained count strings in README.md and
-# docs/architecture.md (agents/commands/skills/hooks totals) so nobody has to
+# docs/reference/architecture.md (agents/commands/skills/hooks totals) so nobody has to
 # recompute and hand-edit them when a feature is added or removed; the
 # corresponding tests/test-meta.sh assertions become drift detectors, not a
 # manual-arithmetic chore.
 #
 # Usage:
-#   feature-registry.sh generate [outfile]   # default: docs/FEATURES.md
+#   feature-registry.sh generate [outfile]   # default: docs/reference/FEATURES.md
 #   feature-registry.sh check [--fix] [outfile]
 
 set -euo pipefail
@@ -351,7 +351,7 @@ hooks_table() {
 }
 
 generate() {
-  local out="${1:-$KIT_DIR/docs/FEATURES.md}"
+  local out="${1:-$KIT_DIR/docs/reference/FEATURES.md}"
   local tmp="$out.tmp.$$" qfile rfile
   qfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; rfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   # expand the paths NOW: the trap fires at script exit, after the locals are gone
@@ -366,7 +366,7 @@ generate() {
     echo ""
     echo "# Feature registry"
     echo ""
-    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched, \`[V]\` lib verb declared by a \`# kit-verb:\` header line. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\` + \`lib/*/tests/**\` (a verb also counts tests naming a hook that calls its script), Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
+    echo "GENERATED , do not hand-edit. Regenerate: \`bash lib/registry/feature-registry.sh generate\`. One row per live feature; freshness pinned by \`tests/test-meta.sh\` and refused pre-push by \`hooks/ship-gate.sh\`, both through \`feature-registry.sh check\`. Trigger classes per \`docs/reference/workflow-paths.md\` section 1: \`[H]\` human-typed, \`[H/I]\` human-or-intent, \`[I]\` intent-read, \`[E]\` event-fired, \`[D]\` dispatched, \`[V]\` lib verb declared by a \`# kit-verb:\` header line. Refs are exact-token greps: Specs over \`docs/specs/\`, Tests over \`tests/*.sh\` + \`lib/*/tests/**\` (a verb also counts tests naming a hook that calls its script), Dispatched-by over \`commands/*.md\` + \`skills/*/SKILL.md\` (skill dispatchers marked \`(skill)\`); \`-\` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested)."
     echo ""
     commands_table
     agents_table
@@ -393,8 +393,8 @@ generate() {
 # feature wires that file to the feature and moves this projection, which is how a
 # comment explaining an unrelated flake drifted three rows on 2026-09-14.
 check() {
-  local out="${1:-docs/FEATURES.md}" fix="" tmp rc=0
-  [ "$out" = "--fix" ] && { fix=1; out="${2:-docs/FEATURES.md}"; }
+  local out="${1:-docs/reference/FEATURES.md}" fix="" tmp rc=0
+  [ "$out" = "--fix" ] && { fix=1; out="${2:-docs/reference/FEATURES.md}"; }
   if [ ! -f "$out" ]; then
     echo "feature-registry: $out does not exist; run 'generate' first" >&2
     return 1

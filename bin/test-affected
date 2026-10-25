@@ -235,7 +235,7 @@ kit_toml_narrow() {  # args: the suites naming kit.toml; prints the ones that re
 #
 # No area suite is always-run. The registry freshness pin lives in docs-registry and is mapped by
 # its inputs; hooks/ship-gate.sh already refuses a push that moves one without a fresh
-# docs/FEATURES.md. The tree-wide lints that guard every diff carry their own `# always:` header,
+# docs/reference/FEATURES.md. The tree-wide lints that guard every diff carry their own `# always:` header,
 # which run-all.sh --changed adds.
 #
 # What each area reads by glob or scan (derived from the suites' own paths):
@@ -251,10 +251,10 @@ kit_toml_narrow() {  # args: the suites naming kit.toml; prints the ones that re
 #   goal-ledger      the libs gate-ledger.sh sources (it runs gate-ledger.sh)
 #   spec-depth       nothing by glob; every path it reads is named, so the reference scan covers it
 #   docs-registry    hooks/ commands/ agents/ skills/ lib kit-verb files and lib/*/tests/ (registry
-#                    inputs), docs/specs docs/decisions (collision guard, Specs column), docs/FEATURES.md
+#                    inputs), docs/specs docs/decisions (collision guard, Specs column), docs/reference/FEATURES.md
 #                    (freshness pin; also a live doc for the two scans above), examples/ .github/workflows/ (demo project, workflow pins), settings.json
 # Excluded by every scan (the dated archives): docs/{verification,retro,handoff,research}/,
-# docs/CHANGELOG.md, CHANGELOG.md, _meta/. A named path there still picks by reference.
+# CHANGELOG.md, _meta/. A named path there still picks by reference.
 META_ALL="plugin-hooks contract agents-commands spec-depth review-verifiers vmodel-dispatch goal-ledger docs-registry"
 
 # A lib file that declares a kit-verb feeds the registry; so does one that just dropped the header,
@@ -280,9 +280,9 @@ meta_input() {
 # scan excludes it; empty when this table cannot say.
 meta_areas() {
   case "$1" in
-    docs/verification/*|docs/retro/*|docs/handoff/*|docs/research/*|docs/CHANGELOG.md|CHANGELOG.md|_meta/*) echo none ;;
+    docs/verification/*|docs/retro/*|docs/handoff/*|docs/research/*|CHANGELOG.md|_meta/*) echo none ;;
     docs/specs/*|docs/decisions/*) echo "docs-registry" ;;
-    docs/FEATURES.md) echo "docs-registry plugin-hooks vmodel-dispatch" ;;
+    docs/reference/FEATURES.md) echo "docs-registry plugin-hooks vmodel-dispatch" ;;
     commands/*|agents/*) echo "agents-commands review-verifiers vmodel-dispatch plugin-hooks docs-registry" ;;
     skills/*) echo "agents-commands review-verifiers vmodel-dispatch plugin-hooks docs-registry" ;;
     hooks/*) echo "plugin-hooks vmodel-dispatch docs-registry" ;;
@@ -298,7 +298,7 @@ meta_areas() {
     lib/*.md) echo "plugin-hooks" ;;
     lib/*/tests/*) echo "docs-registry" ;;
     lib/*) kit_verb_file "$1" && echo "docs-registry" || true ;;
-    docs/*.md|docs/*/*.md|WORKFLOW.md|README.md|MANUAL.md|AGENTS.md) echo "plugin-hooks vmodel-dispatch" ;;
+    docs/*.md|docs/*/*.md|WORKFLOW.md|README.md|docs/MANUAL.md|AGENTS.md) echo "plugin-hooks vmodel-dispatch" ;;
     *.md) echo "plugin-hooks" ;;
   esac
 }

@@ -1,10 +1,1217 @@
 # Changelog
 
-All notable changes to dwarves-kit are documented here. Format: [Keep a Changelog](https://keepachangelog.com/).
+All notable changes to dwarves-kit are documented here.
 
-An `[Unreleased]` section accumulates entries above the latest release until the next cut.
+## [Unreleased]
 
-**Full history:** [`docs/CHANGELOG.md`](docs/CHANGELOG.md) -- every version, its date, and its
-entries live there. This root file is a thin entry point kept short so a newcomer isn't buried
-on arrival; `/kit:ship` and `/kit:kit-health` both write to and read from `docs/CHANGELOG.md`
-directly (SPEC-185).
+### COMPAT (contract surfaces, per forge kit-versioning.md)
+- Layout (path move, no behavior change): reference docs moved to `docs/reference/` (architecture, data-flow, execution-planes, kit-contract, consumer-contract, glossary, hooks, tiers, FEATURES, PHILOSOPHY, hard-rules.tsv, hermes-layering, wrap, workflow-paths), the path-scoped rule templates to `templates/rules/` and the guide template to `templates/GUIDE.template.md`, the Hermes adapter from `adapters/hermes/` to `integrations/hermes/`, `docs/CHANGELOG.md` to the root `CHANGELOG.md`, and `.skillspector-baseline.yaml` to `docs/audits/`. The root `MANUAL.md` pointer stub and `docs/workflow-map.md` are gone. Root `WORKFLOW.md` stays for adopted repos. A consumer that links these files or reads `adapters/hermes` repoints to the new paths. Dated records keep their old citations.
+- Gate surface (kit's own config, no contract change): the kit repo's `.kit.toml` carries a `[[gate.hard_path_exempt]]` entry that exempts `lib/session/**` from the `auth` hard path only, so session transcript tooling edits stop classifying `full` by directory name. Secret, ci, infra and kit-config paths under it still hit. Proof: `docs/verification/session-not-auth-path.md`.
+- Command surface (`wrap merge`, additive and opt-in, NO default change): `--pr <n> --rebase-stacked [--verify <cmd>]` recovers a stacked child after its parent PR squash-merged. The child still holds the parent's original commits, so after a retarget to the default branch it reads CONFLICTING and no merge of the default branch clears it. The verb finds the merged PR whose last head is an ancestor of the child (the tip of the chain when several stack), runs `git rebase --onto origin/<default> <that head>` in the clean checkout that holds the branch or a scratch worktree, and pushes the PR's own branch with `--force-with-lease` at the head the gates read. It refuses by name and changes nothing on a rebase conflict (the files are printed and the rebase aborted), a fork PR, an armed auto-merge, open dependents on the branch, a moved head, or a default-named branch. It is a flag because every wrap verb promised never to force-push; the flag is the operator naming the one rewrite. `--rebase-stacked` needs `--pr` and a checkout, so it refuses `--repo`.
+- Command surface (`wrap merge --pr`, BEHAVIOR CHANGE for a repo that carries a `ci` label): a named PR whose head reports no check run at all now gets the `ci` label through the same `_ci_label_sync` and `_ci_checks_wait` that `land` uses, before the gate reads it, even without `--with-ci`. A label-gated repo starts no run until the label lands after the head, so the old order read an empty rollup on a non-CLEAN state as pending and refused. A repo without the exact `ci` label, and a head that already reports checks, never reach the label call. A label that will not set exits 2 and merges nothing. Without `--pr`, the label step stays behind `--with-ci` as before; under `--with-ci` a PR armed here skips the second sync. `_ci_repo_has_label` and `_ci_zero_checks` in `lib/wrap/wrap-ci.sh` are the shared probes. Proof: `docs/verification/wrap-merge-stacked-ci.md`.
+- Sync surface (BEHAVIOR CHANGE, `lib/sync/sync_core.py`, `lib/sync/sources/reminders.py`): the board owns closed rows. A spoke item still open on a shipped or dropped row no longer flips the row back to an active status; the plan closes the spoke item instead and says so in a note (this inverts the old binary-spoke "reopen flows to the board" case for closed rows only; active rows are unchanged). `only_tags` and `skip_tags` now read the item cell as well as the notes cell, so rows tagged in the item (`#u-hi`) reach a filtered spoke and rows tagged `#family` in the item leave a skipped one; planner title compares ignore `#tags`, and a reminder title carries only the notes tags as its suffix. Intake dedupe ("title already on board") skips shipped and dropped rows. `intake_skip_re` is searched against `title + "\n" + body`, so a title-addressed ticket (`^\[to:`) can be carved out of `intake=all`; the `^thread: ` body form is unchanged. Pinned by `lib/sync/tests/test_core.py`, `test_prefix.py`, `test_reminders.py`.
+- Adopt surface (BEHAVIOR CHANGE, NEW ADOPTS ONLY): the `.kit.toml` that `lib/adopt.sh` seeds now sets `[gate] proof_of_done = true` and `lane_gates = true`, so an adopted repo starts with the proof-of-done gate and the lane x phase gates on. They were seeded `false`. The kit root `kit.toml` is unchanged: a raw install still blocks nothing until a gate is turned on. An operator `kit.toml` that names either key still wins over the seed. The seeded comment says how to turn each off (`proof_of_done = false`, `lane_gates = false`, committed). An existing `.kit.toml` is never touched, by adopt or `--refresh`, so a repo adopted earlier keeps its file. Pinned by `tests/test-gate-opt-in.sh`.
+- Install surface (BEHAVIOR CHANGE, closes the last open drift row, a hook ran migration code): the one-time move of old logs into the durable ledger root now runs at install time only. New `lib/telemetry/kit-migrate.sh` holds both moves (the run corpus, `cp -Rn`, and the hook logs, `cp -n`); `install.sh` and `lib/adopt.sh` (not `--check` or `--dry-run`) call it once. `ledger_root`, `kit_hook_log_dir` and `kit_migrate_log_dir` only resolve a path now and never copy, so a hook no longer runs migration code. A machine that upgrades the code without running `install.sh` or `/kit:adopt` keeps its old logs where they are; the resolvers print one stderr line naming `kit-migrate.sh` while a legacy dir is unmigrated. A per-project `[ledger].location = "isolated"` root is no longer seeded from the machine corpus. Pinned by `tests/test-ledger-durability.sh` and `tests/test-hook-log-dir.sh`.
+- Install surface (BEHAVIOR CHANGE, NEW INSTALLS AND NEW ADOPTS ONLY, MAJOR for a consumer that relied on the old defaults): a fresh `install.sh` wires the spine plus the table's `core` modules, today `board` (`board-row-gate`, plus `backlog-stage` on SessionEnd and SessionStart, which also runs the intake sweep; the stage entries stay inert until opted in) and installs the `board` CLI shim. It used to wire the spine alone. The adopt default shrinks the other way: a fresh `.kit.toml` seeds `board` on and `session`, `advisor`, `queue`, `stats` off (they were on). `session` capture hooks, `advisor`, `cosmetic`, `money_gate`, `prose_rag`, and the hookless plane modules are opt-in through `--with` or `[modules]`. An existing install keeps what it has: a re-run never adds the core set, an existing `.kit.toml` is never rewritten, and `--prune` is still the only trim.
+- Config surface (new `lib/config/modules.tsv` and `lib/config/modules.sh`, MOVED): the module table. One data file holds each module's hooks with their event, its CLIs, and `core` or `opt-in`; `install.sh` and `lib/adopt.sh` both read it and neither keeps a private list. `KIT_KNOWN_MODULES` is now derived from it. `lib/adopt.sh` thereby gains `worktree`, `money_gate`, `prose_rag` and `sync`, and drops the folded `bridge`. `tests/test-modules-table.sh` pins `settings.json`, `hooks/hooks.json`, `kit.toml [modules]` and the registry rows to the table.
+- Install surface (BEHAVIOR CHANGE): on a machine where `lib/onboard-detect.sh` reports `plugin` or `both`, `install.sh` refuses to wire hooks into `settings.json`, says so, names `--with` as ignored when given, and does the compat-only install. `--force-both` wires them anyway (every hook then fires twice); `KIT_FORCE_FULL=1` remains as the older spelling. The detector is now the single one: `install.sh` no longer reads `installed_plugins.json` itself. The roster decides when it exists (a roster-only plugin counts, a stale cache dir after `/plugin uninstall` does not, a plugin switched off in `enabledPlugins` does not), the cache glob decides only without a roster, and the roster match is the exact `"kit@dwarves-marketplace"` key. The compat branch now also removes the kit's own stale bare command symlinks, as the full path did.
+- Adopt surface (BEHAVIOR CHANGE): on a plugin machine `lib/adopt.sh` leaves the project's `.claude/settings.json` alone, adding no hook entries and stripping none (the plugin's `hooks.json` registers every hook under a different command string, and the project file is committed and shared). The output line says so. `CLAUDE_DIR` overrides the Claude home, as in `install.sh`.
+- Hook surface (`hooks/harvest.sh`, PORT, no behavior change intended): the PreCompact, SessionEnd (`--lab-log`), and opt-in Stop (`--stop-trigger`) hook runs as bash plus jq; `hooks/harvest.py` is gone, so the hook no longer needs python3 and no kit hook runs Python. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-harvest-parity.sh` (171 goldens generated from `b9306b37`, including the exact prompt) and was checked on real session transcripts. The operator verbs (`--cleanup`, `--flush-list`, `--mark-flushed`) and the sweep verbs (`--sweep`, `--dry-run`, `--status`) still run in Python through `hooks/harvest_sweep.py`; their usage line names that script. Recorded divergences: the detached child is in its own process group, not its own session (macOS has no `setsid`); a Python crash is a silent exit 0 here; `NaN` in a transcript line; a candidate field that is a list or object. An upgraded install keeps an orphaned `hooks/harvest.py` that nothing calls (SPEC-409).
+- Library surface (new `hooks/harvest_lib.py`, MOVED): the state-dir resolver, slug rules, ledger locks, dedup-and-append stager, and the three operator verbs that `hooks/harvest_sweep.py` imported from `harvest.py` now live there, unchanged.
+- Test surface (`tests/lib/hook-parity.sh`): a stamp the hook just wrote (an epoch within a day of now) in a `read` file folds to `@NOW@`, so a golden does not rot.
+- Hook surface (`hooks/backlog-stage.sh`, PORT, no behavior change intended): the opt-in SessionEnd and SessionStart hook runs as bash plus jq; `hooks/backlog-stage.py` is gone, so the hook no longer needs python3, and it renders through the `lib/reflect/staging-format.jq` twin that intake-sweep introduced. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-backlog-stage-parity.sh` (goldens generated from `b9306b37`, including the exact prompt and its byte count) and was checked on real session transcripts. Recorded divergences: the detached child is in its own process group, not its own session (macOS has no `setsid`); `NaN` in a transcript line; a candidate field that is a list or object. An upgraded install keeps an orphaned `hooks/backlog-stage.py` that nothing calls (SPEC-408).
+- Test surface (`tests/lib/hook-parity.sh`): `hp_run_case` gains a `settle` field (wait for a detached child) and expands `@HOME@` and `@CWD@` in seeded text and in args.
+- Hook surface (`hooks/intake-sweep.sh`, PORT, no behavior change intended): the SessionStart sweep (run by `backlog-stage.sh --surface`) runs as bash plus jq; `hooks/intake-sweep.py` is gone, so the hook no longer needs python3. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-intake-sweep-parity.sh` (160 goldens generated from `b9306b37`) and was checked on the real digest ledger, board, and staging file (byte-identical staging output and swept keys). New: `lib/reflect/staging-format.jq`, the jq twin of the staging grammar (full Unicode casefold table, `render_block`, the dedup-key parsers), and `lib/reflect/shlex-split.sh`, both pinned to their Python by `tests/test-staging-format-jq.sh`; `lib/reflect/staging-format.py` stays for its Python importers. Recorded divergences, none from realistic data: invalid UTF-8 in a source file, `NaN` in a JSON line, a map value or name that is a list or object, a lone `\r` as a line break in a jsonl file, characters assigned after Python 3.12's Unicode database, and a source command that reads stdin. An upgraded install keeps an orphaned `hooks/intake-sweep.py` that nothing calls (SPEC-407).
+- Hook surface (`hooks/context-hints.sh`, FIX): an unset `HOME` no longer stops the hook with an unbound-variable error; the default state dir expands a tilde.
+- Library surface (`lib/reflect/hook-util.sh`, FIX): `hu_run_capture` no longer waits out the extractor timeout when its caller ignores TERM (`lib/gate/negctl.sh` does from its restore step on, which made every negative control of a hook port stall); the watchdog is killed with SIGKILL.
+- Library surface (new `lib/reflect/hook-util.sh`, additive): the helpers the staging hooks share (GNU-first `stat` mtime, `int()` parsing, the throttle stamp, the timeout runner), pinned by `tests/test-hook-util.sh`.
+- Test surface (`tests/lib/hook-parity.sh`): `hp_run_case` gains `args`, `touch`, executable seeds, and a `@TODAY@` fold; `hp_gen_expected` gains `HP_EXTRA_FILES`.
+- Hook surface (`hooks/context-hints.sh`, PORT, no behavior change intended): the UserPromptSubmit hook runs as bash plus jq; `hooks/context-hints.py` is gone, so the hook no longer needs python3. It was tested on jq 1.7.1 and 1.8.2. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-context-hints-parity.sh` (120 goldens generated from `b9306b37`) and was checked on 1,266 real captured prompts. Recorded divergences, none from a realistic payload: `NaN` or `Infinity` in the payload, state, or map; `CONTEXT_HINTS_NOW` spellings only Python's `float()` accepts (`1_000`, `inf`); characters whose Python `lower()` and Oniguruma case folding disagree (the Kelvin sign, dotted `İ`, the long s); a map value that is a list or object. An upgraded install keeps an orphaned `hooks/context-hints.py` that nothing calls (SPEC-406).
+- Test surface (`tests/lib/hook-parity.sh`): `hp_run_case` gains a `seed` field (files written before the run), a `read` field (files dumped after it), and `@HOME@`/`@CWD@` tokens; the library now runs under bash 3.2.
+### Added
+- Library surface (new `lib/docdrift/refcheck.sh`, additive, MINOR): the Tier 1 path check of the doc-drift audit now has a script. `refcheck.sh scan --repo DIR [--docs PATHSPEC]...` prints one TSV row (`doc`, `line`, `kind`, `ref`) per backticked or linked path that does not resolve, then a `SUMMARY` line. It judges a backticked ref only when its first segment is a top-level entry of the repo, and skips fenced code, URLs and placeholders, so sibling-repo paths and gitignored files do not surface. `skills/doc-drift/SKILL.md` step 3 names it. Pinned by `tests/test-docdrift-refcheck.sh`.
+- Command surface (`precedent`, additive, MINOR): the inventory is the one index for skills and tools. New registry kinds `exec <dir>` (executables to `depth`, default 2, header-comment summary; skips `*.bak*`, `test*`, hidden files, `.git`, `node_modules`, `__pycache__`, venv and `retired`/`archive` dirs), `commands <dir>` and `agents <dir>` (`*.md`, one per file); a row takes `label=NAME` and `depth=N`, and exec, skills, commands and agents take a glob. `skills` rows now walk category dirs (default depth 3), so a nested tree finds its `SKILL.md`, and a row with a label keeps same-named skills from other sources instead of deduping them. Every skill, tool, script, command, agent and learning is an item that can declare `layer`, `cluster`, `owner`, `harness`, `drives`, `parent`, `status` in SKILL.md frontmatter (`metadata.estate`), a `tool.toml` `[estate]` table, or a script header line `# estate: layer=T1 cluster=any`; a missing or malformed block reads as blank, never an error, and a script under a tool inherits the tool's fields. `find` prints a query equal to an item name (or `kit:<name>`) first in an `exact` section (`--json` adds an `exact` key and leaves every section whole), and takes `--layer`, `--cluster`, `--kind`. New `precedent index` writes a markdown page grouped by cluster, then layer, then kind, with `(blank)` where a field is undeclared. `--explain` resolves command, agent and exec labels. Pinned by `tests/test-precedent-index.sh`.
+- Command surface (new mode, additive, MINOR): `session recall --final <transcript.jsonl> [--fence TAG]` prints the last assistant message that has text, or only the last closed fenced block opened with `TAG` (```` ``` ```` or `~~~~`). A subagent returns its report in its final reply because a hook blocks report files; this saves it without hand-rolled `jq`. Output is verbatim (no redaction, no DATA marker) so it can be redirected to a file. Exit 1 on no assistant text or no such block.
+- Library surface (`lib/sync/sources/notion_taskboard_pull.py`, `lib/sync/sources/hermes.py`, additive, MINOR): a task the `hermes` spoke creates from a Notion Task Board intake row now carries the card's page body. `expand_body` reads the block children through `ntn` (paginated, one level of nesting, plain text of paragraph, heading, list, to-do, callout and quote blocks) and splices them into the row's untrusted fence under `Page body:`, clipped at 8000 characters with the usual defang and redaction. The board row is untouched and stays one line. A failed read creates the task anyway, with `(page body unavailable)` in the fence. `HermesSource` takes an optional `body_expander`; `build_source` wires it. `_run_ntn` now gives a body-less call `/dev/null` for stdin.
+- Skill surface (new `skills/system-design/SKILL.md`, additive, MINOR): the kit ships the `system-design` skill that `/kit:design` was calling an external dependency. It owns `docs/SYSTEM-DESIGN.md` and renders it as a UML drawing set with the delta against a base ref marked new, changed or removed.
+- Library surface (new `lib/system-design/`, additive): the engine behind the skill: `build` (bash + git), `template.html`, `delta.js`, `layout.js`, `shots.mjs`, `test.mjs`, `FORMAT.md` and the `examples/marketplace/` fixture. `node` is optional and used only by `--shots` and `test.mjs`; no hook uses it. Pinned by `tests/test-system-design.sh`.
+- Command surface (`commands/design.md`, FIX): the system-design branch no longer treats the skill as external or tells the user to install it. It builds with the kit's own engine and skips only a missing optional runtime (node or Chrome for `--shots`), reviewing the model diff as text instead. `docs/SYSTEM-DESIGN.md` now draws the skill as a kit component.
+- Command surface (new verb, additive, MINOR): `backlog.sh add <title> [--notes T] [--mid V]... [--status S] [--section H]` (also `board add`) mints the next id and writes one row under the board lock, in the target table's own column count, and prints the id. `board capture`, `board promote`, `/kit:assign` freeform, `/kit:wayfind` and `web-drift` file rows through it. Minted ids follow the board: its own prefix, bare numbers unless the board already carries a zero-padded id (then that width), where `capture` used to be bare and `promote` always padded; a batch lands newest on top. `board promote` exits 1 when nothing was promoted.
+- Library surface (new `lib/board/board_add.py` and `lib/reflect/staging-format.sh`, additive): the row writer behind `backlog.sh add`, and `sf_append`, the bash door to the locked staging append. `staging-format.py` gains `staging_lock`, `append_blocks`, `rewrite` and an `append <file> [--header TEXT]` verb.
+- Command surface (new verb, additive, MINOR): `gate-ledger.sh record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...` records the named phases of a lane in one call, each with its own evidence. It runs `start` when the rid has no ledger and `start --amend` (keeping the classified lane, type and repo) when it has one, writes each phase through `record` or `override`, then runs `check <lane> <rid>` and exits with its status. A refusal writes nothing: an unknown phase, state or duplicate phase and empty evidence exit 64, a reason shared by two overrides exits 65. Internal: `plan-record` shares its scratch dry run with the new verb as `_pr_dry_run`, with its messages and exit codes unchanged.
+- `wrap merge` resyncs a stale PR head. When the settle wait after wrap's own re-merge push ends with GitHub still on the pre-push head, and origin holds exactly the pushed commit, `merge` closes and reopens its own PR once, then settles and gates again. It never does this for a draft, a fork PR, a PR that is not OPEN, a PR with auto-merge armed, or when dependents are open. The close fires `pull_request` `closed` listeners, and the reopen fires `reopened`. A failed reopen, or a failed close whose state cannot be read, exits 2 with the exact `gh pr reopen` command. An interrupt inside the close window reopens the PR and exits 130.
+
+### Fixed
+- Command surface (`lib/gate/negctl.sh`, FIX): a `<root>` that is a subdirectory of the repo no longer fails its restore with `restore failed: git checkout HEAD -- <path>` and leaves the mutated file in the tree. `git diff --name-only` prints toplevel-relative paths, so the checkout now runs from `git rev-parse --show-toplevel`; the tests and the mutation still run in `<root>`.
+- The staging buffer has one lock domain. `board promote`, `reflect drain`, `stats anomalies --propose` and the `backlog-stage` and `intake-sweep` hooks all write it through `staging-format.py`; promote re-reads the buffer inside its hold, so a block a proposer appended while it ran is no longer lost, and a block expired since it was listed is skipped instead of minted. `board promote` also reads blocks through the shared parser instead of a private copy.
+- `board normalize [--check] <board.md>` (new, `lib/board/bin/board-normalize`): pads short rows to their table's own column count, id-preserving and idempotent. `sync_core.split_row` reads rows by the table's header width, so `board sync` sees six-column rows.
+- `backlog.sh lint` judges each table's rows against that table's own header instead of a hardcoded 4 cells, so a six-column board no longer reports false findings and its real four-cell rows now show.
+- `ship-gate` enforces the DO NOT SHIP review verdict the workflow docs always called HARD. It reads the last `Verdict:` line in the branch spec's `## Review` section(s) and refuses the push and the PR create (exit 2) on `DO NOT SHIP`; re-running `/kit:review` clears it. No section or verdict passes. New `[gate] review_verdict` key, default ON, read at the merge base; opt out with `review_verdict = false` in a committed `.kit.toml`. Before this, only the `/kit:ship` prose stopped, and any `review ran` ledger record satisfied the gate whatever the verdict.
+- `lane-classify` no longer treats every `*changelog*.json|xml|yaml|sql` file as a migration hard path: a content file such as `changelog-2025-01-15-ten-years-strong.json` forced the full lane on a data-only diff. The migration hard path now matches Liquibase layouts only (`db.changelog-*`, `changelog-master.*`, and changelog files or a `changelog/` dir under `db/` or `liquibase/`).
+- `wrap land` and `wrap apply` could miss the "already landed" proof about 1 run in 20 on macOS: `_absorbed` set `local LC_ALL=C`, and Homebrew bash 5.3 SIGSEGVs (rc 139) in `setlocale` when the function exit restores `LC_ALL`, so the proof read as empty and land went down the push and merge path. `LC_ALL=C` now reaches git through `env`, never as a bash variable. Showed up as the intermittent red `test-wrap-land` in the nightly regression.
+- `ship-gate` refuses a push whose commits carry a fixture git identity (a no-dot domain such as `x@x`, `t@t.dev`, `example.com`, `.test`) as author, committer or `Co-authored-by`; real, GitHub noreply and bot noreply addresses pass. Cause of the `han <x@x>` commit on PR #930: unknown (not in the tree). Needs an `origin` remote. Opt out with `fixture_identities = false` under `[gate]` in a committed `.kit.toml` (read at the merge base).
+
+### Security-relevant config
+- Mega-goal auto-merge head pin (BEHAVIOR CHANGE for `lib/goal/mega-merge.sh merge`): the merge reads the PR head SHA first and passes it as `gh pr merge --match-head-commit <sha>`, so a push after the guards read the PR (such as a `.kit.toml` edit) makes GitHub refuse the merge. An unreadable or malformed head refuses the merge (fail closed), and the DRY-RUN line shows the pinned command. New test-only env knob `MEGA_MERGE_PR_HEAD_CMD`.
+- Mega-goal auto-merge gates on the PR head (BEHAVIOR CHANGE for `lib/goal/mega-merge.sh merge` and `gate`): `merge` fetches `refs/pull/<n>/head` and the PR's base branch from `origin`, refuses when the fetched head is not the pinned one or the fetch fails or times out, and runs the hard-path floor and the large-spec rule on that head against its own base branch, so a PR that touches a hard path owes the full lane's gates even when the orchestrator checkout is on another branch. It also refuses when the PR base branch changes after the gate. `gate <rid> <lane> --head <sha> [--base-tip <sha>]` is the new head mode; `gate` with no `--head` is unchanged. New env knobs `MEGA_MERGE_PR_BASE_CMD` and `MEGA_MERGE_PR_FETCH_CMD` (test-only) and `MEGA_MERGE_FETCH_TIMEOUT`.
+
+## [2.3.0] - 2026-10-09
+
+Release note: [docs/releases/2.3.0.md](releases/2.3.0.md).
+
+### Highlights
+
+- **Design review as a diagram delta.** `/kit:design` now reviews a feature as a delta against `docs/SYSTEM-DESIGN.md`, rendered as a UML drawing set with new, changed and removed elements marked. `/kit:spec` stops on an unapproved L1 or L2 change and keeps terms and quality requirements as living docs. (#961, #962)
+- **Lighter, data-driven lanes.** Lanes are data in `kit.toml`, the default lane is light, and a fail-closed diff floor applies full-lane gates to hard paths. Small specs skip the 7-reviewer round, and `/kit:execute` uses one builder per spec. (#840, #849, #860, #847, #843)
+- **Safer gates and hooks.** A hardened `safety-gate` normalizer and `permission-auto-approve`, every hook anchored to the repo root, a board-row gate, and the hard-path exemptions listed under Security-relevant config. (#804, #801, #802, #703)
+- **Wrap and landing grow up.** `wrap land`, `start`, `rebase`, `adopt` and `deploy-wait` land hand-made worktrees end to end, with merge proofs that cannot delete unlanded work, conflict recovery, CI-label waits, and a linted report. (#674, #718, #954, #947, #861, #794, #817)
+- **Board and fleet visibility.** `board work` shows who is on what, `board brief` and `board health` post a daily digest per cluster, `board hermes` links kit skills into Hermes, and a Board pane mod brings it into Claude Code. (#834, #944, #941, #945, #874)
+- **Scheduled harvest and the decision API.** The harvest sweep stages learnings from transcripts on a schedule, and `bin/flick` answers "pick one of N" through a decision API behind an egress guard. (#814, #829, #864, #895)
+- **Cost and context observability.** `session observe entry-fee`, `burn` and `timing`, `session recall --tail`, and a percent-of-window `context-budget` warning show where tokens and time go. (#657, #563, #880, #753, #759)
+- **Faster tests.** `bin/test-affected` and `run-all.sh --changed` run only what a diff touches, suites run in parallel, and `negctl --parallel` runs controls side by side. (#815, #664, #916, #930)
+
+### COMPAT (contract surfaces, per forge kit-versioning.md)
+- Install layout (BEHAVIOR CHANGE, PATCH): `install.sh` no longer copies gitignored build output into `$CLAUDE_DIR/dwarves-kit/lib`: `.venv`, `__pycache__`, `*.pyc`, `lib/*/rust/target` and `lib/*/bin/*-rs`. A dev checkout installed 485M of it (cargo output from the retired prose-rag crate, the stats venv); the install is now the tracked files only, 7M. Nothing read those paths: `bin/prose-rag` never looks under `lib/`, and `bin/stats` runs `uv run --project`, which rebuilds the venv in place on first use. So the first `stats` run on a fresh install builds its venv through uv and needs the network once; the venv the old copy shipped was already broken, since it pointed back at the source checkout.
+- Command surface (`wrap land`, additive, MINOR): `land --no-pull` makes the same promise `merge --no-pull` and `apply --no-pull` make, never write the main checkout. It still pushes, merges, verifies the tree, deletes the origin branch, removes the worktree and deletes the local branch, but skips the closing fast-forward with `SKIP pull: --no-pull`. `/kit:wrap` step 0 and step 3 now send a stopped repo's hand-made worktree through `land <wt> --no-pull` instead of the manual push, `gh pr create`, `merge`, `apply --own` loop. (#954)
+- Config surface (new env knob `KIT_WRAP_LAND_REGISTER_SECS`, additive, MINOR): the `wrap land` check-registration hold for an unfiltered `pull_request` workflow, default 300. `KIT_WRAP_LAND_GRACE_SECS` (30) now covers only filtered workflows. (#947)
+- Command surface (`board brief run`, BEHAVIOR CHANGE to the unreleased brief, plus additive hook keys and one flag): the message renders under Discord small headings (`### 🙋 Needs your decision`, `### 🔥 Open incidents`, `### 🗂️ Boards`, `### 🔄 Sync · 🤖 Bots`) with a blank line between sections; ids are masked links with the preview suppressed (a board row id links to its line in the GitHub copy of the board, a hook row to its `url`; inline code when there is no URL); the decision question is bold and a host after `@` is inline code; the details message uses the same headings. The `board-brief` payload's `fields` now include `heading` and `gap` (blank) lines; `data.drift` lists ids. Incident hook object: optional `host` and `url` per open row, optional `url` per decision. New flag `--main-chars N` (default 1250). Reason: the first live TEST read as a flat wall of text. (#946)
+- Command surface (new verb `board hermes link|check`, additive, MINOR): `link` installs `adapters/hermes/skills/*` into one Hermes profile with a digest stamp, records the link (and the cluster's rail, hub, boards) in `~/.config/dwarves-kit/hermes-links.json`, and verifies with one real agent turn; `/kit:onboard` offers it (step D3). `check [--record]` compares each link's stamp with the kit; `board sweep` records it every tick (`hermes_links` in the health state, additive) and `board brief` raises `kit skills on <label> are stale: re-run board hermes link` as a decision line. (#945)
+- Command surface (new verb `board brief run`, additive, MINOR): ONE message per cluster per day built on `board health`: needs your decision (hub/mirror drift rows, `needs_you` incident rows), open incidents (the `--incidents C=CMD` hook, one JSON object on stdout), the boards (every third day, or when a decision exists), one line of what the bots did; details go in `payload.details` for the poster to send as a follow-up. `--decisions-only C`, `--boards-every-days`, `--show-boards`, the same `--poster`/`--dry-run`/`--no-state`/`--force`/`--cluster` as `health run`. New payload `kind: "brief"` (the poster contract gains one shape). State lives in the health state file under `brief`. Under `--dry-run` and `--no-state` the incident hook runs with `BOARD_BRIEF_READ_ONLY=1` in its environment and must write nothing. (#944)
+- Command surface (`board health run` and `board brief run`, additive, MINOR): `--config FILE`, else `$DWARVES_BOARD_CONFIG`, else `~/.config/dwarves-kit/board.json`, supplies flags as JSON (`common`, `health`, `brief` sections; keys are long flags with `-` as `_`). Command-line flags come after the file. A bad file is an error. (#944)
+- Hermes adapter (additive): `adapters/hermes/skills/kit-board` and `kit-precedent`, thin SKILL.md files that name which kit command to run and hold no logic. Layering: `docs/hermes-layering.md`. (#944)
+- Command surface (`board health` and `board sweep --health`, BEHAVIOR CHANGE to the unreleased health digest): one short line per item instead of per-repo lists. New flags `--hub C=NAME` (one hub line with its Hermes mirror count, `= hub` or a fault), `--board C=SLUG` (a named kanban board line), `--faults-only C`, `--triage-open N` and `--triage-days N` (a board over the threshold gets one `waiting in triage, oldest Nd` fault line, three at most, then `+N more boards over threshold`); the sweep forwards them as `--health-hub`, `--health-board`, `--health-faults-only`, `--health-triage-open`, `--health-triage-days`. The warning mark is reserved for faults, and an operator `--line` that opens with it counts as one. The `hubs` and `kanban` lines are gone. Reason: the first live post wrapped a long inline list that the approved mock never showed. (#944)
+- Command surface (new verb and sweep flags, additive, MINOR): `board health run|record` and `board sweep --health` build a periodic health digest per cluster: per repo the active, parked, and stale rows (git blame age on the origin copy), per kanban board (reader named by `--health-kanban C=CMD`) the open, stale, and archived-since-last-run cards, and sync health per spoke and for the mirror leg from records every sweep tick now writes to `health-state.json`. The payload is the digest payload plus `kind: "health"`, handed to the same `--poster`; `--health-quiet C` posts nothing for a clean cluster, `--health-line C=CMD` adds operator lines. Without `--health` the sweep only records, and its exit code never changes. (#941)
+- Command surface (`lib/session/handoffs.sh list`, additive, MINOR): repeatable `--under <root>` (also `--under=<root>`) scans every immediate child of `<root>` holding a `.git`, sorted, the rule `wrap scan --under` uses; a bare `--under` expands the root-only `wrap.roots` knob and errors when it is empty. Output is grouped: a `## <repo path>` header per repo with open handoffs, repos with none silent, last line `<n> open handoffs in <m> repos`. `--days` and `--limit` apply per repo. `--repo` output is unchanged. (#940)
+- Command surface (`lib/gate/negctl.sh`, additive, MINOR): `--parallel <N> [--slot-env VAR=start:step]... <root> <test-cmd> <mutate-cmd>...` runs one negative control per mutation, N at a time, each in its own `git worktree add --detach` copy of HEAD under `$TMPDIR/negctl-par.*` (removed on exit and on interrupt). Worker k exports `VAR=start+k*step` for each `--slot-env`, so a suite that binds ports can give each slot a disjoint range. Output is each control's serial block in control order; exit 0 only when every control PASSed. Without the flag nothing changes, except that a second `<mutate-cmd>` is now a usage error (exit 64) instead of being ignored silently. (#930)
+- Command surface (new verb and lint rule, additive, MINOR; BEHAVIOR CHANGE only while `decide.points` lists `wrap-7b`): `wrap flick-7b` reads one `<candidate-slug> <hit-name> <verdict>` pair per stdin line, sends them to `bin/flick` in one call and prints the `flick wrap-7b: ...` row for the report's FYI. `report-lint.sh` now fails a wrap report with no such row while `wrap-7b` is enabled (not owed by a follow-through or sweep report, or a `**Built:** SKIPPED:` report). Reason: step 7b's flick call was prose, and no real wrap ran it in the first five days of shadow mode. (#924)
+- Command surface (new verb, additive, MINOR): `gate-ledger.sh inherit <rid> full --from <spec-rid>` writes one `override` line per spec-level gate (think, design, design-critique, spec, validate, design-record, test-plan) for a task branch built under a validated multi-task spec. It refuses with exit 1, writing nothing, unless the last GATE line for each of those phases in the spec rid's ledger is `ran`; a parent that itself inherited is refused with the real spec rid named; a child that already inherited from another parent exits 65; a re-run skips lines already written. Build, review, docs, ship and reflect are never inherited. Lead-only, full lane only (`docs/specs/SPEC-393-task-gate-inherit.md`). (#914)
+- Config surface (additive, MINOR; default unchanged): `[test] suite` = `full` (default) or `affected`. Under `affected`, `/kit:execute` step 3, `/kit:ship` step 2 and the negative control run only the tests the change touches (`bin/test-affected` in this repo), and `/kit:verify` skips `kit:system-verifier` with `SKIPPED: full suite runs on the schedule (test.suite=affected)`; the full suite runs on the schedule. (#885)
+- Command surface (`wrap apply` and `wrap merge`, additive; `/kit:wrap` step 0, BEHAVIOR CHANGE): `--no-pull` is the verbs' promise never to write the main checkout. `apply --no-pull` skips the pull and the stray-commits move, pushes nothing for stray lines (`SKIP stray lines: --no-pull (N lines in <file> stay local)`), skips the worktree and all-branches sweeps unless `--own` scopes them, keeps the `--own` tidy and the origin sweep, and refuses `--pull-only` (exit 64). `merge --no-pull` skips any PR whose head branch the main checkout holds, whatever its state. Step 0's foreign-activity stop now covers only writes to the main checkout's working tree, index, and HEAD: a stopped repo still merges (`merge --apply --no-pull`) and runs `apply --apply --own <wt>... --no-pull`; `wrap land`, the pull, the stray-commits move, the board flip, the commit, and the activity line stay stopped (`docs/specs/SPEC-383-wrap-step0-scope.md`) (#881)
+- Command surface (`wrap land`, BEHAVIOR CHANGE): `land` refuses to open a NEW PR with the title as its body when the worktree carries a GitHub PR template (`.github/`, repo root or `docs/`, any case) and no `--body-file` was given: `PR REFUSED: <template> exists ...`, exit 2, before the push. A repo without a template, and an adopted PR, are unchanged. Before the first merge, on a repo whose `.github/workflows` has a `pull_request` trigger, `land` also waits for the PR's checks (`KIT_WRAP_LAND_GRACE_SECS`, default 30, for one to register; then `KIT_WRAP_CARRY_CHECKS_SECS`) and refuses with `MERGE REFUSED #<n>`, PR left open, exit 2, when one failed, is still pending at the bound, or cannot be read. A repo with no such workflow pays nothing. (#867)
+- Config surface (additive, MINOR; BEHAVIOR CHANGE while `wrap-7b` is enabled): `[decide] word_gate` (default `on`) and `dict_file` (default `/usr/share/dict/words`), root-only. Each hyphen segment of a `wrap-7b` candidate must be a dictionary word, a built-in dev word, or a kit-public name, else that question is `egress_denied` (log reason `word_gate`); a missing dictionary denies every candidate (`word_gate_no_dict`). Segments under 3 characters pass only as dev words or public names; `dict_file` must be an absolute path to a regular file under 16 MB. `word_gate = "off"` restores the deny-list-only guard. Also (BEHAVIOR CHANGE): `flick` no longer reads `KIT_CONFIG_OPERATOR`, `KIT_CONFIG_ROOT`, `XDG_CONFIG_HOME` or `DWARVES_KIT`; it reads the kit root's own `kit.toml` and `$HOME/.config/dwarves-kit/kit.toml` (the two test overrides need `FLICK_TEST=1`). (#866)
+- Config surface (additive, MINOR; off by default): `[decide] jev_token_cmd` (and reserved `openai_token_cmd`), root-only. When the env var named by `jev_token_env` is empty, `flick` runs this command (whitespace-split, absolute first word, no shell, no expansion, stdin `/dev/null`, own process group killed at 10 s, 4096-byte output cap) and uses its stdout as the token. Any failure, timeout or malformed output is `no_token`; the output is never logged or printed. Also fixes a config-injection hole: env vars shaped like the engine's internal config variables (`OP_points`, `RT_deny_words`) no longer override `allow_names`, `deny_words`, `points` or `backend`. (#865)
+- Command surface (new verb, additive, MINOR; off by default): `bin/flick` (engine `lib/decide/flick.sh`) answers "pick one of N" through a decision API, bash plus curl plus jq, no compiled code. One JSON request on stdin, one JSON object on stdout, always exit 0: every failure (no backend, no token, timeout, HTTP error, malformed or inconsistent answer) prints empty answers and a reason, so the caller keeps its current path. Questions are slots filled into a fixed template, never caller text. Only pairs whose hit is a public kit name leave the host, the rest come back `egress_denied`, and a denied pair is dropped before the request is built. `flick body` prints the guarded request with no network and no token. The decision log (`decide.jsonl` beside the run logs) records sent slugs, the answer and the caller's own verdict, never the token, a caller id, or denied text. (#864)
+- Config surface (new section, additive, MINOR; off by default): `[decide]` with `backend` (default `none`, which sends nothing), `mode`, `points` (empty by default), `timeout_ms`, `jev_model`, `jev_token_env`, `allow_names`, `deny_words`, plus reserved `openai_*` keys. Every key resolves root-only, so a project `.kit.toml` cannot switch egress on. The `openai` backend answers `unsupported` until the vendor publishes its request shape. (#864)
+- Command surface (`/kit:wrap` step 7b, additive, off by default): when `decide.points` lists `wrap-7b`, wrap sends all (candidate, hit) pairs to `bin/flick` in one call and logs the answer beside its own verdict. Shadow only: nothing it returns changes a verdict, lane or closure. With the key unset, step 7b is unchanged. (#864)
+- Lane matrix + command surface (BEHAVIOR CHANGE, validate by size): `validate` is now `light` on the normal lane, so the ship-gate no longer requires it there (full, bug, backfill and tiny unchanged). `/kit:spec` step 5 and the `/kit:execute` preflight run the 7-reviewer round only for LARGE specs; a SMALL spec (normal lane, `standard` or absent `Depth:`, 1 to 3 tasks) records a Validate override and relies on the post-build review. New verb `spec.sh depth size <spec>` prints `small` or `large` (exit 0 or 1), additive. `/kit:battery` leg 2 (review) runs on Sonnet on the normal lane and stays Opus on the full lane. (#860)
+- Command surface (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:wrap`, BEHAVIOR CHANGE, review diet): the normal lane gets 1 validation round (a second only when round 1 raised a critical the fold must fix; the full lane keeps its ceiling of 3); a finding is CRITICAL only if the spec's own tests would miss it; after a fold, one reviewer reads only the fold diff as the default re-check; warnings the build's tests would catch go to `docs/implementation-notes/<slug>.md` for the builder, not into the spec; Reviewers 1 to 5 and 7 dispatch on Sonnet on every lane and Reviewer 6 stays on Opus (before: Opus on the full lane). `docs/WORKFLOW.md` adds the lane rule: a kit spec copies its `Lane:` from `lib/classify/lane-classify.sh`, and `full` by habit is a misroute. Prose rules only; no code under `lib/gate`, `lib/classify` or `hooks/` changes. (#858)
+- Command surface (`wrap land`, BEHAVIOR CHANGE): `land` reads the merge proof `apply`'s worktree tidy uses before it pushes or opens a PR. A branch whose own PR squash-merged, or whose net change landed under another commit, prints `already landed: <proof>; nothing to push, no PR opened` and tidies instead of opening a second PR with the same diff. It refuses by name when origin's copy of the branch differs from the proven tip or cannot be read, when the tree or tip changed during the proof, or when an open PR for the branch still exists. The open-PR lookup now runs before the push, so a failed lookup no longer leaves a pushed branch behind; the `ahead` count reads full refs; an origin branch GitHub already deleted prints `already gone from origin` instead of `FAILED delete`; and every land re-reads the tree and tip right before it removes the worktree. The shared tail is `_land_tidy` in `lib/wrap/wrap-land.sh`. (#859)
+- Command surface (`wrap land` + `wrap merge`, BEHAVIOR CHANGE): an own PR that reads CONFLICTING no longer stops there. Both verbs run the same merge cycle: `origin/<default>` merged into the branch with `merge --no-ff --no-commit`, a generated file (`docs/FEATURES.md`) resolved through the worktree's own `lib/registry/feature-registry.sh` only when the branch and `origin/<default>` carry the same generator, a `docs/CHANGELOG.md` conflict kept when both sides purely added lines, any other conflict refused with the pre-merge state restored (an unrestorable one exits 2 with the checkout named for a human). A green cycle lands a `chore(merge)` commit, optionally runs `--verify <cmd>` in the worktree, and fast-forward pushes before `merge` re-gates or `land` retries its squash-land. An undo after the commit is a `reset --keep` of this run's own unpushed commits; a scratch detached worktree re-merges a branch no checkout holds and is dropped on every outcome but a 2 (SPEC-378). (#861)
+- Lane matrix (BEHAVIOR CHANGE, reverses the earlier `run-lite` Validate call on the normal lane): the normal lane now requires `validate` and `review` again (ADR-0037). `[lane.<name>]` blocks in `kit.toml` hold each lane's `phases` and `light` arrays, `lib/gate/lane-data.sh` is the one reader, a committed `.kit.toml` may override a lane, and the `docs/WORKFLOW.md` matrix is the human view, pinned equal by a test. `[lanes] default` names the lane classify returns (`normal`). (#849)
+- Lane classifier (BEHAVIOR CHANGE): words never pick `full`. A hard-flag match, or four soft flags, prints one `LANE-SUGGEST: full (<flags>)` line, records a `lane-suggest` action when given `--rid`, and returns the default lane. The operator assigns `full`. New verb `lane-classify.sh floor <root> [<base>]` returns `full <kind>: <path>` from the diff. (#849)
+- Ship gate (BEHAVIOR CHANGE where `[gate] lane_gates` is on): a diff that touches a hard path (migration, auth, secrets, CI workflow, kit config, a submodule, an added data-loss line, or a path in the add-only `[lanes] extra_hard_paths` ERE) owes the full lane's gates whatever the spec's `Lane:` says. The floor ignores project lane overrides and reads `lane_gates` as of the merge base, so a PR cannot switch off its own floor. Repos with `lane_gates` off keep neither the automatic full lane nor the floor. (#849)
+- Command surface (new verb, additive, MINOR): `board work [--json] [--idle-min N] [--since DAYS] [--code-root D] [--megagoals-root D] [--backlog-file F] [--repo-root D]` prints one read-only table of who is on what: board rows, unfinished mega sub-goals and worktrees joined with git, `orca worktree ps` and the run ledger at call time. Columns are item, worktree, agent state (working, idle, unknown), rung reached, lane and flags such as PARKED and DONE-UNSEEN. It stores nothing and exits 0 when Orca is absent. (#849)
+- Command surface (new verb, additive, MINOR): `stats ceremony [--from ISO] [--to ISO] [--since-sha SHA] [--json]` reads gate records, subagent dispatches, lines shipped, PRs merged and catches per run and per week. The share is of gate records, never of tokens or time, and a value nobody recorded prints `?`. The default window is 14 days. (#849)
+- Command surface (new flag and verbs, additive, MINOR; off by default): `orchestrate.sh run <dir> --backend orca` (or `MEGA_BACKEND=orca`, the flag wins) runs the ROADMAP through Orca Tasks and supervised Claude workers instead of one `claude -p` per sub-goal. `orchestrate.sh status <dir>` prints each sub-goal's derived state and `orchestrate.sh orca-reset <dir>` rolls a run back. The ROADMAP box stays the only proof of done and the default path never loads the backend. (#849)
+- Command surface (`/kit:adopt`, BEHAVIOR CHANGE): adopt writes a small AGENTS.md pointer (about 1 KB: four rules and where the full contract lives) instead of a copy of the contract. A repo's own AGENTS.md is never overwritten, an unmodified old kit copy is replaced only by `--refresh --swap-agents`, and an edited file gets a drift line. `/kit:onboard` ends on two ideas (lane, proof of done) and a one-line menu instead of the five-stage tour. (#849)
+- Command surface (`/kit:spec`, BEHAVIOR CHANGE): every new spec carries a `Depth:` line under `Lane:` with a named reason (`standard`, `research (repo: ...)`, `research (outside: ...)`, `blind-spot (failure: ...)`). Research agents run only when the line asks for them, so a `standard` spec sends none. `lib/spec/spec-depth.sh` reads and checks the line, and `/kit:spec-validate` treats a new spec without one as a critical. A spec with no line counts as `standard`. (#849)
+- Command surface (`/kit:test-plan-review-team`, BEHAVIOR CHANGE at the default): a two-lens `--light` pass (Coverage and Oracle, plus Tiering when the plan has a `Tier` column) is the default. The full 6-lens team with revise rounds runs only when the spec's `Depth:` names a blind-spot. (#849)
+- Command surface (`/kit:execute`, BEHAVIOR CHANGE, ADR-0038): one builder gets the whole spec as a brief, and verification runs once at the end (one `task-verifier` pass over every task, then integration and acceptance), with a fix-agent retry of at most 2. A spec of more than 6 tasks splits into slices with a verifier pass at each boundary, and a builder near its context limit returns `PROGRESS:` and continues. A build that cannot meet a criterion ends `Result: PARTIAL` and names it. The per-task persona dispatch is gone. (#849)
+- Config surface (new key, additive, MINOR): `[execute] recheck_sample`, default `5`, root-only. One run in N rechecks every end-verifier PASS with a fresh-context `kit:recheck-verifier`; `0` never samples, `1` rechecks every PASS, a full-lane run always uses `1`, and a `(self-attested)` row is always rechecked. `lib/gate/recheck-sample.sh decide <rid>` makes and records the decision. (#849)
+- Command surface (`/kit:spec`, `/kit:execute`, wording): every subagent dispatch description carries `rid=<rid>`, so a reader of the transcripts can count dispatches and tokens per run. (#849)
+- Hook surface (`hooks/safety-gate.sh`, FIX + BEHAVIOR CHANGE): the normalizer split segments on `;` and `|` before it read quotes, so `git push -o 'a;b' origin main` passed. It now walks each command the way bash splits it: quotes, escapes, continuations, comments, `&`, substitutions, and heredocs (only an unquoted `<<`, delimiter read as bash reads it, body after the logical line, replayed if it never closes). Today's naive split stays as a second pass for scripts inside quotes. The segment start skips shell grammar (including `coproc NAME`, `function NAME`, and the zsh words `noglob`, `repeat`, `always`), redirections, more wrappers and the flags each one owns, and matches on the basename. A `$( )` or backtick no longer splits the outer command, so `git -C "$(git rev-parse --show-toplevel)" push origin main` blocks. The rules gain bundled force flags, `refs/heads/main`, `git -c`, `--mirror`, `--all`, glob and brace refs, `rm -R`, `kubectl -n`, and DROP TABLE in a heredoc. Newly blocked on purpose: a quoted string whose text after a separator reads as a push to main, `--all`/`--mirror` pushes, and an unterminated heredoc whose body holds a blocked command. A 28 KB command now checks in 0.4 s, not 17 s (SPEC-332). (#804)
+- Hook surface (`hooks/citation-guard.sh`, PORT, no behavior change intended): the Stop hook runs as bash plus jq; `hooks/citation-guard.py` is gone, so the hook no longer needs python3. It needs jq 1.6 or later (Oniguruma regex), the first kit hook to use jq's regex. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-citation-guard-parity.sh` (goldens generated from `ce08a00b`). Recorded divergences, none realistic from Claude Code: Unicode digits in a ref (`a.md:٣`) are not read; a few rare Unicode classes right after the digits (combining marks, `①`, `⁰`) and `\x1c`-`\x1f` in a URL split differently; invalid UTF-8 is read as U+FFFD; and the malformed shapes the Python crashed on (a non-object payload or transcript line, a non-object `message`, a non-string `text`, a truthy non-string `cwd`) exit 0 silently instead of exit 1. An upgraded install keeps an orphaned `hooks/citation-guard.py` that nothing calls (SPEC-356). (#823)
+- Hook surface (`hooks/money-gate.sh`, PORT, no behavior change intended): the PreToolUse hook runs as bash plus jq; `hooks/money-gate.py` is gone, so the hook no longer needs python3. Parity with the Python, as its shim surfaced it, is pinned by `tests/test-money-gate-parity.sh` (59 goldens generated from `ce08a00b`). Recorded divergences, all out of parity for a realistic Claude Code payload: Unicode case-folding reads the Kelvin sign, the long s, dotted I, and dotless i as separators, so the port over-fires where Python stayed silent on those and never misses a real hit; invalid UTF-8, `NaN` in the payload, a list `cwd`, a lone surrogate in `file_path`, and a trailing-slash log path stay unpinned; a UTF-8 BOM before the JSON fires where Python stayed silent. An upgraded install keeps an orphaned `hooks/money-gate.py` that nothing calls (SPEC-355). (#822)
+- Config surface (new keys, additive, MINOR; BEHAVIOR CHANGE on an active sweep host): `[harvest] extractor_model` (default `sonnet`, was a fixed `haiku`; about 3 to 5 times the quota a call, per-run caps unchanged), `extractor_fallback` (default `codex`; `none` disables), and `extractor_fallback_model` (default empty), all root-only. A Claude extractor failure that is not auth-shaped runs the same prompt once through `codex exec --sandbox read-only --skip-git-repo-check --ephemeral --ignore-user-config` on the host's ChatGPT login; a success counts and the report carries `STATE <source>: extractor fallback used: codex (limit|error)`. A limit-shaped probe now holds (rc 0) instead of paging as auth. Transcripts reach OpenAI only on that fallback path (SPEC-357 DEC-92). Proof: `docs/verification/harvest-extractor-fallback.md`. (#836)
+- Config surface (new section, additive, MINOR): `[harvest]` with `enable` (default `false`), `schedule_hours`, `sources`, `max_sessions_per_run`, and `hook_when_sweep_on`. Every key resolves root-only, so a project `.kit.toml` cannot switch the sweep on or keep the hook running. A host is active only when `harvest.enable` is true and its `<state>/sweep/installed` marker exists. (#829)
+- Config surface (new value, additive, MINOR): `[wrap] distill = "harvest"` lands only and leaves the distill half to the sweep on a host where the sweep is active. The report says `SKIPPED: distill runs in the harvest sweep`. On any other host the value resolves as `true`. (#829)
+- Hook surface (`harvest`, BEHAVIOR CHANGE on a host where the sweep is active): the auto modes (`no-arg`, `--lab-log`, `--stop-trigger`) exit 0 without work, so a session is never staged twice. Set `harvest.hook_when_sweep_on = true` to keep the hook. Explicit verbs are never gated. (#829)
+- Command surface (new verbs, additive, MINOR): `hooks/harvest.py --sweep [--dry-run] [--since <iso|epoch>]`, `--status`, `--flush-list`, and `--mark-flushed <row-id> <ref>`. `--dry-run` prints the manifest and changes no cursor, ledger, or report state. (#829)
+- Command surface (new installer, additive, MINOR): `deploy/macos/harvest-sweep/install [--apply|--uninstall] [--label L]` renders the LaunchAgent and writes the per-host marker. The plist installs readable by vps-mon discovery. (#829)
+- Command surface (`harvest sweep`, FIX): a limit-shaped extractor failure holds the run (exit 0, cursor kept, no failure counted). The pattern now also matches the weekly limit and `hit your <window> limit`, which paged as an auth failure before. (#829)
+- Command surface (new verb, additive, MINOR): `bin/test-affected [--base <ref>] [--list] [--no-cache]` runs only the `tests/test-*.sh` a diff touches. A changed test maps to itself; any other changed file maps to every suite naming its path (sources also by basename); `tests/test-meta.sh` runs whenever anything changed; a file no suite names prints UNCOVERED and does not fail. A PASS is cached under `<kit log dir>/test-cache/` keyed on the suite, the sources it names, and VERSION; FAIL is never cached and an unusable cache runs everything. `--list` prints each pick with its reason and runs nothing. A non-source file matches only a full-path reference outside comments, a source also by basename over 5 chars, and `lib/<mod>/` picks `tests/test-<mod>*.sh`. `tests/run-all.sh --changed` takes its selection from `bin/test-affected --list` and keeps its parallel runner. (#815)
+- Command surface (`wrap merge --apply`, `wrap land`, `wrap apply` autoland, FIX): on a label-gated repo, a PR that already carried completed checks from before the `ci` label (an earlier plain `pull_request` run, or another label's `labeled` event whose jobs all skipped) read "0 pending" right after the label went on, so the wait ended at once and the head merged untested. `_ci_label_sync` now records the keys of the checks already on the PR when it adds the label, and refuses (the caller leaves the PR open) when it cannot read the PR. `_ci_checks_wait` holds, inside `KIT_WRAP_CI_GRACE_SECS`, until a check appears that is outside that set and not SKIPPED; pending checks still wait to `KIT_WRAP_CARRY_CHECKS_SECS`. When the hold runs out with nothing new, `wrap merge --apply` merges on the pre-label checks only on a `CLEAN` merge state. `_pr_gate` (every eligibility and re-gate read, on any repo) now sorts every pending check last in its name group and keys the rest on their first real time: gh reports a queued or running check's `completedAt` as the zero time `0001-01-01T00:00:00Z`, which let an older or later SKIPPED run of the same name stand in as the verdict. A pending check now refuses the gate, and a stuck pending entry blocks its name until it completes or is cancelled, even behind a newer completed run. `commands/greenlight.md` Step 1b names the same race for its snapshot. `wrap land` still has no re-gate after the wait (SPEC-360). Proof: `docs/verification/wrap-ci-label-wait.md`. (#817)
+- Command surface (`wrap land` + `wrap apply` autoland, FIX): on a repo whose PR workflows run only on `pull_request: types: [labeled]`, an unlabeled PR reports an empty rollup and the pending-check wait read it as "nothing pending", merging the head untested. Both landing paths now run a `_ci_label_sync` before the wait: it exact-matches the repo's `ci` label out of the fuzzy `gh label list --search` answer, adds it when the PR lacks it, and removes and re-adds it when the label predates the head (the `labeled` event fired before the pushed commits). `_ci_checks_wait` then bounds the wait for the runs the label starts, counting an empty rollup as pending inside `KIT_WRAP_CI_GRACE_SECS` (default 90) because the event registers its runs a few seconds late; past the window an empty rollup is a paths-filtered workflow that started nothing. A repo without the label behaves exactly as before, and a label that will not set refuses the merge rather than landing untested. `commands/greenlight.md` carries the same step before its snapshot, where "no checks at all" is `done` only on a repo with no `ci` label. Proof: `docs/verification/land-adds-ci-label.md`. (#809)
+- Hook surface (`permission-auto-approve`, SECURITY FIX, BEHAVIOR CHANGE): the hook auto-approved Bash commands that write or run code, for example `echo x >/tmp/f`, `find . -delete`, `git log --output=f`, a multi-line command, and quoted or expanded flags. It now approves only a single command whose characters all sit in a fixed ASCII allowlist, whose first word is on an explicit read-only list, and whose flags pass a per-tool allowlist for `find`, `git`, and `file`. Tools that can load checked-in or command-line config never auto-approve: `npm`, `npx`, `ruff`, `go`, `env`, `printenv`, and the `node`/`python3`/`cargo --version` shims now show the normal prompt. The hook never denies; every other command falls through to the prompt (SPEC-340). A git command additionally requires the payload's working directory to sit inside a real work tree (`git rev-parse --is-inside-work-tree` must print `true`), closing the case where a clone delivers a tracked bare-repo layout whose `config` names a program a read would run. (#801)
+- Command surface (new verb, additive, MINOR): `spec task-done <spec> <TASK-ID> --commit <sha>` checks off exactly that task line as `- [x] <TASK-ID> (DONE, commit <sha>, verified)`, and with `--verify-log` appends the task's verification entry (Command, Exit, Output (excerpt), Verdict, optional Re-audit), creating the log when absent. A missing or already-checked ID exits 1 with a named error and writes nothing. It never commits. `/kit:execute` step 2e names it, and its example line now shows the shape the verb writes (SPEC-337). (#800)
+- Command surface (`wrap scan/apply`, FIX): the merge proofs resolved refs loosely, so a colliding name stood in for the real ref and `apply` deleted unlanded work. A tag or local branch named `origin/<default>` beat the remote-tracking ref in the ancestor proof, and a tag named like the branch at a merged PR head passed the squash proof for a branch with later commits. Every proof and tip read now names `refs/heads/<branch>` and `refs/remotes/origin/<default>`. Branches enumerate by full name, so `scan` no longer prints an ambiguous branch as `heads/<branch>` and the tip-moved guard matches it again. `apply --archive-unmerged` pushes `refs/heads/<branch>`, so a same-named tag no longer fails the push. It skips a symbolic ref under `refs/heads/`, and deletes the local branch only once origin's archive ref holds the tip it read (a leased `update-ref --no-deref -d`). Right before that delete it re-checks the checked-out and worktree-held states, and keeps a branch that gained either during the push. `wrap.sh` also unsets the repo-location variables a caller such as a git hook exports (git's own `--local-env-vars` list minus `GIT_CONFIG*`, plus `GIT_NAMESPACE`), so every git call acts on the repo it was given. A leaked `GIT_COMMON_DIR` once made `apply` delete the target's unlanded branches. Injected config (`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT` pairs) stays, so a caller's credential or `insteadOf` mapping still reaches every fetch. (#794)
+- Command surface (`wrap apply`, FIX): the worktree sweep's ancestor proof checked the bare branch name, which git resolves to a same-named tag first. A tag on the default branch proved an unlanded worktree branch merged, and `apply --worktrees` removed it. It now checks `refs/heads/<branch>`. (#793)
+- Command surface (`wrap scan`/`apply`, BEHAVIOR CHANGE): a third merge proof, ABSORBED. A branch where every path it changed since its merge base is byte-identical on `origin/<default>` already has its net change on the default branch, so `scan` marks it `[ABSORBED: content already on origin/<default>, safe to -D]` and `apply` deletes it (and removes its clean worktree under `--worktrees`), with or without `gh`. It covers a subagent branch whose lead re-committed the work under its own PR: new hashes and no PR of its own, so neither the ancestry nor the squash proof could ever hold. It compares trees rather than trying a merge, so a `.gitattributes` merge driver (keep-ours, `merge=union`) cannot hide a branch-only edit. A partial landing, or any later edit to one of the branch's files on the default branch, still leaves the branch. (#793)
+- Command surface (new verb, additive, MINOR): `wrap rebase <worktree>` rebases a worktree branch onto `origin/<default>`. At each stop it regenerates `docs/FEATURES.md` with the worktree's own `lib/registry/feature-registry.sh`, keeps both sides of a `docs/CHANGELOG.md` conflict only when both sides purely added lines, and runs `git rebase --abort` naming any other conflict (exit 1). The stage set is exact and scanned for conflict markers before `git add`; the only commit is one regeneration once no rebase is stopped. It refuses the main checkout, never pushes, and `/kit:wrap` step 10 runs it before a push (SPEC-329). (#788)
+- Config surface (new key, additive, MINOR): `[wrap] autoland_carry`, default `false`, root-only, off whenever `merge_own_prs` is `false`. `true` makes `wrap apply --apply` open and merge its own stray-line and stray-commit carry PRs through `wrap merge --apply --pr` (same gate, re-merge and tree verify), and land an orphan `wrap/stray-<file>-<stamp>` branch an earlier run left without a PR when its diff is that file's carry alone. A gate refusal leaves the PR open; a failed merge or TREE MISMATCH exits 2. New env `KIT_WRAP_CARRY_CHECKS_SECS` (default 300) bounds the wait for pending checks (SPEC-322). (#782)
+- Command surface (`/kit:wrap` step 10, wording): BUILD/FINISH PRs open with `--fill-first`, and the full-lane draft takes the feature commit's subject as an explicit `--title`, because `--fill` titles a multi-commit branch after the branch name (SPEC-323). (#783)
+- Command surface (`wrap land`, BEHAVIOR CHANGE): with no `--title` given and no PR to adopt, the fresh PR (and therefore the squash-merge commit it lands under, on a multi-commit branch) is now titled from the branch's first non-merge commit ahead of the default branch whose subject is not a `docs`/`chore`/`test` conventional type, oldest first, instead of the branch tip. A single-commit branch, an explicit `--title`, and an adopted PR are unaffected (SPEC-326). (#789)
+- Command surface (`wrap land`, additive): the fast-forward step now carries a dirty `merge=union` file's local lines across the pull, the same way `apply` already does, instead of leaving `PULL BLOCKED` for that case. A dirty non-union file is untouched and still blocks the pull exactly as before; `wrap.pull_past_dirty` is not read here (SPEC-321). (#778)
+- Lane matrix (BEHAVIOR CHANGE): the `docs/WORKFLOW.md` Validate row is now `run-lite` on the normal and backfill lanes (full stays `measure-twice`). `gate-ledger.sh plan normal` and `plan backfill` list `validate  lite`, and `progress` counts it: a normal run is now 10 steps. The ship-gate does not refuse and prints nothing for it; `required normal` is unchanged (SPEC-320). (#780)
+- Command surface (`gate-ledger.sh plan-record`, BEHAVIOR CHANGE): a normal or backfill `plan-record` call now needs a `validate` disposition (`--ran`, `--skipped <reason>`, or `--override <reason>`) and exits 64 naming it otherwise (SPEC-320). (#780)
+- Read surface (`gate-ledger.sh progress`, BEHAVIOR CHANGE): a past normal rid with no validate line now reads one step short of complete (for example `step 4/10 (validate)` instead of `complete (9/9)`). No read-side alias credits the old self-validated `spec-validate` lines (SPEC-320). (#780)
+- Read surface (`gate-ledger.sh progress`, NOTE): on the normal and backfill lanes a `Validate skipped "NEEDS REVISION: ..."` line still reads as disposed (✓validate) in `progress`, because lite phases count any disposition, ran or skipped, not just a pass; the failed verdict is only visible by reading the note, not the checkmark (SPEC-320). (#780)
+- Command surface (`/kit:spec-validate`, BEHAVIOR CHANGE): it records `Validate ran` on APPROVED only; NEEDS REVISION records `Validate skipped "NEEDS REVISION: <criticals>"`, and a Reviewer 6 critical records `design-record skipped "critical: <finding>"`, so the full lane's ship-gate refuses both. `/kit:spec` step 5 and a new `/kit:execute` validation preflight dispatch it in a fresh-context, read-only subagent and the lead records `fresh agent=<id>`; `/kit:wrap` step 10 workers stop with `VALIDATE PENDING` instead of validating their own spec (SPEC-320). (#780)
+- Command surface (`wrap land`, additive): once the merge's tree is verified, `land` now derives the landed branch's rid (the same rule `gate-ledger.sh rid` uses) and, only when that rid already has a run ledger with no `ship` gate line yet, appends `| GATE | ship | ran | shipping pr=#<n> via=land` -- the `via=land` tag keeps it distinguishable from a line hooks/ship-gate.sh itself gated, while `/kit:wrap` step 8's anchored retro-trigger grep still matches it, so a spec cycle shipped through `land` too gets its retro. A hand-made land with no prior ledger for its rid writes nothing; a rid whose ledger already names this PR skips as idempotent, a different PR skips as a reused-slug collision, and a record failure prints the captured error plus the exact manual command -- none of these ever fail the land (SPEC-317). (#779)
+- Command surface (`/kit:spec-validate`, additive): a 7th reviewer, Sustainability Critic, advisory. A spec that leaves a long-lived job, service, external dependency, credential, or paid call behind must answer run cost, owner and liveness, dependency lifespan, retirement, and handover, or it gets a warning. A short-lived spec passes in one line. Reviewer 6 stays the only blocking reviewer (SPEC-314). (#771)
+- Command surface (`/kit:spec-validate`, BEHAVIOR CHANGE, wording only): Reviewer 7's not-long-lived pass line now goes only under `## Passed`, and nothing else from that reviewer lands in Critical Issues or Warnings on the same spec, solo or co-tagged onto another reviewer's finding. A live eval showed it still co-tagging a retirement finding on a short-lived spec (SPEC-316); the quiet case is now 0/3 across three samples (SPEC-319). (#777)
+- Report surface (`report-lint.sh`, BEHAVIOR CHANGE): a `**Built:**` item that is REPORTED with a `reported:` reason saying "already covers" or "nothing missing" now fails. A precedent hit that does the whole job closes as `NOTE ... covered, pointer added at <file>`, with the pointer written in-session (`commands/wrap.md` step 7b), because a REPORTED item with no work in it left step 10 nothing to build and the next session hand-rolled the tool again. (#766)
+- Command surface (`wrap apply`, BEHAVIOR CHANGE at the default): a main checkout on the default branch and ahead of origin/<default> now has its stray commits pushed to a new `wrap/stray-commits-<YYYYMMDD-HHMM>` branch (the `gh pr create --head` command printed, no PR opened), and the local default branch moves back with `git reset --keep` to where it left origin, so the pull fast-forwards instead of failing as diverging. A dirty non-union tracked file leaves the branch ahead and says so. Governed by the existing `[wrap] carry_stray_lines` knob; `false` reports the count and touches nothing (SPEC-312). (#757)
+- Config surface (new key, additive, MINOR): `[wrap] follow_through`, one of `off`, `lanes`, `all`, default `"off"`, so a plain `/kit:wrap` behaves as before. Resolves root-only. Any other value prints one line naming the knob and the allowed values and runs as `off`. New verb `wrap follow-mode [lanes|all]` prints the resolved mode and lanes (SPEC-310). (#754)
+- Command surface (`/kit:wrap` step 0, BEHAVIOR CHANGE): a foreign writer in a repo's main checkout now stops only the writes to that checkout (steps 1, 2, 3, 5, 6 and a seam write). A step 7b build in an isolated `wrap start` worktree still runs there, and its PR stays `OPEN` (SPEC-310). (#754)
+- Report surface (`report-lint.sh`, additive): a report whose first `## ` heading is `## Follow-through:` owes no `**Seam:**` line, and may close a `lane=full` item as built only as `#<pr> DRAFT` paired with a `REVIEW #<pr>` item in `Needs you`. A `## Wrap:` report is judged as before (SPEC-310). (#754)
+- Config surface (new key, BEHAVIOR CHANGE at the default): `[wrap] delete_merged_remote_branches`, default `true`. `wrap apply --apply` now deletes GitHub origin branches whose same-repo PR merged at their exact origin tip, never the default branch and never a head or base of an open PR. `merge` never passes `--delete-branch`, so merged heads piled up on origin (173 on one repo). `false` reports the count and deletes nothing. Resolves root-only like the other `[wrap]` autonomy knobs. (#736)
+- Config surface (new key, BEHAVIOR CHANGE at the default): `[gate] board_row_gate`, default `true`, the only `[gate]` key that defaults on. A repo with a board now blocks a commit that adds a new row without a `board-row-ok: <reason>` line. A repo opts out with `board_row_gate = false` in a committed, clean `.kit.toml`; the operator overlay can switch it off machine-wide. Resolves project > operator > kit root through `lib/gate/gate-policy.sh`, like the other gate keys. (#703)
+- Config surface (new keys, additive, MINOR): `[wrap] merge_own_prs`, `[wrap] tidy_worktrees`, `[wrap] build_candidates`, all defaulting `true`. An existing install keeps its current behavior without editing anything. All three resolve root-only, so a project `.kit.toml` cannot set them. (#527)
+- Config surface (new key, additive, MINOR): `[wrap] build_lanes`, default `"tiny"`, which is step 7b's behavior before the key existed. Resolves root-only like the other `[wrap]` autonomy knobs. (#617)
+- Config surface (new key, additive, MINOR): `[wrap] distill`, default `true`. A plain `/kit:wrap` runs both halves: the landing half (board rows, commit, merge, deploy check, tidy, pull, activity line, retro, report) and the distill half (the pre-step-0 candidate scan, the `before`/`after` seams, all of step 7 and its drain). Ships on because operators asked for it every session, not as a special-cased extra; the landing half always lands regardless of the knob. `distill = false` in the operator `kit.toml` restores landing-only every time, and `/kit:wrap distill [repo...]` still forces the distill half on for one call at either setting. Resolves root-only. (#755)
+- Report surface (`/kit:wrap`, BEHAVIOR CHANGE at the default): `Left alone` now lists only the pass's own leftover worktree, branch, or dirty files, plus one count bullet per repo for other sessions' residue. `/kit:wrap wide [repo...]` restores the full per-item listing for that call. Actions were already session-scoped; only the report narrowed. (#676)
+- Report surface (`/kit:wrap`, shape only): `Shipped`, `Left alone`, and `FYI` are markdown tables with fixed header rows instead of bullet lists. `Needs you`, `What happened`, `Built`, and `Seam` keep their shape; `report-lint.sh` is unchanged. (#677)
+- Lane classifier (BEHAVIOR CHANGE): the auth hard-gate regex no longer matches the bare word `session`; it matches `session token|cookie|id|hijack|fixation|store|management|expiry` and `login|auth|user session(s)`. A task that mentions the session in the wrap or handoff sense now sizes by its other flags instead of going `full` (SPEC-296). (#681)
+- `precedent find --surface inventory` matching (BEHAVIOR CHANGE): a query of three or more terms now finds rows that match all but one term, when one matched term is in the row's name. `nothing_matched` is therefore false more often for longer queries; one- and two-term queries still need every term. `_`, `-` and `/` split query terms, and stopwords (`the`, `of`, `for` ...) no longer match. Output format, `--json` keys, the `--quiet` summary line and the log line are unchanged (SPEC-308). (#745)
+- Ledger grammar, lanes.d plan format, export `schema`: unchanged. (#527)
+- Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252). (#558)
+- Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone. (#615)
+- Engine resolution (BEHAVIOR CHANGE at the `PROSE_RAG_BIN` seam): the recall engine folded into context-kit's `ctx` (`ctx index|query|hook` are the engine verbs), and `bin/prose-rag` is now an alias that resolves `$PROSE_RAG_BIN` (argv-compatible either way), then `ctx` on PATH, then `prose-rag` on PATH. `prose-rag <verb>` call sites, the flags, and the `PROSE_RAG_*` env are unchanged; `config seams` reports the same ladder, so a ctx-only install reads `filled` instead of `absent`. The no-engine exits are unchanged (`hook` exits 0, unconfigured `index` exits 0, anything else prints the install hint naming `cargo install --path <context-kit>/src/ctx` and exits 1). An install with only a pre-fold `prose-rag` binary keeps working. (#733)
+- Command surface (`wrap apply`, additive): `--pull-only` runs exactly `fetch --prune`, default-branch resolution, and the pull section (`_pull_default`'s union carry and `wrap.pull_past_dirty` stash/pop, unchanged) for each named repo, skipping every worktree, branch, archive-unmerged, origin-branch, stray-line, and stray-commit write and printing no section for any of them. It refuses to combine with `--worktrees`, `--archive-unmerged`, `--own`, or `--tips-file` (exit 64, naming the conflicting flag). Because it skips the stray-commits carry, the pull section prints `NOTE: <default> is N commits ahead of origin/<default>; --pull-only never carries them, plain apply --apply does` whenever the default branch is ahead. Merely ahead of an unmoved origin, the pull is a no-op (exit 0); diverged, it still fails (`FAILED pull --ff-only`, exit 2). Under the flag, a repo whose default branch does not resolve exits 2, and under `--apply` so does a pull skipped because `index.lock` stays held (plain `apply` keeps exit 0 on both). The tip snapshot and the `gh auth status` probe do not run under the flag. Fixes the operator workaround `commands/wrap.md` already forbids: a hand-rolled `git stash push -- <file> && git pull --ff-only && git stash pop` on a shared checkout when only the pull, not the full sweep, is wanted (SPEC-359). (#857)
+
+### Security-relevant config
+- Auth test-path default (BEHAVIOR CHANGE for every adopter, fewer `auth` hits): a path with a directory `tests`, `__tests__`, `fixtures` or `cases`, or a basename containing `.test.` or `.spec.`, no longer counts as the `auth` hard path. The list is fixed and case-sensitive. Every other kind (`migration`, `secret`, `ci`, `infra`, `kit-config`) still matches test paths. Each skip prints an `[advisory]` line on the push. To keep strict `auth` on a test directory, add it to `[lanes] extra_hard_paths`.
+- Battery and proof side effects of that default (BEHAVIOR CHANGE): `lib/gate/battery-gate.sh` can answer SKIP instead of RUN (when the size floor also allows it) for a diff that only touches login-named tests, and the `negative_control = "full"` check in `lib/gate/proof-ledger.sh` answers `no` for the same diff. The battery gate now hides the floor's stderr, so skip notices never leak into the size check.
+- New config `[[gate.hard_path_exempt]]` (additive): an array of tables in the project `.kit.toml`, each with `paths` (git-style globs), `kinds` and a non-empty `reason`. Only `auth` and `migration` are exemptable. The file is read at the merge base only, so the PR that adds an entry still blocks on `kit-config`. Every exempted path prints an `[advisory]` line with the entry and reason, and logs an `EXEMPT` line.
+- New config `[gate] hard_path_canaries` (additive): literal repo paths that add to the built-in canaries. A glob that matches a canary makes the entry invalid.
+- Never exemptable: `secret`, `ci`, `infra` and `kit-config`. Data-loss lines, submodules and `[lanes] extra_hard_paths` ignore every exemption.
+- Whole-config refusal: one invalid entry (bad kind, missing reason, malformed glob, canary match, unreadable form) makes no entry apply. Each push prints a `WARNING: hard-path exemptions refused` line and logs `EXEMPT-REFUSED`.
+- Push output (BEHAVIOR CHANGE): on an allowed push, `hooks/ship-gate.sh` now prints one exit-0 JSON object (`systemMessage` plus `additionalContext`) when the floor has notices. Under Codex the adapter drops it, so notices reach only `ship-gate.log`. The `ship-gate.sh` pin in `hooks/codex-hooks.json` is updated.
+- Mega-goal auto-merge (BEHAVIOR CHANGE): `lib/goal/mega-merge.sh merge` refuses any PR that touches the root `.kit.toml`, so a human merges every such PR. A file list it cannot read refuses as unclassifiable. The test-only env knob `MEGA_MERGE_PR_FILES_CMD` is listed in `lib/config/module-registry.md`.
+- The unreleased `[lanes] hard_path_exempt` single-ERE key is gone with no migration. A `.kit.toml` that still carries it gets no exemption.
+- New root `SECURITY.md` states the fail-open trust model and the private reporting channel.
+
+### Added
+
+#### Design and spec lane
+- `/kit:design` reviews a feature design as a delta against the repo's `docs/SYSTEM-DESIGN.md`, rendered as a UML drawing set with every element marked new, changed or removed. `/kit:spec` keeps terms and quality requirements as living repo-level docs. (#961, #962)
+- Specs carry a `Depth:` line, so research agents and the full test-plan review run only when the spec earns them. A light two-lens test-plan pass is the default. (#843)
+- Spec validation runs as parallel reviewers, and the new validate-round gate verb does the round's bookkeeping. (#816, #842)
+- `/kit:execute` hands one builder the whole spec, verifies at slice and build end, and rechecks a sample of passes in a fresh context. (#847)
+- `spec task-done <spec> <TASK-ID> --commit <sha>` checks off one task line and can append its verification entry. (#800)
+- Spec numbers are minted against open PR heads too, so two branches stop taking the same number. (#661)
+- Every subagent dispatch description carries `rid=<rid>`, so transcripts can be counted per run. (#824)
+- Briefs carry a test budget, a host-load warning and suite timing history. (#913)
+- A new impl-notes gate checks that a spec's implementation notes exist. (#756)
+- `ui-design` briefs name the styles to exclude. (#773)
+- A worker-brief pattern and a proof-gate skeleton are available for builder dispatches. (#582)
+- `lib/bench/lens-eval.sh` runs a repeatable eval of a prompt-only lens against fixture specs, and warns when its "fewer" signals show no gap. (#775, #786)
+- `dispatch` keeps attempt state apart from task state and carries the standing worker rules in every prompt. (#655, #650)
+
+#### Gates, lanes and ship
+- Lanes are data (`[lane.<name>]` blocks in `kit.toml`), with a light default lane and a fail-closed diff floor at ship that applies full-lane gates to hard paths. (#840, #849)
+- `validate` is `light` on the normal lane, and a small spec skips the 7-reviewer round. (#860, #858)
+- The blocking quality gates default off and are opt-out per project; `adopt` seeds the preset. (#656, #653)
+- `[gate] negative_control` can limit the negative control to the full lane. (#883)
+- A proof of done carries its captured output into the PR, and `proof-asset` puts and flushes visual proof images. (#892, #894)
+- `negctl` can run at a commit (`--at`), against a base ref on a shared checkout (`--base-ref`), with bounded retries for flaky tests, and one control per worktree in parallel (`--parallel`). (#798, #724, #604, #930)
+- `gate-ledger.sh plan-record` disposes a whole lane plan in one call, and `inherit` lets a task branch reuse a validated multi-task spec's gates. (#634, #914)
+- A verbatim-rows check guards structured index rewrites. (#638)
+- `ship-gate` refuses a push that leaves `docs/FEATURES.md` stale, and `lib/registry/feature-registry.sh check` answers drift outside the suite. (#675, #648)
+- `FEATURES.md` lists lib verbs, hook descriptions and trigger classes, and its Tests column credits tests that invoke a verb. (#851, #904)
+- `battery` refuses a small change and points at proof of done. (#890)
+- `[test] suite = "affected"` runs only the tests a change touches. (#885)
+
+#### Hooks and safety
+- `board-row-gate` blocks a commit that adds a board row without a `board-row-ok:` reason. (#703)
+- `batch-debt-warn` warns once per session when a second `gh pr merge` runs with no gate record. (#620)
+- `context-budget` warns when a session's context grows past budget and, one band later, tells the agent to wrap up. (#572, #697)
+- A Codex plugin manifest and lifecycle adapter carry the five hard guardrails to Codex.
+- `money-gate` and `citation-guard` now run as bash plus jq, with shared parity harness `tests/lib/hook-parity.sh` pinning them to the old Python. (#822, #823, #825)
+
+#### Wrap and landing
+- `wrap land` lands one committed branch from a hand-made worktree; `wrap start` opens it, `land` adopts the operator's own open PR, and `land` carries dirty union-marked files across the pull. (#674, #718, #706, #758, #778)
+- `wrap merge --pr N` lands one reviewed draft PR, retries transient gh merge errors, and falls back to a squash-equivalent replacement PR when GitHub still reports CONFLICTING. (#701, #708, #728)
+- `wrap rebase`, `wrap adopt` and `wrap deploy-wait` are new verbs: rebase a worktree branch, adopt a repo and land it, and wait for a push-deploy check. (#788, #907, #765)
+- `/kit:wrap follow` builds the report's candidates in background workers and merges each green own PR. (#754)
+- `wrap apply` gains `--own` (scope the tidy), `--archive-unmerged`, `--pull-only`, a third ABSORBED merge proof, and removal of a proven-merged locked worktree. (#710, #763, #857, #793, #622)
+- `wrap apply` pulls past a sibling's dirty tracked files behind a knob, carries union-marked logs across the pull, and moves stray local commits to a branch. (#630, #577, #757)
+- Wrap warns when a write verb lands a file on the default branch, refuses ignored files under touched paths, and archives finished handoffs at session close. (#658, #917, #921)
+- `merge --apply` checks the default branch's tree after the merge and recovers from conflicts by merging `origin/<default>` into the branch. (#628, #861, #859)
+- The wrap report is linted: Built and FYI items need tags, prose-only Built is refused, report prose is checked against STE-lite, and `Needs you` has an admission test. (#580, #573, #567, #672, #666, #676, #677, #893, #529, #527)
+- New `[wrap]` knobs make each write action a choice (`merge_own_prs`, `tidy_worktrees`, `build_candidates`, `build_lanes`, `distill`, `delete_merged_remote_branches`, `follow_through`, `autoland_carry`, `drain_staged`), and wrap gains a `before`/`after` seam. (#526, #527, #528, #532, #551, #617, #736, #754, #755, #782)
+- `adopt.single_source` and `wrap.roots` knobs, and `adopt --single-source`, fold `CLAUDE.md` into `AGENTS.md`. `/kit:adopt` writes a small `AGENTS.md` pointer. (#744, #740, #833)
+- Four landing fixes (`-D`, `--under`, stray-line carry and one more) make `wrap` safer on a shared checkout. (#742)
+- `wrap flick-7b` and the `flick` decision API (clef backend on Cloudflare Workers AI) support wrap's shadow step 7b. (#864, #895, #924)
+- `/kit:start` picks up from handoffs, goal drafts and the board, with mega-goal awareness and capped lists. (#693, #694)
+- `git` treats the board and notes as `merge=union`. (#663)
+
+#### Board and sync
+- `board work` prints one live table of who is on what, joining board rows, mega sub-goals, git, Orca and the run ledger. (#834, #831, #849)
+- `board brief`, `board health` and `board hermes link|check` give a periodic per-cluster digest and a Hermes skill link with a stale check. (#941, #944, #945, #946)
+- Board sweep, digest, mirror cleanup and verify are kit verbs, and bot cards expire by age. (#929, #953)
+- `board get` shows one row's status, `board lint` lists malformed rows before sync trips, `board run` scaffolds a single-row megadir, and `backlog.sh dedupe-all` collapses the duplicates a union re-merge leaves behind. (#715, #723, #717, #635, #608)
+- `board` warns when a cockpit repo's checkout lags upstream and refuses to promote bare-URL staged blocks. (#547, #518)
+- The Board pane mod for Claude Code shows band actions, worktree staleness and NEXT. (#874, #878)
+- `mega` can run a roadmap through Orca Tasks and supervised workers (opt-in), and `orchestrate` caps turns per agent with a deterministic segment handoff. (#841, #714)
+
+#### Observability and session
+- `session observe entry-fee`, `burn`, `timing` and `tools --errors` size the per-turn preamble, rank live sessions by token burn (split by model, priced), time hooks and group errors. (#657, #563, #637, #880, #709)
+- `session observe` counts every hook event, not just Stop, and measures the skill listing and last-fired skills from transcripts. (#803, #721)
+- `session recall --tail <id-prefix>` shows what one session is doing now. (#753)
+- `lib/session/handoffs.sh list` lists open handoffs, per repo with `--under`. (#626, #940)
+- `stats ceremony` reports gate records, dispatches and catches per run and week. (#849)
+
+#### Tests and tooling
+- `tests/run-all.sh --failed` reruns only failed suites, and the fix agent follows a no-weaken rule for tests. (#959)
+- `tests/run-all.sh` defaults to `--changed`, takes `--time`, and `bin/test-affected` maps a diff to the suites it touches. (#664, #666, #673, #815)
+- `intake gate` is a scripted dedup gate for knowledge intake. (#615)
+- The scattered-id enumerator `bin/lint` backs the provenance rule and its ratchet. (#537, #587, #591)
+- A configurable Claude Code output style (first style `adhd`) is set by `[output] style`, at adopt and install time. (#558, #559)
+- `precedent` has a learnings kind for harness site recipes. (#562)
+- `webcheck` flags an SVG `og:image` and a missing `og:url`. (#704)
+- The harvest sweep stages learnings from transcripts on a schedule, in phase 1. (#814, #829)
+- `audit due` and a cadence table schedule the audit loops; the repo-hygiene loop audits a repo's own files and proves nothing references a staging entry before flagging it. (#679, #576, #583)
+- `/kit:kit-health` reports broken symlinks under the installed kit root, `doc-drift` checks diagram nodes, and `loop-engineering` gains a stop condition. (#767, #613, #612)
+- `learn` raises propose promote-precision. (#542)
+- Docs: `docs/execution-planes.md` and a PHILOSOPHY principle that reversible-in-git is the line between acting and asking. (#534)
+
+### Changed
+
+- `/kit:wrap` step 7b sizes a candidate against `wrap.build_lanes`, routes every built candidate through its lane, and files a full-lane candidate as a queued board row. (#621, #569)
+- `hooks/context-budget.sh` warns on a percentage of the model's window (`KIT_CTX_WARN_PCT` 65, `KIT_CTX_STRONG_PCT` 70) instead of a raw token count. (#759)
+- `/kit:explain` hands its skeleton to whatever skill `understand.teach` names; with no teacher it prints `skipped: no teacher`. (#606, #560)
+- Faster: `gate-ledger.sh check` caches its verdict, `lane-telemetry.sh misfires` drops from about 93 s, the registry reference matcher cuts generation from 50 s to 4 s, and `context-readiness` reads specs in one awk pass. (#912, #863, #915, #805)
+- Faster tests: suites run in parallel longest first, picks follow run or source and `kit.toml` section or key, per-area meta suites carry measured timeouts, and the orca fixture builds once. (#916, #927, #911, #909, #960, #644)
+- `wrap.sh` is split into per-subcommand modules with their tests. (#853)
+- Docs follow ops-toolkit's move of `board-decisions.py` and `board-archive` under `_meta/scripts/`. (#872)
+- Spec ids are stripped from `lib/`, `agents/`, `commands/` and user-facing strings, `lib` becomes lint zone 8, and the `cc-` prefix retires from doc filenames. (#588, #591, #616, #618, #565, #536)
+
+### Deprecated
+- `bin/learn` forwards to `bin/reflect` (same verbs, arguments, exit codes) for ONE release,
+  per ADR-0036: the `learn` subsystem is renamed `reflect`. It ships here in 2.3.0 and is
+  removed starting 2.4.0 (backlog ID-839; `tests/test-meta.sh` trips once VERSION reaches
+  2.4.0 while `bin/learn` still exists, so the removal cannot be forgotten past that bump).
+  Repoint any external caller to `bin/reflect` now. (#606)
+
+### Fixed
+
+#### Wrap and landing
+- `wrap land` holds up to 300 s for a late-registering `pull_request` check, only for a real `pull_request` trigger, so a run queued 190 s late (dwarvesf/share#47) no longer merges unchecked. (#947, #950)
+- A worktree is no longer removed while a live process holds it, and a caller's own pipeline reader never counts as a holder. (#948, #951, #952, #698)
+- Flags packed into one word (a zsh `$args`) no longer silently lose `--own`; `wrap` verbs now refuse them with exit 64. (#850)
+- `wrap merge --apply` and `land` stop reporting `TREE MISMATCH` when another PR merged in between, and wait for GitHub to settle mergeability instead of refusing a just re-merged PR. (#768, #732)
+- On label-gated repos, `land`, `merge --apply` and `apply` arm the `ci` label first and wait for the checks it starts, so a head no longer merges untested; the label gate is opt-in via `--with-ci`. (#809, #813, #817, #835)
+- Merge proofs name `refs/heads/<branch>` and `refs/remotes/origin/<default>`, so a colliding tag or branch name can no longer delete unlanded work. (#793, #794)
+- `wrap` gates the latest check run per name, skips draft PRs, reads own open PRs off the repo, and step 3 merges only the session's own PRs via `--pr`. (#760, #685, #690, #882)
+- `wrap` deletes land's own origin branch after a verified merge, runs the origin sweep under `--own`, carries union files beside non-union dirt, and resolves its stash by name. (#741, #738, #725, #636)
+- `wrap` removes a locked worktree instead of declining, lands log entries below the header, allows a symlink that points outside the worktree, and drops the no-table rule that contradicted the table sections. (#595, #574, #926, #678)
+- `wrap` reports unbuilt candidates instead of filing rows, and step 7b reports an outcome the lint can check. (#702, #546, #553)
+- `/kit:wrap` steps 5, 7 and 9 fixes: pass `--worktrees`, resolve the main checkout, re-scan before `Left alone`, wire a precedent hit into the tool, and print a structural skip for the DEBT marker. (#523, #524, #525, #527, #548)
+- `/kit:ship` step 8 runs a pre-merge check so a branch on an append-only log no longer shows CONFLICTING. (#548)
+
+#### Gates and ship
+- `negctl` restores files a test run itself writes, survives interrupts, and no longer reads a leftover write as a failed control. (#790, #774)
+- The ship gate honors the ledger START-AMEND lane over the spec header, shares its rules with the mega gate and fails closed, and skips ignored artifacts. (#920, #935, #931)
+- Gate checks no longer fail on `grep -q` SIGPIPE from large producers, and tests-only diffs are read by path, not commit subject. (#925, #735)
+- The classifier stops a Tailwind `truncate` class tripping the data-loss floor. (#943)
+- `proof-ledger` names the near-miss file in its BLOCKED message, and `dispatch,gate` release settled attempt records and read a bold Lane header. (#792, #660)
+- `ship` pins the verification-section fence rule. (#787)
+
+#### Hooks and install
+- `post-compact-reinject` now fires (SessionStart, matcher `compact`), and every hook runs through `hooks/anchor-root.sh`, so a hook fired from a subdirectory reads root files. (#810, #802)
+- Context-budget finds the real window from a statusline file, the model-identity attachment or the configured model, and the long-session nudge suggests `/dcompact`. (#791, #762, #761, #937)
+- `/kit:think`, `/kit:design` and `/kit:debug` carry trigger phrases in their descriptions, and `stats` restores its own. (#770, #631, #830; #700 had moved the clause out of the description)
+- Plugin-mode install retires duplicate bare agents, keeps agents plugin-served, never writes a CLI shim outside HOME, skips a self-resolving symlink, and links `kit.toml` and `VERSION` into the compat farm. (#691, #707, #696, #642, #764)
+- Agent references are qualified as `kit:<agent>`, and `audit-scanner` frontmatter is valid strict YAML. (#719, #705)
+- Codex hooks are repinned after the ship-gate edit. (#936)
+- The `adhd` output style defers reply shape to `CLAUDE.md`. (#902)
+
+#### Board and sync
+- Board id minting reads git history and takes a shared flock, so ids no longer collide across checkouts and sessions. (#609, #727; builds on #541 and #596)
+- Duplicate and malformed rows heal: `set` refuses an id matching several rows, `dedupe` reports an absent id, 6-cell rows fold back to 4, and collided ids no longer refuse the hourly sync. (#625, #716, #713, #712)
+- Writeback skips a card the mirror itself completed, a blocked card, and a card still in its mirror-created column; a terminal note supersedes in-flight ones. (#711, #682, #680, #600)
+- Sync closes the spoke card of an archived row, refuses bulk status flips and duplicate rows, and the mirror archives closed rows and moves drifted cards. (#686, #955, #684, #928)
+- Backlog helpers reject stray flags, honor `--backlog-file`, and refuse cleanly on an unreadable file. (#689, #659, #641)
+- The board pane stacks the AbovePrompt band over downstream rows. (#957)
+- `goal` prunes worktrees and counts Status in megagoals; `bin/mega status` reads the current SG-NN grammar. (#695, #533)
+
+#### Harvest, config and release tooling
+- Harvest holds on a weekly usage limit, installs its plist readable by vps-mon, restates the task after the transcript, routes `--status` to the sweep, and shows STATE rows in a dry run. (#828, #826, #821, #819, #838)
+- `bin/config` honors the operator `kit.toml` layer; `ledger.location`, `decide` and `proof.*` root-only keys are registered. (#746, #875, #932, #901)
+- `bin/release` targets `docs/CHANGELOG.md`, writes the right header and bumps `tool.toml`. (#535)
+- The shared secret-shape regex now catches AWS secret keys, PEM blocks, 1Password tokens and `PASSWORD=` assignments. (#535)
+- `spec-next.sh reserve` no longer gives one number to several worktrees, reclaims a dead holder's lock, and rejects arguments. (#776, #671)
+- Spec helpers resolve co-located specs, and research, brief and context paths are slugged per feature. (#898, #564)
+- `precedent find` ranks partial matches, accepts bare-word args, skips dot-directories and indexes extensionless scripts. (#745, #566, #749, #520)
+- Observe dedups assistant usage by message id; recall and the transcript parser survive non-object lines. (#877, #586, #571)
+- `session` handoffs scan one level, and the kit no longer reads the operator's dotfiles skill. (#797, #554)
+- `repohygiene` reads a log's budget and a mega-goal's own record correctly. (#584, #578)
+- `prose-rag` resolver skips the kit's own PATH wrapper, `kit-wrap` scans candidates first, and FYI carries future work with its home. (#519, #553, #531)
+- Docs lose an operator path (#568), and spec ids leave strings the operator reads (#536).
+
+#### Tests and CI
+- Test fixtures no longer write into the real repo or leave the checkout dirty, and flaky or load-sensitive suites are bounded. (#619, #614, #610, #784, #769, #594, #589)
+- Run-all keeps a failed suite's full output, reports a timeout as its own fact, honors TMPDIR and keeps interactive runs off the full glob. (#939, #605, #958, #906)
+- CI defaults the runner back to sequential, marks `test-runs-dashboard` serial and stops refreshing apt for jq. (#647, #646, #552)
+- Internal: 20 maintenance PRs (#938, #933, #918, #908, #903, #889, #886, #873, #845, #832, #820, #750, #730, #722, #662, #645, #585, #549, #540, #539).
+
+## [2.2.0] - 2026-09-07
+
+### COMPAT (contract surfaces, per forge kit-versioning.md)
+- Ledger grammar: unchanged. lanes.d plan format: unchanged. Export `schema`: unchanged (1).
+- Seam keys (new surface, additive, MINOR): `[knowledge] root`, `[wrap] before`, `[wrap] activity_log`, `[precedent] registry`, `PROSE_RAG_BIN`; every default keeps the kit working with nothing filled. `bin/config seams [--check]` reports them.
+- `prose_rag` module: the vendored crate is gone; recall now needs context-kit's `prose-rag` binary on PATH or `PROSE_RAG_BIN`. With neither, the hook stays silent and `index` skips; only an explicit query errors with the install hint.
+- Overlay floors: unchanged (learning-kit and context-kit declare `>= 2.0`; both keep passing their contract tests against this cut).
+
+- prose-rag: the module is an ADAPTER (SPEC-250). `bin/prose-rag` resolves `$PROSE_RAG_BIN` (a regular executable file) then `prose-rag` on PATH, the order `config seams` already reports for that row, and execs it; the vendored Rust crate under `lib/prose-rag/rust` is deleted, because context-kit owns the engine (`cargo install --path src/prose-rag`) and two builds of one engine drift. The three no-engine exits are unchanged: `hook` exits 0, an unconfigured `index` exits 0, any other verb prints an install hint naming context-kit's crate and exits 1. New `tests/test-prose-rag-adapter.sh`.
+- config: named cross-kit seams (SPEC-249). A `[knowledge] root` key (operator or kit-root only; empty means repo-local `.claude/memory`) tells the engine where the context tree lives; a `## Seams` join table in `lib/config/module-registry.md` tags each seam with a kind and the overlay that fills it; `bin/config seams [--check]` reports every seam as `default|filled|unresolved|absent` without executing a target, fenced the way the consumers fence (realpath under HOME, no symlink, no relative path), and `--check` gives an installer a one-bit exit. `_env_val` guards every indirect env expansion in `config.sh` against a forged registry name.
+- wrap: Step 7 `learn` owns the process half of session distill (SPEC-249): the DEBT marker via `significance-classify.sh record`, new-tool candidates through `precedent find --json` into the staging buffer, and one memory note per own-mistake incident under `bin/wrap knowledge-root`. New verbs `wrap knowledge-root <repo>` (fenced root, repo-local fallback) and `wrap stage` (paths and fences in bash, the write in `staging-format.py stage`, which dedupes over staging and board with a Unicode-aware key). Every wrap writer resolves the post-worktree-copy path before fencing it. `commands/onboard.md` and `commands/adopt.md` name the overlays and their seams.
+- sync: new `--filter <app>:intake_skip_re=<regex>` keeps a foreign app item on the app whatever `intake` says (body regex, MULTILINE). An adopted item with no in-scope tag scope-exits on the next tick and closes on the app, which is right for junk tickets and wrong for one that has its own lifecycle there: a member-facing support ticket carries a `thread:` line, and archiving it made the support desk tell the member their ticket was solved. `intake_ok` checks the skip first; a bad regex fails the parse.
+- wrap: step 5 removes the session's own `EnterWorktree` worktree once `wrap scan` proves its branch squash-merged and the tree is clean (`ExitWorktree remove` with `discard_changes: true`, then `git branch -D`); the old rule kept it and asked, which left a finished worktree behind on every wrap. Keep now applies only to a dirty, unproven, or `gh`-less worktree, named in `Left alone`.
+- config: an operator-owned `kit.toml` now sits between the project `.kit.toml` and the kit-root `kit.toml` (SPEC-248). `kit_config_operator()` resolves `${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit}/kit.toml`; `kit_config_get` reads project > operator > kit-root > default and `kit_config_get_root` reads operator > kit-root > default, because the operator file lives on the operator's machine and never rides inside a pull request. Per-operator paths such as `wrap.activity_log` and `precedent.registry` now survive a kit upgrade instead of living in the kit checkout. New `[wrap] before` consumer key names a skill `/kit:wrap` invokes before step 0, whose report lines fold in after the report's `FYI` line; `/kit:wrap` also gained its trigger phrases.
+- wrap: new `/kit:wrap`, the session-scoped landing step after ship (SPEC-246). `lib/wrap/wrap.sh` + `bin/wrap` ship five verbs (`scan`, `apply`, `merge`, `log`, `default-branch`), porting the operator's `repo-wrapup` scripts and `session-closeout` Phase 2 into the kit: board rows flip, the operator's own green PRs merge one at a time under gates (base is the default branch, mergeable, checks green, no unresolved threads, no open dependents per SPEC-065), a `workflow_dispatch` deploy gets a `headSha` check, branches and worktrees tidy under proof (an ancestor deletes with `-d`, a squash-merge proof deletes with `-D`, nothing forced), the default branch pulls `--ff-only`, and an activity line prepends through the new `[wrap] activity_log` consumer key. `/kit:wrap` is the only caller of `/kit:retro` off a ship-ledger fact. `commands/start.md` and `commands/retro.md` name it.
+- precedent: `bin/precedent find` now answers "done before?" over two corpora. The records surface (specs, ADRs, retros, verification, run ledger) is unchanged and byte-parity pinned; the new inventory surface scans what has been BUILT (tools, scripts, bin, cli, `_meta` wrappers, experiments, memory notes, skills, feature registries, the kit's own verbs, `~/.claude/skills`, `~/.local/bin`, launchd plists, wrangler crons) with AND scoring, secret redaction, a 240-char cap, and a DATA marker. Sources beyond the repo and the kit come from a consumer registry (`repo | scripts | skills | crons | memory` rows; `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` > the XDG default). `--explain <label>` prints a hit's header, confined to the scanned roots. `lib/precedent.sh` (root orphan) is gone; `/kit:assign` and `/kit:grill` call `bin/precedent find`. Ported from ops-toolkit's `repo-sweep whathas` (SPEC-245).
+- docs: onboarding golden-path pass (ID-400). README leads with the two-command plugin install +
+  `/kit:onboard` + `/kit:start`, module list stays below the fold; new `docs/QUICKSTART.md`; the
+  bash installer is relabeled a maintainer/power path; a "disclose gaps, don't hide them" principle
+  in `docs/PHILOSOPHY.md` generalizes `/kit:onboard` section E's honest-disclosure convention.
+- agents: new devops-triage subagent, on-demand production error-alert triage (evidence-first, read-only, bounded verdict); ambient twin lives in ops-toolkit tools/alert-triage/
+
+### Fixed
+- **Queue launcher pre-flights the `/goal` 4000-char cap.** Interactive `/goal` refuses
+  anything over 4000 chars, but the launcher never checked before typing, so an over-budget
+  pointer opened a real window, typed a silently-rejected goal, and sat idle forever with no
+  journal entry. `QUEUE_GOAL_CHAR_LIMIT` (default 4000) is now checked before any window
+  opens; an over-budget pointer fails fast to journal `error` with the reason named.
+- **`test-queue.bats` sandboxes its ledger root; NC2/NC6/NC7 un-failed.** The suite sandboxed
+  the journal but not the run files, so guard counters leaked into the operator's real
+  `~/.local/state` and accumulated across local runs until the SPEC-221 breaker trip rewrote
+  the NCs' expected `stalled` into `error stagnation_detected`, machine-local, invisible on
+  fresh checkouts. `KIT_LEDGER_DIR` now points at the per-test sandbox, a T13 tripwire pins
+  the resolver, and the leaked files were cleaned. The ID-463 class, state-dir edition.
+- **Queue launcher no longer strands a row on a dropped Enter (SPEC-217).** `_mux_submit`'s
+  still-pending check matched the literal `/goal` at the prompt, but a long typed goal
+  renders tail-first in the input box, so the string never appears there. A dropped Enter
+  read as submitted and the row sat idle with no journal entry, reproduced on 3 consecutive
+  live `#auto` runs, each needing a manual Enter to unstick. Detection is now "any prompt
+  line still carries content", errs toward re-Entering rather than toward a false submit.
+- **`tests/test-meta.sh` no longer rewrites the tree it runs in.** `feature-registry.sh`'s
+  `generate()` unconditionally called `sync_counts()`, so the freshness check, which
+  regenerates to a throwaway temp path purely to diff, silently rewrote `README.md` and
+  `docs/architecture.md` on every run, masking the exact drift it had just flagged.
+  `sync_counts` now fires only when `generate` writes the real file in place. Also fixes the
+  drift itself: `/kit:gauntlet` was missing from README's command table and
+  `docs/architecture.md`'s V-phase inventory; a pristine run is now 809/809 and leaves the
+  tree byte-identical (checksummed before/after, plus an independent negative control).
+
+### Added
+- **Auto review-fix loop on the full lane (SPEC-231).** The multi-lens review now runs by
+  default, not on request: `/kit:execute` drives `/kit:review-team` (the three specialist
+  lenses plus the kit-default advisor, in one pass) after build on the full lane, and the
+  spec stage runs a default design-time critique plus advisor over-suggest before validate.
+  Findings sort convergent-first (a defect two or more lenses agree on outranks single-lens
+  taste), and the review re-runs over each fix batch up to two rounds, because a fix batch
+  can reopen the bug it fixed. The verdict stays advisory (auto-run, not auto-block), and a
+  lane gate keeps the cost on the full lane only. Foundation: `docs/patterns/review-fix-loop.md`.
+- **`slop-stripper` agent: the behavior-preserving AI-slop strip pass (kit ID-402).** Resolves the
+  deslop absorption contradiction (2026-06-11 pinned-kits called it a duplicate of the simplify +
+  maintainability-lens surfaces; the 2026-07-25 absorption survey scored it ABSORB). Both were
+  right about different halves: the DETECT half (the 5-item checklist) duplicates the review lenses
+  and the slop-cleaner hook, but the FIX half, an edit-capable, behavior-preserving strip pass that
+  applies surgical edits before merge, had no home in the kit. Every existing surface is
+  detect-only by design (review lenses are read-only, ADR-0005; slop-cleaner nudges and never
+  auto-fixes; fix-agent only fires on verifier FAIL:fixable and its anti-patterns forbid
+  "improving" unflagged code). The new agent re-implements the deslop mechanism from az-skills
+  (no license; original prose, source cited) and lands as an OPT-IN step on `/kit:review-team`'s
+  decision gate: the operator's judgment is the gate, then `/kit:verify` before `/kit:ship`.
+- **Test-plan coverage advisory at the ship boundary (ID-466).** The test plan fed
+  `/kit:execute`'s verify steps but nothing at the gate traced the proof back to the matrix.
+  New `proof-gate.sh coverage <spec> [proof.md ...]` subcommand parses both matrix dialects
+  (numbered `#` column and the older category form, ordinal fallback) and reports
+  `OK` / `NO-MAP` / `UNMAPPED: <rows>`; the ship-gate emits a warn-only `[advisory]` when a
+  spec with a `## Test plan` has no `## Test plan coverage` map in its proof doc, or the map
+  leaves rows unmapped. Detect-not-dictate: never blocks, and a spec without a test plan owes
+  nothing new. Owed shape documented in `docs/verification/README.md`. Third live `#auto`
+  queue-watcher run, filed and shipped the same day (PR #366).
+
+### Fixed
+- **Board-sync id-collision guard (ID-309).** `plan_sync`'s title-prefix link step trusted a
+  matching id alone as proof of identity; a repaired board row whose id had been reused by a
+  spoke-born item (minted while the row was invisible to `parse_board`) could get silently
+  overwritten, retitled, and flipped to a wrong status by the unrelated spoke item. The link
+  step now refuses to adopt a spoke item whose title disagrees with the board row's, emitting
+  a collision note naming both titles instead. `next_id` already scanned raw board text (not
+  parsed rows) so it needed no change. Second live run of the SPEC-217 `#auto` queue watcher,
+  unattended end to end, PR #344.
+
+### Added
+- **`docs/impl-playbook/` ships in the kit itself, review-team agents cite it by stable path.**
+  security-reviewer, code-reviewer (architecture + test-coverage lenses), infra-reviewer,
+  frontend-reviewer, and test-writer now cite `~/.claude/dwarves-kit/docs/impl-playbook/<file>.md`
+  at the checklist item each rule backs (OWASP/ASVS for security, Fowler's pyramid for test
+  layering, coding-hygiene for the architecture lens, Cloudflare specifics for infra). The
+  content used to be the maintainer's personal, machine-local reference; moved into the repo
+  and generalized so every adopter's citations resolve, not just the maintainer's own machine.
+  `install.sh` deploys the directory to the stable install path on both the full-install and
+  plugin-compat paths, with a matching `--uninstall` removal step.
+
+### Fixed
+- **`tests/test-install-compat.sh` now sandboxes `$HOME` (ID-463).** The suite ran `install.sh`
+  with only `CLAUDE_DIR` overridden; the compat branch it exercises writes a CLI shim straight
+  to `$HOME/.local/bin` for every known module, so on 2026-08-01 a real run clobbered 4 live
+  shims (`board`, `prose-rag`, `session`, `worktree-provision`), retargeting them at a `mktemp`
+  dir that vanished on test exit and broke a live hook. Both `install.sh` invocations in the
+  suite now get their own throwaway `HOME`, plus a tripwire assertion that fails if any
+  dwarves-kit-managed shim in the real `~/.local/bin` ever points back into the test's own
+  `$TMPDIR`. First unattended, end-to-end run of the SPEC-217 `#auto` queue watcher: self-grill,
+  sanitized prompt, runaway guards, and the draft-PR-by-default posture all fired for real,
+  producing draft PR #342.
+
+### Added
+- **`backlog-reconcile` skill: the audit-loop pattern's 4th SDLC instance (SPEC-225).**
+  General-purpose (every `/kit:adopt`ed repo, not maintainer-only): audits a repo's
+  `_meta/BACKLOG.md` Active queue against reality, a row's `Status` verdicted against its
+  `Target artifact` spec's own `Status:` header, or a git-log match for `(tiny, no spec)`
+  rows, and ships fixes via PR. Mirrors `topology-drift`'s Tier1-mechanical/Tier2-model-delta
+  shape, reuses `lib/board/backlog.sh` and `agents/audit-scanner.md` unchanged.
+- **Two cheap guardrails on the autonomous run queue (SPEC-224 / ID-461).** Both ride channels
+  SPEC-221 already built, so the diff is small and adds no process. (1) DRAFT-PR-BY-DEFAULT on the
+  unattended path: the queue never runs `gh` itself, so `_goal_line` appends a clause to the typed
+  `/goal` line telling the launched run to open its PR as a draft (`gh pr create --draft`) and stamp
+  a provenance footer naming the run (`[unattended orchestrator run; journal <path>; slug <s>]`),
+  mirroring OpenHands' model-overridable `draft=True`. `queue run --ready` (or `QUEUE_PR_READY=1`)
+  is the escape hatch that opens a normal PR. Interactive `/kit:ship` never calls `_goal_line`, so
+  it is untouched. (2) A per-row and queue-wide SPEND CEILING on a self-reported tool-call count: the
+  run writes `TOOL_CALLS: <n>` into its SPEC-221 `<slug>.status` file, and the conductor reads it on
+  the poll it already does. `QUEUE_MAX_TOOL_CALLS` stops a row (verdict `stalled`, the shared journal
+  reason set to a new value `spend_ceiling`) after its observed turn; `QUEUE_MAX_TOTAL_TOOL_CALLS`
+  aborts the remaining rows after the current one ships (SWE-agent's two-tier split). Both default 0
+  (disabled, matching SWE-agent's `per_instance_call_limit=0`), so the shipped overnight behavior is
+  byte-identical until an operator opts in. The ceiling is composed OR-style with the wall-clock
+  `QUEUE_TIMEOUT_SECS` (first-to-trip wins); self-report is a guardrail, and the wall-clock is the
+  non-gameable backstop. Claim-leases (the row's third idea) were scoped out: SPEC-221's beat-file
+  presence already IS the in-flight claim (DEC-003) and its reaper is the lazy expiry.
+- **An untrusted-input pass on the autonomous run queue (SPEC-223 / ID-459).** The `#auto` path
+  types a pointer file's body into a `--dangerously-skip-permissions` session, and the board row is
+  what selects that file, so on the watcher-planned path that body is untrusted text rather than an
+  operator-authored prompt. `lib/queue/sanitize.sh` adds `sanitize_cell`, an ORDERED pipeline where
+  each step closes a bypass the previous one leaves open: HTML-entity decode (single and double
+  encoded), an invisible-codepoint strip by Unicode PROPERTY (`\p{Cf}` plus
+  `\p{Default_Ignorable_Code_Point}`, never an enumerated list), ANSI strip, control strip (a
+  newline would submit the prompt early, so removing it is a security property here), HTML-comment
+  DELETION, code-fence stripping (gh-aw exempts fences to protect patches; a goal prompt has no
+  patch, so the exemption is inverted and nothing is exempt), pipe escaping (a board row is a
+  markdown table), an https-only URL allow-list with a percent-decode preamble, and a size cap that
+  truncates with a VISIBLE marker instead of rejecting. The typed prompt is then framed by an
+  untrusted-content preamble and fenced with explicit begin/end markers. `queue.sh run` gains
+  `--sanitize-prompt` (implied by `--from-boards`); `watch-board.sh --apply` forwards it. A
+  hand-authored tsv is unchanged, because operator authorship is the trust boundary the pointer
+  allow-list already uses. A run that writes a protected path (`.claude/*`, `CLAUDE.md`,
+  `AGENTS.md`, `.github/*`, `_meta/BACKLOG.md`, tunable via `QUEUE_PROTECTED_GLOBS`) ends `gated`
+  instead of shipping: DETECTION, not prevention, since nothing in bash sits between a
+  skip-permissions session and the filesystem. A host without the sanitizer skips the row with a
+  named reason and opens no window. Proof: `docs/verification/notes-sanitization.md` (52 assertions,
+  a negative control per section, three live revert-to-RED probes, and a security round whose
+  Critical finding, an enumerated invisible-character list broken by U+034F, is fixed and now
+  regression-tested). Deferred with a tripwire: gh-aw's read-only-agent plus safe-outputs plus
+  model-judge separation, which becomes real work the day a second person can edit a watched board
+  or the loop ingests text the operator did not author.
+- **Runaway guards on the autonomous run queue (SPEC-221 / ID-460).** Three mechanisms, all
+  hanging off per-slug sidecar files under `<log-dir>/queue-runs/`, and none of them a daemon:
+  the reaper runs on the `queue watch` tick the operator already invokes. (1) A stale-window
+  watchdog: the conductor touches a heartbeat every poll, a beat older than 10 minutes reports
+  an orphan and refuses to plan the slug, and one older than 60 minutes writes a verdict
+  (honoring the run's own `EXIT_SIGNAL` if it finished), increments the stall counter, and
+  schedules a jittered 5-15 minute retry; the third stall writes an empty `retry_after`, which
+  is the quarantine. This closes the case where a dead conductor process left NO journal row and
+  the row was re-planned forever. (2) A circuit breaker: consecutive no-progress and repeated-error
+  counters trip to `error` reason `stagnation_detected` with a 30-minute cooldown, with four
+  escape hatches (repo moved, self-reported files changed, an explicit completion, and a run that
+  stopped to ASK freezes the counters rather than counting as stagnation). (3) A dual-condition
+  exit gate: a run may write an explicit `EXIT_SIGNAL: true|false`, which always outranks pane
+  prose; `false` keeps the run going even against a `RUNNER_DONE` pane, and a present-but-malformed
+  signal is never a completion. With no status file, completion detection is byte-identical to
+  before. Also: `_slug_ok` now rejects `/` (the slug names a sidecar file), and the progress check
+  no longer lets `git -C ""` silently read the operator's current directory.
+- **Self-answer mode + the backlog watcher, the orchestrator-loop pilot (SPEC-217 / ID-457).**
+  `/kit:grill` gains an explicit self-answer mode for autonomous runs: it activates only when
+  the driving row carries the operator-set `#auto` tag, and every self-answered question lands
+  as a debt-ledger row (question, answer, why) that `learn debt collect` surfaces at paydown;
+  the rule is "never decide invisibly", interactive lanes untouched. `queue watch`
+  (`lib/queue/watch-board.sh`) is a filter in front of `queue run`: it plans `queued` rows
+  tagged `#auto` that pass the pointer allow-list plus a symlink-aware containment pass, dedups
+  against the queue journal (`done`/`gated` are terminal), dry-run by default, budget cap
+  forwarded to the queue. Side fix: `_pointer_allowlist_reason` no longer glob-expands its
+  pattern loop against the cwd, which had broken legitimate `--from-boards` pointers when run
+  from the repo root.
+- **Spec template gains `## Picture`, the pre-build twin of visual proof (SPEC-214 / ID-454).**
+  A spec's `## Picture` section (ASCII/box-drawing diagram of the pieces + arrows, never
+  mermaid) sits between `## Solution` and `## Design`, required non-empty on full-lane specs,
+  encouraged elsewhere. A UI-shaped spec points it at a `/kit:prototype` branch + variant
+  instead of drawing ASCII. `/kit:spec-validate` Reviewer 4 (Scope Critic) gains a mechanical
+  presence check (full-lane only) plus a lens question: does the picture agree with
+  `## Task Breakdown`. Both bullets are advisory; Reviewer 6 stays the only reviewer that can
+  refuse `VALIDATED`. Proven the same way SPEC-122's `## Design` check is proven, a
+  fixture-based structural test (`tests/test-picture-section.sh`) since the reviewer itself is
+  prompt text, not code.
+- **`GUIDE.md`, the end-user owner's manual (SPEC-216 / ID-456).** `docs/GUIDE.template.md`
+  is a fill-in skeleton (what this does / how to use it / what to do when it breaks, one
+  page, ELI10 register) for products with an end user who is not the builder. `/kit:ship`
+  gains a warn-not-block check applying that same "has an end user" test; `/kit:docs`'s
+  scan step keeps `GUIDE.md` in scope on doc-drift passes. No renderer, no new command;
+  libraries and infra are exempt by the same test.
+- **`/kit:wayfind`: the file-based decision map (SPEC-207 / ID-450).** User-invoked
+  pre-cycle intake shape for efforts too foggy for one session, ported from
+  mattpocock/skills wayfinder (MIT) onto files + the board: `_meta/megagoals/<slug>/map.md`
+  (Destination / Decisions-so-far gists / fog / out-of-scope) + typed decision tickets
+  (`research|prototype|grilling|task`) routing to the kit's own machinery; claim-by-header,
+  frontier = open unblocked unclaimed, one ticket per session (research fan-out excepted),
+  the agent never answers its own grill questions. Map clear hands off to `/kit:spec` or a
+  ROADMAP.md beside the map, never straight to execute. One umbrella board row per map.
+  Tracker-native storage stays parked (2026-07-25 tripwire unchanged). WORKFLOW.md gains
+  the wayfind intake paragraph + SPEC-206's Prototype phase-table row.
+- **`/kit:prototype`: the throwaway-spike beat (SPEC-206 / ID-448).** Opt-in beat beside
+  `/kit:design`, ported from mattpocock/skills prototype (MIT). The question decides the
+  shape: logic branch (pure portable module driven by a full-frame TUI) or UI branch (3-5
+  structurally different variants on one route via `?variant=`, prod-gated floating
+  switcher). Validated decision folds into the owning brief/spec; the prototype survives
+  as a primary source on a `prototype/<name>` branch, never in master. HITL by contract.
+  Executor for wayfind prototype tickets (ID-450).
+- **Fowler smell baseline + review-team dispatch safeguards (SPEC-205 / ID-449).** The
+  architecture lens (`agents/code-reviewer.md`) and solo `/kit:review` carry Fowler's
+  12-smell baseline (Refactoring ch.3, via mattpocock/skills code-review, MIT) with
+  three binding rules: repo standard overrides, every smell a labelled judgement call,
+  skip what tooling enforces. `/kit:review-team` fails fast (`git rev-parse` + non-empty
+  diff) BEFORE dispatching subagents, and its report summary states totals + worst issue
+  PER LENS, never a single cross-lens winner (the SPEC-081 merge machinery is unchanged).
+- **Multi-vendor sub-goal dispatch (ID-390).** A mega-goal sub-goal can declare
+  `Harness: codex` (or `pi` / `opencode`) in its goal file to run on a non-Claude
+  CLI, billing that vendor's quota instead of the Claude one while Claude stays the
+  coordinator. New `lib/queue/harness.sh` resolves a vendor to its headless argv +
+  prompt-delivery mode (facts read off each installed CLI, not a copied table);
+  `orchestrate.sh` wires it via `_harness_of` / `_run_one_session_vendor`. Drives
+  each vendor's real non-interactive mode (`codex exec`, `pi --print`,
+  `opencode run`), so the exit code is real, unlike the prior-art TUI-puppeting
+  approach (AI-Builder-Club `open-agent-teams`) it was evaluated against. **Opt-in,
+  OFF by default:** gated by `[mega].enabled_agent_clis`, read from the KIT-ROOT
+  install kit.toml ONLY (never a project `.kit.toml`, which rides inside an untrusted
+  PR and could self-enable a vendor). Grounded completion is unchanged and
+  vendor-independent: a vendor sub-goal advances only when it flips its ROADMAP box.
+  Fail-closed: an unknown or not-enabled harness is a pre-flight STOP, never a silent
+  claude fallback; `Effort:` is charset-validated so it cannot inject argv flags or
+  break out of codex's TOML config; an argv-mode prompt is newline-guarded so a
+  leading `-` is never parsed as a flag. Non-claude sub-goals run the plain path only
+  (no token accounting / stream tail / stall watchdog; WARNed, not silent). Also
+  admits the `fable` tier, which a stale allowlist had been rejecting pre-flight.
+  Design + proof: `docs/verification/harness-adapter.md`; review-round hardening
+  (1 CRITICAL + 4 HIGH) in `docs/implementation-notes/multi-vendor-dispatch.md`.
+- **`skills/memory-tidy`, the judgment half of the memory plane.** Pairs with the
+  read-only `stats memory-sweep` scanner (SPEC-136): evidence-required per-note
+  verdicts (KEEP / MERGE / STALE / UNSURE) via agent fan-out, danger check for
+  notes whose advice contradicts current policy, index rebuild with parity
+  checks, all confined to a worktree branch and shipped as a PR (the operator's
+  approval gate). Consumer cadence toggle `[features].memory_tidy` in `kit.toml`
+  (`[consumer]`, default off); the scheduled runner lives consumer-side
+  (ops-toolkit `tools/memory-tidy/`). CONTRIBUTING gains an "Introducing a
+  component" convention (naming, description discipline, registration,
+  evidence) so new skills/commands/agents never land as unregistered file
+  drops. First production run: tieubao/ops-toolkit#972.
+- **`sync` one-way insert-only push to a foreign team board** (`notion-taskboard`
+  app, SPEC-003, implements ops-toolkit ID-138). Pushes a repo's board rows out
+  to a team-OWNED Notion board (create page, never update, never read for merge,
+  board file never written); fields are set only on page-create so team edits are
+  never overwritten, and the local sync-state map is the identity index. Status/
+  Priority/Weight map to the team board's own option names via `.kit.toml [sync]`
+  config, so the team schema is never mutated. The two-way mesh and its four live
+  adapters are untouched (`create_only` is a separate path, and the two-way
+  board parser stays `ID-`-only; only the one-way READ path accepts any
+  `[A-Z]+-\d+` prefix, e.g. dfoundation `DF-NN`, and it never mints or writes
+  board ids). The sink validates every mapped option against the target's
+  schema before any create, so it never auto-creates an option on the team
+  board; state is checkpointed after each create so a mid-batch failure never
+  re-pushes a page.
+
+### Changed
+- **`bridge` module folded into `sync`** (zero live consumers at fold time: no
+  `bridge=on` rows, no snapshot, module off). Legacy `mirror`/`status`/`writeback`
+  verbs stay runnable with a deprecation note until the SPEC-002 P2 port (ID-290),
+  which must carry the `row_hash` git-wins conflict rule and the live-probed Hermes
+  reachable-state map.
+- **`board promote` write path hardened** (kit ID-288): flock single-writer lock
+  (stable-inode lockfile in tmpdir), read-after-lock, 4-cell row validation, atomic
+  replace. Closes the parallel-session duplicate-ID and malformed-row minting that hit
+  the ops-toolkit board on 2026-07-16.
+
+### Added
+- **`sync.mode = cron`: scheduled `board sync` (kit ID-289).** Wires the
+  `[sync] mode` key (previously `[reserved]`) to a real per-repo macOS
+  LaunchAgent: `lib/sync/deploy/macos/install` refuses to render or load
+  anything unless the target repo's own `.kit.toml` sets `mode = "cron"`
+  (any other value is a clean, named refusal); the installed launcher also
+  re-checks `mode` live on every scheduled run and skips cleanly once a repo
+  un-opts-in. New `sync.interval_secs` key (default 3600) sets cadence. One
+  LaunchAgent per adopted repo (not a kit-weekly job -- sync is per-repo by
+  nature). Tests: `tests/test-sync-cron-install.sh` +
+  `tests/test-sync-cron-launcher.sh`.
+- **`sync` module: two-way board↔apps sync (SPEC-001/SPEC-002 P1).** The ops-toolkit
+  backlog-sync engine graduates into the kit as registered module `sync` (stage: Shape,
+  formerly leg Specify -- renamed by ID-292, see below)
+  at `lib/sync/`: `board sync` mirrors an adopted repo's BACKLOG.md to Apple Reminders /
+  Notion / Hermes kanban / Multica with per-app three-way merge (board wins; app
+  deletions tombstone; inbox intake with `#inbox` quarantine). Config on the ADR-0034
+  layer: `.kit.toml [sync]` (`apps`, per-app keys, audience filters `only_tags` /
+  `skip_tags` / `intake`, `scope_exit_cap`), resolved in `cmd_sync` via the one TOML
+  reader; the python engine takes flags only. Filtered rows freeze two-way and close on
+  the app (scope-exit) with a cap + `--allow-scope-exit` override. Plain-words
+  vocabulary: profile/app/board (was edge/surface+spoke/hub); legacy config aliases
+  kept. Tests: `tests/test-sync.sh` (engine, fake transports) +
+  `tests/test-sync-dispatch.sh` (both board conventions, legacy alias, error
+  paths). Proof: `lib/sync/docs/proof-of-done.md`.
+- **Plain words rule (CONTRIBUTING.md) + ranked jargon inventory**
+  (`docs/research/2026-07-16-plain-words-inventory.md`); rename backlog: ID-291 (cheap
+  cluster), ID-292 (shipped below), ID-293 (big cluster, parked).
+- **The five legs renamed to Shape/Build/Watch/Check/Learn (ID-292).** `Specify`,
+  `Execute`, `Observe`, `Govern` become `Shape`, `Build`, `Watch`, `Check` (`Learn`
+  kept); the container word `leg` becomes `stage`. ADR-0034 amended per its own lock
+  (decision 3's as-decided table left unrewritten); `lib/config/module-registry.md`
+  carries the old names as a one-release parenthetical alias, README/architecture/
+  data-flow/MANUAL/kit-contract/onboard docs and the registry-lint assertions in
+  `tests/test-meta.sh` swept to the new vocabulary. Docs-first: no module or
+  code-identifier renames.
+- **Model-routing enforcement pinned + proven (SPEC-116).** Resolves `orchestrate-hardening`
+  open-fork 3: the enforcement site is `lib/queue/orchestrate.sh` (`_route()` + the serial/wave delegate
+  dispatch sites, which already existed under SPEC-087), not `lib/classify/route-suggest.sh` (a decompose-time
+  suggester with no dispatch-time call site, so it structurally cannot contradict an explicit
+  `Model:` field). The no-`Model:`-field fallback tier is confirmed as "inherit the parent session's
+  tier" (SPEC-107). `tests/test-model-routing.sh` proves the default-applied positive case for
+  opus/sonnet/haiku on the serial path plus one case on the concurrent wave path, and the fallback
+  negative control. No `lib/` behavior change; this is a proof + documentation pin.
+
+## [2.1.0] - 2026-09-06
+
+### Added
+- **Verifier tier parity (SPEC-244): a verifier is never dumber than its worker.** A spec carrying
+  the bare `Model: opus` header now dispatches every verifier for that spec (task, recheck,
+  integration, acceptance, system) with an explicit `model: opus` override, the review-team
+  dispatch-time pattern. Absent the header, verifiers keep their frontmatter default.
+  `recheck-verifier` pins `model: opus` unconditionally: it is the false-PASS backstop and runs
+  once per verified task, so the volume is low. Reviewers, research agents, and `doc-verifier`
+  stay as they are, stated as deliberate in the spec so nobody reverses it by accident.
+  `commands/execute.md` loses the old "Verifiers keep their own frontmatter tiers (unchanged)"
+  wall-off, and SPEC-107 gains a supersession note for the verifier half.
+
+## [2.0.0] - 2026-07-03
+
+The release hold lifts: its stated condition , the **kit-hardening** megagoal , is complete, and
+the **kit-face** megagoal (production-facing + cost-measured) ships on top of it. The major bump is
+driven by the three agent renames below (a breaking change for any repo that dispatches them by
+name) and by tool.toml joining VERSION + plugin.json as a pinned version surface.
+
+### BREAKING
+- **Three agents renamed to the `<x>-reviewer` / `<x>-verifier` convention (ADR-0029).** A repo
+  that dispatches these by `subagent_type` or scaffolds them in an invocation template must update:
+
+  | old | new |
+  |---|---|
+  | `integration-checker` | `integration-verifier` |
+  | `reviewer` | `code-reviewer` |
+  | `security-auditor` | `security-reviewer` |
+
+  A grep across the sibling consumer repos (`~/workspace/<owner>/*`) found the old names ONLY in
+  historical research notes, `LAB_LOG`/`BACKLOG` entries, and the `plan-for-mega-goal`
+  invocation-template , NO live `subagent_type:` dispatch wiring , but the template and any consumer
+  that dispatches by these names should update.
+
+### Added , kit-face megagoal (each sub-goal = one merged PR; #128-136)
+- **Cheap-first tier default, one stance across three surfaces (SPEC-107, #128).** `/kit:execute`
+  workers dispatch `sonnet` by default with an optional bare `Model:` header on the spec as the
+  hard-reasoning escape hatch; `meta-agent` Mode B writes `Model: sonnet` on abstain (reversing the
+  earlier "human's call"); the `plan-for-mega-goal` subgoal-template defaults `Model: sonnet`. Opus
+  is now the deliberate exception, not the silent default (SPEC-087's "Opus only on the hard
+  sub-goals").
+- **Meta-agent provenance + a runtime efficacy metric (SPEC-108, #129).** Generated agents carry a
+  `generated-by: draft-agent <date> <context>` frontmatter key (backfilled on the 5
+  kit-hardening-generated agents; `/kit:draft-agent` stamps it going forward). SPEC-073 gains metric
+  11, generated-agent catch count: SPEC-088 validates the definition at install, metric 11 validates
+  the deployment at runtime.
+- **Capture-gated token accounting + efficiency metrics (SPEC-110, #132).** A new `gate-ledger.sh
+  tokens` subcommand records a `| TOKENS |` ledger line (an additive, gate-invisible marker);
+  `handoff_gen.py sum-usage` extracts per-session usage from the stream-json capture; `lane-telemetry
+  report` grows a token section (median tokens-to-done per lane, cache efficiency, run-granularity
+  rework share) and `render --mermaid` annotates each lane with its median. Capture-gated: only
+  `--stream` / `DETERMINISTIC_HANDOFF` runs record TOKENS; the default `claude -p` invocation is
+  byte-unchanged (SPEC-087 pin) and honest runs report `usage=?`, never a fake zero.
+- **Operator-persona design lens (SPEC-109, #130).** `/kit:visual-team` accepts an operator-supplied
+  `persona: <archetype>` as an inline 6th critique lens (same contract, uniform merge), threaded from
+  `/kit:ui-design`. DEC-017 records the boundary vs DEC-003 (a runtime operator archetype is
+  supplied-not-baked; the kit ships no persona, the taste liability is the operator's), with a
+  `/kit:kit-health` check-13 carve-out so the sanctioned path is not flagged as persona theater.
+- **UI done-modes + a bounded quiescence loop (SPEC-112, #134).** `/kit:ui-design` gains a
+  `Done-mode` flag , `proof` (mandatory floor) | `over-test` (adds a test-plan + coverage-delta) |
+  `quiescence` (Phase B extended into a converging loop: two-sided stop , zero NEW >=HIGH AND no OPEN
+  >=HIGH , cap 3, `[[QL-VERDICT]]` markers, a `### Deferred findings` ledger). DEC-018 records the
+  cap divergence (quiescence 3 vs plain REVISE 2).
+- **Starter role-specialized agent roster (SPEC-111, #133).** Six domain specialists, mixed by fit,
+  each gated + provenance-stamped, with two live dispatch paths: workers (`db-migration-worker`,
+  `data-etl-worker`) via `/kit:execute` 2b-0's reuse branch (a new `role-classify.sh agent-for`
+  lookup makes the hit deterministic), reviewers (`performance`/`api`/`frontend`/`infra-reviewer`)
+  via `/kit:review-team`'s opt-in domain lens. Reconciles SPEC-089: 2b-0's reuse-known-worker vs
+  synthesize-novel branch is the single router; `generic` escalates to Mode-C (the dynamic long tail).
+- **README mermaid lifecycle hero + test-pinned layout counts (SPEC-113, #135).** The hand-drawn
+  ASCII lifecycle becomes a native mermaid flowchart (6 phases, gate classes); the directory-layout
+  counts are corrected (24 agents, 17 hooks) and a computed test-meta parity pin kills the
+  count-drift class. `docs/v-model.svg` is linked from WORKFLOW.md (which keeps the ASCII canon).
+- **Navigable docs map (SPEC-114, #136).** `docs/README.md` extends below its verbatim front door
+  into a thematic map covering every record class , adding `implementation-notes/` and
+  `verification/` (the load-bearing `verification/README.md` the ship-gate keys on) , with a
+  `lib/spec/spec-index.sh` pointer for the specs and no rotting counts.
+
+### Fixed
+- **install.sh is now plugin-aware, no more double-registered hooks.** When the
+  kit plugin (`kit@dwarves-marketplace`) is already installed, `install.sh`
+  detects it and does a COMPAT-ONLY install: it symlinks the legacy
+  `~/.claude/dwarves-kit/{lib,WORKFLOW.md,AGENTS.md}` paths (so docs that still
+  call `bash ~/.claude/dwarves-kit/lib/<x>.sh` in plain bash, where
+  `${CLAUDE_PLUGIN_ROOT}` is unset, keep resolving) and skips the settings.json
+  hook merge + flat-command symlinks the plugin already owns. This removes the
+  "don't run both paths" footgun: running both previously double-registered every
+  hook and could pin a drifting lib/ version. Force the full bash install with
+  `KIT_FORCE_FULL=1`. Covered by `tests/test-install-compat.sh`.
+
+### Added
+- **spec-index: read-only registry view across co-located docs/specs namespaces
+  (no numbering/discovery change).** New `lib/spec/spec-index.sh` scans every
+  `*/docs/specs/SPEC-*.md` in the repo and lists them grouped by namespace
+  (`central docs/specs` and co-located ones like `tools/<name>`), each group
+  sorted by local number. Numbering stays deliberately per-namespace and local;
+  this view is NOT wired into `spec-next` / `goal-drafts` / `precedent`, which
+  remain namespace-scoped. Covered by `tests/test-spec-index.sh`.
+
+## [1.7.0] - 2026-06-11
+
+### Added
+- **Operator doc sync + README parity pins (SPEC-085 / ID-070, the 2026-06-10
+  intake wave closes 8/8).** README's hook and command tables had drifted
+  (claimed 14 hooks vs 16 real, 22 commands vs 25; `ship-gate`, the hook that
+  blocks unproven ships, was absent from the public table). Counts fixed, four
+  rows added, six stale descriptions refreshed (board-aware context-readiness,
+  confidence-gated review-team, INCONCLUSIVE verify), and the README tables now
+  carry the same computed parity pins as the architecture inventories, so the
+  next drift fails the suite instead of waiting for a reader to notice.
+- **Hook fallback layer declared (SPEC-084 / ID-036, I3 closed , the layering
+  contract is complete).** `docs/architecture.md` now states the 3-layer rule
+  (orchestration decides, agents isolate, hooks are fallback ONLY for failure
+  modes that survive prose), a 4-step placement decision test for the next
+  proposed hook, and a classed 16-row inventory (5 hard, 3 advisory, 8
+  convenience) with a parity pin so the table cannot drift. "Guardrails over
+  guidance" is reconciled as bounded: guardrail = the hard subset where trust
+  fails and damage is irreversible. ID-027 landed as a spec-validate
+  Reviewer 4 autonomy-gate bullet; ID-012 P2 is dispositioned as a worked
+  example (loop QA stays orchestration + ship-gate, no new hook).
+
+### Fixed
+- **The nameless hooks-suite flake (ID-081), root-caused and fixed.** BSD
+  `script(1)` copies terminal attrs from its own stdin; when a harness hands
+  the suite a SOCKET stdin (agent runners), the ioctl fails and `script` exits
+  before the child runs, so the PTY color test saw zero bytes, flaky only
+  because stdin's type varies by harness. The test now feeds `script` an
+  explicit `/dev/null` stdin and reads the typescript file instead of racing
+  stdout. The negative control still flips RED when the color gate is broken.
+
+### Added
+- **Session-start board wire (SPEC-083 / ID-033, I1 closed).** The
+  `context-readiness` SessionStart hook now sees the board: a `board:<N>q`
+  state token whenever `_meta/BACKLOG.md` exists, and a queue-aware
+  intent-first suggestion ("N queued on the board; state the task, or
+  /kit:assign --next"). Every cycle suggestion was rewired to speak intent
+  first with the command in parentheses; a live spec's cycle suggestion beats
+  the board pull. The 5-hop wire audit (session start -> orchestration ->
+  commands) is recorded in the spec; hop 1 was the only break.
+- **Per-finding validator wave (SPEC-082 / ID-079; EveryInc, MIT , the final
+  absorption candidate, 6/6 done).** Every unsuppressed CRITICAL/HIGH finding
+  gets ONE adversarial refuter subagent (never batched: batching recreates
+  persona bias); refuted findings demote to the appendix with the
+  counter-evidence, confirmed ones are marked validated, and a validator infra
+  failure NEVER drops a P0/P1 (stays, marked unvalidated, verdict treats as
+  live). Validators run mid-tier; the cost note tells the truth about the
+  added subagents.
+- **Anchored-confidence merge for review-team (SPEC-081 / ID-075; EveryInc, MIT,
+  15/16 , the top absorption candidate).** Reviewers return findings with a
+  confidence at 5 behavioral anchors (each with a self-test); fingerprint dedup
+  (file + line-bucket +-3 + normalized title); cross-lens corroboration promotes
+  one anchor step; a LATE <75 gate (CRITICAL survives at 50+) suppresses weak
+  findings into a never-dropped appendix AFTER they get their promotion chance.
+  Review closed 2 logic holes: suppressed findings can no longer be routed at the
+  decision gate, and telemetry findings=K now counts the main report only.
+- **verify-this delta + architecture tripwires (SPEC-080 / ID-077, ID-080;
+  cursor, MIT).** /kit:verify restates the claim falsifiably (condition + metric
+  + threshold) before measuring and may return INCONCLUSIVE (named causes; not a
+  pass). Review found the gate hole TWICE: an INCONCLUSIVE record with Exit: 0
+  satisfied proof-ledger, and the first guard then blocked the documented
+  append-retry workflow , final semantics: last-verdict-wins on both check
+  paths, 4 behavioral fixtures. Reviewer 2 gains the 1k-line and
+  spaghetti-growth tripwires.
+- **The 12th task type: review (SPEC-079 / ID-074).** Standalone review of a code
+  artifact now routes from intake (the ID-065 trace had it at 0/3): classifier
+  rule with an acting-on-feedback negative guard, registry row (inert: the report
+  IS the proof), loops row wired to SPEC-078 routing, 5b dialect, grill bank,
+  every count + list swept 11->12. Review found 2 CRITICAL false-pass meta pins
+  (hardcoded 11-type alternation stayed green without the new row) , both made
+  falsifiable at 12.
+- **review-team apply-class routing + model tiering (SPEC-078 / ID-076, ID-078;
+  EveryInc, MIT).** Every finding carries a Route (gated_auto -> responding-to-
+  review, manual -> board row, advisory -> spec record; conservative on lens
+  disagreement; no auto-apply class). Security lens dispatches with an explicit
+  session-model override (its agent frontmatter would silently down-tier
+  otherwise , review catch); the other lenses run mid-tier, cutting the
+  command's token cost to ~1.5-2x from 3x.
+- **START amend path + stack-merge self-reconcile (SPEC-077 / ID-072, ID-073).**
+  `gate-ledger.sh start --amend` writes a sanctioned START-AMEND correction; every
+  reader (report, misfires, trace, ship-gate) takes the last amend, else the first
+  plain START , an honest lane fix no longer reads as a MULTI-START misfire (and
+  the audit found report/trace already disagreed on which START wins; unified).
+  stack-merge now self-reconciles every link's own branch onto its base before the
+  squash (state-keyed; both wave-1 and wave-2 chain resumes had hit GraphQL
+  conflicts), with ff-sync, post-push ancestry assertion, and branch restore.
+- **V-model descent contract (SPEC-076 / ID-068).** Every left-arm step now
+  carries a review obligation on EVERY lane (tiny gains a run-lite Review; weight
+  scales, the obligation never waives) and descent order is detected: the lane's
+  plan order IS the descent order, `gate-ledger.sh descent <rid> <lane>` replays
+  the ledger timeline (run-lite phases implicit, grill + required phases real
+  checkpoints, one deduped line per gap), ship-gate surfaces violations as an
+  advisory , never a mid-flight block (ADR-0024). Promotion to a hard gate waits
+  on SPEC-073 telemetry.
+- **Absorption proposal: the two pinned kits (ID-069).** compound-engineering +
+  cursor/plugins scanned proposal-only: 6 gate-passers (anchored-confidence merge
+  15/16, apply-class routing 15/16, verify-this INCONCLUSIVE verdict 14/16, model
+  tiering 14/16, per-finding validators 13/16, two quality tripwires 13/16), 8
+  rejections, licenses MIT. Lane-A drift fixed (upstream deprecated safe_auto).
+  Adoption waits on the human merge gate.
+- **Use-case path audit + eval/research anchor recall (SPEC-075 / ID-065).** The
+  three real loop shapes traced end to end: research routes 2/3 (now 3/3),
+  build-experiment 1/3 (now 3/3), autoreview 0/3 , the 12th-type decision is
+  ID-074 on the board with all SPEC-057 parity surfaces named. Kit-vs-skills
+  verdict: no destination conflicts; the gap class was recall, not capability.
+- **Lane x type composition rule + audit (SPEC-074 / ID-066).** The 55 (lane,
+  type) pairs now have a written contract: the type names the CONTENT (loop steps,
+  proof dialect, executor), the lane names the EVIDENCE (the depth-matrix gates
+  ship-gate enforces); loop steps map into the canonical phases, gaps record
+  skipped-with-loop-note. Three precedence facts pinned (tiny/backfill inert
+  short-circuit; bug+incident; degenerate lanes). The audit also caught the
+  backfill anchor missing its own documented example (fixed, failing-first) and
+  review hardened it against compound phrases carrying hard-gate subjects.
+- **Doc-loop second entry path + telemetry-eval design (ID-060, ID-067 / SPEC-073).**
+  The WORKFLOW doc loop now names BOTH entry paths (code-diff-triggered diff sweep;
+  standalone revision via content brief), one shared doc-verifier exit. The
+  telemetry/PoD effectiveness evaluation is fully designed (10 metrics with
+  thresholds + dispositions decided before the data exists) and PARKED until 3-5
+  days of post-rid-standardization usage; doc-verifier caught 2 overclaims in the
+  design (a phantom --since flag, a phantom escapes subcommand), corrected.
+- **Classifier anchor recall fixes (SPEC-072 / ID-057, ID-064).** data-tool no
+  longer steals feature-work-ON-a-CLI (bare `cli` anchor narrowed to
+  build/write/create/wrap/ship verb phrasings; `make` deliberately excluded);
+  markdown-only / doc-tree bootstrap work classifies tiny via a new 3b precedence
+  slot that runs AFTER the hard-gate pass, so a README about auth tokens or kit
+  machinery still classifies full (multi-lens review HIGH: the first draft put the
+  anchors at tiny's precedence 2, silently preempting hard-gates). The negative
+  control itself found and closed an unpinned regex arm.
+- **Four gate/ledger defect fixes (SPEC-071 / ID-061, ID-063, ID-062, ID-050).**
+  proof-gate's class now floors at the task-type registry default (a doc task is
+  `inert`, not blanket `behavioral`; migration/incident/operate floor at `stateful`,
+  planning/learning at `inert`); the SPEC-069 boardless advisory relocated above the
+  spec check so spec-less pushes finally get the nudge; new evidence-dies-with-the-
+  session advisory (a build-ran run shipping no docs/verification record warns, never
+  blocks, covering the proof-gate's deliberate fail-open seams); progress renders a
+  disposed-past-the-pointer phase as `*` with a legend instead of a misleading ✓.
+  Failing-test-first (5 RED pre-fix), multi-lens reviewed (7/7/7, all findings fixed
+  in-branch).
+- **One canonical rid: the branch slug (SPEC-070 / ID-059).** `lib/gate/gate-ledger.sh rid`
+  prints the runid-normalized branch slug (refuses master/main/detached/empty-stem,
+  loudly), the same key `hooks/ship-gate.sh` checks at push, so assign-time records
+  and ship-time enforcement meet on one ledger: the mirror-record dance (5x in one
+  day, worst friction of the quality wave) is gone and lane-telemetry's untracked
+  metric becomes honest for new runs. Every gate-ledger RID call site swept from
+  `<spec-slug>`/`<slug>` to `<rid>` (debug.md's escaped-from spec reference exempt);
+  agreement pin guards the duplicated transform; `ledger_file` gains an empty-stem
+  guard (review S1: a `feat/@` branch would have merged audit trails into a hidden
+  .log). Multi-lens reviewed (3 lenses, 2 HIGH + 3 MEDIUM found and fixed in-branch).
+
+- **Retro follow-ups: detect what prose forgot, escalate where it bled, color the walk (SPEC-069 / ID-058).** The operator's 5-question retro became machinery: (1) telemetry detects **boardless runs** (ledgered work the board never saw; the whole quality wave ran un-boarded until caught, because the rule was prose and prose loses to context decay) and **shipped-incomplete runs** (a ship gate over un-disposed phases, the spec-064 think class), both surfaced at S1/misfires + a ship-gate advisory line; (2) runs touching lib/ or hooks/ now owe the multi-lens /kit:review-team (two 2-HIGH drafts, both in those surfaces, are the evidence); (3) grill orientation points unfamiliar-code questions at codebase-memory before blind grep; (4) plan/progress/trace gain TTY-gated colors (green disposed, bold-yellow pointer, dim pending, red MISFIRE), piped output byte-identical so 300+ test pins pass untouched; (5) spec-064's missing think gate retro-patched with an honest note. First live run of the detectors immediately flagged the real pre-discipline history (3 boardless, 2 shipped-incomplete).
+
+- **Precedent lookup at intake (SPEC-068 / ID-056).** The second brain had a write head (specs, ADRs, retros, run reasons accumulate every cycle) and no read head: every new task started from a blank page. `lib/precedent.sh find "<task>"` keyword-greps the durable surfaces + run-ledger reasons, ranks by distinct-keyword hits, prints top-N with headlines; /kit:assign runs it before sizing (matches feed the goal draft's Context) and /kit:grill's orientation reads it (a precedent contradicting the ask is the first question). Grep by design, no index/embeddings/daemon. First live smoke on the real repo surfaced 4 genuinely relevant specs for a classifier-tuning ask.
+
+- **The golden run: an end-to-end harness (SPEC-067 / ID-055).** 700+ unit pins prove each part in isolation; nothing proved the parts agree. `tests/test-e2e.sh` builds a temp repo + temp log world and walks ONE task through the whole loop (board pull -> classify both axes -> START -> grill -> phase gates -> ship), then asserts the three read surfaces tell the same story: gate-ledger (check green, progress complete 8/8), lane-telemetry (run + ship counted, verdict surfaces, trace renders, no misfires), and the board (queued -> claimed -> shipped). A deliberately misrouted second run must be SEEN by report, misfires, and trace. CI runs it as a third suite. Bonus: the harness's first execution found a real classifier over-match (bare `cli` anchor steals feature-work-ON-a-cli), filed as ID-057 per the disposition contract.
+
+- **Install by copy, version-pinned (SPEC-066 / ID-054).** Hooks, lib, and the contract files were symlinked into the install dir, so the LIVE enforcement code followed the clone's checked-out branch (a fixed safety-gate silently regressed mid-session on a branch switch; SPEC-064's own ship ran the old ship-gate). Now bash-install copies everything, chmod +x, writes an INSTALL-STAMP (version/sha/date), and re-install is the explicit upgrade path with anti-drift (hand-edited installed copies revert). kit-health gains a staleness probe (stamp sha vs repo HEAD); uninstall removes copies; CLAUDE_DIR is env-overridable so the install is fixture-tested (7 tests incl. the anti-drift negative control).
+
+- **Stack-merge codified (SPEC-065 / ID-053).** The squash-stacked-chain merge dance (retarget the child BEFORE merging the parent or GitHub auto-closes it; squash-merge; reconcile the child on the new tip with a superset-safe `-X ours` merge BY SHA) was executed by hand twice in one day, stranding a PR the first time. `lib/goal/stack-merge.sh next <pr>|chain <pr>...` runs it, `--dry-run` prints the plan, clean-tree guarded; ship.md points stacked shipping at it. Honest limits in the header: squash-only, one child per parent, conflicts beyond `-X ours` abort for a human.
+
+- **Hook precision: parse argv, not prose + the spec-number guard (SPEC-064 / ID-051 + ID-052).** Seven false positives in one day taught the lesson: a string-matched enforcement layer reads DATA as commands, and every false alarm teaches the operator to route around the gate. safety-gate is rewritten parse-aware (heredoc bodies stripped, compounds split into segments, quoted spans excluded; each rule keys on its segment's real argv) with every 2026-06-10 false positive as a permanent pin and every destructive shape re-verified to still block. ship-gate engages on heredoc-stripped code only and gates the cd-target repo (the cross-repo misfire fix). New lib/spec/spec-next.sh ends the SPEC-number collisions (scans specs/, all branches, recent subjects; spec.md wires it; this spec's own 064 came from it). 12 new tests; live 17-case allow/block matrix in the PR.
+
+- **Run legibility: plan, progress, trace + a recordable grill (SPEC-063).** Three operator asks: the run should announce its road on entry, show "step k/n" as it walks, and leave a full reviewable story. `gate-ledger.sh plan <lane>` prints the lane's ordered checklist (matrix-derived, grill prepended as the universal intake phase, tiny exempt); `gate-ledger.sh progress <rid> <lane>` prints `<rid> · <lane> · step k/n (<phase>)` + a ✓/▶/· checklist (plan x ledger, no new state); `lane-telemetry.sh trace <rid>` renders one run's ledger as a story (routing header with LANE/TYPE MISFIRE flags, humanized timeline, escaped-from indictments called out). The grill becomes a recorded phase: ran with a summary, or skipped WITH a reason (an unrecorded skip is invisible to telemetry, which defeats the point; the gap was found when the operator noticed grill never fired during the telemetry waves). Wired: assign prints the plan after the START record; AGENTS carries the standing show-the-road + progress-at-phase-entry rule; grill records itself at exit. 1 pin + 9 fixture tests incl. a record-removal negative control (the ▶ pointer moves back).
+
+- **Telemetry closure: type misroutes, escaped defects, operator scenarios (SPEC-062).** SPEC-061 measured lane routing; the operator's evaluation goal was wider. Three holes closed: (1) START gains a `ctype=` pair so TYPE misroutes (the absorb->eval class, the kind that imposes a wrong proof dialect) reach the report and `misfires`; (2) test-design quality gets its metric: `/kit:debug` records `escaped-from=<spec>` when a defect indicts a shipped spec's test plan, aggregated into an `escaped defects` report section per spec, and `/kit:test-plan` + `/kit:test-plan-review-team` record their verdicts into the ledger; (3) WORKFLOW's "What the operator sees, and when" writes the contract down: S1 session-open misfire shortlist via /kit:start, S2 full report + disposition pass at /kit:retro (recommended after 3-5 days of runs), S3 escaped-defect recorded at debug time and surfaced at S1/S2, with a sample report block. 1 pin + 7 fixture tests incl. a ctype-strip negative control; this run's own ledger carries a real chosen=normal/classified=bug misfire as a live fixture.
+
+- **Lane telemetry + the feedback loop (SPEC-061).** The kit's lanes were unmeasured: run facts existed in pieces (gate ledgers, completeness.log) but nothing recorded the routing decision (chosen vs classified lane, type, repo), review verdicts, or outcomes in queryable form, and nothing aggregated, so a lane misfire died in chat instead of improving the classifier. Now: `gate-ledger.sh start` records the routing facts at `/kit:assign`; reviews record their verdicts via the existing `record` verb; `/kit:ship` carries `pr=#N`; new `lib/telemetry/lane-telemetry.sh report|misfires` aggregates read-side (pure bash/awk over the existing pipe-delimited ledgers, no new store, no daemon); `/kit:retro` Step 1d reviews it under a disposition contract (every misfire becomes a keyword fix + pin, a BACKLOG row, or a recorded accepted-noise line); WORKFLOW "How lanes are judged" names the five signals (misclassification rate, gate skip/override rate, review findings curve, duration vs weight, untracked runs). Telemetry proposes; the human at retro disposes. 3 pins + 6 fixture tests incl. an in-suite negative control.
+
+- **Classifier recall tuned from a live-session truth table (SPEC-060).** A probe of 8 real asks from one working arc found 7/8 falling to the spec-feature default, and one harmful misfire ("evaluate skills + absorb into the kit" -> eval, imposing the wrong metrics+seeds proof dialect). Four narrow anchor extensions: operate gains merge-the-stack / session-wrap / LAB_LOG phrasing; reconcile gains untangle/stranded/orphaned estate anchors; planning gains mega-goal/roadmap-scaffold; a new 4b absorb guard above eval routes absorb-into-kit work to spec-feature (co-occurrence-gated so "absorb the loss into the budget" falls through). No new type: the 11 cover the semantics; real phrasing beats invented phrasing. 14 pins (8 positive real rows + 6 adjacent negatives); negative control run live (guard disabled -> eval -> restored).
+
+- **Absorb wave: feedback-loop-first debugging + deep-module review vocabulary + the skill-routing rule (SPEC-059; absorbed from mattpocock's `diagnose` + `improve-codebase-architecture`).** `/kit:debug` gains `## Phase 0: Build a feedback loop`: a fast, deterministic, agent-runnable pass/fail signal is most of the debugging skill (every later phase just re-runs it), with a 9-tactic construction catalog (failing test -> trace replay -> bisection harness -> differential loop), the iterate-on-the-loop discipline (faster / sharper / more deterministic), repro-rate guidance for flaky bugs, and an honest cannot-build-a-loop stop. `/kit:review-team`'s architecture lens now speaks deep-module vocabulary (deep/shallow, the deletion test, seams, leverage/locality, after Ousterhout) so findings are concrete instead of vibes. PHILOSOPHY §1 gains `### Skill routing: what belongs in the kit`: loop machinery absorbs into the kit; reflex skills and domain procedures live in the operator's skill estate with the type registry's owning-skill column as the bridge, so every future absorb routes mechanically. The same wave's evaluation rejected `grill-me` (superseded by SPEC-058), `triage` (the board IS the state machine), and `teach` (operator's learning estate is deeper); 3 pins + negative control.
+
+- **`/kit:grill`, the universal intake interview (SPEC-058 / ID-049; absorbed from mattpocock's grill-with-docs).** The maintainer's pre-kit workflow grilled the operator before any work; the new intake had lost it (think challenges ideas, design explores solutions, nothing gathered requirements for any type). /kit:grill slots between type classification and the phase-0 Done=: one question at a time with a recommended answer, question banks shaped per all 11 work types, contradictions checked against the repo, and write-as-you-go (a resolved term -> the repo glossary; a decision meeting the 3-criteria bar -> a sparse ADR; the Q&A digest -> the goal draft's Context, the second-brain feed). Exit proposes the Done= the answers imply + a re-classification check. Tiny lane exempt. Wired into AGENTS.md task loop, /kit:assign, and the WORKFLOW phase-0 lead-in; pinned, with the negative control run during build and recorded in SPEC-058's ## Review.
+
+- **Taxonomy expansion: 6 -> 11 work types + universal done-first (SPEC-057 / ID-048; deepens PHILOSOPHY §6 N1/N3).** An evidence sweep over the operator's full LAB_LOG found the 6 types covered ~47% of real work. Five recurring kinds become first-class, each with a classifier rule + registry row + WORKFLOW loop + test-design dialect: **incident** (alert -> triage -> root-cause before fix -> INC record -> monitoring; evidence-ledger dialect), **reconcile** (inventory -> conform/drift -> fix -> reference-fix -> gate; absorbs cleanup/audit/drift), **operate** (recurring procedure runs: payroll/recon/radar; run-ledger dialect), **planning** (gather -> prioritize -> enqueue board rows -> digest), **learning** (ingest -> explain -> practice -> self-check bar). Three deliberate folds documented: deployment stays migration (+launchd/daemon/provision keywords), agent-org config rides spec-feature, discovery splits research/reconcile by intent. Universal phase 0: every loop defines its done scenario (proof contract + dialect test design) BEFORE running, and every `/kit:assign` draft must carry a `Done =` line; SPEC-031 notes the V-model right arm is type-agnostic. 12-case classifier truth table + an 11/11/11 parity pin (a half-added type goes RED); both negative controls recorded.
+
+- **Per-type test-design dialects; test-first becomes the default for normal/full (SPEC-056 / ID-046; realizes PHILOSOPHY §6 N3).** `test-design-standard.md` §5b: one spine, six bodies, spec-feature keeps the BDD category matrix; eval designs metrics + hand-verified seeds + falsifiability controls; research designs a claim-verification matrix; migration/cleanup designs inventory coverage + a rollback REHEARSAL; data-tool designs a recorded live run + negative control; doc designs doc-verifier matches. `/kit:test-plan` classifies the type first and designs in that dialect (same `## Test plan` heading, same AC-traceability). The cycle table flips test-plan from opt-in to default for normal/full (tiny exempt; advisory, never a hard block). Meta pin + negative control.
+
+- **The Active queue is a kanban board with pull mode (SPEC-055 / ID-045; realizes PHILOSOPHY §6 N2).** New `lib/board/backlog.sh`: `board` renders the queue as kanban columns (illegal statuses surface as UNRECOGNIZED instead of vanishing), `next` picks the first queued row (file order = priority), `set` flips a row's leading status keyword mechanically while preserving its annotation prose. SPEC-005's vocabulary gains `claimed` (a pulled item; the cross-session claim stays in goal-registry). `/kit:assign --next` pulls the top queued item without the operator naming one; `/kit:start` nudges the board. No daemon, no parallel database: the markdown file stays the one source of truth. The board's first real render immediately found three drifted rows (two shipped-but-queued, one illegal status), migrated via `set` (dogfood). 10 fixture tests + a meta pin.
+
+- **Right-sized loops per work type (SPEC-054 / ID-044; realizes PHILOSOPHY §6 N1).** The classifier knew six work types but only code had a cycle; research/eval/doc/migration/data-tool work ran as unstructured chat. Now WORKFLOW.md `## Type loops` defines each non-code type's entry -> phases -> exit (research: frame -> sweep -> adversarial claim-verify -> cited report; eval: metrics + seeds -> ladder -> TEST-REPORT; migration: inventory -> dry-run -> staged apply -> rollback proven; etc.), the task-types registry gains an `agent` column (preassigned vs dynamic executor; appended as column 6 so proof-gate's index-based parser is untouched, verified byte-identical), and `/kit:assign` + `/kit:start` classify the type BEFORE sizing, routing non-code work to its loop. Chat stays chat: loops engage on task execution. Also fixed the registry's data-tool artifact example that still taught the generator-clobbers-canonical anti-pattern (contradicted #30). 3 meta pins + negative control.
+
+- **Advisory lane floor-check closes the classify-then-route gap (`lib/classify/lane-classify.sh check`, SPEC-053 / ID-043; revives PR #13).** The classifier suggested a lane, but nothing caught when the lane actually *chosen* in `/kit:assign` was lighter than that deterministic floor, so an under-sized `full`/`bug` task slipped through silently. A new `check <chosen-lane> "<desc>"` subcommand re-classifies the task text and warns + logs to `completeness.log` (reviewed at `/kit:ship`) when `rank(chosen) < rank(suggested)`, with risk ranks `tiny < normal=bug=backfill < full`. Wired into `commands/assign.md` Step 5 right after a lane is committed. Advisory only: always exits 0, never blocks (Detect, don't dictate); over-sizing stays silent (always safe); an unrecognized lane warns distinctly instead of crashing. Originally built 2026-05-23 against the keyword classifier (PR #13); went stale when #26 rewrote the classifier to flag-scoring; re-ported onto `classify_core` with behavior unchanged. 7 behavior tests (`tests/test-hooks.sh`) + 2 structural guards (`tests/test-meta.sh`); `/kit:dispatch` excluded (it seeds from the classifier, cannot downgrade).
+
+### Changed
+
+- **README narrative reframed as a closed agent loop.** The README's narrative layer now positions the kit in closed-looping vocabulary (`goal -> loop -> evaluate -> improve -> result`): a lifecycle-as-loop diagram with per-phase gate labels, a "Why a closed loop" open-vs-closed comparison, and a fleet-shaped verification-pipeline diagram (orchestrator -> worker -> read-only verifier -> fix-agent, max 2). A doc-verifier pass on the first draft caught four enforcement overclaims (most phase gates are advisory; only the four hard stops block), fixed before ship: tagline scoped to "until the verifier passes", advisory labels on the diagram, spec validation scoped to the full lane, "gates are mechanical" scoped to hard gates. Factual sections (install, command/hook/agent tables, structure, credits) unchanged. Follow-ups queued as ID-059 (doc loop standalone-revision entry path) and ID-060 (proof-gate `behavioral` upgrade false positive on the phrase "no behavior change").
+- **Corrected the V-model framing to build-left / test-right (reworks SPEC-031 / ID-034).** SPEC-031 shipped the V-model lens with the arms as DEFINE (left, including test-design) mirrored by VERIFY (right). That was wrong twice over: it mixed *commands* and *agents* on the same arm (e.g. listed `task-verifier`, an agent, where a command was implied), and it put test design on the left as if the kit shifted testing left, which it does not (the kit has one late `/kit:test-plan` step, not a test designed at every phase). Reframed so the **left arm BUILDS** (Brief/Requirement -> Solution-design -> Spec -> Code) and the **right arm TESTS** (test design via `/kit:test-plan`, then the unit -> integration -> system -> acceptance levels execute and report); static review gates (`/kit:spec-validate`, `/kit:devs-team`, `/kit:review`, `/kit:review-team`, `/kit:visual-team`, `/kit:docs`) wrap the V but are not test levels. `WORKFLOW.md`'s `## The V-model lens` redrawn; `docs/architecture.md` inventory regrouped into BUILD / vertex / TEST / static-gate / cross-phase (parity unchanged at 31); ADR-0018 Decision #1 corrected in place (its lens-over-cycle and count-agnostic decisions stand). Also fixed two inventory drifts found en route: `integration-checker` is dispatched only by `/kit:execute` (not review), and `security-auditor` is a standalone agent dispatched by no command. Refined so each static-review gate (`/kit:spec-validate`, `/kit:devs-team`, `/kit:review`, `/kit:visual-team`, `/kit:docs`) is shown inline as the static verification of its artifact, mirrored by the right-arm dynamic test, and a `## The V-model lens` coverage-gaps note names the proposed `/kit:verify` command, the `security-auditor` orphan-agent wiring (ID-039), and the optional `acceptance-verifier` agent. Source: 2026-05-23 V-model framing + coverage review.
+- **Wired the `security-auditor` orphan agent into `/kit:review-team` (ID-039).** The agent existed but no command dispatched it (dead code by the kit's no-phantom rule, surfaced by the V-model coverage map). `/kit:review-team`'s security slot now dispatches `security-auditor` (the dedicated deep-security reviewer) instead of the generic `reviewer` security lens; `docs/architecture.md`, the WORKFLOW V-model lens, and `docs/v-model.svg` updated to show it dispatched, not orphaned. No new command, per the command-vs-agent rule (an agent needs a trigger, not its own command).
+- **Plugin command namespace renamed `dwarves-kit` -> `kit` (ID-031).** Commands now resolve as `/kit:<cmd>` (e.g. `/kit:spec`); install is `/plugin install kit@dwarves-marketplace`. `plugin.json` + `marketplace.json` carry the new name; the meta-test name guard tracks it. The repo/project name is unchanged. `user` was rejected as the namespace: it is a reserved prefix (personal/project commands) and collides with their resolution. Discovered while migrating off the bash installer: CC 2.1.148 cannot install a local directory-source marketplace plugin, so the maintainer loads the kit via a `--plugin-dir` shell wrapper (namespace + live edits); github-source is the frozen end-user path. Reference: `ops-toolkit/research/2026-05-22-cc-plugin-local-install.md`.
+- **Swept the stale `/user:` invocation form to `/kit:` across the live docs (SPEC-029 / ID-031).** 326 `/user:<cmd>` occurrences became `/kit:<cmd>` across 31 files (`README.md`, `MANUAL.md`, `WORKFLOW.md`, `CLAUDE.md`, `docs/`, `commands/`, `examples/`). `/user:` never resolved the kit on CC 2.x (reserved prefix) and bare `/<cmd>` was only the flat-installer artifact. A new denylist meta-test guard (`tests/test-meta.sh`) fails on any `/user:` in live docs and auto-covers future files; dated/point-in-time records (`docs/specs`, `docs/retro`, `docs/decisions`, `docs/handoff`, `docs/research`) plus `CHANGELOG.md` and `_meta/` are exempt (rewriting records falsifies history). README + MANUAL gained a one-line plugin-vs-bash invocation note (`/kit:spec` vs bare `/spec`). Validated via `/kit:spec-validate` (the 5-lens pass caught an allowlist-vs-denylist guard flaw before it shipped). Meta suite to 257.
+- **Finished the `/user:` sweep at the install + hook surfaces (SPEC-030 / ID-032).** SPEC-029 swept the docs but its guard was `*.md`-only, so `install.sh` and `hooks/*.sh` still printed the dead `/user:` form to users (the install success line, the session-state resume note, the `context-readiness` next-step hints, the `anti-rationalization` block reason). Swept per surface to the form correct for its cohort: `install.sh` (the bash path, which resolves bare) -> bare `/<cmd>`; the hooks (which run under both install paths and cannot detect which) -> neutral, slash-free command names, since no single slash form serves both the bash (`/<cmd>`) and plugin (`/kit:<cmd>`) cohorts. The `tests/test-meta.sh` namespace guard now also scans `install.sh` + `hooks/*.sh` (DEC-003; `tests/` excluded so it cannot flag its own descriptive comment), closing the blind spot that let SPEC-029 ship incomplete. No `*.md` doc changed; hook control flow / exit codes unchanged. Meta suite stays 257 (the guard gained file coverage, not a new assertion).
+
+### Added
+
+- **The proof-of-done gate now enforces in CONSUMER repos, not just dwarves-kit (SPEC-045, fix).** `hooks/ship-gate.sh` resolved its lib as `${CLAUDE_PLUGIN_ROOT:-$ROOT}/lib/...`, so in bash-install mode (no `CLAUDE_PLUGIN_ROOT`) it looked for `lib/gate/proof-ledger.sh` inside the repo being pushed; a consumer repo has none, so the gate failed open everywhere but dwarves-kit itself. Fixed: resolve from the stable install root `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/`, and `install.sh` now deploys `lib/` there (dir symlink, in-place-guarded, removed on `--uninstall`). `lib/gate/proof-gate.sh` uses `pwd -P` so the registry still resolves through the symlink. End-to-end repro in `docs/verification/SPEC-045.md`: a behavioral consumer diff fails open without the lib, BLOCKS with it, passes once proof is added. Pin in `tests/test-meta.sh` (suite 389 -> 390). Unblocks adopting the gate across the active engineering repos.
+
+- **Task-type contracts compose onto the proof gate (SPEC-044).** A second classification axis on the verification gate. `lib/classify/task-type-classify.sh` maps a task to a work TYPE (eval/research/doc/migration/data-tool/spec-feature); `docs/verification/task-types.md` (one row per type, the extension point) maps each type to its proof artifact + owning skill. `lib/gate/proof-gate.sh contract "<desc>"` composes the TYPE (artifact shape + skill) with the existing proof CLASS (rigor); the class still wins on rigor (a migration upgrades to stateful). The `proof-ledger.sh` BLOCKED message now points to `proof-gate.sh contract` for the type-specific artifact (auto-typing a diff is a deferred follow-up). 18 structural assertions in `tests/test-meta.sh` (suite 371 -> 389). Proof: `docs/verification/SPEC-044.md` (green run + negative control). Status: implemented + self-verified on `feat/proof-done-task-types`; pending `/kit:spec-validate` + `/kit:review` + merge before SHIPPED.
+
+- **Single-source verification numbers + the experiment sibling (`lib/gate/verif-counts.sh`).** Cross-pollination with the `tool-eval-experiment` discipline (the two are dialects of one evidence grammar: recorded, reproducible, falsifiable). Borrowed FROM the benchmark's `gen_docs.py` single-source pattern: suite counts are generated into the GEN block of `docs/verification/COUNTS.md` from the live suites, never hand-typed into N docs where they drift; a verification log links there instead of transcribing a number. `docs/verification/README.md` gains a "Sibling discipline" section naming the experiment (the research-paper / comparison form) vs proof of done (the QC / confirmation form), and mapping the shared mechanisms (our negative control = their falsifiability check; their single-source numbers = this). The reverse borrow landed in ops-toolkit + the chezmoi skill: the `tool-eval-experiment` skill now requires a recorded **falsifiability check** (the eval twin of our negative control) and the benchmark records one (`harness/probes/falsifiability.py` -> `results/falsifiability.json`, generated into `TEST-REPORT.md`). 3 structural pins (`tests/test-meta.sh` 365 -> 368). **Dogfooded:** `docs/verification/shared-evidence-discipline.md` links COUNTS.md instead of typing the count, records the regenerate (add tests -> figure moves 365 -> 368, no hand-edit), and a NEGATIVE CONTROL (revert the impl -> the 3 pins fail).
+
+- **Proof of done is enforced at the ship gate, not just advised (`lib/gate/proof-ledger.sh`, ADR-0025).** The proof-of-done discipline was command/agent advice an agent could skip. Now it is a wall: a behavioral or stateful change cannot pass the ship/push boundary without a matching, fresh proof-of-done entry. The gate keys off the **branch diff** (not a spec), so it fires the same whether the work came through `/kit:execute` or a freeform `/goal` loop , closing the bridge the existing spec-keyed lane gate (ADR-0024) missed (it fails open without a spec). `hooks/ship-gate.sh` runs the proof check before its lane check; exit 2 blocks and names the change's class and exactly what proof is missing. **Opt-in per repo** (engages only where `docs/verification/README.md` exists) so a globally-installed hook never blocks unrelated repos; **fails open** on ambiguity; the only bypass is a **logged override** (`proof-ledger.sh override <slug> "<reason>"`), never silent. 14 behavioral + hook-integration tests (`tests/test-hooks.sh` 151 -> 164) + 7 structural pins (`tests/test-meta.sh` 358 -> 365). **Proven live + dogfooded:** `docs/verification/enforce-proof-of-done.md` records the suites green, a NEGATIVE CONTROL (revert the gate in a throwaway worktree -> 11 tests fail, the wall stops blocking, exit 2 -> 0), and a LIVE run of the hook BLOCKING a spec-less behavioral change (exit 2) then PASSING once proof is added (exit 0). Deliberately out of scope: enforcing verifier-implementer independence (the gate checks the entry exists + is valid-shaped, not who produced it), and the stateful live proof on a real deploy/migration repo.
+
+- **Proof of done is gated by task risk class (`lib/gate/proof-gate.sh`).** The discipline now lands where the risk is and gets out of the way where it isn't. A new classifier (reusing `lib/classify/lane-classify.sh`) maps a task to one of three **proof classes**: **stateful** (deploy / migration / data / persistent state) , exercise the REAL flow on a copy or dry-run, record it, and note rollback/reversibility (`[UNAVAILABLE: reason]` if no such flow exists in the repo, never a fake run); **behavioral** (changes behavior) , run the REAL primary flow the change adds (not a tangential test that happens to pass) plus a negative control; **inert** (docs / comments / cosmetic) , exempt, record `[PROOF OF DONE: exempt -- reason]`, no run. Wired into the convention (`docs/verification/README.md` risk-class table + the run-the-real-flow rule), `commands/execute.md`, `commands/verify.md`, and `agents/task-verifier.md` (inert exempt is accepted; a stateful task marked exempt or missing reversibility is a FAIL). 8 behavioral classify tests (`tests/test-hooks.sh` 143 -> 151) + 7 structural pins (`tests/test-meta.sh` 351 -> 358). **Proven behaviorally:** the classifier's own primary flow recorded real in `docs/verification/risk-gated-proof-of-done.md` (GREEN `proof-gate.sh class ...` -> correct classes; NEGATIVE CONTROL removes the impl in a throwaway worktree -> classify exit 127 + the 8 proof-gate assertions fail, 151 -> 143; shared checkout untouched), the inert exemption shown, and the stateful class honestly marked `[UNAVAILABLE]` (dwarves-kit has no deploy/migration flow). Key sharpening over the prior proof-of-done: the recorded run must exercise the *real* flow, not a proxy.
+
+- **Proof of done = green + a negative control + reproducible (SPEC-042).** A captured green run is still a weak proof: it shows the check passes, not that the check *exercises* the change. "Done" is now a proof of done with three parts , the captured green run, a **negative control** (the same check shown to go RED when the work is reverted, so the green is not trivially green), and reproducibility (re-run the logged `Command:`). `docs/verification/README.md` names the concept; `commands/execute.md` (Step 4) and `commands/verify.md` produce the negative control for load-bearing (`normal`/`full`) changes in a throwaway worktree (the shared checkout is never reverted), and a check that stays green when reverted is a finding, not a pass (tiny/docs lanes may skip with a logged reason); `agents/task-verifier.md` flags a weak/absent negative control (read-only, it does not revert) and its tool allowlist now runs a bash/make/just project suite, not only npm/go/pytest/cargo (a real gap , the verifier could not run dwarves-kit's own `bash tests/test-meta.sh`). 5 new `tests/test-meta.sh` pins (346 -> 351). **Proven behaviorally, not hand-followed:** an independent verify-flow agent drove `/kit:verify` end-to-end against SPEC-042 and returned real records , GREEN `bash tests/test-meta.sh` exit 0 (351/351) and a NEGATIVE CONTROL exit 1 (337/351, the 14 verification pins fail) run in a throwaway worktree, restore GREEN exit 0, shared checkout untouched; transcribed to `docs/verification/proof-of-done.md`. Still no blocking hook (the ship-gate-blocks-on-missing-proof remains the deferred enforcement escalation).
+
+- **Execution-backed verification + the verification log (`docs/verification/<spec-slug>.md`).** "Verify before proceeding" now means the check was *actually run* and the run is *recorded as a re-runnable artifact*, not asserted in prose. The verifiers already ran the suite, but the result evaporated into a "Tests: passing" line nobody could re-run. Now: (1) `agents/task-verifier.md` Section 2 requires capturing the exact command, its real exit code, and an output excerpt, and reports them in a `Verification record` block under every verdict; a task with no runnable check records an explicit `[NO EXECUTABLE CHECK: <reason>]` instead of a silent pass (the soft-warning path is gone). (2) `commands/execute.md` appends a verification-log entry at each phase checkpoint (Step 3) and at completion (Step 4), and surfaces the `docs/verification/<spec-slug>.md` path in the completion summary alongside the implementation-notes path. (3) `commands/verify.md` appends one entry per read-only run (the only thing it writes; it never touches the code under test) and its read-only framing is carved to allow recording the run. (4) `docs/verification/README.md` is the convention (entry shape: `Command:` / `Exit:` / `Output (excerpt):` / `Verdict:`; re-run the `Command:` line to regression-check a past verdict). (5) `docs/PHILOSOPHY.md` records the bend under "Verify before proceeding" as an extension of ADR-0005, mirroring the SPEC-041 implementation-notes by-product-of-the-flow shape; kept as command/agent text + convention doc pinned by `tests/test-meta.sh` (9 new guards, meta suite 337 -> 346), not a new hook, since the record is produced structurally by the verify flow. `commands/review.md` (static judgment, not test execution) gains a boundary note: it reads test state from the verification log rather than asserting "tests pass" from inspection, and a missing/`[NO EXECUTABLE CHECK]` entry is itself a review finding. Demonstrated live on this change: `docs/verification/verify-by-execution.md` carries a real `bash tests/test-meta.sh` run (exit 0, 346/346) plus an honest `[NO EXECUTABLE CHECK]` entry for the one subjective aspect, and re-running the logged command reproduced the verdict. This is the *recording* dimension of verify-arm hardening; it is a thematic neighbor of ID-020 (the removal-class absence check, already covered by `task-verifier` Section 1b), not the same gap and not a closure of it. A ship-gate that blocks on a missing verification entry is the documented enforcement escalation if advice proves insufficient (deferred). No new command, no new agent.
+- **codebase-memory SessionStart auto-index hook, fixed to actually fire (SPEC-043).** `hooks/codebase-index.sh` background-indexes the cwd repo in codebase-memory-mcp so `/kit:spec` + `/kit:execute` can query a structural index instead of grepping, with zero manual step. Opt-in by tool presence (no-ops quietly when codebase-memory-mcp is absent), backgrounded so session start never blocks, build-then-incremental-refresh. The hook shipped earlier (commit a1a6e4b) but was **inert in practice**: it lived on an unmerged branch, so the global `settings.json` symlink into the dwarves-kit working tree dangled and the hook silently no-opped; and its `[ -d .git ]` guard is false in a git **worktree** (`.git` is a file there), skipping every worktree session. Fix: guard on `git rev-parse --is-inside-work-tree` and index `git rev-parse --show-toplevel` (worktree- and subdir-correct), plus ship it onto master so the symlink resolves. 3 `tests/test-meta.sh` pins (exists+executable, guards-on-rev-parse-not-`[ -d .git ]`, registered in both registries). Verified live: the fixed hook fires in a worktree (the old guard would have skipped). Lesson recorded: a new kit hook is only live once it lands on master (the install symlinks the working tree).
+
+- **Implementation-notes log during `/kit:execute` and `/kit:next` (SPEC-041 / ID-041).** Workers and contractors now maintain `docs/implementation-notes/<spec-slug>.md` for the run of decisions the spec did not pin down, deviations from spec, tradeoffs worth surfacing, and constraints the spec missed. Five-bullet entry shape (Context / Decision-or-Change / Why / Alternatives considered / Impact). One file per spec, markdown only, no `.html`. Empty-case clause: if a build runs end-to-end with zero off-spec moments, the worker still writes a `No deviations from spec` line so silence is intentional, not forgotten. Three insertion points: (1) `commands/execute.md` worker template gains the rule under `## Rules`, the worker's `## When done` report names the file path + entry count, and the orchestrator's `### Step 4: Completion` execution-summary carries the line + nudges `/kit:ship` to include it in the PR body. (2) `commands/next.md` Step 4 hand-off reminds the implementor and scaffolds the file header before handing off. (3) The maintainer's dotfiles overlay (`~/.claude/CLAUDE.md` § "When implementing from specs") carries the paired rule so ad-hoc "implement X" / "build out Y" framings outside the kit also fire it. Four `tests/test-meta.sh` guards pin the rule (worker-template rule present, "When done" reporting names the path, completion-summary carries the file, `/kit:next` hand-off carries the reminder), so it cannot regress silently. No new command, no new agent, no behavior change to the verifier pipeline; the PR-body surfacing is operator discipline, not a hook (preserves the ID-036 orchestration-first / hooks-as-fallback layering). Tiny lane, backfill SDD (the implementation shipped before the spec; SPEC-041 documents the after-state + decisions). Kit commit 2dd80b9; paired dotfiles commit 3bc78eb.
+- **Freeform front door: `/kit:assign` now accepts freeform intent, not only `ID-NNN` (SPEC-026 / ID-022).** A vague brief or "apply SDD to X" is a native one-shot intake instead of a hand-bridged detour. The argument resolver routes `^ID-[0-9]+$` down the unchanged ID-first path and anything else down a freeform path that: delegates the crystallize interview to `/kit:think` (assign stays a light mutator-dispatcher, it does not embed the interview, DEC-003); gates on explicit human approval of the crystallized objective **before** allocating anything (approve-before-allocate, so no half-baked rows, DEC-002); sanitizes the text (escape `|`, newlines -> spaces in BACKLOG cells; slug reduced to `[a-z0-9-]+` so it cannot traverse out of `.claude/goals/`, DEC-004); atomically allocates the next ID by re-reading max in the write step with a loud post-write collision check (DEC-005); writes the BACKLOG row before the goal draft (row-before-draft); then rejoins the existing ID-first tail (draft -> lane -> hand-off). ID-first traceability preserved; unparks the SPEC-024-deferred griller entry. Pinned by `tests/test-meta.sh`; documented in `MANUAL.md`. Source: SPEC-026 / ID-022.
+- **Multi-session concurrent goals: the cross-session running-goal registry (`lib/goal/goal-registry.sh`, SPEC-036 / ID-040).** Extends concurrency from the single-session `/kit:dispatch` fan-out to the case where one operator opens several Claude sessions on one machine (one goal each) and walks away, with no shared lead. Five pieces landed: (1) **ADR-0022** supersedes the "multi-session stays L5" PHILOSOPHY boundary (conflict C4, the multi-session twin of SPEC-032's C1) for exactly the one-operator / N-same-machine-sessions / disjoint-goals case; `docs/PHILOSOPHY.md` (lines ~121 + ~151) and `commands/kit-health.md` (a recorded carve-out) reworded so the bend is deliberate, and `_meta/BACKLOG.md`'s parked "L5 not needed until 3+ concurrent sessions" entry re-scoped. Across machines, 3+ live human operators, and goal-ordering chains stay L5 (Nimbalyst / GSD v2). (2) **`lib/goal/goal-registry.sh`**: a passive per-goal file registry under `$(git rev-parse --git-common-dir)/kit-goals/` (shared by every worktree of the repo, inherently untracked) with `claim` / `list` / `log` / `status` / `release`; one single-writer file per goal (no shared write); the cross-session disjointness gate **reuses** `lib/gate/dispatch-gate.sh` (a new shared `gate_normalize_glob` single-sources the prefix rule), so a goal overlapping an active one is REFUSED, the colliding goal named. (3) The **claim** step wired into `/kit:assign` (refuse-on-overlap before routing into a lane). (4) The cross-session **monitor** wired into `/kit:start` (a "Running goals (cross-session)" count always, the full `goal-registry list` table in `--full`), the kit-level companion to the native agent view (which sees only one session's subagents); `/kit:dispatch` also registers its in-session workers so one `list` shows both axes. (5) Each goal leaves a human-legible **attempt log** (`<slug>.attempts`), the convention documented in the `/kit:assign` directive + the `/kit:dispatch` worker prompt (helper-backed, detect-don't-dictate). No daemon, no scheduler, no DAG, no durability state machine; the registry records and compares, it never sequences or merges. Tests: registry round-trip (claim disjoint→both, claim overlap→refused, list/log/status/release) in `tests/test-hooks.sh`; structural + boundary guards (ADR exists, PHILOSOPHY reworded, lib executable, assign/start/dispatch wiring, kit-health carve-out) in `tests/test-meta.sh`. No new command ⇒ architecture inventory parity unchanged. Source: SPEC-036; ADR-0022; reuses SPEC-032 gate + SPEC-031 single-writer model.
+- **Cross-goal concurrent dispatch built + proven (`/kit:dispatch`, SPEC-032 / ID-035).** The kit can now fire N independent `VALIDATED` specs concurrently, each in its own git worktree, then converge lead-owned. Five pieces landed: (1) **ADR-0019** supersedes the four standing "one session / sequential" boundaries with the bounded model (one lead orchestrating N isolated worktree workers behind a disjointness gate); `docs/PHILOSOPHY.md` (the four C1 boundaries + a "Shallow and wide is width, not a runtime" note) and `commands/kit-health.md` (a recorded fan-out carve-out) reworded so the conflict is settled, not silently broken. (2) **`lib/gate/dispatch-gate.sh`**, a new pure-bash home for command-helper logic: the **disjointness gate** (pairwise directory-prefix-glob overlap, conservative prove-or-serialize, undeclared-spec REJECT) + the **drift guard** (a worker's real diff must stay inside its declared globs and never touch a hands-off surface; hands-off list extracted from WORKFLOW.md, single-source). (3) A required-for-dispatch **`## Touches`** section in the spec template (`commands/spec.md`). (4) **`/kit:dispatch`**: fan-out via `Agent(run_in_background, isolation:worktree)` (ADR-0020 primitive), a wait-queue for overlapping specs, the worker blocker/signal contract (READY/BLOCKED/FAILED), and lead-owned convergence + worktree GC (unlock -> remove -> branch -D); no DAG, no auto-merge. (5) Registered across README, MANUAL, and the `docs/architecture.md` V-phase inventory (32 -> 33 entries, parity green). Tests: gate + drift behavioral cases in `tests/test-hooks.sh`, structural guards + the ADR/PHILOSOPHY/kit-health un-nerf in `tests/test-meta.sh` (meta 297 -> 304, hooks to 106). **Proven on a live run:** two disjoint demo specs dispatched concurrently into two isolated worktrees, each ran the kit task loop and committed conventionally, zero cross-write, drift-clean. That run also surfaced + fixed a real correctness bug: the drift base must be the worktree fork point (`git merge-base`), not a session-global `HEAD`, because `isolation:worktree` snapshots the lead's uncommitted state into each worktree. Intra-spec `/kit:execute` is unchanged (still sequential). Source: SPEC-032; ADR-0019/0020; SPEC-031 convergence.
+- **Deterministic task-type -> risk-lane auto-classification (`lib/classify/lane-classify.sh`).** Encodes the `WORKFLOW.md` "Size the work first" lane triggers once (precedence backfill -> tiny -> full -> bug -> normal, "when in doubt, heavier"), wired into the intake path (`/kit:assign`) and the dispatch path (`/kit:dispatch`) so a lane is auto-chosen from the task description instead of ad-hoc judgment. Suggests, never dictates (Detect-don't-dictate). Verifiable on the three sample types (a doc fix -> tiny, a bug -> bug, a full feature -> full) plus normal + backfill, pinned in `tests/test-hooks.sh`; structural wiring guards in `tests/test-meta.sh`.
+- **`/kit:verify`: on-demand read-only re-run of the V-model right arm (SPEC-035 / ADR-0021 / ID-038).** Re-dispatches `task-verifier` + `integration-checker` against the active spec/branch with no rebuild and no fix, printing a PASS/FAIL verdict. The on-demand executor of the right arm's unit + integration levels, for re-checking after a manual edit, a branch built elsewhere, or a read-only `/goal`-loop check. A command (not an agent) per the command-vs-agent rule; read-only (no `fix-agent`) like `/kit:review`; the integration base ref is the merge-base with the default branch (the C1 spec-validate fix). 3 new `tests/test-meta.sh` guards (exists + description; dispatches both agents; declares the read-only no-fix-agent invariant); architecture inventory 31 -> 32. The three rejected phantom commands (`/kit:accept`, `/kit:check-reqs`, `/kit:doc-spec`) stay rejected.
+- **SPEC-029** (`docs/specs/SPEC-029-invocation-namespace-sweep.md`): the invocation-sweep spec, with the live-vs-historical scope split, the dual-ship invocation decision (DEC-001), and the denylist guard design (DEC-004..008).
+- **SPEC-030** (`docs/specs/SPEC-030-namespace-sweep-fallout.md`): the install/hook sweep-fallout spec, with the per-surface invocation truth table, the hook-form decision (DEC-002: neutral slash-free phrasing for hooks, where SPEC-029 kept `/kit:` for docs), and the guard extension to runtime surfaces (DEC-003).
+- **V-model lifecycle lens + lead-owned convergence contract (SPEC-031 / ID-034).** Frames the kit's cycle as a V (each define phase mirrored by its verify phase, build at the bottom) as a *lens over* the existing `WORKFLOW.md` cycle table, not a second table (ADR-0018). Adds to `WORKFLOW.md`: `## The V-model lens` (names every cycle phase + the two mirror gaps brief/requirement, covered today by ship-acceptance tracing the brief's pain + retro, no new command), a lane×phase depth matrix (5 lanes × 13 phases, each cell measure-twice/run-lite/skip), and `## Lead-owned convergence` (the enumerated hands-off shared-surface list workers must not write, integrated once by the lead via `/kit:ship`; the non-duplication clause delegates cross-task wiring to `integration-checker` and the shared write to `/kit:ship`). `docs/architecture.md` gains a command/agent → V-phase inventory (parity-tested). The "8 phases" hard count is reworded to count-agnostic "lifecycle phases" across the operating surfaces (`docs/PHILOSOPHY.md`, `commands/kit-health.md`) + the absorption-gate citations (SPEC-003/004/007), criterion #2's meaning preserved. 4 new `tests/test-meta.sh` guards (lens + convergence present, all cycle phases in the lens, hands-off ⊆ doc-impact map, inventory parity), hardened against a vacuous pass after review; meta suite 257 → 284. The hands-off list is the artifact SPEC-032's disjointness gate imports. Built + adversarially reviewed this cycle: `/kit:execute` caught a self-defeating acceptance criterion (the blanket 8-phases grep, scoped to operating surfaces via AMEND-001) and `/kit:review` caught a self-disabling-guard flaw in the new tests, both fixed. Source: SPEC-031 / ID-034.
+- **Concurrent-workflow spec set.** `docs/specs/SPEC-032-concurrent-goal-dispatch.md` (ID-035): cross-goal `/kit:dispatch` fan-out + a file-disjointness gate + a post-task drift guard, the dispatch primitive locked to in-session worktree subagents by **ADR-0020** after a head-to-head bakeoff spike (SPEC-033) that proved the `claude agents` agent view is monitor-only. **SPEC-032 is now built** (see the `/kit:dispatch` entry above; all 10 tasks done). `docs/specs/SPEC-034-mega-goal-lane.md` (ID-037): the sequential/dependent `/kit:mega` complement, still queued (out of scope for the cross-goal dispatch work; sequential chains, not disjoint fan-out). Plus the V-model-gated decision brief and the parallelism research note. ADR block linearized 0017-0020.
+
+## [1.6.0] - 2026-05-22
+
+### Changed
+
+- **Dropped hand-maintained component counts and stripped spec IDs from the WORKFLOW contract.** The exact `N hooks / N commands / N agents / N skill` strings are removed from every live surface (`.claude-plugin/{plugin,marketplace}.json`, `README.md`, `MANUAL.md`, `CLAUDE.md`, the `docs/architecture.md` component table, `tool.toml`) and replaced with qualitative phrasing; the `92`/`238` test-suite-total comments in `CLAUDE.md` are dropped too. Counts rot silently: this swept up live drift the guards never caught (`architecture.md` said 19 commands, `tool.toml` said 12 hooks / 18 commands / 9 agents). With nothing left to keep in sync, both count tests in `tests/test-meta.sh` are removed (the ID-013 component-count guard added earlier this cycle and the older command-count parity test); meta suite 238 -> 213. `WORKFLOW.md` no longer cites `SPEC-NNN`/`ADR-NNN` inline (the `docs/specs/SPEC-NNN-<slug>.md` filename pattern stays): rules are stated by concept with one provenance pointer to `docs/specs/` + `docs/decisions/`, and the count-sweep chore paragraph is replaced by a version-only note. SPEC-004 + SPEC-005 `Status:` reconciled VALIDATED -> SHIPPED (shipped alongside SPEC-006).
+
+### Added
+
+- **Release-hygiene guard: a warn on a phantom version cut (SPEC-028).** Closes the recurring messy-release state the SPEC-018 + SPEC-027 retros both flagged (`VERSION`/`plugin.json` cut to a version that was never tagged, with `[Unreleased]` piling on top). Two warn-only surfaces detect the **phantom cut** (`VERSION` names a version with no matching `git tag`), plus a soft heads-up when `[Unreleased]` is non-empty above it: a `/user:ship` Step-4a warn (at the version/tag decision) and a `commands/kit-health.md` check (run before tagging, repo-scoped, degrades to a no-op outside the repo). Warn-only, never blocks (Approach A; PHILOSOPHY reserves hard blocks for safety, and an untagged cut is a legitimate release transient, so a hard `tests/test-meta.sh` tag assertion was rejected). Both surfaces share one pinned check shape (whitespace-strip + `git tag -l "v$VER"` + a `git rev-parse --git-dir` degrade guard + the same `[Unreleased]` non-empty awk), pinned by 2 `tests/test-meta.sh` assertions (meta suite to 256). The verification pipeline earned its keep here: task-verifier caught one DEC-005 guard drift, the integration-checker caught a second, and `/user:review` caught a third (the soft accumulation-signal drift), all on the guard's own two copies (DEC-005/DEC-006). Source: SPEC-028 / ID-026.
+- **Mid-flight spec amend: a declared path to add scope to a building spec without restarting the lane (SPEC-027).** Closes the `BUILDING -> SPECIFYING -> BUILDING` gap (operating-layer-vision Scenario 7): when a build reveals scope that must be added now ("also do Y"), the operator approves, then the spec is amended in place at a task checkpoint instead of being silently mutated or the lane restarted. Convention, not a new command or hook (Approach A; PHILOSOPHY "earn the abstraction"). Four invariants, canonical in `WORKFLOW.md` "## Mid-flight amend": no lane restart (`Status:` stays VALIDATED, only the delta re-validated), add-only (completed `- [x]` tasks frozen), recorded + operator-approved at a checkpoint (an optional on-demand `## Amendments` provenance section in the spec), resume with `/user:next` (not a fresh `/user:execute`). Projected into `docs/operating-layer-vision.md` §3.3 (the transition row) + §5 (gap closed), `commands/execute.md` (the no-silent-mutation anti-pattern now points at the amend path), `commands/spec.md` (the `## Amendments` template section), `docs/PLAYBOOK.md` Scenario 7 + `docs/ORCHESTRATION.md` 5.4 (operator projections), and pinned by 4 `tests/test-meta.sh` assertions (meta suite to 254). `/user:review` (HIGH) added the operator-approval gate the canonical rule had omitted (DEC-008). Source: SPEC-027 / ID-023.
+- **Kit-root `AGENTS.md`: a tool-agnostic operate-contract front door (SPEC-024).** A portable, four-zone operating layer (the same shape any agent runner can read) that fronts the kit's behavioral contract; `CLAUDE.md` and `WORKFLOW.md` now point at it so the cycle and house rules have one neutral entry point instead of being CLAUDE-only. Ships a downstream template at `examples/hello-spec/AGENTS.md` so a consuming project starts with the same front door. Source: SPEC-024.
+- **`backfill` brownfield lane (SPEC-024)**: an intake lane for adopting the kit into an existing repo (bring the operate-contract, specs convention, and guardrails onto code that predates them), recorded in `WORKFLOW.md` alongside the existing intake lanes.
+- **Six-section goal projection in `/user:assign`**: the goal draft `/user:assign` writes now projects the backlog item across six fixed sections (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if) sourced from the `AGENTS.md` zones + the active spec, so a handed-off goal carries fuller context into its lane.
+- **`## After state` section in the `/user:spec` template**: specs now scaffold the observable post-implementation end state, complementing the existing Verification / Open-questions stop-criteria.
+- **doc-impact-map rows for `AGENTS.md` and the top-level files**: the WORKFLOW doc-impact map (reviewed by `/user:ship` + `/user:retro`) now lists `AGENTS.md` and a "new top-level file" trigger so a change that touches them is flagged for a doc update.
+- **Regression coverage for the install settings-merge against a pre-existing third-party hook (test/guard, not a fix)**: `tests/test-meta.sh` gains a block asserting `install.sh`'s `settings.json` merge preserves an existing third-party hook entry. This is added coverage, not a bug fix: the current installer already unions third-party hooks correctly, so no installer change was needed. Plus review-driven anti-drift assertions (CLAUDE.md/WORKFLOW.md carry no read-order restatement) and hello-spec AGENTS.md zone pins. Meta suite to 241 asserts. Source: SPEC-024.
+- **`/user:ui-design` command + the downstream UI-design loop (SPEC-020)**: writes a structured `## UI design` brief (aesthetic-direction preamble + layout + states matrix + named viewports + a11y bars + 3-tier token ladder + voice) into the active spec (else the pre-spec brief), delegates generation to the external `frontend-design` skill (the kit ships no renderer), critiques via `/user:visual-team`, and runs a bounded auto-revise loop (E6 `<user-feedback>` injection-wrap, E7 unconditional accumulated-feedback re-send, terminate on SOLID / RECONSIDER / max-2 cap). Opt-in, report-only, downstream-facing (the PHILOSOPHY carve-out + kit-health allow-note now name both `/user:visual-team` and `/user:ui-design`). The kit is now 20 commands. Brief enriched per the 2026-05-21 deep scan (`docs/research/2026-05-21-ui-design-loop-deep-scan.md`): aesthetic-direction from `frontend-design`'s real input, token ladder + states matrix + a11y bars + voice adapted from `nextlevelbuilder/ui-ux-pro-max-skill` (its renderer / fonts / `.cjs`+`.py` tooling rejected per bash-over-binaries), loop shapes from gstack. Dogfooded through `/user:spec-validate` twice; the re-dogfood caught an unimplementable numeric stop (visual-team emits no combined score) and folded it to a SOLID-verdict stop. Credits: gstack (loop shapes), `frontend-design` (generator), `ui-ux-pro-max-skill` (brief sub-shapes). Source: SPEC-020.
+- **`/user:absorb` command + the absorption ritual (SPEC-004)**: a maintainer-only, proposal-only external-absorption audit that generalizes SPEC-002/SPEC-014's one-shot surveys into a recurring ritual. `docs/ABSORPTION.md` carries it: two lanes (Credits drift re-audit + a seed-rescan of the SPEC-014 survey set, scanning the interest areas workflow/agents/QA/UI), the adoption rubric (>=10), the gate, and the **human merge gate** (discovery + scoring + drafting are automatic; adopting a source or adding it to Credits is maintainer-approved, preserving "synthesize, don't originate"). `/user:absorb` writes a dated, ranked + capped, proposal-only report under `docs/absorption/` (HEAD-SHA baseline for since-last-run, an overflow appendix so a real ADOPT is never dropped, a `git status` self-check); QA/UI candidates needing binaries route to "recommend external". The kit is now 19 commands. Think+Design narrowed lane B to a seed-rescan (web-search discovery deferred as tool-weak). Also corrected the plugin manifests' stale hook/agent counts (now 14 hooks / 11 agents). Source: SPEC-004 + `docs/ABSORPTION.md`; DATA-not-instructions guard from ADR-0008.
+- **Reviewer 5 (Solution-Design & Extensibility Critic)** in `/user:spec-validate`: flags shallow or non-extensible designs, with a calibration clause (no false-positive storm) and a legacy-grace clause for specs predating the richer template. Source: SPEC-008; forked from `superpowers:brainstorming` ("design for isolation and clarity") + its spec-document-reviewer calibration. Not a runtime dependency.
+- **I/O contract + Failure modes sections** in the `/user:spec` template, plus pointer bullets in `/user:spec-validate` Reviewer 2 (failure modes) and Reviewer 5 (I/O contract). Both sections optional + lane-scoped. Source: SPEC-009; forked from ops-toolkit SDD (`agency-lead-radar` / `tide`). Not a runtime dependency.
+- **`/user:design` command (opt-in)**: an interactive solution-design beat between `/think` and `/spec` (propose 2-3 approaches one question at a time, present the design in sections, approve per section), appending the Solution to `docs/specs/DECISION-BRIEF.md` for `/spec` to fold in. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`. The kit is now 13 commands. Closes the "ran without my feedback" half of the original signal.
+- **`/user:debug` command + `bug` lane (SPEC-013)**: a systematic debug loop (four phases: root cause -> pattern -> hypothesis -> fix) under the iron law "no fix without a recorded root cause," with an append-only evidence ledger (`.claude/debug/<slug>.md`), `[DEBUG Hn]`-tagged instrumentation to `.claude/debug/<slug>.log` plus region-marker cleanup, `git bisect` for regressions, failing-test-first routed into the existing verification pipeline, and human-confirm before declaring fixed. `WORKFLOW.md` gains a `bug` intake lane and an off-cycle Debug row. The kit is now 14 commands. Forked from `superpowers:systematic-debugging` + GSD `gsd-debugger` (evidence ledger) + doraemonkeys debug-mode (tagged logs, region cleanup) + SuperClaude `/sc:troubleshoot`; classic lineage Agans ("9 Indispensable Rules") + Zeller (delta debugging). **ADR-0012** records the command+hook hybrid as a refinement of ADR-0008.
+- **`.claude/goals/` draft-store contract + state model (SPEC-005)**: documents the kit's three-store state model (`_meta/BACKLOG.md` queue, `docs/specs/` contract, `.claude/goals/` ephemeral drafts) in `docs/architecture.md`, a formal Active-queue Schema in `_meta/BACKLOG.md`, and the goal-draft store beside the built-in `/goal` (the kit never writes `last-goal.md`; activator-agnostic with graceful degradation). **ADR-0011** records the draft-store-not-a-shadow decision. No `/user:goals` command yet (deferred to SPEC-006).
+- **`/user:assign` command + the orchestration spine (SPEC-006)**: wires the backlog Active queue -> `/user:assign ID-NNN` (goal-crafts a `.claude/goals/` draft, picks the lane from the item, detects the activator, hands off to the lane's first command; never executes, never writes `last-goal.md`, idempotent per id) -> the WORKFLOW lane -> ship. `/user:start` + `/user:next` now render the queue + goal drafts read-only. `WORKFLOW.md` gains a `## The spine` section and two warn+log completeness clauses (decision-translation + doc-update) with a doc-impact map reviewed by `/user:ship` + `/user:retro`; PHILOSOPHY section 3 gains a bounded/unbounded loop note covering both the goal and debug loops. The kit is now 15 commands (also corrects `.claude-plugin/{plugin,marketplace}.json`, stale at 13). Source: SPEC-006.
+- **Three opt-in design-assurance lanes (SPEC-016)**: `/user:devs-team` and `/user:visual-team` add parallel multi-lens critique of a design (in the decision brief or the active spec) before it hardens (the design analogue of `/user:review-team`), and `/user:test-plan` derives a test-case coverage matrix from a spec's acceptance criteria before `/user:execute`. Generic house-style lenses, inline parallel Task dispatch, report-only verdicts, no hard gate. `/user:visual-team` is downstream-facing (recorded PHILOSOPHY carve-out so kit-health does not flag it). The kit is now 18 commands. Lenses adapted from `zvadaadam/az-skills` devs-roundtable + design-roundtable, recast as generic lenses; test-plan is the kit's own coverage shape. Source: SPEC-016.
+- **Two guardrail hooks (SPEC-014): `secrets-guard` + `commit-format`.** `secrets-guard` (PreToolUse Read\|Edit\|Bash) blocks reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`, keychains), canonicalizing the path first so `~`/`$HOME`/`..` spellings cannot bypass; fail-closed on a match, fail-open on parse error; allows `.env.example`. The Read/Edit deny plus a new `settings.json` `permissions.deny` block is the primary layer; the Bash-surface check is best-effort defense-in-depth (a reader denylist is bypassable, stated honestly, not exfil-proof). `commit-format` (PreToolUse Bash) blocks a `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker (subject only; bodies + editor commits pass). The kit is now 14 hooks. **ADR-0014.** Sources: Trail of Bits deny-list + claudekit `file-guard` (secrets); GSD `gsd-validate-commit` (commit-format).
+- **`integration-checker` agent (SPEC-021)**: a read-only adversarial cross-task verifier dispatched once at `/user:execute` Step 4 for multi-task specs, filling the seam between per-task `task-verifier` and the once-at-end full suite (which silently passes when integration tests are absent). It verifies each new component reaches its activation point (a hook registered, a handler mounted, an export imported AND called) and the spec's stated end-to-end chains, without inventing links between independent tasks; scoped read-only tools (no write/bare-Bash, meta-asserted, DEC-006); diffs the whole build via a pre-build base ref; reuses fix-agent for fixable wiring gaps. The kit is now 10 agents. **ADR-0015.** Source: GSD `gsd-integration-checker`.
+- **`doc-verifier` agent (SPEC-022)**: a read-only fact-checker dispatched by `/user:docs` at a new Step 4.5 (after it applies updates, before the commit) that independently verifies the just-updated docs against the live code (counts, command/flag names, file paths, existence, cross-references), closing the fox-guards-henhouse gap where `/docs` was the only reader of what `/docs` wrote. It reads the uncommitted doc diff, flags only checkable contradictions (not phrasing or prose), and reports; `/docs` re-edits a `FAIL:fixable` (max 2 rounds, not fix-agent, since `/docs` is not the `/execute` pipeline). Scoped read-only tools (meta-asserted). The kit is now 11 agents and has three read-only verifiers (task-verifier / integration-checker / doc-verifier), all on the ADR-0005 pattern; the retro should confirm the trio pays off. **ADR-0016.** Source: GSD `gsd-doc-verifier`.
+
+### Changed
+
+- **`/user:devs-team` + `/user:visual-team` aligned to spec-first placement (SPEC-023)**: both critique lanes now write their `## Design critique` / `## Visual critique` into the active spec when one exists (else the pre-spec brief; visual-team else inline), matching `/user:test-plan` (SPEC-018) and `/user:ui-design` (SPEC-020). Previously `devs-team` wrote brief-first and `visual-team` had no spec path, so the WORKFLOW.md placement rule was true for two lanes and waived for two; now all four share the spec-first head (visual-team keeps an inline tail since it alone can run with neither artifact). Both resolve the active spec via the shared SPEC-005 detection and ask on a multi-match; a meta-test pins the spec-first wording (both of devs-team's read and write sides). **Supersedes SPEC-016's `## Design critique` / `## Visual critique` placement.** WORKFLOW.md's two tables drop the "predates the rule" caveats. Source: SPEC-023; dogfooded through `/user:spec-validate` (the assumption-destroyer lens caught a draft that misread SPEC-020's writer model, corrected before implementation).
+- **`/user:test-plan` writes into the spec + `/user:execute` consumes it (SPEC-018)**: the coverage matrix moves from a root `TEST-PLAN.md` to a `## Test plan` section appended into the active spec (mirroring `/user:devs-team`'s `## Design critique`), and `/user:execute` now reads that section, injecting each task's cases into the worker prompt and using each case's `proof` command as the per-step verify. Fixes the SPEC-016 Part B orphan (the plan was produced but never consumed) and makes the plan multi-spec safe (each spec carries its own). Adds a `proof` column to the matrix (behavior-to-proof, adapted from harness-experimental's `TEST_MATRIX.md` Evidence column); `proof` is `TBD` when unknown, never fabricated. The `## Test plan` heading is pinned in both `test-plan.md` and `execute.md` by a meta-test (drift guard). **Supersedes SPEC-016 Part B's root-file placement.** Source: SPEC-018; dogfooded through `/user:spec-validate` (1 critical caught: the wiring was lexical, not behavioral, now fixed).
+- **`/user:spec` Solution template**: replaced the one-line `## Solution` block with scaffolded sub-sections (Approaches considered, Chosen approach + why, Extensibility & boundaries, Architecture) so specs carry design depth by default. Source: SPEC-008; forked from `superpowers:brainstorming` ("propose 2-3 approaches"). The opt-in `/user:design` interactive beat is deferred behind the PHILOSOPHY §5 bar.
+- **`/user:spec` template stop-criteria (SPEC-012 Part 1)**: pinned `## Verification` (the command(s) that prove a spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so any validated spec is natively pointer-`/goal`-ready. Part 2 (the QA gate around the loop) is held until the pointer-`/goal` pattern has real runs.
+- **`tests/test-meta.sh`**: spec-authoring depth + contract assertions (3 Solution sub-headings + Reviewer 5 + the 5-reviewers header + a stale-"4 reviewer" drift guard, SPEC-008; the I/O contract + Failure modes headings, SPEC-009; a no-stray-`.planning/` guard + the demo-migration assertions, SPEC-010; commands/design.md presence, SPEC-011; the Verification + Open-questions headings, SPEC-012 P1). Suite total: 121 → 135.
+- **Unified the spec-location convention onto `docs/specs/SPEC-NNN-<slug>.md`** for both the kit and downstream projects (was: downstream `.planning/SPEC.md`). The 5 spec-aware hooks resolve the active spec from `docs/specs/` (interim selector: highest non-SHIPPED/PARKED `SPEC-NNN`; SPEC-005 dual-detect refines later) with a bounded `.planning/` deprecation fallback (removed next minor). Satellite artifacts: research -> `docs/research/`, retro -> `docs/retro/`, CONTEXT -> `docs/specs/CONTEXT.md`, decision-brief folded into the spec. The demo (`examples/hello-spec`) migrated. **ADR-0010 supersedes ADR-0002.** Source: SPEC-010 Part 1 (Part 2 worktree-safety pending).
+- **Spec detection is now branch-aware (SPEC-005)**: `context-readiness.sh`, `spec-drift-guard.sh`, `commands/next.md`, `commands/start.md` resolve the active spec among non-SHIPPED/PARKED `docs/specs/` specs by git-branch slug match, emitting `spec:ambiguous(...)` instead of silently picking when several are live (replaces SPEC-010's interim highest-NNN selector); `spec-drift-guard` greps the union of all active specs. The leakage sweep extends to `agents/` (research agents write `docs/research/`, not `.planning/research/`). SPEC-005 was reconciled to ADR-0010 (docs/specs-first; `.planning` is the deprecation fallback) since it predated SPEC-010. Tests: test-hooks 42 → 52 (10 detection fixtures), test-meta +4 (state-model + agents guard).
+- **`/user:execute` worker step expansion (SPEC-017)**: each worker now expands its task into bite-sized "smallest verifiable increment -> verify -> commit" steps before coding (TDD when a unit test fits; grep/bash/test-suite verify for the kit's doc and config tasks), instead of a 3-bullet sketch. Worker-side (orchestrator stays lean), no new command, no new artifact; the task-verifier runtime gate is unchanged. Folds writing-plans-grade granularity into the kit's idiom. Source: SPEC-017.
+- **`hooks/anti-rationalization.sh` gains a gated guess-fix guard (SPEC-013)**: blocks a premature fix/done claim ONLY when an open `.claude/debug/` ledger still has an empty `## Root cause`; silent in all non-debug sessions (~26ms, under the 500ms budget). The command<->hook contract (the `## Root cause` heading literal) is pinned in both files by a `tests/test-meta.sh` assertion so it cannot silently drift (DEC-010).
+- **`tests/test-hooks.sh` + `tests/test-meta.sh` (SPEC-013)**: 3 hook behavior cases for the guess-fix guard (block when undiagnosed; allow once root cause recorded; dormant outside a debug session) and 13 meta assertions for the debug command structure, the DEC-010 cross-file `## Root cause` pin, and the WORKFLOW bug lane. Suite totals: hooks 52 → 55, meta 135 → 148.
+- **`safety-gate.sh` + `anti-rationalization.sh` + `install.sh` (SPEC-014)**: `safety-gate` gains a build-artifact allowlist (a single `rm -rf node_modules/dist/.next/target/...` passes; compound commands still block) plus `DROP TABLE` / `git reset --hard` / `kubectl delete` blocks; `anti-rationalization` gains a phantom-implementation guard (a completion claim + an unimplemented-stub line such as `raise NotImplementedError` in the diff's added lines blocks, anchored so code that merely names the marker does not self-trigger); `install.sh` now unions `permissions.deny` on merge (was hooks-only). `tests/test-hooks.sh` adds 33 behavior cases and the hook-count assertion moves 12 → 14 (suite to 92 green); `test-meta.sh` parity auto-covers the two new hooks (178 green). A fresh-context code review caught and fixed three issues before merge: an `rm -rf node_modules/../..` traversal escape in the allowlist (now rejects any `..` token), a symlink bypass in secrets-guard (now resolves symlinks via `realpath` and matches both forms), and JSON-injection on a path containing a quote (now emits via `jq`). Sources: gstack `careful` (safety-gate), claudekit `self-review` (phantom-impl).
+
+### Fixed
+
+- **`context-readiness.sh` + `session-state-save.sh` count fragility**: `find ... | grep -v` and `grep -c ... || echo 0` both mishandled the zero-match case under `set -e`/pipefail. In a source-file-free repo the hook aborted with no output; a spec with 0 done tasks rendered `tasks:0\n0/N` plus an `integer expected` error. Now uses `{ grep -v ... || true; }` and `grep -c ... || true`. Found during SPEC-010 execution (ID-013).
+- **`install.sh` never materialized the hooks `settings.json` references (SPEC-025)**: settings hard-code every hook (and the statusline) at `$HOME/.claude/dwarves-kit/hooks/<script>.sh`, but the bash installer only `chmod`'d the scripts at its own `$KIT_DIR/hooks/`, merged settings, and created `logs/`. That coincidence held only for the documented in-place clone (README Option 2: clone to `~/.claude/dwarves-kit`); from a dev checkout or CI clone elsewhere, `~/.claude/dwarves-kit/` got only `logs/` and all 14 hooks plus the statusline pointed at missing files, so a fresh session opened with `SessionStart ... No such file or directory` and every hook was silently dead. `install.sh` now links each `hooks/*.sh` into `~/.claude/dwarves-kit/hooks/` when the kit lives elsewhere (per-file symlinks, mirroring the existing `commands/` step, so dev edits stay live), detects the in-place layout and skips linking (a naive loop there deletes the real scripts and leaves broken self-referential symlinks, a regression the first cut shipped and the SDD pass then caught), and the uninstall removes only the symlinks it created. `tests/test-meta.sh` gains a 3-assertion guard (referenced scripts exist in `hooks/`; an isolated out-of-place install resolves every path; an in-place install keeps the scripts resolvable) so neither failure mode can regress past CI. Meta suite 213 -> 216.
+
+## [1.6.0-pre] - 2026-05-20
+
+### Added
+
+- **`WORKFLOW.md`** (repo root): the agent-facing workflow contract. Names each lifecycle phase, routes work by risk tier (tiny / normal / full), and points at the existing guardrail that enforces each boundary. Delivered via the `CLAUDE.md` pointer (auto-loaded each session); it suggests and routes, it does not block. Downstream template ships at `examples/hello-spec/WORKFLOW.md` (`.planning/` path convention). Source: SPEC-003; harness-experimental intake model + the AGENTS.md pattern.
+- **`tests/test-review-team-plants.sh`**: behavioral regression guard for the `/review-team` security lens. Plants 3 known-bad fixtures under `$TMPDIR` (trap-cleaned, never in the repo) and asserts the security-review prompts still carry the detection vocabulary for each class; a term missing from both `security-auditor.md` and `reviewer.md` fails the build. Wired into CI. Source: superpowers v5.1.0 (SPEC-002 TASK-1).
+- **Tiered `/user:start`**: `--brief` (one line, state + next command) and `--full` (SPEC task checklist, hook-log line counts, recent commits, phase-grouped command map) via `$ARGUMENTS`; default output is byte-for-byte unchanged. Source: GSD v1.43-rc2 (SPEC-002 TASK-3).
+- **`tests/test-meta.sh`**: 6 assertions for the WORKFLOW.md contract (SPEC-003) plus a `model:` parity check on every agent, value in `{sonnet,haiku,opus}` (SPEC-002 TASK-2). Suite total: 104 → 120 (the extra check is the new CONTRIBUTING.md cross-link from TASK-5).
+
+### Changed
+
+- **`CLAUDE.md` Workflow section** (kit root + `examples/hello-spec/`): replaced the duplicated step list with a pointer to `WORKFLOW.md`, so the cycle lives in exactly one place.
+- **`docs/PHILOSOPHY.md`**: reconciled the canonical lifecycle phase count to 8 (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect; was 7 in one place and 9 in another), and added a "What we explicitly reject (from upstream observation)" section enumerating four audited anti-patterns (vendor-skill sprawl, UI-shell creep, agent-persona theater, slop-PR submissions). `CONTRIBUTING.md` and `commands/kit-health.md` cross-reference it, and the same 9→8 count fix was applied in both. Source: SPEC-002 TASK-5.
+- **`README.md`, `MANUAL.md`, `docs/architecture.md`**: one-line cross-reference to `WORKFLOW.md` (the architecture pointer frames it as the imperative companion to the data-flow diagram).
+
+### Fixed
+
+- **OMC lineage correction**: the `task-verifier` pattern no longer claims the unverifiable "OMC" anchor. The README Credits bullet is removed and ADR-0005's Source line now owns the pattern as synthesized from the family of architect-verifier-in-Ralph-loop patterns. Source: SPEC-002 TASK-4 / DEC-003.
+
+## [1.5.1] - 2026-04-21
+
+Audit-fix release. Same-day patch following a retroactive `/review-team` and `/retro` that surfaced gaps in the v1.4/v1.5 SDLC application.
+
+### Fixed
+
+- **`plugin.json` version drift**: `.claude-plugin/plugin.json` was still declaring `1.4.0` after VERSION bumped to `1.5.0`. Now bumped to `1.5.1` and asserted by `tests/test-meta.sh` (parity check between VERSION and plugin manifest). The bug shipped briefly in v1.5.0; v1.5.0 tag is preserved in history.
+
+### Added
+
+- **`tests/test-meta.sh`**: 62 new assertions covering structural integrity that grep-only checks miss. Validates: plugin manifest schema (including version-matches-VERSION parity), hooks.json/settings.json hook count parity, all hooks.json paths use `${CLAUDE_PLUGIN_ROOT}`, every agent/command markdown file has YAML frontmatter with required fields, CLAUDE.md Subagents list bidirectionally matches `agents/*.md`, demo project files have all required template sections, workflow has explicit permissions block, CONTRIBUTING.md cross-links resolve. Test suite total: 42 → 104.
+- **CI hardening**: workflow now runs `tests/test-meta.sh` alongside `tests/test-hooks.sh`. `actions/checkout` pinned to release SHA (supply-chain best practice). Explicit `permissions: contents: read` (least privilege).
+- **`docs/retro/v1.3-v1.5.md`**: cycle retrospective covering what worked, what hurt, action items. First retro since the kit started; addresses the action item to make `/retro` part of the release ritual.
+
+### Changed
+
+- **README "Project structure" section**: replaced the embedded file tree (drifted across 5 releases, last accurate at v1.0) with a concise top-level overview pointing at `git ls-files` for the canonical listing. Removes a recurring drift surface.
+- **README "Changelog" section**: removed the duplicated highlight bullets (last updated at v1.2.0). CHANGELOG.md is now sole source of truth for version history.
+- **README "v2 roadmap"**: removed "Plugin marketplace packaging" (shipped in v1.4); added "Multi-harness packaging" deferred line.
+- **`examples/hello-spec/README.md`**: added a one-line synthetic-demo disclaimer at the bottom (the `spm` package is fictional; the file shapes are real).
+
+## [1.5.0] - 2026-04-21
+
+### Added
+
+- **GitHub Actions CI** (`.github/workflows/test.yml`): runs `bash tests/test-hooks.sh` on push to `master` and on every PR. Matrix: macOS + Ubuntu. Also validates all JSON files (`plugin.json`, `marketplace.json`, `hooks.json`, `settings.json`) parse cleanly.
+- **CI status badge in README** (top of file alongside version, license, Claude Code plugin badges).
+- **README hero section**: tagline, badge row, value prop, "Who this is for" / "Who this is NOT for" sections, prominent plugin install command. First-screen visible to anyone landing on the repo.
+- **Demo project at `examples/hello-spec/`**: small self-contained walkthrough showing real `CLAUDE.md`, `.planning/SPEC.md`, and a README that explains how the kit picks each file up. Demo subject: a Python CLI's `--version` flag.
+- **`CONTRIBUTING.md`** at repo root: rejection-first voice (adapted from superpowers v5.0.7 AGENTS.md, same source as v1.3 kit-health). Numbered MUST list before opening a PR. "What we will not accept" enumerates PHILOSOPHY.md's actual rejection criteria with cross-links.
+
+### Notes
+
+- All changes are additive. No breaking changes. No removals.
+- No new ADR: every change fits within existing principles. PHILOSOPHY.md unchanged.
+- README's component count line updated to "9 agents" (was "8"); tracks the `responding-to-review` agent added in v1.3.
+- CI is **descriptive**, not enforcing: PRs that fail CI are flagged but not auto-blocked. Enforcement still lives in the `safety-gate` hook locally.
+
+## [1.4.0] - 2026-04-21
+
+### Added
+
+- **Claude Code plugin packaging**: Kit now installs via `/plugin marketplace add dwarvesf/dwarves-kit` + `/plugin install dwarves-kit@dwarves-marketplace`. No `git clone`, no bash, no `jq` required. Updates via `/plugin update dwarves-kit`.
+- **`.claude-plugin/plugin.json`**: Plugin manifest with name, version, description, author, homepage, repository, keywords. Auto-discovers `agents/`, `commands/`, `skills/` directories.
+- **`.claude-plugin/marketplace.json`**: Self-hosted marketplace manifest. Single-plugin marketplace named `dwarves-marketplace` pointing at the repo root.
+- **`hooks/hooks.json`**: Plugin-format hook registration. Same 12 hooks across 8 event types as the bash install path. Uses `${CLAUDE_PLUGIN_ROOT}` for path-portable script references.
+- **README dual install section**: Plugin install presented first as recommended path. Bash install retained as alternative for CI / older Claude Code versions / non-plugin contexts. One-line note about Anthropic official marketplace submission via https://claude.ai/settings/plugins/submit.
+
+### Changed
+
+- **`docs/decisions.md`**: Added ADR-009 documenting the dual-ship deviation from PHILOSOPHY's "Replace, don't deprecate" with explicit rationale and sunset trigger.
+
+### Notes
+
+- This is an additive release. The bash installer (`install.sh`) and root `settings.json` are unchanged. Existing installs continue to work without action.
+- **Do not run both install paths on the same machine.** Hooks would register twice. Pick one.
+- Plugin install does not configure `statusLine` (not in v1 plugin schema). Use the bash install if you want the statusline HUD.
+
+## [1.3.0] - 2026-04-21
+
+### Added
+
+- **`responding-to-review` agent**: New subagent that responds to code review findings with verify-before-implement, no performative agreement, YAGNI check, and push-back-when-wrong. Wired into `/review-team` Step 5 so the FIX-THEN-SHIP path can dispatch it. Source: superpowers v5.0.7 `skills/receiving-code-review/SKILL.md`, adapted from a Skill (auto-discovered) to a custom subagent (dispatched on demand).
+- **`task-verifier` "Extra / unneeded work" check (Section 3b)**: Verifier now explicitly checks whether the worker built features that weren't requested, over-engineered, or added nice-to-haves outside the spec. Distinct from the existing file-scope check. Source: superpowers v5.0.7 `skills/subagent-driven-development/spec-reviewer-prompt.md`.
+- **`reviewer` (architecture lens) decomposition + contribution checks**: New bullets for "decomposed for independent testability" and "what this change contributed (don't flag pre-existing file size)". Source: superpowers v5.0.7 `skills/subagent-driven-development/code-quality-reviewer-prompt.md`.
+- **`commands/kit-health` rejection-first verdict**: Output template now produces `SHIP / FIX-REQUIRED / REJECT` verdicts with explicit gate rules. New Step 4 "What this kit will reject" section enumerates 10 auto-REJECT conditions grounded in PHILOSOPHY.md. Source framing: superpowers v5.0.7 `AGENTS.md` "What We Will Not Accept".
+
+### Changed
+
+- **`task-verifier` Rules**: Added "Verify by reading code, not by trusting the worker's report" as the first rule. Source: superpowers v5.0.7 spec-reviewer-prompt.
+- **`commands/review-team` Step 5**: FIX-THEN-SHIP path now suggests dispatching `responding-to-review` to handle the findings without performative agreement.
+- **`CLAUDE.md`**: Added `responding-to-review` to the Subagents inventory.
+- **`docs/decisions.md`**: Added ADR-008 covering the superpowers v5.0.7 adoption.
+
+### Fixed
+
+- **`tests/test-hooks.sh`**: Stale assertion `expected 10 event hooks` updated to `12` to match actual settings.json count (drift since v1.2 added SubagentStop and StatusLine entries). Test suite now reports 42/42 instead of 41/42.
+
+## [1.2.0] - 2026-03-30
+
+### Added
+
+- **Verification pipeline**: /execute now runs worker > task-verifier > fix-agent retry loop (max 2) for every task. No task is accepted without verification.
+- **8 custom agents**: task-verifier (read-only verification), fix-agent (targeted fixes), reviewer (configurable lens), security-auditor (OWASP audit), research-stack, research-features, research-architecture, research-pitfalls (4 parallel brownfield researchers).
+- **/start command**: entry point router that detects project state and suggests next command. Source: CCGS /start.
+- **/review-team command**: parallel 3-lens review dispatching security + architecture + test-coverage reviewers simultaneously.
+- **session-state-save.sh** (Stop + SubagentStop): persists session state to `.claude/session-state/`, rotates last 10 archives. Fail-open.
+- **docs/COLLABORATIVE-DESIGN.md**: shared protocol for structured decision-making (Question > Options > Recommendation > Decision > Record).
+- **SubagentStop event** in settings.json for session-state-save.
+
+### Changed
+
+- **/execute**: complete rewrite with verification pipeline, Collaborative Design Protocol integration, codebase-memory-mcp awareness.
+- **/ship**: added review gate (checks REVIEW.md verdict), version bump detection, automatic changelog entry generation.
+- **/spec**: added 4 parallel research subagents for brownfield projects (Mode A: formal agents, Mode B: inline fallback).
+- **/spec-validate**: enhanced Scope Critic with aggressive atomicity check, dependency declaration checking, testability criteria.
+- **context-readiness.sh**: v2 upgrade. Reads spec status, counts completed tasks, suggests next command ("detect, don't dictate").
+- **install.sh**: added agents install/uninstall, path-scoped rules auto-copy to `.claude/rules/`.
+- **PHILOSOPHY.md**: added "Verify before proceeding" and "Verify, then trust" principles. Updated version strategy.
+- **rules/*.md**: YAML `paths` changed to multi-line list format.
+
+## [1.1.0] - 2026-03-30
+
+### Security
+
+- **permission-auto-approve**: reject commands with pipes, chains, subshells (`|`, `&&`, `;`, `$()`, backticks) before checking whitelist. Prevents injection via chained commands.
+
+### Fixed
+
+- **anti-rationalization**: trimmed from 13 to 5 patterns. Removed 8 false-positive-prone phrases ("out of scope", "pre-existing", "we can revisit", "a future improvement", "for now, this should", "beyond the scope", "outside the current task", "I'll leave that for").
+- **auto-format**: no more `npx --yes` network downloads per edit. Detection order: project-local binary > global binary > npx cache only (`npx --no`).
+- **install.sh**: fixed jq merge logic that silently replaced user's existing hooks. Now removes dwarves-kit hooks first (idempotent), then concatenates arrays. Backs up settings.json before every modify.
+- **context-readiness**: reduced context noise. Only outputs warnings and compact state (branch, dirty count). Healthy project = empty JSON = zero context cost.
+- **spec-drift-guard**: shortened warning message, added `.claude/` to skip list.
+
+### Added
+
+- **statusline.sh** (StatusLine): shows `[model] branch | ctx:XX%! | $cost | think:on/off`. Context warning at 60% (`!`) and 80% (`!!`). Bash-only.
+- **slop-cleaner.sh** (Stop hook): checks recently modified files for functions >50 lines, deep nesting >4 levels, files >300 lines, duplicate code blocks. Nudge only, never blocks.
+- **kit-health command**: self-assessment against PHILOSOPHY.md principles. Checks file count, hook performance, settings validity, source citations, structural health.
+- **rules/backend-go.md**: Go backend conventions template (path-scoped rules).
+- **rules/frontend-ts.md**: TypeScript frontend conventions template (path-scoped rules).
+- **tests/test-hooks.sh**: automated test suite (40+ cases) covering safety-gate, anti-rationalization, permission-auto-approve, auto-format, context-readiness, slop-cleaner, statusline.
+- **Hook logging**: safety-gate, spec-drift-guard, slop-cleaner now log decisions to `~/.claude/dwarves-kit/logs/`.
+- **Debug mode**: `DWARVES_KIT_DEBUG=1` makes all hooks log to stderr.
+- **install.sh --uninstall**: clean removal of hooks, commands, skills from settings.json.
+
+### Changed
+
+- File budget: replaced hard 35-file cap with "every file must justify its existence" rule in PHILOSOPHY.md.
+- README: added v1.1 changelog section, testing instructions, debug mode docs, hook log docs, known limitations.
+- PHILOSOPHY.md: added indirect lineage documentation, expanded "NOT cover" section for parallel execution.
+- v1.1-handoff.md: rewritten from build spec to post-build handoff document.
+
+## [1.0.0] - 2026-03-29
+
+Initial release. 9 hooks + 9 commands + 1 skill.
+
+### Hooks
+- safety-gate (PreToolUse): blocks rm -rf, push to main, force push
+- context-readiness (SessionStart): project status injection
+- anti-rationalization (Stop): catches incomplete work rationalization
+- auto-format (PostToolUse): runs formatter on file changes
+- spec-drift-guard (PreToolUse): warns on unplanned files
+- pre-compact-backup (PreCompact): saves session snapshot
+- post-compact-reinject (PostToolUse): re-injects rules after compaction
+- notification (Notification): desktop alert when Claude needs input
+- permission-auto-approve (PermissionRequest): auto-approves read-only operations
+
+### Commands
+- /user:think, /user:spec, /user:spec-validate, /user:execute, /user:next
+- /user:review, /user:docs, /user:ship, /user:retro
+
+### Other
+- settings.json with all hooks registered
+- CLAUDE.md project template with Trail of Bits quality rules
+- install.sh idempotent installer
+- skills/get-api-docs Context Hub integration
+- docs/PHILOSOPHY.md design principles

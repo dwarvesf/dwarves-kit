@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """board hermes: link a Hermes agent profile to the kit, and notice when the link goes stale.
 
-The kit ships thin Hermes skills (adapters/hermes/skills/*/SKILL.md) that only say
+The kit ships thin Hermes skills (integrations/hermes/skills/*/SKILL.md) that only say
 which kit command to run. `link` puts them in one Hermes profile, records the link,
 and proves the profile can use them. `check` compares each linked profile's stamp
 with the kit, so a changed skill is noticed instead of silently drifting.
@@ -17,7 +17,7 @@ link, in order (each step previewed; nothing is written before a yes):
   2 pick     the profile that speaks for the operator (the master or spokesperson): --profile,
              else asked on a terminal. With more than one choice and no terminal, it lists the
              choices and exits 64. No Hermes found: one skip line, exit 0.
-  3 install  every skill dir under adapters/hermes/skills into the profile's skills dir, and a
+  3 install  every skill dir under integrations/hermes/skills into the profile's skills dir, and a
              stamp file (.dwarves-kit-skills.json: a digest of the skill files, the kit version
              and sha, the time). Re-running refreshes.
   4 record   the link in ~/.config/dwarves-kit/hermes-links.json ($DWARVES_HERMES_LINKS), with
@@ -58,7 +58,7 @@ sys.path.insert(0, str(HERE))
 import sweep_modules  # noqa: E402
 
 KIT = HERE.parent.parent.parent
-SKILLS_SRC = KIT / "adapters" / "hermes" / "skills"
+SKILLS_SRC = KIT / "integrations" / "hermes" / "skills"
 STAMP_NAME = ".dwarves-kit-skills.json"
 DEFAULT_LINKS = os.path.expanduser("~/.config/dwarves-kit/hermes-links.json")
 VERIFY_SESSION = "kit-link-verify"

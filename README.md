@@ -48,7 +48,7 @@ You rarely type a command. Say what you want, such as "add a `--version` flag to
 
 - **Commands.** The `/kit:*` actions for each phase. Every command is documented in the [command reference](docs/MANUAL.md#command-reference-the-kit-invokes-these-from-your-intent-you-rarely-type-them).
 - **Agents.** Read-only verifiers and reviewers, plus a fix-agent and domain builders. The [agents table](docs/MANUAL.md#agents-dispatched-not-invoked) says who dispatches each.
-- **Hooks.** Bash scripts on Claude Code events. A small spine always runs; the rest is opt-in. The full inventory is [`docs/hooks.md`](docs/hooks.md).
+- **Hooks.** Bash scripts on Claude Code events. A small spine always runs; the rest is opt-in. The full inventory is [`docs/reference/hooks.md`](docs/reference/hooks.md).
 - **Skills.** Claude loads these when your intent matches, for example the audit loops. See [Skills](docs/MANUAL.md#skills-claude-triggered).
 - **The bash engine.** Each subsystem is a standalone shell command under `bin/`, for example `bash bin/board --help` and `bash bin/precedent find "<query>"`. It runs without Claude Code.
 
@@ -62,10 +62,10 @@ It is bash and markdown, with no UI and no server. It targets one engineer or on
 | Doc | What it holds |
 |---|---|
 | [`docs/MANUAL.md`](docs/MANUAL.md) | The operator reference: commands, agents, skills, install layers, project layout, tests, troubleshooting |
-| [`docs/hooks.md`](docs/hooks.md) | Which hook prints which message, and the knobs that tune it |
-| [`docs/architecture.md`](docs/architecture.md) | How the parts fit and how data moves |
+| [`docs/reference/hooks.md`](docs/reference/hooks.md) | Which hook prints which message, and the knobs that tune it |
+| [`docs/reference/architecture.md`](docs/reference/architecture.md) | How the parts fit and how data moves |
 | [`docs/SYSTEM-DESIGN.md`](docs/SYSTEM-DESIGN.md) | The design model: use cases, components, flows, state machines |
-| [`docs/FEATURES.md`](docs/FEATURES.md) | Generated one-row-per-feature registry |
-| [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) | Why the kit is shaped this way, and what it rejects |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Release history |
+| [`docs/reference/FEATURES.md`](docs/reference/FEATURES.md) | Generated one-row-per-feature registry |
+| [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY.md) | Why the kit is shaped this way, and what it rejects |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), [`LICENSE`](LICENSE) | Contribute, report a vulnerability, MIT terms |
