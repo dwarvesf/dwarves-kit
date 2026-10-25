@@ -58,22 +58,27 @@ GH_RE='gh[[:space:]]+pr[[:space:]]+(create|new)'
 ENGAGE_RE="$GIT_RE|$GH_RE"
 # The gh words are also read with the quoted text of an inert command blanked out, so `printf '...gh pr
 # create...'` or a commit message that mentions it does not engage. Inert means: the segment's command word
-# is echo, printf or `git commit`, and the quoted span runs no substitution. The blanking fails toward
-# engaging: an unbalanced quote, an ANSI-C `$'..'` quote, or a pipe into a shell or runner leaves the text as is.
+# is echo, printf (not `printf -v`) or `git commit`, with no substitution before or inside the span. The
+# blanking fails toward engaging, and leaves the text whole when it meets: an unbalanced quote, an ANSI-C
+# `$'..'` quote, a comment, or any unquoted pipe or redirect (the quoted text could be written out or piped
+# to something that runs it).
 _blank_inert_quotes() {
   awk '
     { s = (NR == 1 ? $0 : s "\n" $0) }
     function inert(seg,   t) {
+      if (seg ~ /\$\(|`/) return 0
       t = seg; sub(/^[ \t]+/, "", t)
       while (match(t, /^[A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+/)) t = substr(t, RLENGTH + 1)
+      if (t ~ /^printf[ \t]+-v/) return 0
       return (t ~ /^(echo|printf)([ \t]|$)/ || t ~ /^git[ \t]+commit([ \t]|$)/)
     }
     END {
-      n = length(s); out = ""; seg = ""; i = 1
+      n = length(s); out = ""; seg = ""; i = 1; risky = 0
       while (i <= n) {
         c = substr(s, i, 1)
         if (c == "\\") { out = out substr(s, i, 2); seg = seg substr(s, i, 2); i += 2; continue }
-        if (c == ";" || c == "&" || c == "|" || c == "\n") { out = out c; seg = ""; i++; continue }
+        if (c == "|" || c == "<" || c == ">") { risky = 1; break }
+        if (c == ";" || c == "&" || c == "\n") { out = out c; seg = ""; i++; continue }
         if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n]/)) { out = out substr(s, i); break }
         if (c != "\047" && c != "\"") { out = out c; seg = seg c; i++; continue }
         if (i > 1 && substr(s, i - 1, 1) == "$") { out = out substr(s, i); break }
@@ -90,13 +95,11 @@ _blank_inert_quotes() {
         else { out = out substr(s, i, j - i + 1); seg = seg substr(s, i, j - i + 1) }
         i = j + 1
       }
-      printf "%s", out
+      if (!risky && i <= n && substr(s, i) ~ /[|<>]/) risky = 1
+      printf "%s", (risky ? s : out)
     }'
 }
-CMD_GH="$CMD_CODE"
-if ! grep -qE '\|&?[[:space:]]*([^|;&[:space:]]*/)?(sudo|exec|xargs|command|bash|sh|zsh|dash|ksh|eval|source|node|python3?|perl|ruby)([[:space:]]|$)' < <(printf '%s' "$CMD_CODE"); then
-  CMD_GH=$(printf '%s' "$CMD_CODE" | _blank_inert_quotes)
-fi
+CMD_GH=$(printf '%s' "$CMD_CODE" | _blank_inert_quotes)
 # A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
 # gate cannot see what is pushed: it is refused below (once the repo is known).
 SHELL_HD=0

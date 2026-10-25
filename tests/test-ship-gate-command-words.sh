@@ -62,6 +62,14 @@ third"'
 inert "echo then an unrelated command"      "echo 'gh pr create' && git status"
 
 # Anything that could still run the quoted text, or that the gate cannot read, engages.
+engages "substitution before the quote"     "echo \$(sh -c 'gh pr create')"
+engages "backtick before the quote"         "echo \`sh -c 'gh pr new'\`"
+engages "process substitution"              "echo x > >(bash -c \"gh pr create\")"
+engages "written to a file, then run"       "echo 'gh pr create' > /tmp/s.sh; sh /tmp/s.sh"
+engages "printf -v, then run the variable"  "printf -v c 'gh pr create'; \$c"
+engages "piped into env sh"                 "printf 'gh pr create' | env sh"
+engages "piped into a read loop"            "echo 'gh pr create' | while read c; do \$c; done"
+engages "redirect hides nothing after it"   "echo 'x' 2>&1 ; sh -c 'gh pr new'"
 engages "echo piped into a shell"           "echo 'gh pr create' | bash"
 engages "printf piped into xargs"           "printf 'gh pr new' | xargs sh -c"
 engages "command substitution in echo"      'echo "$(gh pr create)"'
