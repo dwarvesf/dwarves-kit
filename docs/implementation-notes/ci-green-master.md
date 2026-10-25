@@ -25,10 +25,15 @@ Goal: the `test` workflow green on master. Baseline run 40213719424 (head 2892b8
 | test-test-affected, -cache, -parallel | macos-latest has no `timeout`. `bin/test-affected` and `tests/run-all.sh` then ran every suite with no ceiling and never printed TIMEOUT. | `tests/lib/timeout.sh`: `kit_timeout` uses `timeout`, `gtimeout`, else a perl fork with its own process group, TERM at the limit, KILL 5 s later, GNU exit codes. Both runners source it. The three suites and five `test-run-all-*` suites copy it into their fixtures. | mac with no `timeout` on PATH |
 | test-proof-negctl | Cases 31 and 32 slept a fixed 1.0 s, then sent SIGINT, assuming negctl was inside the restore's `git checkout`. | The git shim writes a marker on entering `checkout`; the test waits for it (20 s ceiling) before the interrupt. | mac, also under 30 busy loops. Root cause unconfirmed, see below. |
 
+## Full container run
+
+`CI=true bash tests/run-all.sh --all` in the container at the fix commits: 260 suites ok or skipped for missing agent CLIs, one red (test-board-work, the image gap below). The baseline run listed 13 red ubuntu suites.
+
 ## Not reproduced
 
 - test-lanes-data and test-tool-policy-guard failed on ubuntu in the baseline run. They pass alone at that commit and at current master in the container, and pass in a full CI-like `run-all.sh --all`. Both read a throwaway repo or the module table, which another suite does not touch. I could not tie them to a cause. They are the likeliest suites to be flaky or order-dependent. Dispatch once and look.
 - test-proof-negctl on macOS: I never reproduced the failure on a Mac (the old file passes under 30 busy loops). The timing guess is the only fixed-delay assumption in the two failing cases and the symptom (empty output, clean tree) matches an early interrupt. The fix removes that assumption; it is not proven to be the CI cause.
+- test-proof-negctl case 42 failed once in four macOS runs, only while 33 other suites ran beside it (`run-all.sh --changed`). Bash printed `child setpgid (...): Operation not permitted` into the output the case compares byte for byte. That is bash's own job-control race in `lib/gate/negctl.sh --parallel` (`set -m` workers that exit fast). Thirty busy loops did not reproduce it, so I did not touch negctl.sh. If it recurs, redirect stderr of the worker launch loop. The suite passed alone on the same tree.
 - test-board-work fails in my container and passes in the baseline run, so the gap is in my image, not the kit. Not investigated further.
 
 ## Rollback
