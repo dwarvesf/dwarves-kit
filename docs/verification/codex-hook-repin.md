@@ -8,8 +8,16 @@
 |---|---|---|
 | `bash tests/test-codex-hooks.sh` | 0 | PASS (94 passed, 0 failed) |
 
+```
 Command: bash tests/test-codex-hooks.sh
 Exit: 0
+Output:
+PASS secret attempt from AWS-shaped working directory is blocked
+PASS working directory token fixture is absent from output and logs
+
+94 passed, 0 failed
+Verdict: PASS
+```
 
 ## Negative control
 
