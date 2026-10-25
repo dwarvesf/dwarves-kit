@@ -233,8 +233,31 @@ def test_allocation_flags_partial_periods():
     assert "Sample:" in md
 
 
+def test_push_url_ignores_the_project_kit_toml():
+    import os
+    with tempfile.TemporaryDirectory() as d:
+        proj, op = Path(d, "proj"), Path(d, "op")
+        proj.mkdir()
+        op.mkdir()
+        (proj / ".kit.toml").write_text('[observe]\npush_url = "https://project.example"\nrepos = "demo"\n')
+        saved = (os.getcwd(), os.environ.get("KIT_CONFIG_OPERATOR"))
+        os.environ["KIT_CONFIG_OPERATOR"] = str(op)
+        os.chdir(proj)
+        try:
+            assert dashboard.observe_config("push_url") != "https://project.example"
+            assert dashboard.observe_config("repos") == "demo"  # other keys keep the project layer
+            (op / "kit.toml").write_text('[observe]\npush_url = "https://operator.example"\n')
+            assert dashboard.observe_config("push_url") == "https://operator.example"
+        finally:
+            os.chdir(saved[0])
+            if saved[1] is None:
+                os.environ.pop("KIT_CONFIG_OPERATOR", None)
+            else:
+                os.environ["KIT_CONFIG_OPERATOR"] = saved[1]
+
+
 if __name__ == "__main__":
-    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    fns =[v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:
         fn()
         print(f"ok {fn.__name__}")
