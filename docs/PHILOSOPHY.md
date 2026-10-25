@@ -99,7 +99,7 @@ We believe a unified kit covering Think-through-Retro is more valuable than 4 be
 
 We believe covering the full lifecycle (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect) at 70% depth each is better than covering a couple of phases at 100% depth. The biggest failures in AI-assisted development come from skipped phases (no spec, no review, no retro), not from insufficient depth in any one phase.
 
-**This principle UPHOLDS cross-goal fan-out, it does not forbid it.** Running N goals concurrently is *width* (N lifecycles at 70% depth each), not the *depth* of an in-kit scheduler. The boundary "Shallow and wide" draws is against rebuilding a runtime (a DAG, wave execution, crash recovery), not against breadth. Fan-out behind the disjointness gate stays shallow-and-wide; a topological scheduler would not, and is handed to GSD v2.
+**This principle UPHOLDS cross-goal fan-out, it does not forbid it.** Running N goals concurrently is *width* (N lifecycles at 70% depth each), not the *depth* of an in-kit scheduler. The boundary "Shallow and wide" draws is against rebuilding a runtime (an ordering graph, crash recovery), not against breadth. One narrow piece is in: the orchestrator runs sub-goals that are already dependency-independent as a bounded wavefront (ADR-0030). Fan-out behind the disjointness gate and that wavefront stay shallow-and-wide; a general ordering-graph scheduler and crash-recovery durability would not, and are handed to GSD v2.
 
 **Decision this already made:** /execute uses Claude Code's native Task tool for subagent dispatch. It's not as sophisticated as GSD v2's Pi SDK runtime (which has crash recovery, token tracking, and automated git branching). But it exists, and it covers the execution gap that 0 commands would leave.
 
@@ -147,7 +147,7 @@ Hooks stay bash. A third kind of exception means revisiting this rule, not bendi
 
 ### "Detect, don't dictate"
 
-We believe the kit should detect the user's current state and suggest the right action, not require them to memorize 11 commands. A full-time coder in flow state doesn't want to remember whether the next step is /review or /docs or /ship. The kit should surface what's relevant based on project state.
+We believe the kit should detect the user's current state and suggest the right action, not require them to memorize the command list. A full-time coder in flow state doesn't want to remember whether the next step is /review or /docs or /ship. The kit should surface what's relevant based on project state.
 
 **Decision this already made:** context-readiness hook (v1.2) reads the active spec's status, counts completed tasks, checks whether the spec carries a `## Review` section, and injects a one-line "next:" suggestion into Claude's context at session start. The /start command provides the same detection as an explicit entry point. Both detect and suggest; neither blocks.
 
@@ -227,7 +227,7 @@ End of day or end of sprint: /retro to capture learnings.
 - **CI/CD**: The kit produces commits and PRs. GitHub Actions or whatever CI pipeline runs after that is a separate concern.
 - **Multi-agent coordination across machines or by a team**: When 3+ contractors (multiple human operators) run Claude Code, or sessions must coordinate across machines, that's L5 orchestration (Nimbalyst/Intent territory). In-kit: one **lead** session orchestrating N isolated worktree workers within itself, and one operator's N concurrent same-machine sessions over disjoint goals, coordinated by the passive running-goal registry (ADR-0022, the cross-session disjointness gate + monitor). What stays L5: coordination across machines, 3+ live human operators sharing a pool, and goal-ordering chains (B waits for A to merge).
 - **Project management**: No sprint boards, no story points, no velocity tracking. Notion handles that.
-- **A cross-task DAG / scheduler / runtime**: bounded cross-goal fan-out IS in-scope: one lead session fans out N disjoint `VALIDATED` specs into isolated worktree workers behind a disjointness gate, with lead-owned convergence. What stays out: a topological / wave scheduler, crash-recovery durability, and intra-spec task parallelism (`/kit:execute` itself stays sequential, dispatching one task at a time via the Task tool). The moment goals develop real ordering chains (C needs A+B merged, then D needs C), hand execution to GSD v2 (Pi SDK runtime) or Agent Teams; the kit does not rebuild a runtime.
+- **A cross-task DAG / scheduler / runtime**: bounded cross-goal fan-out IS in-scope: one lead session fans out N disjoint `VALIDATED` specs into isolated worktree workers behind a disjointness gate, with lead-owned convergence. What stays out: a general topological ordering-graph scheduler (the orchestrator's bounded wavefront over already-independent sub-goals is in, ADR-0030), crash-recovery durability, and intra-spec task parallelism (`/kit:execute` itself stays sequential, dispatching one task at a time via the Task tool). The moment goals develop real ordering chains (C needs A+B merged, then D needs C), hand execution to GSD v2 (Pi SDK runtime) or Agent Teams; the kit does not rebuild a runtime.
 
 ---
 
@@ -325,11 +325,10 @@ The thesis is not "better components" but "better integration." If that thesis i
 1. **Identify the source.** What existing tool or pattern does this come from? (principle: "synthesize, don't originate")
 2. **Score with the adoption rubric.** Layer fit + Pain match + Adoption cost + Timing; the scored table lives in `docs/ABSORPTION.md` (not a `/eval-tool` command). Must score 10+ to be ADOPT.
 3. **Check the NO list.** Does it violate any hard limit or rejection criterion?
-4. **File budget check.** Will the kit stay under 35 files? If not, what gets removed?
-5. **Performance check.** For hooks: does it complete in under 500ms?
-6. **Write the one-sentence description.** If you can't, it's too complex.
-7. **Add source citation.** README credits section must be updated.
-8. **Test on one real project for 1 week before merging.**
+4. **Performance check.** For hooks: does it complete in under 500ms?
+5. **Write the one-sentence description.** If you can't, it's too complex.
+6. **Add source citation.** README credits section must be updated.
+7. **Test on one real project for 1 week before merging.**
 
 ### Deprecating a component
 
@@ -354,12 +353,7 @@ The bar for this: run it only when manual iteration has plateaued AND 10+ real s
 
 ### Version strategy
 
-- **v1.0-v1.1**: Commands + hooks. Manual iteration on prompts. Sequential task dispatch.
-- **v1.2** (current): Verification pipeline (task-verifier + fix-agent + retry loop). Bootstrapping router (/start). Path-scoped rules. Context-readiness v2 with command suggestions.
-- **v2.x** (pending real usage data): Prompt-type hooks (anti-rationalization upgraded to Haiku evaluation). /qa command with browser testing. Agent Teams parallel execution. Plugin marketplace packaging.
-- **v3.x**: Agent-type hooks for deep verification. Multi-runtime support (Codex, Gemini). AutoResearch-optimized prompts.
-
-No timeline commitment. Version bumps happen when real usage exposes the limits of the current version, not on a calendar schedule.
+The version plan moved to ADR-0040 (`docs/decisions/0040-version-strategy.md`). The current version is the `VERSION` file.
 
 ---
 
@@ -505,21 +499,21 @@ telemetry or termination contract.
 ### N6, Self-improvement: the kit learns from its own runs
 
 We believe the kit improves itself through its own stage loop (Shape -> Build -> Watch -> Check ->
-Learn): every run emits measurable signals across its surfaces and artifacts, the Learn stage turns
+Reflect): every run emits measurable signals across its surfaces and artifacts, the Reflect stage turns
 them into cited proposals, and "propose, never dispose" keeps a human at the promote step. The
 mid-term goal: the framework gets better because it ran, not because someone remembered to improve
 it.
 
-**What exists today:** gate-ledger + lane-telemetry + stats projections; `learn propose` -> staging
+**What exists today:** gate-ledger + lane-telemetry + stats projections; `reflect propose` -> staging
 -> `board promote`; `caught=bool` + override-rate per gate; delivery-ratio; kit-health;
-learn-propose precision tracking.
+reflect-propose precision tracking.
 
 **The gap:** the learning loop's one measured precision gap (ID-305, promote-precision on a
 labelled sample) has a fix plus a reconstructed-sample regression proof (24 -> 67 percent), but
 no live field remeasurement yet, so it is fixed, not yet trusted at scale; review-economics
 unmeasured; context freshness is pull-based with no owner.
 
-**A conforming proposal looks like:** it adds or consumes a measurable signal, feeds the Learn
+**A conforming proposal looks like:** it adds or consumes a measurable signal, feeds the Reflect
 stage's staging file, and is itself measured (the meta-loop). **It would reject:** self-rewriting
 automation that bypasses staging; an unmeasured "smart" feature (the ruflo trap: capability claims
 with no observable signal).
