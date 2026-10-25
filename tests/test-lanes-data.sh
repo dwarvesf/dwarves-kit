@@ -1667,6 +1667,27 @@ case_floor_data_loss_sqli_big_head() {
   else fail floor-data-loss-sqli-big-head "out='$out' elapsed=${ms}ms (limit 5000ms)"; fi
 }
 
+# The kit's own .kit.toml, as committed on the base branch, exempts the session transcript tooling
+# (lib/session/) from the auth hard path and nothing else. Reads the repo's real file into a fixture.
+case_kit_own_session_not_auth() {
+  local bad="" p out
+  mkrepo; _git checkout -q main >/dev/null 2>&1
+  { cat "$KIT_DIR/.kit.toml"; printf '\n[gate]\nlane_gates = true\n'; } > "$ROOT/.kit.toml"; _commit "chore: kit own config"
+  _git checkout -q -B feat/x >/dev/null 2>&1
+  for p in lib/session/observe/bin/session-observe lib/session/recall/lib/final.sh; do
+    mkrepo_keep_config; addfile "$p" "x"
+    out="$(floor_out)"; [ -z "$out" ] || bad="$bad [$p => '$out']"
+  done
+  for p in lib/session.ts src/auth/login.ts app/session/store.ts lib/other/session/x.sh lib/session/.env lib/session/credentials.json; do
+    mkrepo_keep_config; addfile "$p" "x"
+    out="$(floor_out)"
+    case "$out" in "full "*": $p") ;; *) bad="$bad [$p => '$out' (want full)]" ;; esac
+  done
+  [ -z "$bad" ] && pass kit-own-session-not-auth || fail kit-own-session-not-auth "$bad"
+}
+# mkrepo_keep_config: reset feat/x to main (which carries the kit's own config) between probes.
+mkrepo_keep_config() { _git checkout -q -f main >/dev/null 2>&1; _git branch -q -D feat/x >/dev/null 2>&1; _git checkout -q -b feat/x >/dev/null 2>&1; }
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -1674,7 +1695,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-review-repros floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head"
+ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-review-repros floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head kit-own-session-not-auth"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
