@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# requires: timeout
+# requires: perl
 # run-all.sh must report a per-suite TIMEOUT as a DIFFERENT fact from a red assertion.
 #
 # Both still exit 1, but they mean different things: a ceiling hit under load is not a broken
@@ -137,6 +137,30 @@ OUT8="$(DWARVES_KIT_LOG_DIR="$LOG8" bash "$K7/tests/run-all.sh" --only quiet 2>&
 if [ "$RC8" -eq 0 ] && [ ! -e "$LOG8/run-all" ] && ! grep -q 'full output' <<<"$OUT8"; then
   ok "green run leaves the log root untouched"
 else no "rc=$RC8 out=$OUT8 ls=$(ls -A "$LOG8" 2>&1)"; fi
+
+echo "[11] the perl fallback of tests/lib/timeout.sh (forced, so it runs where GNU timeout exists too)"
+FB() { ( export KIT_TIMEOUT_FORCE_PERL=1; . "$DIR/tests/lib/timeout.sh"; kit_timeout "$@" ); }
+# the command stays in the caller's process group: a new group once hung two suites on a stock macOS runner
+MYG="$(ps -o pgid= -p $$ | tr -d ' ')"
+KIDG="$(FB 5 bash -c 'ps -o pgid= -p $$' | tr -d ' ')"
+if [ -n "$MYG" ] && [ "$MYG" = "$KIDG" ]; then ok "the command runs in the caller's process group"; else no "caller=$MYG command=$KIDG"; fi
+# stdin and the exit status pass straight through
+if [ "$(printf 'via stdin' | FB 5 cat)" = "via stdin" ]; then ok "stdin reaches the command"; else no "stdin lost"; fi
+FB 5 bash -c 'exit 7'; RCX=$?
+FB 5 bash -c 'kill -9 $$'; RCK=$?
+if [ "$RCX" = 7 ] && [ "$RCK" = 137 ]; then ok "exit 7 stays 7, a SIGKILL death is 137"; else no "rc=$RCX killed=$RCK"; fi
+# a command over its limit: 124, the diagnostic names what was still running, and the whole tree is gone
+T11="$(mktemp -d "$TMP/t11.XXXXXX")"
+FB 1 bash -c 'sleep 23 & sleep 24' 2>"$T11/err"; RCT=$?
+sleep 0.3
+LEFT="$(pgrep -f 'sleep 2[34]' | wc -l | tr -d ' ')"
+if [ "$RCT" = 124 ] && grep -q 'timeout: 1s reached' "$T11/err" && grep -q 'sleep 23' "$T11/err" && [ "$LEFT" = 0 ]; then
+  ok "124 on a timeout, the live process tree is printed, no descendant survives"
+else no "rc=$RCT left=$LEFT err=$(cat "$T11/err")"; fi
+# a command that ignores TERM is still ended (KILL follows) and the run does not wait out the sleep
+T0="$(date +%s)"; FB 1 bash -c 'trap "" TERM; sleep 25' 2>/dev/null; RCI=$?; TOOK=$(( $(date +%s) - T0 ))
+pkill -f 'sleep 25' 2>/dev/null
+if [ "$RCI" = 124 ] && [ "$TOOK" -lt 15 ]; then ok "a TERM-ignoring command is killed after the grace period (${TOOK}s)"; else no "rc=$RCI took=${TOOK}s"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-run-all-timeout: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-run-all-timeout: all $pass passed"
