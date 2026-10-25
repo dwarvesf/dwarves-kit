@@ -25,7 +25,7 @@ node_modules/
 # the spec's `## Review` section, and the spec location unified onto docs/specs/
 # (ADR-0010). Kept ignored so a stray copy (an older kit version, a downstream
 # project, or a manual run) can never slip into version control.
-REVIEW.md
+/REVIEW.md
 TODOS.md
 .planning/
 
