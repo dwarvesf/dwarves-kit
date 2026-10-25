@@ -656,5 +656,17 @@ if [ "$RC" -eq 1 ] && grep -q 'Verdict: FAIL: RED was a load or compile error, n
   ok "import-analysis parse failure rejected"
 else no "rc=$RC out=$OUT"; fi
 
+echo "[55] a SUBDIRECTORY root: the restore resolves toplevel-relative paths, the file is never left mutated"
+SREPO="$TMP/subrepo"; mkdir -p "$SREPO/tools/app"
+printf 'add() { echo $(( $1 + $2 )); }\n' > "$SREPO/tools/app/lib.sh"
+printf '#!/usr/bin/env bash\nsource ./lib.sh\n[ "$(add 2 2)" = "4" ]\n' > "$SREPO/tools/app/test.sh"
+printf 'top\n' > "$SREPO/top.txt"
+git -C "$SREPO" init -q && git -C "$SREPO" add -A && git -C "$SREPO" -c user.name=t -c user.email=t@t commit -q -m seed
+OUT="$(bash "$NC" "$SREPO/tools/app" "bash test.sh" "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q 'Changed: tools/app/lib.sh' <<<"$OUT" \
+   && ! grep -q 'restore failed' <<<"$OUT" && grep -q '+' "$SREPO/tools/app/lib.sh" && clean "$SREPO"; then
+  ok "subdir root restored, tree clean"
+else no "rc=$RC tree=$(git -C "$SREPO" status --porcelain) out=$OUT"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
