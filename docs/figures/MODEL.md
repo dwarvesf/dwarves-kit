@@ -129,7 +129,7 @@ id: board-row
 type: state
 title: Board row status
 level: L4
-caption: "A board row moves from queued to shipped. /kit:assign claims it, /kit:spec marks it validated, and /kit:wrap closes it. Amber is the one flip no command makes: you set a validated row to executing by hand."
+caption: "A board row moves from queued to shipped. /kit:assign claims it, /kit:spec marks it validated, /kit:execute marks it executing when the build starts, and /kit:wrap closes it."
 states:
   - {name: queued, initial: true, tone: green, at: [0, 1]}
   - {name: claimed, tone: green, at: [1, 1]}
@@ -144,7 +144,7 @@ transitions:
   - {from: claimed, to: speccing, event: "/kit:assign, lane has a spec", tone: green}
   - {from: claimed, to: executing, event: "/kit:assign, tiny lane", tone: green}
   - {from: speccing, to: validated, event: "/kit:spec, round approved", tone: green}
-  - {from: validated, to: executing, event: "you, by hand", tone: amber}
+  - {from: validated, to: executing, event: "/kit:execute, build starts", tone: green}
   - {from: executing, to: shipped, event: "/kit:wrap", tone: green}
   - {from: executing, to: parked, event: "/kit:wrap", tone: green}
   - {from: queued, to: dropped, event: "/kit:wrap", tone: green}

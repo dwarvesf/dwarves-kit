@@ -34,7 +34,7 @@ No Claude Code plugin system, or you use Codex? See [Install options and modules
 | Ship one change and see what happens when | [`docs/guides/spine.md`](docs/guides/spine.md) |
 | Get a change reviewed before it ships | [`docs/guides/review.md`](docs/guides/review.md) |
 | Run several pieces of work at once | [`docs/guides/mega-goal.md`](docs/guides/mega-goal.md) |
-| Check that your docs work for a stranger | [`docs/guides/gauntlet.md`](docs/guides/gauntlet.md) |
+| Prove an artifact works for a cold reader (docs, a runbook, a spec, an API) | [`docs/guides/gauntlet.md`](docs/guides/gauntlet.md) |
 | Land a finished session and clean up | [`docs/guides/wrap.md`](docs/guides/wrap.md) |
 | Fix a push that was blocked | [`docs/guides/gates-and-proof.md`](docs/guides/gates-and-proof.md) |
 | Hunt a bug | [`docs/guides/debug.md`](docs/guides/debug.md) |

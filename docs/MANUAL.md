@@ -739,8 +739,8 @@ bash install.sh                # re-registers
 
 Plugin install:
 ```
-/plugin uninstall dwarves-kit@dwarves-marketplace
-/plugin install dwarves-kit@dwarves-marketplace
+/plugin uninstall kit@dwarves-marketplace
+/plugin install kit@dwarves-marketplace
 ```
 
 #### Roll back a bad release

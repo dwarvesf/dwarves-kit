@@ -102,6 +102,8 @@ Show the plan (phases, tasks, slices, and the `LANE-SUGGEST` line if `$SUGGEST_F
 
 ### Step 2: Dispatch the builder
 
+**Board flip.** When the spec carries a `Board: <ID>` header line, flip that row as the build starts: `bash lib/board/backlog.sh set <ID> executing`. With no `Board:` line, make no board call (a spec without a board row never creates one). This is the one flip between `validated` and `wrap`; `/kit:wrap` closes the row.
+
 > A subagent is NOT automatically cheaper. Dispatch one to isolate large reads and long tool chains from the lead's context, not for a one-prompt task or near a budget limit.
 
 **Run-id tag.** Every Agent/Task dispatch this command instructs sets its `description` to include `rid=<rid>` (the rid `bash lib/gate/gate-ledger.sh rid` prints), e.g. `"build rid=<rid>"`, so a transcript reader can count dispatches and tokens per run from each subagent's `.meta.json`.
