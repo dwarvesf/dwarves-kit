@@ -10,8 +10,9 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
 # build_stack <name> [--conflict] -- a bare origin and a clone on main. stack/a (commits a1,
-# a2) squash-merged into main as one commit; stack/b (commit b1) was built on stack/a, so it
-# still holds a1 and a2. --conflict adds a main commit that writes b.txt too, so replaying b1
+# a2, where a2 edits the line a1 added) squash-merged into main as one commit; stack/b (commit
+# b1) was built on stack/a, so it still holds a1 and a2. Replaying a1 onto main conflicts, so a
+# rebase without the parent cut point is red. --conflict adds a main commit that writes b.txt too, so replaying b1
 # conflicts. Sets SK_A1, SK_A2 (stack/a's pushed commits), SK_B (stack/b's head), SK_MAIN.
 build_stack() {
   local name="$1" mode="${2:-}" w="$TMPD/sk-work-$1"
@@ -21,12 +22,12 @@ build_stack() {
   git -C "$w" checkout -q -b stack/a
   printf 'line1\na1\n' > "$w/a.txt"; git -C "$w" commit -qam a1
   SK_A1="$(git -C "$w" rev-parse HEAD)"
-  printf 'a2\n' > "$w/a2.txt"; git -C "$w" add -A; git -C "$w" commit -qm a2
+  printf 'line1\na1-edited\n' > "$w/a.txt"; printf 'a2\n' > "$w/a2.txt"; git -C "$w" add -A; git -C "$w" commit -qm a2
   SK_A2="$(git -C "$w" rev-parse HEAD)"
   git -C "$w" checkout -q -b stack/b
   printf 'b1\n' > "$w/b.txt"; git -C "$w" add -A; git -C "$w" commit -qm b1
   git -C "$w" checkout -q main
-  printf 'line1\na1\n' > "$w/a.txt"; printf 'a2\n' > "$w/a2.txt"
+  printf 'line1\na1-edited\n' > "$w/a.txt"; printf 'a2\n' > "$w/a2.txt"
   git -C "$w" add -A; git -C "$w" commit -qm "squash a"
   if [ "$mode" = "--conflict" ]; then
     printf 'main b\n' > "$w/b.txt"; git -C "$w" add -A; git -C "$w" commit -qm "main adds b"
