@@ -5,7 +5,7 @@
 # _pr_detail <url> <number> -- the fields every merge gate reads.
 _pr_detail() {
   gh pr view "$2" --repo "$1" \
-    --json number,title,body,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft 2>/dev/null
+    --json number,title,body,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft,isCrossRepository,autoMergeRequest 2>/dev/null
 }
 
 # _pr_gate <json> <default branch> -- "OK" or "SKIP <reason>". mergeStateStatus carries the
@@ -590,11 +590,284 @@ _remote_merge_verify() {
   else printf 'merge commit is not on %s' "$2"; fi
 }
 
+# ------------------------------------------------------------ stacked child after a squash
+
+# After GitHub squash-merges a parent PR, a child still holds the parent's ORIGINAL commits,
+# which the squash commit does not contain, so the child conflicts with the default branch
+# and no merge of the default branch into it can clear that. The recovery is the rebase an
+# operator runs by hand: replay only the child's own commits onto origin/<def> with the
+# parent's last pushed head as the cut point, then push the PR's own head with a lease.
+# It is the one history rewrite `merge` owns, so it runs only under `--rebase-stacked`.
+
+# _stacked_parent <repo> <url> <def> <head-oid> -- the squash-merged PR a stacked child was
+# built on: a PR merged into <def> whose headRefOid is an ancestor of the child's head and
+# NOT of origin/<def> (a plain merge would have put it there). Several must form one chain;
+# the tip-most wins and a fork in the chain is refused. Sets STK_PARENT and STK_PARENT_PR.
+# 0 found, 1 none (not the stacked case, nothing touched), 2 unreadable or ambiguous.
+_stacked_parent() {
+  local repo="$1" url="$2" def="$3" head_oid="$4" list cands c o i j best="" ok
+  local -a oids=() prs=()
+  STK_PARENT=""; STK_PARENT_PR=""
+  list="$(gh pr list --repo "$url" --state merged --base "$def" --limit 100 \
+    --json number,headRefOid,baseRefName,mergedAt 2>/dev/null)" || {
+    echo "     the merged-PR query on ${url} failed"; return 2; }
+  cands="$(printf '%s' "$list" | jq -r --arg d "$def" \
+    '.[] | select(.mergedAt != null and .baseRefName == $d) | "\(.number) \(.headRefOid)"' 2>/dev/null)" || {
+    echo "     the merged-PR list on ${url} did not parse"; return 2; }
+  while read -r c o; do
+    [ -n "$o" ] && [ "$o" != "$head_oid" ] || continue
+    git -C "$repo" cat-file -e "${o}^{commit}" 2>/dev/null || continue
+    git -C "$repo" merge-base --is-ancestor "$o" "$head_oid" 2>/dev/null || continue
+    git -C "$repo" merge-base --is-ancestor "$o" "origin/${def}" 2>/dev/null && continue
+    oids+=("$o"); prs+=("$c")
+  done <<< "$cands"
+  [ "${#oids[@]}" -gt 0 ] || return 1
+  for i in "${!oids[@]}"; do
+    ok=1
+    for j in "${!oids[@]}"; do
+      [ "$i" = "$j" ] || git -C "$repo" merge-base --is-ancestor "${oids[$j]}" "${oids[$i]}" 2>/dev/null \
+        || { ok=0; break; }
+    done
+    [ "$ok" = 1 ] && { best="$i"; break; }
+  done
+  [ -n "$best" ] || {
+    echo "     merged PRs ${prs[*]} all sit under the head but do not form one chain; the parent is ambiguous"; return 2; }
+  STK_PARENT="${oids[$best]}"; STK_PARENT_PR="${prs[$best]}"
+}
+
+# _stk_trap -- INT/TERM/HUP inside `_stacked_rebase`: ignore further signals, set the flag
+# the body checks, abort a rebase in flight, and put a rebased-but-unpushed branch back at
+# the head it started from (`reset --keep`, so nothing uncommitted is lost).
+_stk_trap() {
+  trap '' INT TERM HUP
+  STK_HIT=1
+  [ -z "$STK_WT" ] && return
+  git -C "$STK_WT" rebase --abort >/dev/null 2>&1
+  [ -n "$STK_PUSHED" ] || [ "$(git -C "$STK_WT" rev-parse HEAD 2>/dev/null)" = "$STK_BASE" ] \
+    || git -C "$STK_WT" reset -q --keep "$STK_BASE" >/dev/null 2>&1
+}
+
+# _stacked_rebase <repo> <url> <def> <n> <branch> <head-oid> <parent-oid> [<verify-cmd>] --
+# `git rebase --onto origin/<def> <parent-oid>` of the PR's own head, then one
+# `push --force-with-lease=refs/heads/<branch>:<head-oid>` of that branch and nothing else.
+# The lease names the head the gates read, so a push by anyone else in between refuses it.
+# Never auto-resolves: a conflict aborts the rebase and names the files. The work happens in
+# the checkout that holds the branch (clean, at the PR head), else in a scratch detached
+# worktree; no other checkout is touched. A branch GitHub protects refuses the push and
+# nothing changes. 0 pushed (STK_OID), 1 refused with nothing changed on origin, 2 a
+# checkout needs a human, 130 interrupted. Runs in the current shell: never call it inside
+# $(...).
+_stacked_rebase() {
+  local rc ti tt th
+  STK_OID=""; STK_WT=""; STK_HIT=""; STK_SCRATCH=""; STK_BASE=""; STK_PUSHED=""
+  ti="$(trap -p INT)"; tt="$(trap -p TERM)"; th="$(trap -p HUP)"
+  trap '_stk_trap' INT TERM HUP
+  _stacked_rebase_body "$@"; rc=$?
+  if [ -n "$ti" ]; then eval "$ti"; else trap - INT; fi
+  if [ -n "$tt" ]; then eval "$tt"; else trap - TERM; fi
+  if [ -n "$th" ]; then eval "$th"; else trap - HUP; fi
+  [ -n "$STK_SCRATCH" ] && [ "$rc" -ne 2 ] && _scratch_wt_drop "$1" "$STK_SCRATCH"
+  [ -z "$STK_HIT" ] || return 130
+  return "$rc"
+}
+
+_stacked_rebase_body() {
+  local repo="$1" url="$2" def="$3" n="$4" branch="$5" head_oid="$6" parent="$7" cmd="${8:-}"
+  local wt tip rc files new remote
+  case "$branch" in
+    ''|-*|HEAD|"$def"|main|master)
+      echo "     REFUSED #${n}: ${branch:-an empty branch name} is never rewritten"; return 1 ;;
+  esac
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     REFUSED #${n}: fetch origin ${def} failed"; return 1; }
+  git -C "$repo" fetch -q origin "$branch" 2>/dev/null || { echo "     REFUSED #${n}: fetch of ${branch} failed"; return 1; }
+  tip="$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null)"
+  [ "$tip" = "$head_oid" ] || {
+    echo "     REFUSED #${n}: origin ${branch} is $(_short "$tip"), not the PR head $(_short "$head_oid")"; return 1; }
+  if wt="$(_branch_worktree "$repo" "$branch")"; then
+    tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+    [ "$tip" = "$head_oid" ] || {
+      echo "     REFUSED #${n}: ${branch} at ${wt} is $(_short "$tip"), not the PR head $(_short "$head_oid"); push or reset it first"; return 1; }
+    [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || {
+      echo "     REFUSED #${n}: ${wt} is dirty, so a rebase would sweep uncommitted work into the branch"; return 1; }
+    _write_guard "$wt" || { echo "     REFUSED #${n}: index.lock held by another writer in ${wt}"; return 1; }
+  else
+    wt="$(_scratch_wt_add "$repo" "$head_oid")" || {
+      echo "     REFUSED #${n}: no checkout holds ${branch} and a scratch worktree failed"; return 1; }
+    STK_SCRATCH="$wt"
+    echo "     no local checkout holds ${branch}; rebasing in a scratch worktree"
+  fi
+  STK_BASE="$head_oid"; STK_WT="$wt"
+
+  GIT_EDITOR=true git -C "$wt" rebase --onto "origin/${def}" "$parent" >/dev/null 2>&1; rc=$?
+  [ -z "$STK_HIT" ] || return 130
+  if [ "$rc" -ne 0 ]; then
+    files="$(git -C "$wt" diff --name-only --diff-filter=U 2>/dev/null | paste -sd, - | sed 's/,/, /g')"
+    git -C "$wt" rebase --abort >/dev/null 2>&1
+    if [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$head_oid" ] \
+       || [ -n "$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+      echo "ABORT FAILED ${branch}: run git rebase --abort in ${wt}"; return 2
+    fi
+    if [ -n "$files" ]; then
+      echo "     REFUSED #${n}: rebasing ${branch} onto origin/${def} conflicts in: ${files}; aborted, nothing pushed"
+    else
+      echo "     REFUSED #${n}: git rebase exited ${rc} in ${wt}; aborted, nothing pushed"
+    fi
+    return 1
+  fi
+  new="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  if ! git -C "$wt" merge-base --is-ancestor "origin/${def}" "$new" 2>/dev/null; then
+    echo "     REFUSED #${n}: the rebased ${branch} does not contain origin/${def}; nothing pushed"
+    _undo_local "$wt" "$branch" "$head_oid"; return $?
+  fi
+  if [ -n "$cmd" ]; then
+    ( cd "$wt" && exec bash -c "$cmd" ); rc=$?
+    [ -z "$STK_HIT" ] || return 130
+    if [ "$rc" -ne 0 ] || [ "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" != "$new" ] \
+       || [ -n "$(git -C "$wt" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+      echo "     VERIFY FAILED #${n}: ${cmd} (exit ${rc}) in ${wt} after rebasing onto origin/${def}; nothing pushed"
+      _undo_local "$wt" "$branch" "$head_oid"; return $?
+    fi
+    echo "     verified in ${wt}: ${cmd}"
+  fi
+
+  git -C "$wt" push -q "--force-with-lease=refs/heads/${branch}:${head_oid}" origin "HEAD:refs/heads/${branch}" 2>/dev/null; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    # A push whose answer failed may still have landed: origin's tip is the judge.
+    remote="$(git -C "$wt" ls-remote origin "refs/heads/${branch}" 2>/dev/null \
+      | awk -F'\t' -v r="refs/heads/${branch}" '$2 == r { print $1 }')"
+    if [ "$remote" != "$new" ]; then
+      echo "     PUSH REFUSED #${n}: the lease on ${branch} at $(_short "$head_oid") did not hold or the push was refused (exit ${rc}); nothing changed on origin"
+      _undo_local "$wt" "$branch" "$head_oid"; return $?
+    fi
+  fi
+  STK_PUSHED=1; STK_OID="$new"
+  echo "     rebased ${branch} onto origin/${def} without the commits of merged #${STK_PARENT_PR}, force-with-lease pushed $(_short "$new") (was $(_short "$head_oid"))"
+  return 0
+}
+
+# _stacked_recover <repo> <url> <def> <n> <detail> <verify> -- the stacked-child recovery for
+# a CONFLICTING PR on <def>, under `--rebase-stacked --apply`. Every guard that would make a
+# force-push unsafe refuses by name here, before `_stacked_rebase` touches anything: the head
+# must be the one the gates read, a fork PR or an armed auto-merge is never rewritten, and
+# open dependents on the branch would be stranded by the rewrite. A PR that is not the
+# stacked case (its head already holds origin/<def>, or no squash-merged parent sits under
+# it) is left to the paths below. Sets PREP_DETAIL to the read on the pushed head. 0 done or
+# not applicable (STK_OID tells which), 3 refused, 2 needs a human, 130 interrupted.
+_stacked_recover() {
+  local repo="$1" url="$2" def="$3" n="$4" detail="$5" cmd="$6"
+  local head head_oid list dep rc r_head
+  STK_OID=""
+  head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
+  head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     fetch origin ${def} failed; the stacked recovery is skipped"; return 0; }
+  git -C "$repo" fetch -q origin "$head" 2>/dev/null \
+    && [ "$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null)" = "$head_oid" ] || {
+    echo "REFUSED #${n}: ${head} is not at the head the gates read ($(_short "$head_oid")); nothing pushed"; return 3; }
+  if git -C "$repo" merge-base --is-ancestor "origin/${def}" "$head_oid" 2>/dev/null; then
+    echo "     ${head} already holds origin/${def}; not the stacked case"; return 0
+  fi
+  printf '%s' "$detail" | jq -e '.isCrossRepository == false and has("autoMergeRequest") and .autoMergeRequest == null' >/dev/null 2>&1 || {
+    echo "REFUSED #${n}: a fork PR, one with auto-merge armed, or an unreadable PR is never force-pushed; nothing pushed"; return 3; }
+  list="$(gh pr list --repo "$url" --state open --limit 100 --json number,baseRefName 2>/dev/null)" || {
+    echo "REFUSED #${n}: the open-PR read failed, so dependents on ${head} are unknown; nothing pushed"; return 3; }
+  dep="$(printf '%s' "$list" | jq -r --arg b "$head" \
+    '[.[] | select(.baseRefName == $b) | "#\(.number)"] | join(", ")' 2>/dev/null)" || {
+    echo "REFUSED #${n}: the open-PR list did not parse; nothing pushed"; return 3; }
+  if [ -n "$dep" ]; then
+    echo "REFUSED #${n}: ${dep} still target ${head}, retarget them first; nothing pushed"; return 3
+  fi
+  _stacked_parent "$repo" "$url" "$def" "$head_oid"; rc=$?
+  case "$rc" in
+    1) echo "     no squash-merged parent PR sits under ${head}; not the stacked case"; return 0 ;;
+    2) echo "REFUSED #${n}: the parent of ${head} could not be named; nothing pushed"; return 3 ;;
+  esac
+  echo "     #${n} was stacked on #${STK_PARENT_PR} ($(_short "$STK_PARENT")), now squash-merged; rebasing ${head} onto origin/${def}"
+  _stacked_rebase "$repo" "$url" "$def" "$n" "$head" "$head_oid" "$STK_PARENT" "$cmd"; rc=$?
+  case "$rc" in
+    0) ;;
+    1) return 3 ;;
+    *) return "$rc" ;;
+  esac
+  PREP_DETAIL="$(_pr_detail_settled "$url" "$n" "$STK_OID" "$head_oid")"
+  r_head="$(printf '%s' "$PREP_DETAIL" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  if [ "$r_head" != "$STK_OID" ]; then
+    echo "SKIP #${n} after the rebase: head is $(_short "$r_head"), not the pushed $(_short "$STK_OID"); once gh pr view ${n} --json headRefOid shows it, re-run wrap merge --apply --pr ${n}"
+    return 3
+  fi
+  return 0
+}
+
+# _merge_pr_prepare <repo> <url> <def> <n> <detail> <apply> <stacked> <verify> -- the two
+# recoveries `merge --pr N` runs on the named PR before it is gated, in this order:
+#   1. `--rebase-stacked`: a CONFLICTING PR on <def> whose parent PR squash-merged is rebased
+#      onto origin/<def> (`_stacked_recover`), then re-read on the pushed head.
+#   2. a head with no check run at all, on a repo that carries a `ci` label, gets the label
+#      through the same `_ci_label_sync` and `_ci_checks_wait` that `land` uses: a
+#      label-gated repo starts no run until the label lands after the head.
+# Only a PR whose verdict is OK or "checks are pending or failing" is labeled; a draft, a
+# conflict or a requested change would be refused anyway. Dry run prints a note and acts on
+# nothing. Sets PREP_DETAIL (the detail to gate) and PREP_ARMED (set when the label sync
+# ran). 0 continue; 3 refused with the reason printed, exit 0 as every merge refusal; 2
+# failed; 130 interrupted. Runs in the current shell.
+_merge_pr_prepare() {
+  local repo="$1" url="$2" def="$3" n="$4" detail="$5" apply="$6" stacked="$7" cmd="$8"
+  local verdict rc r_head head_oid rebased=""
+  PREP_DETAIL="$detail"; PREP_ARMED=""
+  verdict="$(_pr_gate "$detail" "$def")"
+
+  if [ "$stacked" = 1 ] && [ "$verdict" = "SKIP not mergeable (CONFLICTING)" ]; then
+    if [ "$apply" != 1 ]; then
+      echo "note: #${n} conflicts; --apply would rebase its branch onto origin/${def} if its parent PR squash-merged (--rebase-stacked), then force-with-lease push it"
+    else
+      _stacked_recover "$repo" "$url" "$def" "$n" "$detail" "$cmd"; rc=$?
+      [ "$rc" -eq 0 ] || return "$rc"
+      if [ -n "$STK_OID" ]; then
+        rebased=1; detail="$PREP_DETAIL"; verdict="$(_pr_gate "$detail" "$def")"
+      fi
+    fi
+  fi
+
+  case "$verdict" in
+    OK|"SKIP checks are pending or failing") ;;
+    *) return 0 ;;
+  esac
+  if ! _ci_zero_checks "$detail"; then
+    # A rebase just pushed a head whose checks are still registering: let them finish.
+    if [ -n "$rebased" ]; then
+      _ci_checks_wait "$url" "$n"
+      PREP_DETAIL="$(_pr_detail_settled "$url" "$n")"
+    fi
+    return 0
+  fi
+  if [ "$apply" != 1 ]; then
+    _ci_repo_has_label "$url" \
+      && echo "note: #${n} reports no checks and the repo carries a ci label; --apply would label it ci and wait for the runs"
+    return 0
+  fi
+  _ci_label_sync "$url" "$n"; rc=$?
+  case "$rc" in
+    0)
+      _ci_checks_wait "$url" "$n"
+      PREP_DETAIL="$(_pr_detail_settled "$url" "$n")"
+      PREP_ARMED=1
+      r_head="$(printf '%s' "$PREP_DETAIL" | jq -r '.headRefOid // ""' 2>/dev/null)"
+      head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+      if [ "$r_head" != "$head_oid" ]; then
+        echo "FAILED merge #${n}: head moved to $(_short "$r_head") during the check wait; left open" >&2
+        return 2
+      fi ;;
+    1) ;;
+    *) echo "FAILED merge #${n}: the ci label could not be set" >&2; return 2 ;;
+  esac
+  return 0
+}
+
 cmd_merge() {
-  local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head="" slug=""
+  local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head="" slug="" rebase_stacked=0 prc ci_armed=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --apply) do_apply=1; shift ;;
+      --rebase-stacked) rebase_stacked=1; shift ;;
       --no-pull) NO_PULL=1; shift ;;
       --pr) pr_only="${2:-}"; shift 2 ;;
       --repo) [ $# -ge 2 ] || { echo "wrap.sh merge: --repo needs an <owner>/<name>" >&2; return 64; }
@@ -618,7 +891,11 @@ cmd_merge() {
     esac
     [ -n "$slug" ] || { echo "wrap.sh merge: --repo wants <owner>/<name>" >&2; return 64; }
   else
-    [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify <cmd>] <repo> | --repo <owner>/<name>" >&2; return 64; }
+    [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--rebase-stacked] [--with-ci] [--verify <cmd>] <repo> | --repo <owner>/<name>" >&2; return 64; }
+  fi
+  if [ "$rebase_stacked" = 1 ]; then
+    [ -n "$pr_only" ] || { echo "wrap.sh merge: --rebase-stacked needs --pr N, the one PR it may rewrite" >&2; return 64; }
+    [ -z "$slug" ] || { echo "wrap.sh merge: --rebase-stacked needs a local checkout, so it cannot combine with --repo" >&2; return 64; }
   fi
   case "$pr_only" in
     '') ;;
@@ -689,6 +966,14 @@ cmd_merge() {
   local n detail base head
   for n in $numbers; do
     detail="$(_pr_detail_settled "$url" "$n")"
+    if [ -n "$pr_only" ]; then
+      _merge_pr_prepare "$repo" "$url" "$def" "$n" "$detail" "$do_apply" "$rebase_stacked" "$verify"; prc=$?
+      case "$prc" in
+        0) detail="$PREP_DETAIL"; [ -z "$PREP_ARMED" ] || ci_armed="$n" ;;
+        3) rm -rf "$jsondir"; return 0 ;;
+        *) rm -rf "$jsondir"; return "$prc" ;;
+      esac
+    fi
     printf '%s' "$detail" > "${jsondir}/pr-${n}.json"
     base="$(printf '%s' "$detail" | jq -r '.baseRefName // ""' 2>/dev/null)"
     head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
@@ -830,7 +1115,7 @@ cmd_merge() {
   # default), or on a repo without the label, the merge runs as it always did; under the
   # gate, a label that will not set refuses rather than merging untested.
   local rc=1
-  if _ci_on_merge; then
+  if _ci_on_merge && [ "$ci_armed" != "$first_eligible" ]; then
   _ci_label_sync "$url" "$first_eligible"; rc=$?
   case "$rc" in
     0)

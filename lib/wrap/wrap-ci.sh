@@ -35,11 +35,24 @@ CI_JQ_DEFS='
     or ((.state // "") == "PENDING") or ((.state // "") == "EXPECTED");
   def ckey: (.name // .context // "") + "@" + ([.detailsUrl, .targetUrl, .startedAt, .createdAt] | map(real) | .[0] // "");
 '
+
+# _ci_repo_has_label <repo-url> -- 0 when the repo carries an exact `ci` label. `--search`
+# is fuzzy, so the exact match is the test; a failed read answers 1, the same as no label.
+_ci_repo_has_label() {
+  gh label list --repo "$1" --search ci --limit 200 --json name 2>/dev/null \
+    | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1
+}
+
+# _ci_zero_checks <pr-detail-json> -- 0 when the PR reports no check run at all. Unreadable
+# JSON answers 1: only a read that parsed and showed an empty rollup counts.
+_ci_zero_checks() {
+  printf '%s' "$1" | jq -e '((.statusCheckRollup // []) | length) == 0' >/dev/null 2>&1
+}
+
 _ci_label_sync() {
   local url="$1" n="$2" detail
   CI_PRELABEL_KEYS='[]'
-  gh label list --repo "$url" --search ci --limit 200 --json name 2>/dev/null \
-    | jq -e '[.[] | select(.name == "ci")] | length > 0' >/dev/null 2>&1 || return 1
+  _ci_repo_has_label "$url" || return 1
   detail="$(gh pr view "$n" --repo "$url" --json labels,statusCheckRollup 2>/dev/null)"
   printf '%s' "$detail" | jq -e 'type == "object"' >/dev/null 2>&1 || {
     echo "     could not read the labels and checks of #${n}" >&2; return 2; }

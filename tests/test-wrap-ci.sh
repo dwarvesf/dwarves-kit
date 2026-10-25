@@ -302,6 +302,100 @@ chk_no "ci-off merge: the repo labels are never probed" "$(cat "$GH_STUB_CALLS")
 chk_no "ci-off merge: no pr edit runs" "$(cat "$GH_STUB_CALLS")" "pr edit"
 chk_has "ci-off merge: the empty rollup is mergeable again" "$out" "merged #72 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
 
+echo "=== merge --pr: a head with no checks on a repo with a ci label is labeled without --with-ci ==="
+# A label-gated repo starts no run on a new head until the label lands after it, so the head
+# reads an empty rollup and a merge state that is not CLEAN: `_pr_gate` refuses it as pending
+# and `merge` never reached the label sync. Under --pr, merge now arms the label through the
+# same _ci_label_sync/_ci_checks_wait that land uses. The read order for --pr N is: view 1
+# the draft check, view 2 the eligibility read, view 3 the label sync, views 4-5 the check
+# wait, view 6 the re-read the gate runs on.
+zc_json() { # zc_json <n> <mergeStateStatus> <rollup>
+  printf '{"number":%s,"title":"zero checks","headRefName":"feat/ci-gate","headRefOid":"%s","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"%s","reviewDecision":"APPROVED","statusCheckRollup":%s,"labels":[],"isDraft":false}' "$1" "$PR50_OID" "$2" "$3"
+}
+zc_open() { printf '[{"number":%s,"title":"zero checks","headRefName":"feat/ci-gate"}]' "$1"; }
+ZC_GREEN='[{"name":"pr-check","status":"COMPLETED","conclusion":"SUCCESS"}]'
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 80)" \
+  GH_STUB_PR_80="$(zc_json 80 BLOCKED '[]')" \
+  GH_STUB_PR_80_3='{"number":80,"labels":[],"statusCheckRollup":[]}' \
+  GH_STUB_PR_80_4='{"number":80,"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
+  GH_STUB_PR_80_5="{\"number\":80,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_80_6="$(zc_json 80 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --pr 80 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check --pr: exits 0" "$rc"
+chk_has "zero-check --pr: reports the labeling" "$out" "labeled #80 ci"
+chk_has "zero-check --pr: added the ci label" "$(cat "$GH_STUB_CALLS")" "pr edit 80 --repo ${MERGE_URL} --add-label ci"
+chk "zero-check --pr: the label precedes the merge" \
+  "$(awk '/^pr edit 80 .*--add-label ci/{a=NR} /^pr merge 80 /{m=NR} END{exit !(a && m && a<m)}' "$GH_STUB_CALLS"; echo $?)"
+chk "zero-check --pr: the run was waited out and the head re-read (6 reads)" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-80" 2>/dev/null)" -eq 6 ]; echo $?)"
+chk_has "zero-check --pr: merged once the label's run read green" "$out" "merged #80 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
+
+echo "--- zero-check --pr: the label is already on, so it is removed and added again"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 81)" \
+  GH_STUB_PR_81="$(zc_json 81 BLOCKED '[]')" \
+  GH_STUB_PR_81_3='{"number":81,"labels":[{"name":"ci"}],"statusCheckRollup":[]}' \
+  GH_STUB_PR_81_4="{\"number\":81,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_81_5="$(zc_json 81 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --pr 81 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check re-add: exits 0" "$rc"
+chk_has "zero-check re-add: reports the re-label" "$out" "re-labeled #81 ci (the label predates the head)"
+chk "zero-check re-add: the remove precedes the add" \
+  "$(awk '/^pr edit 81 .*--remove-label ci/{r=NR} /^pr edit 81 .*--add-label ci/{a=NR} END{exit !(r && a && r<a)}' "$GH_STUB_CALLS"; echo $?)"
+
+echo "--- zero-check --pr: a label that will not set refuses the merge"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_EDIT_RC=1 GH_STUB_OPEN_PRS="$(zc_open 82)" \
+  GH_STUB_PR_82="$(zc_json 82 BLOCKED '[]')" \
+  GH_STUB_PR_82_3='{"number":82,"labels":[],"statusCheckRollup":[]}' \
+  "$WRAP" merge --apply --pr 82 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check noset: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "zero-check noset: names the refusal" "$out" "FAILED merge #82: the ci label could not be set"
+chk_no "zero-check noset: the untested head never merges" "$(cat "$GH_STUB_CALLS")" "pr merge 82"
+
+echo "--- zero-check --pr: a repo without the ci label is untouched"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci-extra"}]' GH_STUB_OPEN_PRS="$(zc_open 83)" \
+  GH_STUB_PR_83="$(zc_json 83 CLEAN '[]')" \
+  "$WRAP" merge --apply --pr 83 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check no-label repo: exits 0" "$rc"
+chk_no "zero-check no-label repo: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit"
+chk_has "zero-check no-label repo: merges as before" "$out" "merged #83 ("
+
+echo "--- zero-check --pr: a head that already reports checks never probes the labels"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 84)" \
+  GH_STUB_PR_84="$(zc_json 84 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --pr 84 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check with checks: exits 0" "$rc"
+chk_no "zero-check with checks: the repo labels are never probed" "$(cat "$GH_STUB_CALLS")" "label list"
+chk_no "zero-check with checks: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit"
+
+echo "--- zero-check --pr: a dry run names the label and edits nothing"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 85)" \
+  GH_STUB_PR_85="$(zc_json 85 BLOCKED '[]')" \
+  "$WRAP" merge --pr 85 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check dry run: exits 0" "$rc"
+chk_has "zero-check dry run: names the label step" "$out" "note: #85 reports no checks and the repo carries a ci label; --apply would label it ci and wait for the runs"
+chk_no "zero-check dry run: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit"
+
+echo "--- zero-check --pr under --with-ci: one label sync, not two"
+# The gate's own sync sits after the eligibility pass; the head armed here skips it, so the
+# label is probed and added once.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 86)" \
+  GH_STUB_PR_86="$(zc_json 86 BLOCKED '[]')" \
+  GH_STUB_PR_86_3='{"number":86,"labels":[],"statusCheckRollup":[]}' \
+  GH_STUB_PR_86_4="{\"number\":86,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_86_5="$(zc_json 86 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --with-ci --pr 86 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "zero-check --with-ci: exits 0" "$rc"
+chk "zero-check --with-ci: the labels were probed once" "$([ "$(grep -c '^label list' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk "zero-check --with-ci: the label was added once" "$([ "$(grep -c '^pr edit 86 .*--add-label ci' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk_has "zero-check --with-ci: merged" "$out" "merged #86 ("
+
 echo "=== land: the ci label gate arms CI before the merge ==="
 # A label-gated repo runs no checks on an unlabeled PR, so a land that skipped the label
 # would merge the pushed head untested. The stub serves the read sequence the sync and

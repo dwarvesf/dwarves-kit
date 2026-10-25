@@ -6,7 +6,7 @@
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
-#   wrap.sh merge [--apply] [--no-pull] [--pr N] [--with-ci] [--verify C] <repo>|--repo <owner>/<name>   merges ONE own green PR (--pr: a named draft; --repo: no checkout, gh-only, local steps skipped)
+#   wrap.sh merge [--apply] [--no-pull] [--pr N [--rebase-stacked]] [--with-ci] [--verify C] <repo>|--repo <owner>/<name>   merges ONE own green PR (--pr: a named draft; --repo: no checkout, gh-only, local steps skipped)
 #   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify C]   one hand-made worktree, landed
 #   wrap.sh land  <worktree> --draft [--title T] [--body-file F]   push, open a draft PR, stop: no merge, no tidy
 #   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
@@ -86,9 +86,12 @@
 # `--continue` per resolved stop, `--abort` on any refusal) and, once no rebase is stopped,
 # at most one regenerate commit there; it never pushes.
 # Every other action is a report line. The
-# verbs never switch a branch and never force a push or a pull. The one force is
+# verbs never switch a branch and never force a push or a pull. The forces are
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
-# unproven worktree, and the removal counts only once a postcondition finds the path gone.
+# unproven worktree, and the removal counts only once a postcondition finds the path gone;
+# and `merge --pr N --rebase-stacked --apply`, opt-in: one rebase of the named PR's own head
+# onto origin/<default> past a squash-merged parent, pushed `--force-with-lease` to that
+# branch alone (the lease names the head the gates read), a conflict aborting untouched.
 #
 # Ported from the operator's repo-wrapup scripts. The default branch is DETECTED, never
 # assumed to be main.
