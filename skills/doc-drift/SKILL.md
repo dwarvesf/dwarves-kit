@@ -42,7 +42,7 @@ for describing 2026-05 reality is noise, not a finding.
 
 3. **Tier 1, mechanical pass, zero model cost, every file.** For each doc, extract and check
    the mechanical claims:
-   - every backtick path or file reference resolves (`ls` it),
+   - every backtick path or file reference resolves: `bash lib/docdrift/refcheck.sh scan --repo <dir>` (TSV of dead refs; it judges only refs whose first segment is a top-level entry of the repo, plus relative links),
    - every inventory table row maps to a live file (`diff` the table names against the dir
      listing, both directions: rows with no file, files with no row),
    - every hardcoded count matches the derived count (`ls | wc -l`),

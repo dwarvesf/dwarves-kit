@@ -22,6 +22,7 @@ Every `lib/` directory has one row.
 | `config/` | The config layer: `kit-config.sh` resolver (project > operator > kit-root), `modules.tsv` (the one module table), `module-registry.md` (module to stage map). |
 | `cosmetic/` | The `cosmetic` module's docs: six session-comfort hooks that sit outside the loop. The hook scripts live in `hooks/`. |
 | `decide/` | `flick.sh`, the decide engine: answer a pick-one-of-N question through a decision API, shadow-only and fail-open. Entry: `bin/flick`. |
+| `docdrift/` | `refcheck.sh`, Tier 1 of the `kit:doc-drift` audit: dead in-repo path references in living docs. |
 | `gate/` | The Check stage's engine: gate and proof ledgers, ship rules, dispatch gate, quiz gate, coverage-delta, mutation-smoke, battery and doc-projection checks. Entry: `bin/gate`; see `gate/README.md`. |
 | `gauntlet/` | `stats.sh`, a read-only projection over the gauntlet run-record corpus. |
 | `goal/` | Goal drafts and the running-goal registry, attempt state, mega-goal merge helpers, the handoff generator. Entry: `bin/goal`. |
