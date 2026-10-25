@@ -35,7 +35,7 @@ cache IN launchd context, not over ssh; a cache warmed over ssh leaves a
 ## Cheap probe: omp + an OpenAI-compatible endpoint
 
 A mid-tier Anthropic probe stays the primary signal: a smarter model succeeds
-despite a bad artifact (mistake 2 in `docs/guides/gauntlet-tutorial.md`). A
+despite a bad artifact (mistake 2 in `docs/guides/gauntlet.md`). A
 flat-rate or cheap OpenAI-compatible model, run through `omp`
 (`@oh-my-pi/pi-coding-agent`), makes a replication round close to free, so you can
 run a second opinion on every round without spend anxiety. Treat a cheap-model round as a second opinion that

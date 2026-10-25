@@ -1,103 +1,136 @@
-# Run the gauntlet (user guide)
+# Run the gauntlet
 
-You have an artifact that must work for a cold consumer with nobody helping them:
-contributor docs before outside devs arrive, a runbook before the incident, a spec
-before a cold implementer, an API surface before external integrators. The gauntlet
-answers one question before a human finds out the hard way: **can a median-skill
-agent, given only what you ship, achieve the outcome, unaided?**
+Use this when an artifact must work for a cold reader with nobody helping: contributor docs before outside developers arrive, a runbook before the incident, a spec before a cold implementer, an API surface before outside integrators.
 
-It does this by actually trying it: a probe agent (a mid-tier model, on purpose)
-gets a fresh clean room, your artifact, and one task card. It follows the artifact.
-Where it gets stuck, your artifact is the bug. The kit revises the artifact, tears
-the room down, and tries again with a fresh one, up to three rounds.
+![A clean-room probe attempts the outcome unaided; on a fail the artifact is revised and the room respins; the loop stops on two passes in a row or the round cap.](../figures/gauntlet.png)
 
-For the mechanics (the four slots, presets, rules) read `commands/gauntlet.md`; for
-the design rationale and known limits read `docs/patterns/gauntlet.md`. This guide
-is only what YOU do. First run, or unsure how to fill the slots? The step-by-step
-walkthrough with copy-paste slot files is `docs/guides/gauntlet-tutorial.md`.
+_Figure: the probe is the thermometer and the artifact is the patient. You never fix the probe and you never help it._
 
-## Before you run it (the checklist)
+## What happens
 
-| You need | Why | Example |
+- The kit builds a fresh clean room from committed state and hands a probe agent the artifact and one task card.
+- The probe is a mid-tier model on purpose. A frontier model succeeds despite a bad artifact and hides the defect.
+- The probe follows the artifact. Where it gets stuck, the artifact is the bug.
+- On a fail, the kit revises the artifact, tears the room down, and tries again with a fresh probe.
+- The loop stops on two passes in a row, or on the round cap (three by default). Every round is saved.
+
+The mechanics (the four slots, presets, rules) live in `commands/gauntlet.md`. The design rationale and known limits live in `docs/patterns/gauntlet.md`. This page is what you do.
+
+## What you do
+
+Four slots configure a run. The engine does not change.
+
+| Slot | Plain meaning | What you create |
 |---|---|---|
-| A deterministic Tier 1 suite | cheap checks run before any paid probe round | a script asserting the artifact's mechanical properties (files exist, commands run, links resolve) |
-| A clean-room recipe | the fresh env each round builds from COMMITTED state, matched to the artifact kind | repo: a Dockerfile + runner building from `git archive HEAD`; host: a stripped snapshot/restore procedure |
-| One task card | the outcome the probe attempts; small, real, bounded (<= 1 agent-day), with acceptance criteria + a verification command | your card template, filled |
-| A deterministic checker | pass/fail oracle on what the probe produces | derived from the card's verification command |
-| A spend-capped model API key | the probe's ONLY credential | never CF / 1Password / GitHub credentials |
-| The room's runtime available | the clean room needs it | Docker running (repo kind) |
+| Artifact | the files being improved | a list of globs |
+| Outcome contract | how the kit knows the probe succeeded | a card, a checker script, a Tier 1 script |
+| Probe framing | who the probe pretends to be | one sentence |
+| Clean-room recipe | how a fresh sandbox is built | one script, or an existing one |
 
-Host-kind artifact (a runbook against a real machine)? Two extra things fall on YOU:
-the room must be a credential-stripped clone/VM (a snapshot carrying any credential
-beyond the probe key is rejected), and teardown is destructive, so the kit asks you
-to confirm it before round 1.
+**Path A: run the kit's own onboarding preset.** Zero building, about ten minutes of prep.
 
-Not ready? Say so, the kit will help you build the missing piece first. Do not
-hand-polish the artifact beyond "the suite is green": the gaps a cold consumer hits
-are invisible to you (you know too much), and finding them is the gauntlet's job.
+1. Open the dwarves-kit checkout on a clean tree.
+2. Provide the probe key, a spend-capped Anthropic key. A local run (`runner_host = "local"`, the default) reads `ANTHROPIC_API_KEY` from your environment. A remote run resolves the key on the runner host from `probe_key_ref`, which you set under `[gauntlet]` in `~/.config/dwarves-kit/kit.toml`. The project `.kit.toml` cannot set it. This key is the only credential the room gets.
+3. Run `bash tests/gauntlet/tier1.sh`. It must be green before any paid round.
+4. Say `/kit:gauntlet onboarding`. Confirm the inputs table the kit fills from `tests/gauntlet/README.md`.
+5. Wait. When it stops, read `ROUNDS.md`.
 
-## Run it
+**Path B: build your own run.** The worked example is a spec gauntlet: a cold probe implements one spec in a fixture repo without hitting a question the spec cannot answer. The same steps fit a runbook or an API surface; only the file contents change.
 
-Say "run the gauntlet" (or `/kit:gauntlet <preset>`). Bare invocation asks which
-preset; the kit confirms the inputs table, then loops. Expect per round: an
-environment build plus one full agent work session. You do not need to watch; every
-round persists its full record.
+1. Name the artifact. One file is fine, for example a spec called rate-limiter.md under your specs folder.
+2. Write the card. It is a goal contract: outcome, acceptance criteria, a verification command, a stop-on-blocker clause. Keep it to one agent-day.
 
-**Do not help the probe.** If you answer its question, the round is void, that
-question was a finding, and now it is lost.
+   ```markdown
+   # Card: implement the rate-limiter spec in the fixture repo
 
-## What you get
+   A fixture repo is at /work/fixture and the spec is at /work/spec.md.
+   Implement the spec exactly. If the spec does not answer a question you
+   need answered, write it to /work/OPEN-QUESTIONS.md and stop.
 
-Everything lands in `docs/verification/gauntlet/<date>-<preset>-<slug>/`:
+   Acceptance:
+   - `npm test` is green in /work/fixture
+   - /work/OPEN-QUESTIONS.md does not exist or is empty
+   Verification command: `cd /work/fixture && npm test`
+   ```
 
-- `ROUNDS.md`, the one-page story: what failed each round, how bad, what got
-  fixed, what it cost, final verdict. Read this first.
-- `round-N/`, the evidence: the probe's full transcript, its output, the
-  findings with quotes, and the exact artifact changes made afterward. Failed
-  rounds are kept forever, they are the justification for every artifact change.
+3. Write the checker. It prints PASS or FAIL on what the probe left behind. No checker yet? The kit derives one from the card's verification line at the confirm step.
 
-## Reading the verdict
+   ```bash
+   #!/bin/bash
+   set -e
+   work="$1"
+   cd "$work/fixture" && npm test || { echo "FAIL: tests red"; exit 1; }
+   [ -s "$work/OPEN-QUESTIONS.md" ] && { echo "FAIL: spec left questions"; exit 1; }
+   echo PASS
+   ```
 
-| Verdict | Meaning | What you do |
+4. Write Tier 1. These are free mechanical checks that run before any paid probe: the artifact exists, it has the load-bearing sections, its commands parse. Any finding you can reduce to a grep moves here, and the next round gets cheaper.
+
+   ```bash
+   #!/bin/bash
+   set -e
+   spec="docs/specs/rate-limiter.md"
+   [ -f "$spec" ] || { echo "FAIL: spec missing"; exit 1; }
+   for h in "## Verification" "## Acceptance"; do
+     grep -qF "$h" "$spec" || { echo "FAIL: $h missing"; exit 1; }
+   done
+   echo PASS
+   ```
+
+5. Build the clean room. Copy `tests/gauntlet/cleanroom/run.sh` and `Dockerfile`, then remove the onboarding parts. Keep this shape: stage `git archive HEAD` (an uncommitted fix does not exist for the probe), strip the answer key (your checker, Tier 1, earlier run records), inject only the artifact, the card, a fixture, and one capped key, run the probe, copy the record out, tear the room down.
+6. Run it. Say `/kit:gauntlet`, answer "custom", or give everything in one line:
+
+   > run the gauntlet: artifact docs/specs/rate-limiter.md, card gauntlet/card.md, checker gauntlet/check.sh, tier1 gauntlet/tier1.sh, clean room gauntlet/run.sh, probe framing "you are a contractor with no prior context implementing this spec", cap 3
+
+   The kit validates every input before it spends anything. Three or more missing inputs is a designed good outcome: you get the build checklist in dependency order and no round runs.
+
+**A host artifact** (a runbook against a real machine) adds two things. The room must be a credential-stripped clone or VM, because the kit rejects a snapshot that carries any credential beyond the probe key. Teardown is destructive, so the kit asks you to confirm it before round 1. Do your first run with a container.
+
+**Do not help the probe.** If you answer its question, the round is void and that question was a finding you just lost. Do not hand-polish the artifact beyond "the suite is green" either: the gaps a cold reader hits are invisible to you.
+
+## What you will see
+
+Everything lands in `docs/verification/gauntlet/<date>-<preset>-<slug>/`.
+
+- `ROUNDS.md` is the one-page story: what failed each round, how bad, what got fixed, the cost, the verdict. Read it first.
+- `round-N/` holds the evidence: `findings.md` (each finding carries a transcript quote), `transcript.md`, `submission/`, and `artifact-diff.patch` (what the reviser changed after the round).
+
+A real `ROUNDS.md` from a campaign over the kit's onboarding surface ends its verdict like this:
+
+```
+## Verdict: REVISE (10/11 GREEN; both findings are HARNESS findings, the surface itself took no hit)
+```
+
+| Verdict | Meaning | You do |
 |---|---|---|
-| SOLID | an unaided pass, replicated twice | ship the artifact to its real consumers; watch the FIRST real one anyway, their friction is your next round |
-| REVISE | improving, but the round cap hit | read ROUNDS.md, apply the open findings yourself, rerun later (often one more round) |
-| RECONSIDER | not converging; the artifact has a structural gap | the gap list names what is missing; this usually means a missing tool or section, not a wording fix. It also lands on your weekend paydown ledger |
+| SOLID | two unaided passes in a row | ship the artifact; watch the first real consumer anyway |
+| REVISE | improving, but the round cap hit | apply the open findings yourself, rerun later |
+| RECONSIDER | not converging; a structural gap | the gap list names the missing tool or section; decide, then rerun |
 
-## Worked example: the onboarding preset, gauntleting the kit itself
+## When it breaks
 
-The reference preset converges a repo's contributor surface: can a new dev, given
-only what the repo ships, get set up, build one small feature, and submit it? The
-kit's own surface can take it, with one decision made first: **which persona?** The
-kit has two, and they need separate runs:
-
-- **The kit USER**: someone adopting the kit in their repo from the docs alone.
-- **The kit CONTRIBUTOR**: someone changing the kit's own code.
-
-The user-persona preparation, mapped to the checklist above:
-
-| Input | For the kit it means |
+| You see | Do this |
 |---|---|
-| Artifact globs | README, MANUAL, `/kit:onboard` + `/kit:adopt` docs, this guides/ series |
-| Tier 1 suite | deterministic checks that already exist: `kit-health`, `adopt --check` against a fixture repo, install-mode detection; gather them under one runnable entry first |
-| Clean room | a container with git + node + the claude CLI + a capped API key; the kit arrives as a tarball, NOT pre-installed, installing it IS part of day one |
-| Task card | "adopt the kit into this fixture repo and ship one tiny-lane change through the loop", exercises onboard, adopt, a lane, and the ship gate in one card |
-| Checker | assert the artifacts the loop must leave behind: AGENTS.md injected, a spec file exists, gate-ledger rows present, a PR-shaped branch with the change |
-| Probe | mid-tier model, as always |
+| The probe failed on something obvious | It is obvious to you only. That is the signal you paid for. Fix the artifact. |
+| You want a stronger model so it passes | Do not. Real consumers do not get frontier intuition. |
+| It passed once | Run again. One pass can be luck; SOLID needs two in a row. |
+| The kit stops before round 1 with a list of inputs | A designed outcome. Build the missing pieces in the order shown. |
+| A remote run exits 65 before any ssh | `probe_key_ref` is empty. Set your own reference under `[gauntlet]` in `~/.config/dwarves-kit/kit.toml`. |
+| The card is too big and the probe flails | Cut it to one bounded slice. "Implement the whole feature" mixes a bad artifact with a hard task. |
+| You answered the probe's question | The round is void. Rerun it. |
 
-The contributor persona differs in artifact globs (CONTRIBUTING-level docs, lib/
-conventions, the proof-gate rules) and card (a small kit fix through the
-kit's own gates). Run it second; the user persona finds the louder gaps first.
+**Cheap probe.** A flat-rate OpenAI-compatible model run through `omp` makes a replication round close to free. The recipe and the rules that cost real rounds to learn are in `tests/gauntlet/deploy/README.md` under "Cheap probe". A mid-tier Anthropic probe stays the primary signal. To watch a round live, run `bash tests/gauntlet/cleanroom/watch.sh`.
 
-## Common questions
+**Common mistakes.**
 
-- **"The probe failed on something obvious."** Obvious to you. That is the curse
-  of knowledge, and precisely the signal you paid for.
-- **"Can I use a stronger model so it passes?"** No. A frontier model succeeds
-  DESPITE a bad artifact; your artifact stays broken and the pass is a lie. Real
-  consumers do not get frontier intuition.
-- **"It passed once, are we done?"** A pass must replicate (two consecutive
-  unaided passes) before the kit calls it SOLID; one pass can be luck.
-- **"How often should I rerun?"** One round after any major change to the
-  artifact or the card template. A converged artifact is a snapshot, not a
-  property.
+1. Helping the probe. One answered question voids the round.
+2. A frontier probe. It passes despite the bad artifact. Mid-tier is load-bearing, not a cost saving.
+3. An oversized card. Park the rest.
+
+**Reruns.** Run one round after any major change to the artifact or the card. A converged artifact is a snapshot, not a property.
+
+## Related
+
+- [loops.md](loops.md) explains the round cap, honest halts, and the verdict words.
+- [adopt.md](adopt.md) covers the adoption step the onboarding preset exercises.
+- `commands/gauntlet.md` is the engine contract; `tests/gauntlet/README.md` holds the kit's own instance files.
