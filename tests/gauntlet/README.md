@@ -2,7 +2,7 @@
 
 Instance files for running `/kit:gauntlet` against the kit's own contributor
 surface. Two personas, two runs, run the USER persona first (it finds the louder
-gaps). Guide: `docs/guides/gauntlet.md` (worked example); engine:
+gaps). Guide: `docs/guides/gauntlet.md` (how to run one); engine:
 `commands/gauntlet.md`.
 
 ## Inputs table, persona A: the kit USER

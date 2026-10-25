@@ -8,7 +8,7 @@ This is the kit's bounded concurrency surface (the parallel-execution-boundary d
 
 ## Prerequisites
 
-1. Each input spec is `Status: VALIDATED` and has a `## Touches` section (directory-prefix globs). A spec lacking `## Touches` is rejected by the gate (not assumed-empty).
+1. Each input spec is `Status: VALIDATED` and has a `## Touches` section (directory-prefix globs). A spec lacking `## Touches` is never assumed empty: `plan` serializes it (`WAIT`) and `disjoint` rejects it (exit 2).
 2. The session runs under **bypassPermissions** (unattended workers cannot answer prompts). Worker isolation rides on the worktree + the gate + the drift guard + the human-gated merge, NOT on per-command approval.
 3. Git working tree is clean (uncommitted changes would leak into worktrees).
 
@@ -26,7 +26,7 @@ Take the specs named in the command argument, or if none given, list `docs/specs
 bash lib/gate/dispatch-gate.sh plan <spec1> <spec2> ...
 ```
 
-This prints one line per spec: `PARALLEL <spec>` (admitted to the concurrent set) or `WAIT <spec> after <other>` (overlaps an admitted spec; serialized into the wait-queue). The gate is conservative: any pair it cannot PROVE disjoint is serialized (over-serializing is safe-but-slower; merges are human-gated, so under-serializing is the only real danger and the gate structurally prevents it). A spec with no `## Touches` makes the gate exit non-zero with a REJECT message; fix the spec, do not bypass the gate.
+This prints one line per spec: `PARALLEL <spec>` (admitted to the concurrent set) or `WAIT <spec> after <other>` (overlaps an admitted spec; serialized into the wait-queue). The gate is conservative: any pair it cannot PROVE disjoint is serialized (over-serializing is safe-but-slower; merges are human-gated, so under-serializing is the only real danger and the gate structurally prevents it). A spec with no `## Touches` comes back as `WAIT` from `plan` (exit 0), and `dispatch-gate.sh disjoint` rejects it with `REJECT` and exit 2; add the section, do not bypass the gate.
 
 Specs that touch the same module (the same `lib/<module>/` or file) also wait for each other, even when their `## Touches` globs differ by a suffix: they run serially inside the wave, and the first merges before the next worker starts. Present the parallel-safe set + the wait-queue to the user. Cap concurrent workers at a small max (guidance: **4**; the lead enforces it by hand, since `dispatch-gate.sh plan` prints every PARALLEL spec and applies no cap); queue the rest even if disjoint (rate-limit / quota protection).
 
@@ -180,6 +180,6 @@ Workers run **autonomous** (bypassPermissions); the kit:task-verifier inside eac
 - **Auto-merge** of worker branches. Merge is the human's, at `/kit:ship`.
 - **A DAG scheduler / crash-recovery durability.** Flat set + pairwise gate + wait-queue only. Dependent chains go through `/kit:mega`, whose orchestrator (`lib/queue/orchestrate.sh`) runs disjoint dependency-independent sub-goals as waves; dispatch has no wave scheduler of its own.
 - **Intra-spec task parallelism.** That is `/kit:execute`, and it stays sequential.
-- **Running a spec without `## Touches`.** The gate rejects it; an undeclared file-set is the "gate lies" failure by default.
+- **Running a spec without `## Touches`.** `plan` serializes it and `disjoint` rejects it; an undeclared file-set is the "gate lies" failure by default.
 
 Source: the concurrent-goal-dispatch design, the parallel-execution-boundary decision, the dispatch-primitive-lock decision (in-session `Agent(run_in_background, isolation:worktree)`, proven by an early spike), the lead-owned-convergence design. The gate + drift guard are `lib/gate/dispatch-gate.sh`.

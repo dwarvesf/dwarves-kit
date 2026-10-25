@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm install -g @anthropic-ai/claude-code
 
 # Prepared toolchain (SPEC-238): TOOLS only, never config/keys/repos. Baked so
-# the cheap-probe recipe (docs/guides/gauntlet-tutorial.md "Cheap probe") skips
+# the cheap-probe recipe (docs/guides/gauntlet.md "Cheap probe") skips
 # its per-round npm install, which flaked repeatedly on 2026-08-31 (bun's
 # postinstall ENOENT-renaming its own binary in /tmp). `npm install -g` puts
 # both on the global bin, which is on PATH for every user including -u node

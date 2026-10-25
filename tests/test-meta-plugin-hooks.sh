@@ -167,7 +167,7 @@ else
 fi
 rm -rf "$TMP_HOME"
 
-# (3) In-place layout (README Option 2: the kit is cloned to ~/.claude/dwarves-kit)
+# (3) In-place layout (docs/MANUAL.md install options: the kit is cloned to ~/.claude/dwarves-kit)
 # must NOT clobber the real hook scripts. Regression: when KIT_DIR == the install
 # destination, the per-file link step rm'd each script and replaced it with a
 # self-referential broken symlink. Here the scripts must stay resolvable.

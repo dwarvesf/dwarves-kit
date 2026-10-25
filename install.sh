@@ -24,7 +24,7 @@ set -euo pipefail
 # the front door must refuse before any write happens).
 for prereq in jq git; do
   if ! command -v "${prereq}" >/dev/null 2>&1; then
-    echo "dwarves-kit install requires '${prereq}' (README: Requirements)." >&2
+    echo "dwarves-kit install requires '${prereq}' (docs/MANUAL.md: Install options and modules)." >&2
     echo "Install it first (brew/apt, or a static binary on PATH), then re-run." >&2
     exit 1
   fi
@@ -578,7 +578,7 @@ echo "[ok] Hook scripts are executable"
 # 1b. Ensure the hook scripts exist at the path settings.json references.
 # settings.json hard-codes $HOME/.claude/dwarves-kit/hooks/<script>.sh, so the
 # scripts must live there. Two layouts:
-#   in-place : the kit was cloned to ~/.claude/dwarves-kit (README Option 2), so
+#   in-place : the kit was cloned to ~/.claude/dwarves-kit (docs/MANUAL.md, Install options and modules), so
 #              KIT_DIR already IS ~/.claude/dwarves-kit and the scripts are in
 #              place. Linking would point each script at itself, so skip it.
 #   elsewhere: a dev checkout, CI, or template dir. Link each hooks/*.sh into
