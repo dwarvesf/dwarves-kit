@@ -12,7 +12,7 @@ Confirm WebFetch and `gh` are available. If either is missing, report "external 
 
 ### Step 2: Resolve the scan set (two lanes)
 
-- **Lane A (Credits drift):** parse README Credits (`- [name](url)` bullets), validate each URL is a repo (not an org root), report malformed entries, and reconcile against the prior audit set (note any audited-but-uncredited repos).
+- **Lane A (Credits drift):** parse the Credits section of `docs/MANUAL.md` (`- [name](url)` bullets), validate each URL is a repo (not an org root), report malformed entries, and reconcile against the prior audit set (note any audited-but-uncredited repos).
 - **Lane B (seed-rescan):** the scan set is the live Credits parse UNION the pinned non-Credits extras in `docs/ABSORPTION.md` `## Seed list`. No web-search discovery of brand-new sources (v1; deferred until a real missed-source signal).
 
 ### Step 3: Establish the since-last-run baseline
@@ -37,7 +37,7 @@ Run `git status`. Assert changes appear ONLY under `docs/absorption/`. If anythi
 
 ### Step 8: Hand off
 
-Tell the maintainer: review the proposal; an approved ADOPT/ADAPT becomes a `_meta/BACKLOG.md` item -> a SPEC -> the full WORKFLOW + a README Credits citation + a PHILOSOPHY section 5 soak. Adding a discovered source to Credits is the maintainer's call (the human merge gate). Do NOT run any of that yourself.
+Tell the maintainer: review the proposal; an approved ADOPT/ADAPT becomes a `_meta/BACKLOG.md` item -> a SPEC -> the full WORKFLOW + a `docs/MANUAL.md` Credits citation + a PHILOSOPHY section 5 soak. Adding a discovered source to Credits is the maintainer's call (the human merge gate). Do NOT run any of that yourself.
 
 ## Notes
 

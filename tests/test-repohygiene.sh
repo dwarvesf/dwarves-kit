@@ -750,7 +750,7 @@ grep -q 'status marker' "$SKILL"; assert "SKILL.md states the mega-goal completi
 grep -q 'general-purpose subagent' "$SKILL"; assert "SKILL.md names the general-purpose fallback" $?
 grep -q 'repo-hygiene' "$KIT_DIR/agents/audit-scanner.md"; assert "audit-scanner names repo-hygiene as a dispatching instance" $?
 grep -q 'repo-hygiene' "$KIT_DIR/docs/patterns/audit-loop.md"; assert "the pattern doc lists repo-hygiene under Known instances" $?
-grep -q '| repo-hygiene |' "$KIT_DIR/README.md"; assert "README skills table carries a repo-hygiene row" $?
+grep -q "| repo-hygiene |" "$KIT_DIR/docs/MANUAL.md"; assert "MANUAL skills table carries a repo-hygiene row" $?
 
 echo
 echo "$PASS/$TOTAL passed, $FAIL failed"

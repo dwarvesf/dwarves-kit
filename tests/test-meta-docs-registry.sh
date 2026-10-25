@@ -278,21 +278,25 @@ assert_eq "eval design pins its data window honestly" 0 $RC
 echo ""
 echo "=== SPEC-085: operator doc sync (ID-070) ==="
 # ============================================================
-RM85="$KIT_DIR/README.md"
-# parity: ROW counts only (summary-header numbers retired by the no-counts policy 2026-08-10)
+MAN85="$KIT_DIR/docs/MANUAL.md"
+HOOKS85="$KIT_DIR/docs/hooks.md"
+# parity: the rosters live in MANUAL (command sections, agents) and docs/hooks.md (hooks) since the
+# README became a routing page; ROW counts only (summary-header numbers retired by the no-counts
+# policy 2026-08-10)
 HF=$(ls "$KIT_DIR"/hooks/*.sh | wc -l | tr -d ' ')
-HROWS=$(awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep -cE '^\| [a-z]' || true)
-assert_eq "README hooks rows == hook files ($HF)" "$HF" "$HROWS"
+HMISS=""
+for hf in "$KIT_DIR"/hooks/*.sh; do grep -qF "$(basename "$hf" .sh)" "$HOOKS85" || HMISS="$HMISS $(basename "$hf")"; done
+assert_eq "docs/hooks.md names every hook file ($HF files; missing:${HMISS:- none})" "" "$HMISS"
 CF=$(ls "$KIT_DIR"/commands/*.md | wc -l | tr -d ' ')
-CROWS=$(awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -cE '^\| /kit:' || true)
-assert_eq "README commands rows == command files ($CF)" "$CF" "$CROWS"
+CROWS=$(grep -cE '^### `/kit:' "$MAN85" || true)
+assert_eq "MANUAL command sections == command files ($CF)" "$CF" "$CROWS"
 # content: the hard hook is in the public table; the two missing commands exist
-RC=0; awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep -q '^| ship-gate' || RC=1
-assert_eq "README hooks table carries ship-gate" 0 $RC
-RC=0; awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -q 'kit:adopt' && awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -q 'kit:test-plan-review-team' || RC=1
-assert_eq "README commands table carries adopt + test-plan-review-team" 0 $RC
-RC=0; awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep '^| context-readiness' | grep -q 'board' || RC=1
-assert_eq "README context-readiness row is board-aware (SPEC-083)" 0 $RC
+RC=0; grep -q '^| ship-gate ' "$HOOKS85" || RC=1
+assert_eq "docs/hooks.md table carries ship-gate" 0 $RC
+RC=0; grep -q '^### `/kit:adopt`' "$MAN85" && grep -q '^### `/kit:test-plan-review-team`' "$MAN85" || RC=1
+assert_eq "MANUAL carries adopt + test-plan-review-team sections" 0 $RC
+RC=0; sed -n '/^## Hooks (no invocation)/,/^## /p' "$MAN85" | grep -A2 'context-readiness' | grep -q 'board' || RC=1
+assert_eq "MANUAL context-readiness note is board-aware (SPEC-083)" 0 $RC
 
 # ============================================================
 echo ""

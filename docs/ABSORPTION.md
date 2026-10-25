@@ -6,10 +6,10 @@
 
 Two scan lanes, run by `/kit:absorb`, both feeding one dated proposal under `docs/absorption/`:
 
-- **Lane A, drift re-audit.** Re-check the README Credits source repos against what the kit has absorbed: have they shipped new patterns, deprecated old ones, or moved HEAD since the last run? Generalizes SPEC-002's one-shot audit.
+- **Lane A, drift re-audit.** Re-check the `docs/MANUAL.md` Credits source repos against what the kit has absorbed: have they shipped new patterns, deprecated old ones, or moved HEAD since the last run? Generalizes SPEC-002's one-shot audit.
 - **Lane B, seed-rescan.** Re-scan a pinned seed set (see `## Seed list`) for new/changed patterns in the kit's interest areas, generalizing SPEC-014's one-shot wide survey into a recurring scan. v1 is a re-scan of known repos, NOT open web-search discovery of brand-new sources (the kit has no discovery primitive; deferred until a real "we keep missing new repos" signal).
 
-**The human merge gate (the load-bearing rule).** Discovery, scoring, and drafting are automatic. **Adopting** any source or pattern, and **adding** a newly-noted source to README Credits, are maintainer-approved and flow through the standard SDD WORKFLOW. The ritual proposes; the maintainer decides; nothing is absorbed automatically. This is "synthesize, don't originate" (PHILOSOPHY section 1): the kit only ships patterns a human vouched for, with a citation.
+**The human merge gate (the load-bearing rule).** Discovery, scoring, and drafting are automatic. **Adopting** any source or pattern, and **adding** a newly-noted source to the `docs/MANUAL.md` Credits, are maintainer-approved and flow through the standard SDD WORKFLOW. The ritual proposes; the maintainer decides; nothing is absorbed automatically. This is "synthesize, don't originate" (PHILOSOPHY section 1): the kit only ships patterns a human vouched for, with a citation.
 
 ## Interest areas
 
@@ -23,9 +23,9 @@ A candidate that needs a binary, paid dep, or new runtime scores low on the rubr
 
 ## Seed list
 
-Lane B's scan targets, defined to avoid a two-source-of-truth: the **live README Credits parse** UNION a **pinned list of only the non-Credits extras** below. Credits stays the single source for credited repos; this list holds only the extras. Grown AND shrunk only by maintainer edit (the human gate).
+Lane B's scan targets, defined to avoid a two-source-of-truth: the **live Credits parse** (the Credits section of `docs/MANUAL.md`) UNION a **pinned list of only the non-Credits extras** below. Credits stays the single source for credited repos; this list holds only the extras. Grown AND shrunk only by maintainer edit (the human gate).
 
-Pinned non-Credits extras (from the SPEC-014 survey set, repos not in README Credits; the maintainer pins/corrects exact owner/repo URLs as part of the gate):
+Pinned non-Credits extras (from the SPEC-014 survey set, repos not in the Credits section; the maintainer pins/corrects exact owner/repo URLs as part of the gate):
 - `obra/superpowers` , skills framework (brainstorming, writing-plans, TDD, debugging)
 - SuperClaude , command/persona framework
 - BMAD , agent/method framework
@@ -86,4 +86,4 @@ Fail any -> ADAPT (reimplement in kit idiom) or REJECT (with the reason, often "
 
 ## Handoff into WORKFLOW
 
-An ADOPT/ADAPT the maintainer approves becomes a `_meta/BACKLOG.md` item, then a SPEC, then flows the full SDD WORKFLOW (spec -> validate -> execute -> review -> ship), gets a README Credits citation, and starts a PHILOSOPHY section 5 soak. A component that fails its soak after absorption routes to section 5's deprecation path; the originating proposal is annotated with the outcome (closing the audit loop).
+An ADOPT/ADAPT the maintainer approves becomes a `_meta/BACKLOG.md` item, then a SPEC, then flows the full SDD WORKFLOW (spec -> validate -> execute -> review -> ship), gets a `docs/MANUAL.md` Credits citation, and starts a PHILOSOPHY section 5 soak. A component that fails its soak after absorption routes to section 5's deprecation path; the originating proposal is annotated with the outcome (closing the audit loop).
