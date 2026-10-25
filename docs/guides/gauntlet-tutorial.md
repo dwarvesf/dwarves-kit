@@ -39,8 +39,9 @@ The kit ships one complete instance: the kit's own onboarding surface
 2. Provide the probe key, a spend-capped Anthropic key. Local runs
    (`runner_host = "local"`, the default) read it from your environment:
    `export ANTHROPIC_API_KEY=<capped key>`. A remote run (`runner_host` set to an
-   ssh host alias) resolves it on that host from `probe_key_ref` in
-   `kit.toml [gauntlet]`; set that to your own secret reference. That key is the
+   ssh host alias) resolves it on that host from `probe_key_ref`. The shipped
+   default is empty: set your own secret reference under `[gauntlet]` in
+   `~/.config/dwarves-kit/kit.toml` (the project `.kit.toml` cannot set it). That key is the
    ONLY credential the room gets.
 3. Say: **`/kit:gauntlet onboarding`**.
 4. The kit shows the inputs table filled from `tests/gauntlet/README.md` (persona A,

@@ -50,14 +50,17 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# The CC-only-enforcement statement (PHILOSOPHY honesty rule: never over-claim
-# portable enforcement). A drift to "enforcement is portable" would be a lie.
+# The enforcement-boundary statement (PHILOSOPHY honesty rule: never over-claim
+# portable enforcement). Claude Code enforces everything, Codex only the five hard
+# controls, any other runtime is advisory. A drift to "enforcement is portable" would be a lie.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'Enforcement is Claude-Code-only' "$AGENTS_MD" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} AGENTS.md states enforcement is Claude-Code-only"
+if grep -qF '**Claude Code** enforces everything' "$AGENTS_MD" 2>/dev/null \
+   && grep -qF 'five hard controls' "$AGENTS_MD" 2>/dev/null \
+   && grep -qF 'advisory only' "$AGENTS_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md states the enforcement boundary (Claude Code all, Codex five hard controls, others advisory)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} AGENTS.md lost the CC-only-enforcement statement"
+  echo -e "  ${RED}FAIL${NC} AGENTS.md lost the enforcement-boundary statement"
   FAIL=$((FAIL + 1))
 fi
 

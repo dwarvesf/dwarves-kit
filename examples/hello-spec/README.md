@@ -11,7 +11,7 @@ The point: see what `docs/specs/SPEC-001-version-flag.md` actually looks like; s
 ## The files
 
 ### `AGENTS.md`, `WORKFLOW.md`, `docs/verification/README.md`, `.kit.toml`
-What `/kit:adopt` writes into a repo today, copied from a real run. `AGENTS.md` is a small pointer (four rules plus the location of the full contract), not a copy of it. `WORKFLOW.md` is a pointer to the lanes and gate matrix in the installed kit. `docs/verification/README.md` is the proof marker: its presence opts the repo into the proof-of-done ship-gate. `.kit.toml` seeds the project's gate and module settings (`proof_of_done` and `lane_gates` start on). Enforcement (hooks, verifier) is Claude-Code-only; under other runtimes `AGENTS.md` is advisory.
+What `/kit:adopt` writes into a repo today, copied from a real run. `AGENTS.md` is a small pointer (four rules plus the location of the full contract), not a copy of it. `WORKFLOW.md` is a pointer to the lanes and gate matrix in the installed kit. `docs/verification/README.md` is the proof marker: its presence opts the repo into the proof-of-done ship-gate. `.kit.toml` seeds the project's gate and module settings (`proof_of_done` and `lane_gates` start on). Claude Code enforces every hook and the verifier. Codex enforces the five hard controls. Under other runtimes `AGENTS.md` is advisory.
 
 ### `CLAUDE.md`
 Project anchor. Read by Claude Code at session start, by `/kit:spec` for stack detection, by the builder subagent in `/kit:execute`. Tells Claude what the project is, what the stack is, where the spec lives, and what code-quality rules apply. The block at the bottom, between the `kit:adopt` markers, is what adopt appends: it imports `AGENTS.md` and points at the lane classifier.

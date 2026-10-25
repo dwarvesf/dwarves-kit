@@ -19,7 +19,7 @@ defaults. Then run `/kit:start` at the top of every session: it reads where the 
 hands you the next command. Onboarding never finishes; `/kit:start` is the onboarding.
 
 Condensed walkthrough: [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Full command reference:
-[`MANUAL.md`](MANUAL.md).
+[`docs/MANUAL.md`](docs/MANUAL.md).
 
 Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, and agents iterate inside them until a read-only verifier passes, never grading their own homework.
 
@@ -80,7 +80,7 @@ The `/kit:*` commands below are those same actions named explicitly, for when yo
 
 It is bash-first (every hook readable in 30 seconds), and every component traces to a proven pattern, no novel inventions. The point of the kit is the handoff: a solo technical lead writes the spec, a contractor runs `/kit:execute` against the *same* spec.
 
-New here? **Install** below, then run **your first cycle**. The full operator reference (every command, hook, and agent, plus troubleshooting) lives in [`MANUAL.md`](MANUAL.md).
+New here? **Install** below, then run **your first cycle**. The full operator reference (every command, hook, and agent, plus troubleshooting) lives in [`docs/MANUAL.md`](docs/MANUAL.md).
 
 ## Why a closed loop
 
@@ -130,14 +130,13 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | Module | What it wires | Kind |
 |---|---|---|
 | `board` | `backlog-stage` (SessionEnd: stage session work-items to a staging file, opt-in via `BACKLOG_STAGE_AUTO=1`, default off; also wired on SessionStart as `--surface`); that pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated); `board-row-gate` (PreToolUse Bash: blocks a commit that adds a new board row without a `board-row-ok: <reason>` line) | 2 hooks |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `harvest`, `citation-guard`, `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 7 hooks + 1 CLI |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `harvest`, `citation-guard`, `batch-debt-warn` (advisory PreToolUse: warns on a second PR merge with no lane start in the gate ledger), `context-budget` (warns once at 65% of the model's context window, again at 70%, `KIT_CTX_WARN_PCT`/`KIT_CTX_STRONG_PCT`/`KIT_CTX_WINDOW`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
 | `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) |
 | `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
 | `weekend_batch` | the debt-paydown reader/closer (`bin/reflect debt`; engine `lib/reflect/weekend-batch.sh`, relocated per ADR-0034, renamed from `learn` by ADR-0036), invoked by a consumer's own skill or directly | hookless (lib) |
-| `bridge` | FOLDED INTO `sync` 2026-07-16. The git↔Hermes cockpit mirror/writeback verbs (`board.sh mirror/status/writeback`, `bridge=on` rows in `boards.txt`) remain runnable as the legacy engine until the SPEC-002 P2 port (kit ID-290) re-lands them as a sync edge | absorbed |
 | `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
 | `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook |
 | `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI alias over context-kit's `ctx` engine verbs (`lib/prose-rag/`) | 1 hook + 1 CLI |
@@ -145,7 +144,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 
 `team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
 
-**Add a module later** (module #13 never re-onboards you): edit `.kit.toml`'s `[modules]` section
+**Add a module later** (a later module never re-onboards you): edit `.kit.toml`'s `[modules]` section
 by hand, then re-run `/kit:adopt --refresh` (or `bash lib/adopt.sh --refresh <repo>`) to re-wire
 `settings.json` to match. Full detail: [`commands/adopt.md`](commands/adopt.md).
 
@@ -155,6 +154,10 @@ bash install.sh --with session,stats    # add modules (additive; never un-wires 
 bash install.sh --prune                 # explicit trim: spine only
 bash install.sh --prune --with board    # explicit trim: spine + board
 ```
+
+### Requirements
+
+The bash installer needs `jq` (for the settings merge) and `git`, and refuses to start without them. The plugin path needs neither. `node` is optional: only the `system-design` engine's `--shots` and `test.mjs` use it, and no hook does.
 
 ### Option 1: Claude Code plugin (recommended)
 
@@ -191,7 +194,7 @@ git clone https://github.com/dwarvesf/dwarves-kit.git ~/.claude/dwarves-kit
 cd ~/.claude/dwarves-kit && bash install.sh
 ```
 
-Requires `jq` (for settings merge) and `git`; the installer refuses to start without them. `node` is optional: only the `system-design` engine's `--shots` and `test.mjs` use it, and no hook does. No root / no package manager (CI images, locked-down containers): drop a static `jq` binary onto PATH instead, e.g. `mkdir -p ~/bin && curl -fsSL -o ~/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-linux-arm64 && chmod +x ~/bin/jq && export PATH="$HOME/bin:$PATH"` (pick the asset for your arch). Do not hand-copy the kit's files around a missing `jq`: the settings/hooks merge is the step that arms the guardrails, and a partial copy silently ships without them.
+Needs `jq` and `git` (see Requirements above). No root / no package manager (CI images, locked-down containers): drop a static `jq` binary onto PATH instead, e.g. `mkdir -p ~/bin && curl -fsSL -o ~/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-linux-arm64 && chmod +x ~/bin/jq && export PATH="$HOME/bin:$PATH"` (pick the asset for your arch). Do not hand-copy the kit's files around a missing `jq`: the settings/hooks merge is the step that arms the guardrails, and a partial copy silently ships without them.
 
 **Hooks arm only in a NEW Claude Code session.** The installer registers hooks in `settings.json`, but a session that was already running (and any single-shot headless run: `claude -p`, CI agents) never re-reads them, so every gate is advisory there: gate-ledger calls still work and record, but nothing blocks. Restart the session after installing; treat headless runs as unguarded by design.
 
@@ -451,9 +454,10 @@ Also for a builder using Claude Code 6-8 hours a day who wants a context-budget 
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
   AGENTS.md                     Tool-agnostic operate-contract front door (any runtime reads it first)
-  WORKFLOW.md                   The cycle, the risk-tier lanes, the gates, and the flow/loop reference (ASCII diagrams)
-  MANUAL.md                     Operator reference: commands, hooks, agents, natural-language scenarios, troubleshooting
-  README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
+  WORKFLOW.md                   Pointer stub; the cycle, lanes, gates, and flow/loop reference live in docs/WORKFLOW.md
+  MANUAL.md                     Pointer stub; the operator reference lives in docs/MANUAL.md
+  CHANGELOG.md                  Pointer stub; the changelog lives in docs/CHANGELOG.md
+  README.md / CONTRIBUTING.md / VERSION / LICENSE
   CLAUDE.md                     Project template; the Claude-Code layer on top of AGENTS.md
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
@@ -479,7 +483,7 @@ dwarves-kit/
   lib/board/board-run.sh              The single-board-row dispatch path, backing `board.sh run <ID>`: reads the row's Item + Notes through `backlog.sh row` (the board's own parser; same no-row / duplicate-id refusals as `get`), scaffolds the MINIMAL mega-goal dir `lib/queue/orchestrate.sh` expects (one `- [ ] SG-01 <item> , auto` ROADMAP line, POINTER_PROMPT.md seeded from the row, a `goals/01-*.md` contract with `Model:`/`**Branch:**` headers, HANDOFF.md + DECISIONS.md stubs) under the repo's megagoals convention (`--dir` > `megagoal_root:` CLAUDE.md hint > first in-use root in canonical order > `_meta/megagoals/<id-slug>/` default), then prints the exact `orchestrate.sh run <dir>` command. It never launches a session itself; `--exec` composes the launch and forwards args after `--` (e.g. `-- --dry-run`). Idempotent: an existing file is reported `kept`, never overwritten (the `board init` created/kept convention).
   skills/                       Claude-triggered skills (one folder per skill; roster in the Skill table above)
   rules/                        Path-scoped coding-standard templates
-  examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
+  examples/hello-spec/          Illustration of a repo after the kit is adopted: example AGENTS.md, CLAUDE.md and WORKFLOW.md pointers plus one small spec (the onboarding path is /kit:adopt)
   tests/test-hooks.sh           Hook behavior assertions
   tests/test-meta.sh            Structural integrity (manifests, frontmatter, cross-links)
   docs/specs/SPEC-NNN-<slug>.md  Specs, tracked in place via Status header (DRAFT/VALIDATED/SHIPPED); hooks pick the active one by git branch
@@ -507,7 +511,7 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose`, print-only unless `BACKLOG_STAGE_AUTO=1` is set in `~/.config/kit-weekly/env`; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 
-**Testing.** `bash tests/run-all.sh` with no argument runs only the suites the diff touches, plus five always-on tree-wide lints (kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint), about 1 to 2 minutes on a Mac. `test-meta` (about 200 seconds) joins only when the diff touches a path it reads (`meta_input` in `bin/test-affected`). `--all` is the full glob, 13 to 15 minutes, for CI and the nightly job only: it refuses (exit 64) unless `CI` is set or `KIT_RUN_ALL=1`. `RUN_ALL_JOBS` defaults to `auto` on macOS and `1` on Linux. Single suites still run on their own: `bash tests/test-hooks.sh` covers hook behavior, `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links), `bash tests/run-workflow.sh` walks the CI workflow's steps locally and prints only the red ones.
+**Testing.** `bash tests/run-all.sh` with no argument runs only the suites the diff touches, plus the always-on tree-wide lints (kit-contract, config-registry, no-personal-paths, no-scattered-ids, boundary-lint), about 1 to 2 minutes on a Mac. `test-meta` (about 200 seconds) joins only when the diff touches a path it reads (`meta_input` in `bin/test-affected`). `--all` is the full glob, 13 to 15 minutes, for CI and the nightly job only: it refuses (exit 64) unless `CI` is set or `KIT_RUN_ALL=1`. `RUN_ALL_JOBS` defaults to `auto` on macOS and `1` on Linux. Single suites still run on their own: `bash tests/test-hooks.sh` covers hook behavior, `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links), `bash tests/run-workflow.sh` walks the CI workflow's steps locally and prints only the red ones.
 
 **CI.** `.github/workflows/test.yml` runs on `workflow_dispatch` and on a `v*` tag push, nothing else. A push or a pull request starts no run, and merging a PR waits on no check. Run `gh workflow run test` before cutting a release tag. The local check is what catches a regression:
 
@@ -515,7 +519,7 @@ For the full file listing including individual agent/hook/command names, run `gi
   edit on a branch
        |
        v
-  bash tests/run-all.sh ....... diff-scoped suites + the five always-on lints
+  bash tests/run-all.sh ....... diff-scoped suites + the always-on lints
        |                        (about 1-2 min on a Mac)
        v
   commit --> push --> PR --> merge      no CI run fires anywhere on this line
@@ -553,7 +557,7 @@ configure and nothing breaks. Enable: put the binary on `PATH`, run
 - Prompt-type anti-rationalization hook (Haiku evaluation instead of grep patterns)
 - /qa command with headless browser testing (requires Playwright)
 - Intra-spec parallel task dispatch in /execute (cross-goal fan-out across specs already ships as /kit:dispatch; this is the deferred intra-spec case)
-- Multi-harness packaging (Codex / Cursor / Gemini / OpenCode), deferred until real demand
+- Native loaders for the commands, agents, and skills on other harnesses (Cursor / Gemini / OpenCode, and Codex beyond the five hard controls), deferred until real demand
 
 ## Changelog
 
