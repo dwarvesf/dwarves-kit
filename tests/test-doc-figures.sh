@@ -89,6 +89,11 @@ R=$(fresh badguide)
 printf '\n![x](../figures/nope.png)\n' >> "$R/docs/guides/g.md"
 run "$R"
 chk "an unknown id in docs/guides fails and the line names the file" "$([ "$RC" -eq 1 ] && printf '%s\n' "$OUT" | grep -qE '^docs/guides/g.md:[0-9]+: figures/nope.png names no manifest id'; echo $?)"
+R=$(fresh datedrecord)
+mkdir -p "$R/docs/verification"
+printf '\nThe negative test used `figures/nope.png`.\n' > "$R/docs/verification/proof.md"
+run "$R"
+chk "a dated record quoting an unknown id is not scanned" "$RC"
 R=$(fresh placeholder)
 printf '\nEmbed as `../figures/<id>.png` in a guide.\n' >> "$R/docs/guides/g.md"
 run "$R"

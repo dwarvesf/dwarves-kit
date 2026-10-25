@@ -93,10 +93,13 @@ cmd_check() {
     printf '%s\n' "$manifest_ids" | grep -qxF -- "$id" || problem "$id: $f is not in MANIFEST.tsv"
   done
 
-  # Every figures/<id>.png reference in README.md and docs/**/*.md names a manifest id.
+  # Every figures/<id>.png reference in README.md and the living docs names a manifest id.
+  # Dated records (proofs, specs, notes, retros, research) describe their moment and may quote a bad id on purpose.
   local docs=() file line ref
   [ ! -f "$root/README.md" ] || docs+=("$root/README.md")
-  while IFS= read -r file; do docs+=("$file"); done < <(find "$root/docs" -name '*.md' -type f 2>/dev/null | LC_ALL=C sort)
+  while IFS= read -r file; do docs+=("$file"); done < <(find "$root/docs" \( -path "$root/docs/verification" -o -path "$root/docs/specs" \
+    -o -path "$root/docs/implementation-notes" -o -path "$root/docs/retro" -o -path "$root/docs/research" \
+    -o -path "$root/docs/audits" \) -prune -o -name '*.md' -type f -print 2>/dev/null | LC_ALL=C sort)
   for file in ${docs[@]+"${docs[@]}"}; do
     while IFS=: read -r line ref; do
       [ -n "$ref" ] || continue
