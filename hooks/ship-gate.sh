@@ -307,8 +307,14 @@ fi
 # pins in CI. The generator runs from the kit install against the pushed repo's tree
 # (FEATURE_REGISTRY_ROOT), never the repo's own copy; a push that edits the generator
 # itself is left to that CI pin. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
+# An install that predates FEATURE_REGISTRY_ROOT would scan its own tree and call every push stale.
+GATE_REG_OK=0
+grep -q FEATURE_REGISTRY_ROOT "$GATE_INSTALL/lib/registry/feature-registry.sh" 2>/dev/null && GATE_REG_OK=1
+if [ "$GATE_REG_OK" = 0 ] && [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ]; then
+  echo "[advisory] registry freshness check skipped: the kit install at $GATE_INSTALL is too old to run it; update the install" >&2
+fi
 if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/FEATURES.md" ] \
-   && [ -f "$GATE_INSTALL/lib/registry/feature-registry.sh" ] \
+   && [ "$GATE_REG_OK" = 1 ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
   FRBASE="$MBASE"
   FRDIFF=""

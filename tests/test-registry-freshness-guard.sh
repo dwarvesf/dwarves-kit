@@ -160,6 +160,19 @@ gate "$T12" >/dev/null
 [ ! -e "$M12" ] && ok "a repo-supplied doc-projection checker is not executed by the gate" \
   || no "the gate ran the pushed repo's own doc-projection checker"
 
+# 13. a kit install that cannot scan another tree (it predates FEATURE_REGISTRY_ROOT) skips the
+# arm with a note instead of calling a fresh projection stale.
+OLDKIT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+cp -R "$KIT/lib" "$OLDKIT/lib"
+sed 's/FEATURE_REGISTRY_ROOT/LEGACY_SCAN_ROOT/g' "$KIT/$REG" > "$OLDKIT/$REG"
+ERR13="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+RC13="$( cd "$T4" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
+  | CLAUDE_PLUGIN_ROOT="$OLDKIT" DWARVES_KIT_LOG_DIR="$LOGDIR" \
+    bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>"$ERR13"; echo $? )"
+[ "$RC13" = 0 ] && grep -q 'registry freshness check skipped' "$ERR13" \
+  && ok "an install too old to scan another tree skips the arm with a note (exit 0)" \
+  || no "a stale install should skip with a note (got $RC13)"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

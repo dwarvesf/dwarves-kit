@@ -10,7 +10,7 @@ set -euo pipefail
 BACKUP_DIR=".claude/backups"
 # A repo can track .claude or .claude/backups as a symlink; writing through it would drop the
 # snapshot into a directory outside the project. Skip the backup instead (this hook is a convenience).
-GUARD="${BASH_SOURCE[0]%/*}/../lib/config/safe-path.sh"
+GUARD="$(dirname "${BASH_SOURCE[0]}")/../lib/config/safe-path.sh"
 [ -f "$GUARD" ] || exit 0
 # shellcheck source=lib/config/safe-path.sh
 . "$GUARD"
