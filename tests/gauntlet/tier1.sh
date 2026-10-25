@@ -18,7 +18,7 @@ check() { # check <name> <cmd...>
 }
 
 echo "== T1.1 contributor-surface docs exist"
-for f in README.md docs/MANUAL.md docs/guides/README.md docs/guides/gauntlet.md commands/gauntlet.md commands/onboard.md commands/adopt.md; do
+for f in README.md docs/MANUAL.md docs/guides/README.md docs/guides/gauntlet.md docs/guides/adopt.md docs/guides/wrap.md commands/gauntlet.md commands/onboard.md commands/adopt.md; do
   check "doc: ${f}" test -f "${f}"
 done
 
