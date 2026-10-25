@@ -466,9 +466,9 @@ out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABEL_RC=1 \
   GH_STUB_LAND_REPO="$LWT_PF" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ciprobefail" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$LWT_PF" 2>&1)"; rc=$?
 LAND_CALLS="$(cat "$GH_STUB_CALLS")"
-chk "ci-probefail land: does not exit 0" "$([ "$rc" -ne 0 ]; echo $?)"
+chk "ci-probefail land: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "ci-probefail land: names the unread labels" "$out" "could not read the repo labels for #42"
-chk_has "ci-probefail land: leaves the PR open" "$out" "SKIP land feat/land"
+chk_has "ci-probefail land: names the refusal" "$out" "MERGE FAILED #42: the ci label could not be set"
 chk_no "ci-probefail land: never merges an unproven head" "$LAND_CALLS" "pr merge 42"
 chk_no "ci-probefail land: no label edit on an unread repo" "$LAND_CALLS" "pr edit"
 
