@@ -214,6 +214,98 @@ chk "no --carry: the main checkout's edit is untouched" \
 chk "no --carry: no stash was taken" \
   "$([ -z "$(git -C "$CREPO" stash list)" ]; echo $?)"
 
+# ===========================================================================
+echo "=== start --pick: folds worker branches into the new worktree ==="
+# ===========================================================================
+# mk_worker <repo> <branch> <file> <line>... : a local branch off origin/main with one commit
+# per line, each appending <line> to <file>. The checkout returns to main, so the main
+# checkout stays clean.
+mk_worker() {
+  local repo="$1" b="$2" f="$3"; shift 3
+  git -C "$repo" switch -q -c "$b" origin/main
+  for l in "$@"; do echo "$l" >> "$repo/$f"; git -C "$repo" add -A; git -C "$repo" commit -qm "$b: $l"; done
+  git -C "$repo" switch -q main
+}
+
+build_start pick rmain main
+PREPO="$TMPD/st-repo-pick"
+mk_worker "$PREPO" w/one one.txt a1 a2
+mk_worker "$PREPO" w/two two.txt b1
+git -C "$PREPO" branch w/empty origin/main
+out="$("$WRAP" start "$PREPO" feat/fold --pick w/one --pick w/two --pick w/empty 2>"$TMPD/pick.err")"; rc=$?
+PWT="$(cd "$PREPO" && pwd -P)/.claude/worktrees/fold"
+chk "pick: exits 0 on two branches and an empty one" "$rc"
+chk "pick: stdout is the worktree path only" "$([ "$out" = "$PWT" ]; echo $?)"
+chk_has "pick: reports the first branch" "$(cat "$TMPD/pick.err")" "picked w/one: 2 commits"
+chk_has "pick: reports the second branch" "$(cat "$TMPD/pick.err")" "picked w/two: 1 commits"
+chk_has "pick: an empty branch prints nothing to pick" "$(cat "$TMPD/pick.err")" "pick w/empty: nothing to pick"
+chk "pick: the first branch's files landed" "$([ "$(cat "$PWT/one.txt" 2>/dev/null)" = "$(printf 'a1\na2')" ]; echo $?)"
+chk "pick: the second branch's file landed" "$(grep -qx b1 "$PWT/two.txt"; echo $?)"
+chk "pick: three commits sit past origin/main" \
+  "$([ "$(git -C "$PWT" rev-list --count origin/main..HEAD)" = 3 ]; echo $?)"
+chk "pick: commits are in argument order" \
+  "$([ "$(git -C "$PWT" log --reverse --format=%s origin/main..HEAD | tr '\n' ',')" = "w/one: a1,w/one: a2,w/two: b1," ]; echo $?)"
+chk "pick: the worktree is clean" "$([ -z "$(git -C "$PWT" status --porcelain)" ]; echo $?)"
+chk "pick: the worker branch is untouched" \
+  "$([ "$(git -C "$PREPO" rev-list --count origin/main..w/one)" = 2 ]; echo $?)"
+
+echo "--- a missing branch refuses by name before any pick"
+mk_worker "$PREPO" w/three three.txt c1
+out="$("$WRAP" start "$PREPO" feat/missing --pick w/three --pick w/ghost 2>&1)"; rc=$?
+MWT="$(cd "$PREPO" && pwd -P)/.claude/worktrees/missing"
+chk "pick: a missing branch exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pick: the refusal names the missing branch" "$out" "--pick branch w/ghost does not exist locally or on origin"
+chk "pick: the worktree is still created" "$([ -d "$MWT" ]; echo $?)"
+chk "pick: nothing was picked before the refusal" \
+  "$([ "$(git -C "$MWT" rev-list --count origin/main..HEAD)" = 0 ]; echo $?)"
+
+echo "--- a branch known only on origin resolves"
+git -C "$TMPD/st-pusher" switch -q -c w/remote-only origin/main
+echo r1 > "$TMPD/st-pusher/remote.txt"; git -C "$TMPD/st-pusher" add -A; git -C "$TMPD/st-pusher" commit -qm remote-only
+git -C "$TMPD/st-pusher" push -q origin w/remote-only
+git -C "$TMPD/st-pusher" switch -q main
+out="$("$WRAP" start "$PREPO" feat/remote --pick w/remote-only 2>&1)"; rc=$?
+chk "pick: an origin-only branch exits 0" "$rc"
+chk "pick: the origin-only commit landed" \
+  "$(grep -qx r1 "$PREPO/.claude/worktrees/remote/remote.txt"; echo $?)"
+
+echo "--- a conflict aborts, keeps the earlier picks, never resolves"
+mk_worker "$PREPO" w/ok ok.txt k1
+mk_worker "$PREPO" w/clash-a clash.txt from-a
+mk_worker "$PREPO" w/clash-b clash.txt from-b
+out="$("$WRAP" start "$PREPO" feat/clash --pick w/ok --pick w/clash-a --pick w/clash-b 2>&1)"; rc=$?
+CWT="$(cd "$PREPO" && pwd -P)/.claude/worktrees/clash"
+chk "pick: a conflict exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pick: names the conflicting branch and file" "$out" "PICK CONFLICT w/clash-b: clash.txt"
+chk_has "pick: names the commits already picked" "$out" "already picked in ${CWT}:"
+chk "pick: the cherry-pick was aborted" \
+  "$([ ! -f "$(git -C "$CWT" rev-parse --git-path CHERRY_PICK_HEAD)" ]; echo $?)"
+chk "pick: the earlier picks are kept" \
+  "$([ "$(git -C "$CWT" rev-list --count origin/main..HEAD)" = 2 ]; echo $?)"
+chk "pick: the tree is clean after the abort" "$([ -z "$(git -C "$CWT" status --porcelain)" ]; echo $?)"
+chk "pick: the conflicting side did not leak" \
+  "$(grep -qx from-a "$CWT/clash.txt" && ! grep -q from-b "$CWT/clash.txt"; echo $?)"
+
+echo "--- --pick with --carry: picks first, then the carried edits"
+mk_worker "$PREPO" w/car car.txt p1
+echo carried-edit >> "$PREPO/a.txt"
+out="$("$WRAP" start "$PREPO" feat/both --carry --pick w/car 2>&1)"; rc=$?
+BWT="$(cd "$PREPO" && pwd -P)/.claude/worktrees/both"
+chk "pick+carry: exits 0 with --pick after --carry" "$rc"
+chk "pick+carry: the pick landed as a commit" \
+  "$(git -C "$BWT" log --format=%s origin/main..HEAD | grep -qx 'w/car: p1'; echo $?)"
+chk "pick+carry: the carried edit is uncommitted in the worktree" \
+  "$(git -C "$BWT" diff --name-only | grep -qx a.txt; echo $?)"
+git -C "$PREPO" checkout -q -- a.txt
+
+echo "--- --pick usage"
+out="$("$WRAP" start "$PREPO" feat/nopick --pick 2>&1)"; rc=$?
+chk "pick: --pick with no branch exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "pick: the usage error names --pick" "$out" "--pick needs a branch name"
+chk "pick: a usage error created no worktree" "$([ ! -e "$PREPO/.claude/worktrees/nopick" ]; echo $?)"
+chk_has "wrap --help names --pick" "$("$WRAP" --help 2>&1)" "--pick <branch>"
+chk_has "commands/wrap.md names --pick" "$(cat "$KIT_DIR/commands/wrap.md")" '`--pick <branch>`'
+
 echo "=== start: flags packed into one positional are refused ==="
 out="$("$WRAP" start " --carry" br 2>&1)"; rc=$?
 chk "packed arg to start exits 64" "$([ "$rc" = 64 ]; echo $?)"
