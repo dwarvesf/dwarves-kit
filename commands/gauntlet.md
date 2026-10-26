@@ -192,6 +192,7 @@ docs/verification/gauntlet/<YYYY-MM-DD>-<preset>-<slug>/
     findings.md          # severity-classified findings, each with a
                          # transcript quote as evidence
     transcript.md        # the probe agent's full session log
+    transcript.jsonl     # raw stream (may be large): NOT committed, see below
     submission/          # what the probe produced: output, checker log,
                          # verification-run log
     artifact-diff.patch  # what the reviser changed AFTER this round
@@ -206,6 +207,13 @@ eval artifact and the proof-of-done for the artifact; the round dirs are its evi
 Never trim a failed round's record: the failure trail is what justifies each artifact
 change (same rule as the debug loop's evidence ledger). Failed rounds persist their
 logs too, and rule 8's scrub applies to them before any commit.
+
+**Large artifacts stay out of git.** Raw `transcript.jsonl` streams, `fixture-repo.tar.gz`
+and any file over 200 KB go into a release asset on `dwarvesf/dwarves-kit`
+(`gauntlet-corpus-<YYYY-MM>`, created with `--latest=false`), never the tree; `.gitignore`
+blocks them under `docs/verification/gauntlet/`. `docs/verification/gauntlet/CORPUS.md` records
+each release tag, asset name, sha256, fetch and unpack steps, and a per-file table: update it
+in the same commit as a new run. `ROUNDS.md`, findings, patches and small text stay committed.
 
 ## Rules (engine-level; no preset may weaken one)
 

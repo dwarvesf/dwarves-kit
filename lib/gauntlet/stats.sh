@@ -132,9 +132,18 @@ done
 
 [ -s "$TMP" ] || { echo "stats.sh: no run records found under $G" >&2; exit 1; }
 
+# Transcripts live in a release asset, not git (see $G/CORPUS.md). With none
+# unpacked the token/cost columns read "-"; say so instead of staying silent.
+NO_CORPUS=0
+if [ -z "$(find "$G" -name transcript.jsonl -print -quit 2>/dev/null)" ]; then
+  NO_CORPUS=1
+  echo "stats.sh: note: corpus not unpacked (no transcript.jsonl under $G); probe tokens/cost show '-'. Fetch it per $G/CORPUS.md" >&2
+fi
+
 render() {
   echo "# Gauntlet run-record stats ($(date +%F))"
   echo
+  [ "$NO_CORPUS" -eq 1 ] && { echo "> Probe tokens/cost unavailable: corpus not unpacked (see CORPUS.md)."; echo; }
   echo "| Run | Date | Rounds | Findings | Clean at | Rows GREEN | Probe tokens | Probe cost | Probe |"
   echo "|---|---|---|---|---|---|---|---|---|"
   sort "$TMP" | awk -F'\t' '{printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", $1,$2,$3,$4,$5,$6,$7,$8,$9}'
