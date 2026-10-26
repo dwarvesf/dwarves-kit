@@ -31,7 +31,7 @@ table_problems() {
   awk -F'\t' '/^#/ || NF < 4 { next } seen[$1]++ { print "module listed twice: " $1 }' "$table"
   for manifest in "$@"; do
     local wired
-    wired="$(jq -r '.hooks // {} | to_entries[] | .key as $e | .value[] | .hooks[] | .command | gsub("^.*/hooks/"; "") | split(" ")[0] | "\($e):\(.)"' "$manifest" | sort -u)"
+    wired="$(jq -r '.hooks // {} | to_entries[] | .key as $e | .value[] | .hooks[] | .command | gsub("\""; "") | gsub("^.*/hooks/"; "") | split(" ")[0] | "\($e):\(.)"' "$manifest" | sort -u)"
     # every wired pair belongs to a module (anchor-root is the wrapper, not a hook)
     while IFS= read -r w; do
       [ -z "$w" ] && continue
