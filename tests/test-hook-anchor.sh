@@ -30,12 +30,15 @@ EXEMPT_WRAPPED_RE='/hooks/anchor-root\.sh [^ ]*/hooks/secrets-guard\.sh( |$)'
 ANCHOR_RE='^bash [^ ]*/hooks/anchor-root\.sh [^ ]+'
 
 # anchor_violations <json-file>: print one line per offending command, nothing when clean.
+# Double quotes are dropped before matching so the quoted form (a plugin root path may hold a
+# space) and the bare form are judged alike; the printed line keeps the raw command.
 anchor_violations() {
   jq -r --arg anchor "$ANCHOR_RE" --arg exempt "$EXEMPT_RE" --arg exwrap "$EXEMPT_WRAPPED_RE" '
     [.hooks // {} | to_entries[] | .value[]? | .hooks[]? | .command // empty] | .[]
+    | . as $raw | gsub("\""; "")
     | if test($exempt) then empty
-      elif test($anchor) then (if test($exwrap) then "exempt-but-wrapped: \(.)" else empty end)
-      else "unwrapped: \(.)" end
+      elif test($anchor) then (if test($exwrap) then "exempt-but-wrapped: \($raw)" else empty end)
+      else "unwrapped: \($raw)" end
   ' "$1"
 }
 
@@ -89,6 +92,23 @@ case "$OUT" in
   unwrapped:*) ok "fixture: a wrapper call with no explicit bash is flagged" ;;
   *) bad "fixture: a wrapper call with no explicit bash is flagged (got: ${OUT:-nothing})" ;;
 esac
+
+cat > "$TMP/quoted.json" <<'EOF4'
+{"hooks":{"Stop":[{"hooks":[
+  {"type":"command","command":"bash \"${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/slop-cleaner.sh\""},
+  {"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks/session-state-save.sh\""},
+  {"type":"command","command":"\"${CLAUDE_PLUGIN_ROOT}/hooks/secrets-guard.sh\""},
+  {"type":"command","command":"bash \"${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/secrets-guard.sh\""}
+]}]}}
+EOF4
+OUT="$(anchor_violations "$TMP/quoted.json")"
+EXPECT_Q='unwrapped: "${CLAUDE_PLUGIN_ROOT}/hooks/session-state-save.sh"
+exempt-but-wrapped: bash "${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh" "${CLAUDE_PLUGIN_ROOT}/hooks/secrets-guard.sh"'
+if [ "$OUT" = "$EXPECT_Q" ]; then
+  ok "fixture: the quoted form is judged like the bare form"
+else
+  bad "fixture: the quoted form is judged like the bare form (got: ${OUT:-nothing})"
+fi
 
 echo "=== anchor lint: the real dispatch tables ==="
 for f in "$KIT_DIR/hooks/hooks.json" "$KIT_DIR/settings.json"; do

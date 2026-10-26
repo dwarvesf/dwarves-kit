@@ -2806,10 +2806,10 @@ echo "=== anchor-root.sh: hard gates still block through the wrapper ==="
 # every case: "wrapped gate blocks".
 _wired() {  # _wired <hook basename> <hooks.json|settings.json> : that entry's command, pointed at $KIT_DIR
   if [ "$2" = hooks.json ]; then
-    jq -r '.hooks[][].hooks[].command' "$KIT_DIR/hooks/hooks.json" | grep -m1 "/hooks/$1\$" \
+    jq -r '.hooks[][].hooks[].command' "$KIT_DIR/hooks/hooks.json" | grep -m1 "/hooks/$1\"\{0,1\}\$" \
       | sed 's|${CLAUDE_PLUGIN_ROOT}|'"$KIT_DIR"'|g'
   else
-    jq -r '.hooks[][].hooks[].command' "$KIT_DIR/settings.json" | grep -m1 "/hooks/$1\$" \
+    jq -r '.hooks[][].hooks[].command' "$KIT_DIR/settings.json" | grep -m1 "/hooks/$1\"\{0,1\}\$" \
       | sed 's|$HOME/.claude/dwarves-kit|'"$KIT_DIR"'|g'
   fi
 }
