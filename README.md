@@ -23,7 +23,7 @@ _Figure: one change moves through eight phases; two gates block, the rest advise
 Open your repo and run `/kit:onboard`. It adopts the repo and picks modules, and it previews every write; a decline changes nothing.
 Then run `/kit:start` at the top of each session. It reads where the repo stands and names the next command.
 
-No Claude Code plugin system, or you use Codex? See [Install options and modules](docs/MANUAL.md#install-options-and-modules) for the bash installer, the Codex adapter and the requirements.
+No Claude Code plugin system, or you use Codex? See [Install options and modules](docs/reference/install.md) for the bash installer, the Codex adapter and the requirements.
 
 ## Pick your path
 
@@ -49,19 +49,24 @@ You rarely type a command. Say what you want, such as "add a `--version` flag to
 - **Commands.** The `/kit:*` actions for each phase. Every command is documented in the [command reference](docs/MANUAL.md#command-reference-the-kit-invokes-these-from-your-intent-you-rarely-type-them).
 - **Agents.** Read-only verifiers and reviewers, plus a fix-agent and domain builders. The [agents table](docs/MANUAL.md#agents-dispatched-not-invoked) says who dispatches each.
 - **Hooks.** Bash scripts on Claude Code events. A small spine always runs; the rest is opt-in. The full inventory is [`docs/reference/hooks.md`](docs/reference/hooks.md).
-- **Skills.** Claude loads these when your intent matches, for example the audit loops. See [Skills](docs/MANUAL.md#skills-claude-triggered).
+- **Skills.** Claude loads these when your intent matches, for example the audit loops. See the [skills roster](docs/reference/skills.md).
 - **The bash engine.** Each subsystem is a standalone shell command under `bin/`, for example `bash bin/board --help` and `bash bin/precedent find "<query>"`. It runs without Claude Code.
 
 ## Who it is for
 
 A lead who hands implementation to contractors on one shared spec, and anyone who spends long days in Claude Code and wants guardrails and a record of what ran.
-It is bash and markdown, with no UI and no server. It targets one engineer or one lead with helpers, not teams that need cross-machine orchestration; [`docs/MANUAL.md`](docs/MANUAL.md#who-this-is-for) says where that line sits.
+It is bash and markdown, with no UI and no server. It targets one engineer or one lead with helpers, not teams that need cross-machine orchestration; [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY.md#fit-check-in-plain-terms) says where that line sits.
 
 ## Learn more
 
 | Doc | What it holds |
 |---|---|
-| [`docs/MANUAL.md`](docs/MANUAL.md) | The operator reference: commands, agents, skills, install layers, project layout, tests, troubleshooting |
+| [`docs/MANUAL.md`](docs/MANUAL.md) | The command reference: every command, agent and recovery path |
+| [`docs/reference/lifecycle.md`](docs/reference/lifecycle.md) | The loop, the gates and the five stages |
+| [`docs/reference/install.md`](docs/reference/install.md) | Install layers, the module table, plugin, Codex and bash install |
+| [`docs/reference/skills.md`](docs/reference/skills.md) | The skills roster |
+| [`docs/reference/project-structure.md`](docs/reference/project-structure.md) | The directory layout |
+| [`docs/reference/operations.md`](docs/reference/operations.md) | Testing, CI, the weekly scheduler and external tools |
 | [`docs/reference/hooks.md`](docs/reference/hooks.md) | Which hook prints which message, and the knobs that tune it |
 | [`docs/reference/architecture.md`](docs/reference/architecture.md) | How the parts fit and how data moves |
 | [`docs/SYSTEM-DESIGN.md`](docs/SYSTEM-DESIGN.md) | The design model: use cases, components, flows, state machines |

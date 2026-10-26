@@ -154,26 +154,28 @@ HOOK_COUNT=$(ls "$KIT_DIR/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
 # SG-10 (harness-loop): the roster inventories stay pinned to live counts , the agents table sat
 # at 11 rows against 25 files because only the layout number was pinned. Since the README became a
 # routing page, the rosters live in docs/MANUAL.md (commands: one `### /kit:<name>` section each;
-# agents and skills: a table row each) and docs/reference/hooks.md (every hook file named). Both sides are
+# agents: a table row each), docs/reference/skills.md (skills: a table row each) and
+# docs/reference/hooks.md (every hook file named). Both sides are
 # computed; a new agent/command/skill/hook without an entry fails here.
 SKILL_COUNT=$(ls "$KIT_DIR/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
 MANUAL_DOC="$KIT_DIR/docs/MANUAL.md"
+SKILLS_DOC="$KIT_DIR/docs/reference/skills.md"
+STRUCTURE_DOC="$KIT_DIR/docs/reference/project-structure.md"
 # No-counts policy: header/layout numbers retired; a stray survivor fails here so one can
 # never quietly come back and start drifting again.
-assert_eq "README and MANUAL carry no literal roster counts (headers/layout)" "0" \
-  "$(grep -cE '<b>(Agents|Commands|Skills|Hooks)</b> \([0-9]+|(agents|commands|hooks)/ *\([0-9]+' "$KIT_DIR/README.md" "$MANUAL_DOC" | awk -F: '{s+=$NF} END {print s+0}')"
+assert_eq "README, MANUAL, project-structure and install carry no literal roster counts (headers/layout)" "0" \
+  "$(grep -cE '<b>(Agents|Commands|Skills|Hooks)</b> \([0-9]+|(agents|commands|hooks)/ *\([0-9]+' "$KIT_DIR/README.md" "$MANUAL_DOC" "$KIT_DIR/docs/reference/project-structure.md" "$KIT_DIR/docs/reference/install.md" | awk -F: '{s+=$NF} END {print s+0}')"
 
 # Row counts (data rows only: exclude the header row and |--- separator).
 MANUAL_AGT_ROWS=$(sed -n '/^## Agents (dispatched, not invoked)/,/^## /p' "$MANUAL_DOC" | grep -c '^| `')
-MANUAL_SKILL_ROWS=$(sed -n '/^## Skills (Claude-triggered)/,/^## /p' "$MANUAL_DOC" \
-  | grep '^|' | grep -cv '^| Skill\|^|---' | tr -d ' ')
+MANUAL_SKILL_ROWS=$(grep '^|' "$SKILLS_DOC" | grep -cv '^| Skill\|^|---' | tr -d ' ')
 MANUAL_CMD_ROWS=$(grep -c '^### `/kit:' "$MANUAL_DOC")
 HOOKS_MISSING=""
 for hf in "$KIT_DIR"/hooks/*.sh; do
   grep -qF "$(basename "$hf" .sh)" "$KIT_DIR/docs/reference/hooks.md" || HOOKS_MISSING="$HOOKS_MISSING $(basename "$hf")"
 done
 assert_eq "MANUAL agents table rows == live agents ($MANUAL_AGT_ROWS == $AGT_COUNT)" "$AGT_COUNT" "$MANUAL_AGT_ROWS"
-assert_eq "MANUAL skills table rows == live skills ($MANUAL_SKILL_ROWS == $SKILL_COUNT)" "$SKILL_COUNT" "$MANUAL_SKILL_ROWS"
+assert_eq "skills reference table rows == live skills ($MANUAL_SKILL_ROWS == $SKILL_COUNT)" "$SKILL_COUNT" "$MANUAL_SKILL_ROWS"
 assert_eq "MANUAL command sections == live commands ($MANUAL_CMD_ROWS == $CMD_COUNT)" "$CMD_COUNT" "$MANUAL_CMD_ROWS"
 assert_eq "docs/reference/hooks.md names every hook file (missing:${HOOKS_MISSING:- none})" "" "$HOOKS_MISSING"
 
@@ -181,10 +183,10 @@ assert_eq "docs/reference/hooks.md names every hook file (missing:${HOOKS_MISSIN
 assert_eq "architecture.md carries no headline roster tally" "0" \
   "$(grep -cE '^Total: [0-9]+ commands' "$KIT_DIR/docs/reference/architecture.md" | tr -d ' ')"
 
-# The MANUAL five-stage table (moved out of the README) covers every module the registry assigns a
+# The lifecycle reference five-stage table (moved out of the README) covers every module the registry assigns a
 # stage (ADR-0034 decision 3 rendered without omissions; the two tables share one truth). "leg"
 # renamed to "stage" by the 2026-07-18 amendment (ID-292).
-FIVE_LEG_BLOCK=$(sed -n '/^## The five stages/,/^## /p' "$KIT_DIR/docs/MANUAL.md")
+FIVE_LEG_BLOCK=$(sed -n '/^## The five stages/,/^## /p' "$KIT_DIR/docs/reference/lifecycle.md")
 REGISTRY_MODULES=$(sed -n '/^## Module stages/,/^## /p' "$KIT_DIR/lib/config/module-registry.md" \
   | grep '^| ' | grep -v '^| Module\|^|---' | awk -F'|' '{gsub(/ /,"",$2); print $2}')
 TOTAL=$((TOTAL + 1))
@@ -194,10 +196,10 @@ while IFS= read -r m; do
   { trap '' PIPE; echo "$FIVE_LEG_BLOCK" 2>/dev/null || :; } | grep -q "\`$m\`" || MISSING_LEG_MODULES="$MISSING_LEG_MODULES $m"
 done <<< "$REGISTRY_MODULES"
 if [ -z "$MISSING_LEG_MODULES" ]; then
-  echo -e "  ${GREEN}PASS${NC} MANUAL five-stage table covers every module-registry stage row"
+  echo -e "  ${GREEN}PASS${NC} lifecycle five-stage table covers every module-registry stage row"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} MANUAL five-stage table missing module(s):$MISSING_LEG_MODULES"
+  echo -e "  ${RED}FAIL${NC} lifecycle five-stage table missing module(s):$MISSING_LEG_MODULES"
   FAIL=$((FAIL + 1))
 fi
 
@@ -420,13 +422,13 @@ fi
 
 # SPEC-146: the cockpit board command. board.sh + parse-board.sh exist and are executable,
 # board.sh actually delegates base render to backlog.sh (never reimplements it), and the
-# doc-impact map (MANUAL + architecture.md) mentions both new lib files. A drop on any leg
+# doc-impact map (project-structure.md + architecture.md) mentions both new lib files. A drop on any leg
 # means the render-migration contract this depends on is silently unwired.
 TOTAL=$((TOTAL + 1))
 if [ -x "$KIT_DIR/lib/board/board.sh" ] && [ -x "$KIT_DIR/lib/board/parse-board.sh" ] \
    && grep -qF 'backlog.sh' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board.sh' "$KIT_DIR/docs/MANUAL.md" \
-   && grep -qF 'lib/board/parse-board.sh' "$KIT_DIR/docs/MANUAL.md" \
+   && grep -qF 'lib/board/board.sh' "$STRUCTURE_DOC" \
+   && grep -qF 'lib/board/parse-board.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board.sh' "$KIT_DIR/docs/reference/architecture.md"; then
   echo -e "  ${GREEN}PASS${NC} cockpit board wired: lib/board/board.sh + lib/board/parse-board.sh executable, delegates to backlog.sh, doc-impact map updated (SPEC-146)"
   PASS=$((PASS + 1))
@@ -442,7 +444,7 @@ TOTAL=$((TOTAL + 1))
 if [ -x "$KIT_DIR/lib/board/board-mirror.sh" ] \
    && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
    && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board-mirror.sh' "$KIT_DIR/docs/MANUAL.md" \
+   && grep -qF 'lib/board/board-mirror.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/reference/architecture.md"; then
   echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
   PASS=$((PASS + 1))
@@ -458,7 +460,7 @@ fi
 TOTAL=$((TOTAL + 1))
 if [ -x "$KIT_DIR/lib/board/board-writeback.sh" ] \
    && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board-writeback.sh' "$KIT_DIR/docs/MANUAL.md" \
+   && grep -qF 'lib/board/board-writeback.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/reference/architecture.md"; then
   echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
   PASS=$((PASS + 1))
