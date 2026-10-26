@@ -17,7 +17,7 @@
           },
           {
             "type": "command",
-            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/commit-format.sh\" | /usr/bin/grep -q '^e7fab931efb451955ab01611a2856b4a938179c0636704d32f1b16ea4341f8da ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse commit-format.sh",
+            "command": "hash_file() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 \"$1\"; elif command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\"; else return 2; fi; }; hash_file \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" | /usr/bin/grep -q '^974405ac8c8eb00ed7ed463408f571cefb263d15c0da7ea3e9db57b976d150c9 ' && hash_file \"${PLUGIN_ROOT}/hooks/commit-format.sh\" | /usr/bin/grep -q '^72fd134ad7df64f5c4f5f387e0decb651f45e68116389b121098449dd27294d5 ' || { echo 'dwarves-kit: trusted hook content changed' >&2; exit 2; }; exec \"${PLUGIN_ROOT}/hooks/codex-hook-adapter.sh\" PreToolUse commit-format.sh",
             "timeout": 30
           }
         ]

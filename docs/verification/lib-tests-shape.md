@@ -271,3 +271,15 @@ Revert the three code commits on `chore/lib-tests-shape`: the collection change,
 - The 120 s and 180 s ceilings on the uv-backed stats suites are hand-set from this host. Re-measure on a CI run before tightening.
 - `tests/lib/test-affected-replay.sh` does not yet replay module-suite picks.
 - `tests/test-codex-hooks.sh` is red on `origin/master` and stays red here.
+
+## Codex hook repin
+
+`hooks/commit-format.sh` changed on master without a repin, so `tests/test-codex-hooks.sh` was red there. `bash lib/codex/repin.sh .` refreshed its pin on this branch.
+
+```
+Command: bash tests/test-codex-hooks.sh
+Exit: 0
+Output:
+94 passed, 0 failed
+Verdict: PASS
+```
