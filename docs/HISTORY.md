@@ -7,7 +7,7 @@ The public release tree carries the kit, its design record and its living docs. 
 Dated working records that nothing reads at runtime:
 
 - `docs/verification/`: proof-of-done records and run logs, except the files listed below
-- `docs/implementation-notes/`, `docs/retro/`, `docs/audits/`
+- `docs/implementation-notes/`, `docs/retro/`, and the audit reports (the `audits/` folder under `docs/`)
 - `docs/research/`: the dated scans (`research/foundations/` stays)
 - `docs/briefs/`: the dated briefs (the brief template, `CONTEXT.md` and the docs rewrite ledger stay)
 - `docs/absorption/`: the dated reports (the ritual README and `TEMPLATE.md` stay)
