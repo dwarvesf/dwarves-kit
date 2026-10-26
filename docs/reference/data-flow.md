@@ -243,7 +243,7 @@ claim against the command that supposedly does it.
 
 ## Reading order
 
-- New to the kit: `README.md` (the five stages) -> `docs/WORKFLOW.md` (how a run moves) -> this
+- New to the kit: `docs/reference/lifecycle.md` (the five stages) -> `docs/WORKFLOW.md` (how a run moves) -> this
   page (how data moves).
 - Adding a signal pipeline: `docs/reference/kit-contract.md` (the rules) -> flow 1 above (where your
   output has to land) -> `docs/specs/SPEC-200-signal-pipelines.md` (why).

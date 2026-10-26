@@ -197,6 +197,18 @@ Both modes share the same spec format, hooks, and commands. The difference is fr
 
 Not: a team of 10 with a dedicated DevOps pipeline. Not: a team of 3+ live human operators, nor coordination across machines (that's L5, use Nimbalyst/Conductor). In-scope: one lead session fanning out N isolated worktree workers over disjoint specs, and one operator running N concurrent same-machine sessions over disjoint goals, coordinated by the passive running-goal registry. "Several sessions" means one human running several, not a team.
 
+### Fit check in plain terms
+
+A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle with one shared spec format: the contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote with `/kit:spec`.
+
+Also for a builder using Claude Code 6-8 hours a day who wants a context-budget HUD, automatic safety guards, pre-compact backups, and slop detection at stop points.
+
+Not for:
+
+- **Teams of 10+ with a dedicated DevOps pipeline, or anyone who needs cross-machine orchestration.** The kit targets one engineer, or one lead plus delegated contractors. The paragraph above says where the line sits.
+- **Anyone who wants a UI.** The kit is bash hooks + markdown commands. Open any file in a text editor; it's all readable.
+- **Projects already happy with GSD, gstack, or Trail of Bits' configs as standalone tools.** The kit's value is integration; if format-translation overhead between standalone tools isn't hurting you, don't switch.
+
 ### What their week looks like
 
 **Lead mode week:**

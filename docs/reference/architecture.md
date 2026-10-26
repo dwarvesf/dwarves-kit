@@ -1,6 +1,6 @@
 # Architecture
 
-How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Reflect, and which module serves which) lives in the README's "The five stages" section, backed by ADR-0034/ADR-0036 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
+How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Reflect, and which module serves which) lives in [`lifecycle.md`](lifecycle.md) "The five stages", backed by ADR-0034/ADR-0036 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
 
 ## Component layout
 
@@ -475,6 +475,10 @@ task-verifier (read-only), one pass over every task, checks acceptance criteria 
 
 Read-only verifier and write-scoped fix-agent are different subagents on purpose. The verifier cannot "fix" things by silently rewriting code; it can only report. The fix-agent is bounded by the scope the verifier names. See ADR-0005.
 
+The orchestrator (`/kit:execute`) owns the spec's task list and dispatches one builder for the whole spec. The build then goes through the end verifiers (task-verifier over every task, then integration-verifier and acceptance-verifier) and the fix-agent if needed. The builder never grades its own work; the verifiers are separate read-only agents that cannot edit code.
+
+Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out disjoint `VALIDATED` specs into parallel git worktrees behind a disjointness gate; across sessions, a passive goal registry (`lib/goal/goal-registry.sh`) keeps concurrent same-machine sessions from colliding. The kit deliberately stops short of a DAG scheduler, a coordinating daemon, or cross-machine orchestration. For those, run GSD v2 or Nimbalyst alongside it.
+
 ## Collaborative Design Protocol
 
 When an agent encounters a 2+ way design decision during implementation, it follows this 5-step protocol. Referenced by `agents/code-reviewer.md`, `agents/security-reviewer.md`, `commands/execute.md`. Original ADR: 0007.
@@ -607,7 +611,7 @@ Logs are the eval corpus for future prompt optimization. See PHILOSOPHY.md, "Aut
 
 ## Install paths
 
-Two paths, do not run both. See ADR-0009.
+Two paths, do not run both. See ADR-0009. The layers, the module table and the other install routes are in [`install.md`](install.md).
 
 1. **Plugin install** (recommended): `/plugin marketplace add dwarvesf/dwarves-kit` + `/plugin install kit@dwarves-marketplace`. Uses `.claude-plugin/plugin.json` + `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` references. No `statusLine` (v1 plugin schema gap).
 2. **Bash install** (alternative): `bash install.sh`. Uses root `settings.json` with absolute paths. Configures `statusLine`. Requires `jq`, `git`, `bash`.
