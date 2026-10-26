@@ -66,7 +66,7 @@ fi
 
 echo "=== hooks.json: every \${CLAUDE_PLUGIN_ROOT} use sits inside double quotes ==="
 BARE="$(jq -r '.hooks[][].hooks[].command
-  | gsub("\"[^\"]*\\$\\{CLAUDE_PLUGIN_ROOT\\}[^\"]*\""; "")
+  | gsub("\"[^\"]*\""; "")
   | select(contains("${CLAUDE_PLUGIN_ROOT}"))' "$KIT_DIR/hooks/hooks.json")"
 if [ -z "$BARE" ]; then
   ok "no unquoted \${CLAUDE_PLUGIN_ROOT} in any hooks.json command"
