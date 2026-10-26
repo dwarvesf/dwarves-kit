@@ -16,7 +16,7 @@
 # `--files` on classify applies the same path test.
 #
 # Flag-scoring model (absorbed from hoangnb24/repository-harness FEATURE_INTAKE, 2026-06-10;
-# see this module's own flag-scoring design doc + history/2026-10-27:docs/absorption/2026-06-10-repository-harness.md). Named risk flags
+# see this module's own flag-scoring design doc + docs/absorption/2026-06-10-repository-harness.md). Named risk flags
 # are matched against the description:
 #   - HARD-gate flags: any one hit -> a `full` SUGGESTION (mirrors the harness auto-escalate
 #     list + the WORKFLOW full-lane triggers, PLUS a `kit-machinery` flag).
