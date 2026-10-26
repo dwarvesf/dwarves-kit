@@ -296,7 +296,7 @@ override() {
   # inside that repo's tree. Refuse when cwd is not a git repo, rather than log a cwd-keyed
   # entry that will never match a push (review: the write side must not silently no-op). This
   # is the write twin of check()'s explicit-$root read; it also closes the cwd-ambiguity class
-  # noted in history/2026-10-27:_meta/megagoals/_archive/kit-north-star/FEEDBACK.md.
+  # noted in _meta/megagoals/_archive/kit-north-star/FEEDBACK.md.
   if ! git -C . rev-parse --git-common-dir >/dev/null 2>&1; then
     echo "override: cwd is not a git repo. Run this from inside the repo you are overriding for; nothing logged." >&2
     return 66

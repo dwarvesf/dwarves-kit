@@ -28,7 +28,7 @@
 # rather than let that leftover state make the NEXT attempt spuriously RED.
 # Load is the other axis and is deliberately NOT here: holding machine load from a proof tool
 # is hostile on a shared box. Induce it around negctl instead, as
-# history/2026-10-27:docs/verification/wavefront-startup-windows-negctl.sh does.
+# docs/verification/wavefront-startup-windows-negctl.sh does.
 #
 # A RED that is only a load or compile error proves nothing: a mutation that breaks the
 # source turns ANY test red (vitest: `Tests  no tests` or `Transform failed`, pytest: `ERROR
