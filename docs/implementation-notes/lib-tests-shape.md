@@ -35,3 +35,19 @@ No spec backs this change. This note records the decisions and the findings a re
 ## Module READMEs
 
 Twenty-one modules gained a README written from the code: entry points, `bin/` forwarders, test homes, spec or docs. `lib/README.md` links every module row to its README. No spec file moved or was renamed.
+
+## ubuntu 26.04 round
+
+CI run 40370883570 on this branch: macOS green, three newly wired module suites red on ubuntu 26.04. They never ran on Linux before; the wiring exposed them.
+
+| Suite | Cause | Fix |
+|---|---|---|
+| lib-session-test-handoffs | `lib/session/handoffs.sh` read the mtime with `stat -f '%m' \|\| stat -c '%Y'`. On GNU stat `-f` is a filesystem query: it exits 0 and prints several lines, so the fallback never ran and the age arithmetic failed under `set -e`. Every listing printed nothing; only the empty-repo and usage cases passed. | `stat -c %Y` first, digits only, then `stat -f %m`, then now. `\|\| true` on each, because the script runs under `set -e`. |
+| lib-skill-curator-test-curate | `lib/skill-curator/lib/curate.sh` had the same BSD-first chain. The garbage mtime went into `jq --argjson mt`, giving an empty inventory and "invalid JSON text". | Same shape, default 0. |
+| lib-stats-test-memory-lens | The "PermissionError path is skipped" fixture named `/var/root/...`, unreadable on macOS only. On Linux it is absent, so `exists()` is False and the note read as dead. The product is right; the fixture assumed macOS. | The fixture makes its own `chmod 000` directory under the temp root. As root the assertion is skipped with a printed line, since root ignores chmod. The dir is made removable again at the end. |
+
+One trap while fixing: the first version of the handoffs fix dropped the `||` chain and exited silently on macOS, because `stat -c` fails there and `set -e` ended the script. The test caught it. Both fixes carry `|| true`.
+
+Other BSD-first `stat -f` chains: none remain in `lib/`. The rest already try `stat -c` first (`wrap-common.sh`, `queue.sh`, `orchestrate.sh`, `hook-util.sh`, `spec-next.sh`, `work.sh`).
+
+Verification: all three pass in an `ubuntu:26.04` container (non-root user, uutils coreutils) and on macOS; `run-all.sh --only lib-` passes 38 of 38 there. The three fail in the same container before the fix. Proof: `docs/verification/lib-tests-shape.md`, section "ubuntu 26.04 failures".

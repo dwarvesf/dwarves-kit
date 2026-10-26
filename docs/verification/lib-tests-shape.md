@@ -283,3 +283,142 @@ Output:
 94 passed, 0 failed
 Verdict: PASS
 ```
+
+## ubuntu 26.04 failures (CI run 40370883570)
+
+Three module suites that never ran on Linux before failed on ubuntu-latest (26.04). Causes and fixes: `docs/implementation-notes/lib-tests-shape.md`, section "ubuntu 26.04 round".
+
+### Baseline (before the fix, same container)
+
+```
+Command: docker run --rm --init -e CI=true -e LANG=C.UTF-8 -v "$CLONE":/src:ro kit-ci-2604 bash -c 'cp -a /src ~/kit && cd ~/kit && git config --global --add safe.directory "*" && bash lib/session/tests/test-handoffs.sh'   (at 3723a187)
+Exit: 1
+Output:
+  FAIL: expected UNCITED tag, got:
+/home/runner/kit/lib/session/handoffs.sh: line 200: File: unbound variable
+Verdict: FAIL (the baseline this fix addresses)
+```
+
+```
+Command: docker run --rm --init -e CI=true -e LANG=C.UTF-8 -v "$CLONE":/src:ro kit-ci-2604 bash -c 'cp -a /src ~/kit && cd ~/kit && git config --global --add safe.directory "*" && bash lib/skill-curator/tests/test-curate.sh'   (at 3723a187)
+Exit: 1
+Output:
+  ok: CC_SI_* alias resolves + warns; canonical wins when both set
+test-curate: 9 passed, 2 FAILED
+Verdict: FAIL (the baseline this fix addresses)
+```
+
+```
+Command: docker run --rm --init -e CI=true -e LANG=C.UTF-8 -v "$CLONE":/src:ro kit-ci-2604 bash -c 'cp -a /src ~/kit && cd ~/kit && git config --global --add safe.directory "*" && bash lib/stats/tests/test-memory-lens.sh'   (at 3723a187)
+Exit: 1
+Output:
+PASS  O8-real-index-flags-orphan OK (a real link index still flags its orphan + missing link)
+== 39 passed, 1 failed ==
+Verdict: FAIL (the baseline this fix addresses)
+```
+
+### After the fix
+
+```
+Command: docker run --rm --init -e CI=true -e LANG=C.UTF-8 -v "$CLONE":/src:ro kit-ci-2604 bash -c 'cp -a /src ~/kit && cd ~/kit && git config --global --add safe.directory "*" && bash lib/session/tests/test-handoffs.sh'
+Exit: 0
+Output:
+  ok: empty root reported, not silent
+smoke: all 43 passed
+Verdict: PASS
+```
+
+```
+Command: bash lib/session/tests/test-handoffs.sh   (macOS)
+Exit: 0
+Output:
+  ok: empty root reported, not silent
+smoke: all 43 passed
+Verdict: PASS
+```
+
+```
+Command: docker run --rm --init -e CI=true -e LANG=C.UTF-8 -v "$CLONE":/src:ro kit-ci-2604 bash -c 'cp -a /src ~/kit && cd ~/kit && git config --global --add safe.directory "*" && bash lib/skill-curator/tests/test-curate.sh'
+Exit: 0
+Output:
+  ok: CC_SI_* alias resolves + warns; canonical wins when both set
+test-curate: all 11 passed
+Verdict: PASS
+```
+
+```
+Command: bash lib/skill-curator/tests/test-curate.sh   (macOS)
+Exit: 0
+Output:
+  ok: CC_SI_* alias resolves + warns; canonical wins when both set
+test-curate: all 11 passed
+Verdict: PASS
+```
+
+```
+Command: docker run --rm --init -e CI=true -e LANG=C.UTF-8 -v "$CLONE":/src:ro kit-ci-2604 bash -c 'cp -a /src ~/kit && cd ~/kit && git config --global --add safe.directory "*" && bash lib/stats/tests/test-memory-lens.sh'
+Exit: 0
+Output:
+PASS  O8-real-index-flags-orphan OK (a real link index still flags its orphan + missing link)
+== 40 passed, 0 failed ==
+Verdict: PASS
+```
+
+```
+Command: bash lib/stats/tests/test-memory-lens.sh   (macOS)
+Exit: 0
+Output:
+PASS  O8-real-index-flags-orphan OK (a real link index still flags its orphan + missing link)
+== 40 passed, 0 failed ==
+Verdict: PASS
+```
+
+```
+Command: bash tests/run-all.sh --only lib-   (CI=true, ubuntu 26.04 container)
+Exit: 0
+Output:
+lib-stats-test-memory-lens                     ok
+lib-session-intel-smoke                        ok
+run-all: all 38 suites passed, 0 skipped for missing tooling
+Verdict: PASS
+```
+
+### Negative control
+
+macOS has a BSD `stat` that rejects `-c`, so the BSD-first line passes there by accident. The control puts GNU `stat` first on PATH (`$GSTAT/stat` is a symlink to Homebrew `gstat`), which is the Linux behavior, and restores the old BSD-first mtime line in `lib/session/handoffs.sh`. The suite goes red with the Linux symptom; it is green with the fix.
+
+```
+Command: bash lib/gate/negctl.sh "$PWD" "PATH=$GSTAT:$PATH bash lib/session/tests/test-handoffs.sh" "<restore: mtime=\"$(stat -f '%m' \"$f\" 2>/dev/null || stat -c '%Y' \"$f\" 2>/dev/null)\">"
+Command: PATH=/private/tmp/claude-501/-Users-tieubao-workspace-tieubao-ops-toolkit/ec4ab502-2444-4394-bd5d-3a50deac26b5/scratchpad/m/gstatdir:$PATH bash lib/session/tests/test-handoffs.sh
+Exit: 0 (green before mutation)
+Output:
+    ok: two roots, given order, one total
+  [32] bare --under expands the wrap.roots knob (stubbed), root-only
+    ok: bare --under walks both knob roots in listed order
+    ok: bare --under followed by a flag still expands the knob
+  [33] NC bare --under with an empty knob: usage error naming wrap.roots, exit 64
+    ok: exit 64: handoffs list: --under given no directory and wrap.roots is empty
+  [34] NC a root with no git repos: stderr note, zero total, exit 0
+    ok: empty root reported, not silent
+  
+  smoke: all 43 passed
+
+Mutation: python3 /private/tmp/claude-501/-Users-tieubao-workspace-tieubao-ops-toolkit/ec4ab502-2444-4394-bd5d-3a50deac26b5/scratchpad/m/r4/mut.py
+Changed: lib/session/handoffs.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+  [7] NC empty repo: honest 'no handoffs', exit 0
+    ok: no handoffs, exit 0
+  [8] NC unknown subcommand: usage error, exit 64
+    ok: exit 64 on unknown subcommand
+  [9] liveness: a file with no cited row IDs is tagged UNCITED
+    FAIL: expected UNCITED tag, got: 
+  warning: templates not found in ~/.git_template
+  warning: templates not found in ~/.git_template
+  warning: templates not found in ~/.git_template
+  ~/workspace/dwarvesf/dwarves-kit/.claude/worktrees/lib-tests-shape/lib/session/handoffs.sh: line 201: File: unbound variable
+
+Restore: git checkout HEAD -- lib/session/handoffs.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
