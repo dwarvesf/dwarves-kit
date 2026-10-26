@@ -2,7 +2,7 @@
 
 Frozen snapshot of the real proof-of-done, trimmed for `tests/test-pitch.sh` AC1 (a
 CI-portable stand-in for the live `kit-emit-sweep` rid -- see
-`docs/verification/kit-emit-sweep/proof-of-done.md` for the full, current version).
+`history/2026-10-27:docs/verification/kit-emit-sweep/proof-of-done.md` for the full version).
 
 ## Acceptance criteria -> run-table
 

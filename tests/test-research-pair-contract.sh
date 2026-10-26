@@ -6,7 +6,7 @@
 # spec or test coverage) AND their per-agent dispatch deltas in
 # commands/spec.md Step 2, from both sides. One assertion per SPEC-211 Test
 # plan row (rows 1-34; rows 35-36 are the one-time recorded live negative
-# controls, see docs/verification/backfill-research-pair.md). Shared
+# controls, see history/2026-10-27:docs/verification/backfill-research-pair.md). Shared
 # dispatcher rows (Step 2 heading, parallel-4 sentence, Mode A/B gate) are
 # SPEC-210's and deliberately NOT re-pinned here.
 # Exact-string pins are the point: the tested contract IS the prose, so a

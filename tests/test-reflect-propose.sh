@@ -5,7 +5,7 @@
 # INJECTED aggregate (--aggregate-file) and MOCKED LLM seams (LEARN_PROPOSE_INTERPRETER /
 # LEARN_PROPOSE_VERIFIER), so the propose-only / cite-the-number / dedup-hard disciplines
 # are proven without a live model or live stats. Stage 1 (the live stats aggregate) is
-# proven by the LIVE run in docs/verification/loop-05-retro-cycle.md.
+# proven by the LIVE run in history/2026-10-27:docs/verification/loop-05-retro-cycle.md.
 #
 # Run: bash tests/test-reflect-propose.sh
 set -uo pipefail

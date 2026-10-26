@@ -1,7 +1,0 @@
-## Home: repo-b (1 staged)
-  1. Recent candidate inside the window  6d  #u-lo #f-hi  session 2026-07-06
-
-(1 staged candidate)
-promote with: board promote <n>...  |  board promote all  |  board promote reject <n>
-
-1 candidate staged >30d moved to [expired] (never deleted).

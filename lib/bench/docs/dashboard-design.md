@@ -6,7 +6,7 @@
 
 Backfilled design record for `dashboard.py` (operator direction 2026-07-25: "clone them
 all, every feature and render, using our session data... apply the kit... backfill
-design docs"). Feature source: `docs/research/2026-07-25-fiddler-control-plane-features.md`
+design docs"). Feature source: `history/2026-10-27:docs/research/2026-07-25-fiddler-control-plane-features.md`
 (blog + screenshots + docs-index scan). Consuming rows: ID-425 (+ ID-424 replay).
 
 ## Surface map (ours ↔ data source ↔ Fiddler analogue)

@@ -220,7 +220,7 @@ _rows() {
 }
 
 # _review_agg: review-economics counters over runs that recorded at least one review round
-# (per docs/briefs/DECISION-BRIEF-review-economics.md). Read-side only, over the
+# (per history/2026-10-27:docs/briefs/DECISION-BRIEF-review-economics.md). Read-side only, over the
 # ledger's own GATE (`| GATE | review | ran |`) and OUTCOME (`| OUTCOME | review | end |
 # caught=.. dur_s=..`) lines already written -- no new write verb, no new store. One TSV row per
 # reviewed run: <rid>\t<rounds>\t<last-caught>\t<total-review-dur_s>\t<shipped 0|1>.

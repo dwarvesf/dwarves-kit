@@ -40,7 +40,7 @@ base() { git -C "$1" rev-parse HEAD; }
 # START, see check()'s `last_v=` line), so every `Verdict:`/`Result:` line below sits at the
 # start of its own line, never behind a `- ` bullet (a bulleted Verdict: line is invisible to
 # that anchor, same convention every real docs/verification/*.md entry already uses, see e.g.
-# docs/verification/advisor.md).
+# history/2026-10-27:docs/verification/advisor.md).
 
 near_miss_block() {  # a full green run + a NEGATIVE CONTROL block whose own line ends FAIL
   cat <<'EOF'

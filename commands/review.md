@@ -118,7 +118,7 @@ finding-key. A different defect at the SAME FILE (a different slug, e.g.
 `sql-injection:tools/notify.py`) is a DIFFERENT finding-key and is NOT a match -- it always
 fires as a fresh finding, even though it shares a file with something previously rejected.
 Weakening the check to match on file path alone would wrongly suppress every future novel
-defect at that file; see `docs/verification/spec-144-review-findings-memory.md` for the proof.
+defect at that file; see `history/2026-10-27:docs/verification/spec-144-review-findings-memory.md` for the proof.
 
 ### Step 3: Score and output
 

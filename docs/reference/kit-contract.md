@@ -58,7 +58,7 @@ against proves only that the regex matches itself.
 
 This is not theory: in one afternoon the discipline caught seven blind spots, each found by a
 review lens re-planting the violation differently, not by the suite itself. The list is in
-`docs/retro/RETRO-2026-10-25-kit-contract-incidents.md`.
+`history/2026-10-27:docs/retro/RETRO-2026-10-25-kit-contract-incidents.md`.
 
 ## Fanning work out to parallel agents
 
@@ -66,7 +66,7 @@ review lens re-planting the violation differently, not by the suite itself. The 
 
 Git branches share a working tree, so agents dispatched into the SAME checkout switch HEAD out
 from under each other, land commits on each other's branches, and collide on `index.lock`. The
-incident is in `docs/retro/RETRO-2026-10-25-kit-contract-incidents.md`.
+incident is in `history/2026-10-27:docs/retro/RETRO-2026-10-25-kit-contract-incidents.md`.
 
 - Dispatch with `Agent(isolation: "worktree")`, or hand each agent an explicit `cwd` in a
   worktree the lead created first. A subagent must never create its own.

@@ -3,9 +3,10 @@
 #
 # Proves /kit:pitch's assembly engine (lib/pitch.sh) is a grounded ASSEMBLER, never a writer:
 #   AC1  real sample: render against a REAL recently-shipped rid (kit-emit-sweep), into a
-#        scratch copy, produces all 5 sections. The committed docs/verification/pitch-command/
-#        sample-pitch.md is the canonical hand-refreshed proof sample (never written by this
-#        test -- see docs/implementation-notes/kit-pitch.md). The two checks that depend on
+#        scratch copy, produces all 5 sections. The hand-refreshed proof sample
+#        (history/2026-10-27:docs/verification/pitch-command/sample-pitch.md) is no longer in
+#        the tree and is never written by this test (see
+#        history/2026-10-27:docs/implementation-notes/kit-pitch.md). The two checks that depend on
 #        machine-local ledger state (the PR link, the grill-skip reason)
 #        assert against a FROZEN fixture (tests/fixtures/pitch/real-sample/, a snapshot of the
 #        same real content) instead of the live render, so CI's fresh checkout (no
@@ -71,9 +72,9 @@ _render_with_origin() {  # <fixture-name>
 }
 
 echo "=== AC1: real sample -- render against a REAL recently-shipped rid (kit-emit-sweep) ==="
-# The tracked docs/verification/pitch-command/sample-pitch.md is the canonical proof sample,
-# refreshed by hand (see docs/implementation-notes/kit-pitch.md), never by this test: render
-# into a scratch copy instead, so a green run never dirties the tracked file.
+# The proof sample (history/2026-10-27:docs/verification/pitch-command/sample-pitch.md) was
+# refreshed by hand (see history/2026-10-27:docs/implementation-notes/kit-pitch.md), never by this test: render
+# into a scratch copy instead, so a green run never writes into the tree.
 SAMPLE_OUT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; SAMPLE_OUT="$SAMPLE_OUT/sample-pitch.md"
 ( cd "$KIT_DIR" && bash "$LIB" render kit-emit-sweep --out "$SAMPLE_OUT" ) >/dev/null
 assert "AC1 sample-pitch.md was written" "$([ -s "$SAMPLE_OUT" ] && echo 0 || echo 1)"

@@ -118,7 +118,7 @@ anything (a command, a config key, a doc heading, a term in help text):
    retro, triage, cron, worktree)? Those earn their keep, use them.
 3. Renaming an existing term: keep the old name as a working legacy alias
    for one release, sweep docs + config keys, and add the row to
-   docs/research/2026-07-16-plain-words-inventory.md (the ranked inventory
+   history/2026-10-27:docs/research/2026-07-16-plain-words-inventory.md (the ranked inventory
    this rule was born from).
 
 Precedent renames: edge -> profile, surface/spoke/sources -> app,

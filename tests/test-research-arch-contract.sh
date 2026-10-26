@@ -5,7 +5,7 @@
 # research subagent with no prior spec or test coverage) AND its dispatch
 # contract in commands/spec.md Step 2, from both sides. One assertion per
 # SPEC-210 Test plan row (rows 1-24; row 25 is the one-time recorded live
-# negative control, see docs/verification/backfill-research-arch.md).
+# negative control, see history/2026-10-27:docs/verification/backfill-research-arch.md).
 # Exact-string pins are the point: the tested contract IS the prose, so a
 # reword breaks the row and prompts a re-verify (same stance as SPEC-208/209).
 #

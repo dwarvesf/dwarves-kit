@@ -2,7 +2,7 @@
 title: Workflow paths (the complete path map)
 date: 2026-07-31
 status: GENERATED projection
-sources: docs/research/2026-07-31-feature-trigger-map.md, docs/WORKFLOW.md, hooks/hooks.json, settings.json
+sources: history/2026-10-27:docs/research/2026-07-31-feature-trigger-map.md, docs/WORKFLOW.md, hooks/hooks.json, settings.json
 ---
 
 # Workflow paths: every path through the kit
@@ -533,7 +533,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 
 ## 6 · How to regenerate
 
-1. Re-derive the backbone from `docs/research/2026-07-31-feature-trigger-map.md` (or regenerate that file first per its own Method section: enumerate `commands/`, `agents/`, `skills/*/SKILL.md`, `hooks/*.sh` by `ls`, never trust a doc's count).
+1. Re-derive the backbone from the live tree: enumerate `commands/`, `agents/`, `skills/*/SKILL.md`, `hooks/*.sh` by `ls`, never trust a doc's count).
 2. Take stage grouping from `docs/reference/lifecycle.md` "The five stages"; take flow shapes from `docs/WORKFLOW.md` "Flow and loop reference"; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
 3. Take hook events from `hooks/hooks.json` and root `settings.json` (same wiring, two install paths; `statusline` rides the `statusLine` key, not a hook event). Live wiring wins over any doc claim: this pass found `tool-policy-guard` wired at PreToolUse `*` in both files although the trigger map called it unwired; it stays inert until a `tool-policy.json` exists.
 4. Every live feature gets exactly one line in section 5; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
