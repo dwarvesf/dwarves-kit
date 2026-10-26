@@ -30,3 +30,13 @@
 ## Open
 
 - `board-row`: nothing flips `validated` to `executing`. The figure marks it amber, "you, by hand". If a command takes that over, update the sheet.
+
+## SVG output, label size, short digests
+
+- **SVG, not a dark PNG pair.** One SVG per sheet carries both token sets, so a Markdown image follows the reader's theme with no `<picture>` markup. Verified in headless Edge: dark tokens apply with and without a `color-scheme` meta on the host page.
+- **Fonts embedded, not swapped.** Measuring with a fallback stack would differ per OS. The SVG embeds the faces the layout used, subset per figure with the Google Fonts `text` parameter. A failed font fetch fails the figure.
+- **fz zooms the figure.** The template's `--fz` grows glyphs inside fixed-pixel geometry (box width capped at 260, 13 px note pitch); at 1.3 the `lanes` notes overflowed their boxes. `doc-figures` therefore scales the laid-out drawing instead (`SHOT_ZOOM`).
+- **PNG at natural size.** A drawing wider than the 938 px column used to shrink into it (loop, adopt, debug, board-row, several-pieces: labels near 9 px). It now widens the canvas. Narrower figures keep their old dimensions. The committed PNGs change only on the next render.
+- **Rendered SVG marker.** A rendered SVG carries `data-doc-figures`. `check` counts only marked SVGs, so a hand-drawn chart beside the figures (the ops-toolkit Day-12 pilot) is never a stray, and a hand `v-model.svg` never stands in for the rendered figure.
+- **Digest.** `render` writes 16 hex; `check` compares at the stored length and accepts 16 or 64. The committed `docs/figures/MANIFEST.tsv` keeps its 64-hex digests until the next render.
+- **Doc references** still scan `figures/<id>.png` only.
