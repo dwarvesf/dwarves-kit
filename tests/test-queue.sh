@@ -1,13 +1,47 @@
-#!/usr/bin/env bats
-# test-queue.bats -- pins lib/queue/queue.sh (SPEC-146, runner-fastpath sub-goal 03K): the overnight
+#!/usr/bin/env bash
+# test-queue.sh -- pins lib/queue/queue.sh (SPEC-146, runner-fastpath sub-goal 03K): the overnight
 # queue LAUNCHER. Driven ENTIRELY by a STUB mux (tests/fixtures/queue/fake-mux via MUX_CMD) whose
 # capture-pane returns a canned transcript -- NO real UI, NO real `claude`. The five ORIGINALLY
 # named negative controls (NC1-NC5) plus two ADDED after a 2026-07-05 security review found real
 # gaps (NC6 marker-wrap false-positive, NC7 stalled-twice-stops-night), plus T5/T6 locking the
 # allow-list fix from the same review.
+#
+# This was a bats file (tests/test-queue.bats) that no runner collected: bats is not a declared
+# dependency, so run-all.sh and CI never ran it. Each case is now a plain function run by the small
+# harness below, one subshell per case with `set -e` (a failed `[ ]` fails the case, as in bats).
+# `run` keeps the bats contract: it sets $status and $output and never aborts the case.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- harness -------------------------------------------------------------------------------------
+pass=0; fail=0; failed_names=""
+
+run() {  # run <cmd...>: $status = exit code, $output = stdout+stderr
+  status=0
+  output="$( trap - ERR; set +e; "$@" 2>&1 )" || status=$?
+}
+
+run_case() {  # run_case <title> <function>
+  local title="$1" fn="$2" out rc
+  # No `|| rc=$?` after the substitution: an `||` list makes bash skip the ERR trap inside it.
+  out="$( (
+    set -eE
+    trap 'echo "  failed at line $LINENO: $BASH_COMMAND" >&2' ERR
+    trap teardown EXIT
+    setup
+    "$fn"
+  ) 2>&1 )"; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    pass=$((pass + 1)); echo "  ok   $title"
+  else
+    fail=$((fail + 1)); failed_names="$failed_names ${fn#case_}"
+    echo "  FAIL $title"; printf '%s\n' "$out" | tail -20 | sed 's/^/       | /'
+  fi
+}
 
 setup() {
-  KIT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  KIT="$(cd "$HERE/.." && pwd)"
   QUEUE="$KIT/lib/queue/queue.sh"
   FIX="$KIT/tests/fixtures/queue"
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
@@ -49,7 +83,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
 
 # =============================================================================================
 # T1 happy: a clean row whose transcript ends RUNNER_DONE -> journal `done`, window opened+killed
-@test "T1 happy: RUNNER_DONE -> done, window opened and killed" {
+case_T1() {
   local repo="$WORK/r1"; mkrepo "$repo"
   echo "report HEAD then end" > "$WORK/p1.txt"
   # INDENTED marker: the real Claude Code TUI renders the final line inside its message block,
@@ -64,9 +98,10 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   grep -q "new-window slug=ok1" "$QLOG"
   grep -q "kill-window slug=ok1" "$QLOG"
 }
+run_case "T1 happy: RUNNER_DONE -> done, window opened and killed" case_T1
 
 # T2 happy: RUNNER_GATED -> journal `gated`, moves on
-@test "T2 happy: RUNNER_GATED -> gated, moves on" {
+case_T2() {
   local repo="$WORK/r2"; mkrepo "$repo"
   echo "do the thing" > "$WORK/p2.txt"
   seed_transcript g2 "  RUNNER_GATED: held for human review"
@@ -77,9 +112,10 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$(jverdict g2)" = "gated" ]
   awk -F'\t' '$2=="g2"{print $4}' "$JOURNAL" | grep -q "held for human review"
 }
+run_case "T2 happy: RUNNER_GATED -> gated, moves on" case_T2
 
 # T3 dry-run: prints WOULD LAUNCH, NO send-keys, no journal run row
-@test "T3 dry-run: lists would-launch, no send-keys, no journal" {
+case_T3() {
   local repo="$WORK/r3"; mkrepo "$repo"
   echo "x" > "$WORK/p3.txt"
   row d3 "$repo" "$WORK/p3.txt" > "$WORK/q.tsv"
@@ -90,11 +126,12 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ ! -f "$JOURNAL" ] || [ -z "$(jverdict d3)" ]        # no run row for d3
   ! grep -q "type slug=d3" "$QLOG"                       # no send-keys happened
 }
+run_case "T3 dry-run: lists would-launch, no send-keys, no journal" case_T3
 
 # T4 source: --from-boards consumes the stub `board queue` emit on the tsv contract. The pointer
 # must resolve under the allow-listed glob (_meta/megagoals/** or .claude/goals/**) since
 # --from-boards rows get the defense-in-depth confinement check (T5/T6 below cover the boundary).
-@test "T4 from-boards: rows consumed from stub board queue emit, pointer allow-listed" {
+case_T4() {
   local repo="$WORK/r4"; mkrepo "$repo"
   mkdir -p "$repo/_meta/megagoals/fx/goals"
   echo "x" > "$repo/_meta/megagoals/fx/goals/p4.txt"
@@ -108,12 +145,13 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$status" -eq 0 ]
   [ "$(jverdict b4)" = "done" ]
 }
+run_case "T4 from-boards: rows consumed from stub board queue emit, pointer allow-listed" case_T4
 
 # T5 from-boards allow-list: a --from-boards pointer OUTSIDE the allow-listed globs is skipped, no
 # window opened -- the CRITICAL security-review fix: defense-in-depth on top of sub-goal 04's own
 # allow-list, since this launcher must not simply trust an upstream tool has no bugs when the
 # destination is an unattended --dangerously-skip-permissions session.
-@test "T5 from-boards-pointer-allowlist: a non-allow-listed pointer is skipped, no window opened" {
+case_T5() {
   local repo="$WORK/r5"; mkrepo "$repo"
   echo "x" > "$WORK/rogue-pointer.txt"          # OUTSIDE the repo, outside any allow-listed glob
   row rogue "$repo" "$WORK/rogue-pointer.txt" > "$WORK/board-rows2.tsv"
@@ -125,10 +163,11 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   awk -F'\t' '$2=="rogue"{print $4}' "$JOURNAL" | grep -qi "not allow-listed"
   ! grep -q "new-window slug=rogue" "$QLOG"
 }
+run_case "T5 from-boards-pointer-allowlist: a non-allow-listed pointer is skipped, no window opened" case_T5
 
 # T6 hand-authored tsv is allow-list-EXEMPT (operator authorship is the trust boundary for the
 # plain tsv path; only --from-boards gets the defense-in-depth confinement).
-@test "T6 hand-tsv-allowlist-exempt: a plain tsv pointer outside the glob still launches" {
+case_T6() {
   local repo="$WORK/r6"; mkrepo "$repo"
   echo "x" > "$WORK/anywhere.txt"
   seed_transcript hand6 "  RUNNER_DONE"
@@ -139,12 +178,13 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$status" -eq 0 ]
   [ "$(jverdict hand6)" = "done" ]
 }
+run_case "T6 hand-tsv-allowlist-exempt: a plain tsv pointer outside the glob still launches" case_T6
 
 # T7 from-boards-symlink-escape: a SYMLINK planted INSIDE the allow-listed dir but pointing
 # OUTSIDE the repo must be rejected too -- a rung-4 red-team probe found the first cut (resolving
 # only the pointer's containing DIRECTORY, not the final path component) would have let such a
 # symlink read arbitrary file content into the /goal prompt while still LOOKING allow-listed.
-@test "T7 from-boards-symlink-escape: a symlink escaping the repo via the allow-listed dir is skipped" {
+case_T7() {
   local repo="$WORK/r7"; mkrepo "$repo"
   mkdir -p "$repo/_meta/megagoals/fx"
   local outside="$WORK/OUTSIDE_SECRET.txt"; echo "secret" > "$outside"
@@ -159,10 +199,11 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$(jverdict esc7)" = "skipped" ]
   ! grep -q "new-window slug=esc7" "$QLOG"
 }
+run_case "T7 from-boards-symlink-escape: a symlink escaping the repo via the allow-listed dir is skipped" case_T7
 
 # =============================================================================================
 # NC1 dirty-tree skip: a dirty repo -> journal `skipped`, NO window opened
-@test "NC1 dirty-tree-skip: dirty repo skipped, no window opened" {
+case_NC1() {
   local repo="$WORK/rd"; mkrepo "$repo"
   echo "uncommitted" > "$repo/f"          # make the tree dirty
   echo "x" > "$WORK/pd.txt"
@@ -174,10 +215,11 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   awk -F'\t' '$2=="dirty1"{print $4}' "$JOURNAL" | grep -q "dirty tree"
   ! grep -q "new-window slug=dirty1" "$QLOG"             # never opened a window
 }
+run_case "NC1 dirty-tree-skip: dirty repo skipped, no window opened" case_NC1
 
 # NC2 prose-quotes-completion: prose quotes the marker mid-line, no anchored final marker
 #     -> NOT done; keeps waiting -> stalled at the timeout
-@test "NC2 prose-quotes-completion-no-false-done: mid-line marker never triggers done" {
+case_NC2() {
   local repo="$WORK/rp"; mkrepo "$repo"
   echo "x" > "$WORK/pp.txt"
   # transcript quotes the token mid-prose but no line IS the marker
@@ -189,9 +231,10 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$status" -eq 0 ]
   [ "$(jverdict prose1)" = "stalled" ]                  # NOT done
 }
+run_case "NC2 prose-quotes-completion-no-false-done: mid-line marker never triggers done" case_NC2
 
 # NC3 error-twice-stops-night: two rows whose window dies twice -> night stops; row 3 untouched
-@test "NC3 error-twice-stops-night: 2 consecutive errors stop the night, later rows untouched" {
+case_NC3() {
   local r1="$WORK/e1" r2="$WORK/e2" r3="$WORK/e3"; mkrepo "$r1"; mkrepo "$r2"; mkrepo "$r3"
   echo x > "$WORK/pe.txt"
   seed_dead err1; seed_dead err2               # both windows die (nonzero capture)
@@ -205,9 +248,10 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ -z "$(jverdict err3)" ]                     # row 3 never attempted -> no journal row
   { trap '' PIPE; echo "$output" 2>/dev/null || :; } | grep -q "STOP THE NIGHT"
 }
+run_case "NC3 error-twice-stops-night: 2 consecutive errors stop the night, later rows untouched" case_NC3
 
 # NC4 journal-done-idempotence: journal preseeded `slug done` -> row skipped, no window opened
-@test "NC4 journal-done-idempotence: a done slug is skipped on re-run" {
+case_NC4() {
   local repo="$WORK/ri"; mkrepo "$repo"
   echo x > "$WORK/pi.txt"
   printf '%s\tidem1\tdone\t\n' "2026-07-05T00:00:00Z" > "$JOURNAL"   # preseed
@@ -220,9 +264,10 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   ! grep -q "new-window slug=idem1" "$QLOG"             # never opened a window
   [ "$(grep -c 'idem1' "$JOURNAL")" -eq 1 ]             # no second row appended
 }
+run_case "NC4 journal-done-idempotence: a done slug is skipped on re-run" case_NC4
 
 # NC5 queue-metachar argv-safe: metachars in slug + pointer stay literal, never reach a shell
-@test "NC5 queue-metachar-argv-safe: metachar fields are literal, no shell exec" {
+case_NC5() {
   local repo="$WORK/rm"; mkrepo "$repo"
   local sentinel="$WORK/SENTINEL"; : > "$sentinel"
   # a pointer whose CONTENT is a shell-injection attempt; it is TYPED, never executed
@@ -242,6 +287,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   grep -F 'rm -f' "$QLOG"
   grep -F '$(touch' "$QLOG"
 }
+run_case "NC5 queue-metachar-argv-safe: metachar fields are literal, no shell exec" case_NC5
 
 # NC6 marker-wrap false-positive (security review, CRITICAL #2): `_goal_line` flattens the whole
 # pointer into ONE long typed line, and a pointer is DESIGNED to instruct printing RUNNER_DONE. A
@@ -249,7 +295,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
 # rendered row -- indistinguishable from a real completion by line-anchoring alone. This transcript
 # simulates exactly that: a wrapped echo whose last fragment IS "RUNNER_DONE", with NO blank line
 # above it (a genuine wrap continuation never has one). Must NOT be marked done.
-@test "NC6 marker-wrap-false-positive: a wrapped echo fragment never triggers done" {
+case_NC6() {
   local repo="$WORK/rw"; mkrepo "$repo"
   echo "x" > "$WORK/pw.txt"
   {
@@ -262,12 +308,13 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$status" -eq 0 ]
   [ "$(jverdict wrap1)" = "stalled" ]            # NOT done -- the wrap fragment is rejected
 }
+run_case "NC6 marker-wrap-false-positive: a wrapped echo fragment never triggers done" case_NC6
 
 # NC7 stalled-twice-stops-night: two consecutive `stalled` verdicts ALSO stop the night (extended
 # from the original error-only guard, security review MEDIUM: a hang, not just a crash, is an
 # equally valid "the mechanism is dysfunctional" signal and must not silently burn the whole
 # night's remaining queue).
-@test "NC7 stalled-twice-stops-night: 2 consecutive stalls stop the night, later rows untouched" {
+case_NC7() {
   local r1="$WORK/s1n" r2="$WORK/s2n" r3="$WORK/s3n"; mkrepo "$r1"; mkrepo "$r2"; mkrepo "$r3"
   echo x > "$WORK/psn.txt"
   # no transcript seeded for s1n/s2n -> capture-pane returns empty, never matches -> stalled
@@ -281,13 +328,14 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ -z "$(jverdict s3n)" ]                       # row 3 never attempted -> no journal row
   { trap '' PIPE; echo "$output" 2>/dev/null || :; } | grep -q "STOP THE NIGHT"
 }
+run_case "NC7 stalled-twice-stops-night: 2 consecutive stalls stop the night, later rows untouched" case_NC7
 
 # =============================================================================================
 # T9 submit-retry: a dropped Enter with the goal rendered TAIL-first (no `/goal` substring in
 # the pane) is detected as still-pending and re-Entered until the input clears. Pins the fix
 # for the 3-for-3 live stranding: the old `[>❯]\s*/goal` match saw the tail rendering, reported
 # submitted after one dropped Enter, and the row sat idle with no journal entry.
-@test "T9 submit-retry: tail-rendered pending input is re-Entered until clear" {
+case_T9() {
   . "$QUEUE"
   printf '2' > "$QSTUB/s7.pending"                # first 2 Enters drop; 3rd not needed
   # premise guard: the stuck rendering must NOT contain `/goal` (what broke the old regex)
@@ -296,22 +344,24 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ ! -f "$QSTUB/s7.pending" ]                    # input eventually cleared
   [ "$(grep -c 'enter slug=s7' "$QLOG")" -eq 2 ]  # exactly the 2 Enters needed, then stopped
 }
+run_case "T9 submit-retry: tail-rendered pending input is re-Entered until clear" case_T9
 
 # T10 submit-bare-prompt: an already-clear (bare `❯`) prompt submits on the first Enter, no
 # retry storm -- the empty-input rendering must not read as pending.
-@test "T10 submit-bare-prompt: bare prompt exits after one Enter" {
+case_T10() {
   . "$QUEUE"
   printf '❯ \n' > "$QSTUB/s8.transcript"
   _mux_submit s8
   [ "$(grep -c 'enter slug=s8' "$QLOG")" -eq 1 ]
 }
+run_case "T10 submit-bare-prompt: bare prompt exits after one Enter" case_T10
 
 # =============================================================================================
 # T11 goal-over-budget: a pointer whose /goal line exceeds the interactive 4000-char cap fails
 # fast to `error`, with NO window ever opened -- pins the fix for the silent-strand bug (an
 # over-budget goal used to type into a real window and sit there forever, no journal entry,
 # nothing but an idle pane an operator had to notice by hand across 3 live runs).
-@test "T11 goal-over-budget: fails fast to error, no window opened" {
+case_T11() {
   local repo="$WORK/r11"; mkrepo "$repo"
   python3 -c "print('x' * 4200)" > "$WORK/p11.txt"
   row big11 "$repo" "$WORK/p11.txt" > "$WORK/q.tsv"
@@ -321,10 +371,11 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$(jverdict big11)" = "error" ]
   ! grep -q "new-window slug=big11" "$QLOG"
 }
+run_case "T11 goal-over-budget: fails fast to error, no window opened" case_T11
 
 # T12 goal-under-budget: a normal-size pointer is unaffected by the new check (regression guard
 # alongside T1, run through the SAME real `queue run` path with the length check now present).
-@test "T12 goal-under-budget: unaffected, window opens and completes" {
+case_T12() {
   local repo="$WORK/r12"; mkrepo "$repo"
   echo "report HEAD then end" > "$WORK/p12.txt"
   seed_transcript ok12 "  RUNNER_DONE"
@@ -336,17 +387,19 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$(jverdict ok12)" = "done" ]
   grep -q "new-window slug=ok12" "$QLOG"
 }
+run_case "T12 goal-under-budget: unaffected, window opens and completes" case_T12
 
 # =============================================================================================
 # T13 state-sandbox tripwire: with KIT_LEDGER_DIR exported (setup does), every run file the
 # launcher writes resolves INSIDE the sandbox, never the operator's real state dir. Pins the
 # ID-468 root cause: the suite sandboxed the journal but not beat/status/guard, leaking counter
 # files into ~/.local/state until the breaker's noprogress trip flipped NC2/NC6/NC7 forever.
-@test "T13 state-sandbox tripwire: run files resolve under KIT_LEDGER_DIR" {
+case_T13() {
   . "$QUEUE"
   [ "$(_run_dir)" = "$KIT_LEDGER_DIR/queue-runs" ]
   case "$(_run_dir)" in "$WORK"/*) : ;; *) false ;; esac
 }
+run_case "T13 state-sandbox tripwire: run files resolve under KIT_LEDGER_DIR" case_T13
 
 # =============================================================================================
 # wait verb (ID-470): block until a slug reaches a terminal state. Read-only over journal + mux.
@@ -354,52 +407,57 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
 # drive the alive/dead axis with a file.
 
 # W1 already-terminal: a done row already present, window gone -> exit 0, prints the row.
-@test "W1 wait already-terminal -> exit 0 prints the row" {
+case_W1() {
   printf '%s\tw1\tdone\tshipped\n' "2026-08-10T00:00:00Z" > "$JOURNAL"
   seed_dead w1
   QUEUE_WAIT_POLL_SECS=0 run bash "$QUEUE" wait w1
   [ "$status" -eq 0 ]
   { trap '' PIPE; echo "$output" 2>/dev/null || :; } | grep -q "	w1	done	"
 }
+run_case "W1 wait already-terminal -> exit 0 prints the row" case_W1
 
 # W2 new terminal row lands mid-wait (window alive) -> exit 0, prints the new row.
-@test "W2 wait new-row -> exit 0" {
+case_W2() {
   : > "$JOURNAL"                                   # empty: base count 0
   ( sleep 1; printf '%s\tw2\tgated\tneeds-human\n' "2026-08-10T00:00:01Z" >> "$JOURNAL" ) &
   QUEUE_WAIT_POLL_SECS=1 run bash "$QUEUE" wait w2 --timeout 10
   [ "$status" -eq 0 ]
   { trap '' PIPE; echo "$output" 2>/dev/null || :; } | grep -q "	w2	gated	"
 }
+run_case "W2 wait new-row -> exit 0" case_W2
 
 # W3 window dies with no terminal row -> exit 1, residue to stderr.
-@test "W3 wait window-died-no-verdict -> exit 1" {
+case_W3() {
   : > "$JOURNAL"
   seed_dead w3
   QUEUE_WAIT_POLL_SECS=0 run bash "$QUEUE" wait w3
   [ "$status" -eq 1 ]
   { trap '' PIPE; echo "$output" 2>/dev/null || :; } | grep -q "gone with no terminal journal row"
 }
+run_case "W3 wait window-died-no-verdict -> exit 1" case_W3
 
 # W4 timeout: window alive, no row ever -> exit 2.
-@test "W4 wait timeout -> exit 2" {
+case_W4() {
   : > "$JOURNAL"                                   # window alive (no .dead), never a row
   QUEUE_WAIT_POLL_SECS=1 run bash "$QUEUE" wait w4 --timeout 1
   [ "$status" -eq 2 ]
   { trap '' PIPE; echo "$output" 2>/dev/null || :; } | grep -q "timeout after 1s"
 }
+run_case "W4 wait timeout -> exit 2" case_W4
 
 # W5 bad input: a slug with a tmux/path separator, and a missing slug -> usage exit 64.
-@test "W5 wait bad-slug and missing-slug -> exit 64" {
+case_W5() {
   run bash "$QUEUE" wait 'a:b'
   [ "$status" -eq 64 ]
   run bash "$QUEUE" wait
   [ "$status" -eq 64 ]
 }
+run_case "W5 wait bad-slug and missing-slug -> exit 64" case_W5
 
 # =============================================================================================
 # D1 done-needs-delta: a RUNNER_DONE claim with no HEAD move and no new PR is journaled `gated`,
 # reason `no-delta`, never `done` (the negative control for "self-reported completion").
-@test "D1 no-delta: RUNNER_DONE with no commit and no PR -> gated no-delta" {
+case_D1() {
   local repo="$WORK/rd1"; mkrepo "$repo"
   echo "report only" > "$WORK/pd1.txt"
   seed_transcript nd1 "  RUNNER_DONE"
@@ -410,6 +468,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$(jverdict nd1)" = "gated" ]
   awk -F'\t' '$2=="nd1"{print $4}' "$JOURNAL" | grep -q '^no-delta$'
 }
+run_case "D1 no-delta: RUNNER_DONE with no commit and no PR -> gated no-delta" case_D1
 
 # D2 a PR of mine created since the window opened counts as delta even when HEAD did not move (the run
 # worked in a worktree and pushed). The `gh` stub honours -q: it runs the real jq filter over a canned
@@ -425,7 +484,7 @@ GHEOF
   chmod +x "$WORK/ghbin/gh"
 }
 
-@test "D2 pr-delta: a PR created during the run -> done without a HEAD move" {
+case_D2() {
   local repo="$WORK/rd2"; mkrepo "$repo"
   echo "report only" > "$WORK/pd2.txt"
   seed_transcript nd2 "  RUNNER_DONE"
@@ -436,9 +495,10 @@ GHEOF
   [ "$status" -eq 0 ]
   [ "$(jverdict nd2)" = "done" ]
 }
+run_case "D2 pr-delta: a PR created during the run -> done without a HEAD move" case_D2
 
 # D3 a PR that predates the window is no evidence
-@test "D3 pr-delta: a PR older than the window -> gated no-delta" {
+case_D3() {
   local repo="$WORK/rd3"; mkrepo "$repo"
   echo "report only" > "$WORK/pd3.txt"
   seed_transcript nd3 "  RUNNER_DONE"
@@ -449,9 +509,10 @@ GHEOF
   [ "$status" -eq 0 ]
   [ "$(jverdict nd3)" = "gated" ]
 }
+run_case "D3 pr-delta: a PR older than the window -> gated no-delta" case_D3
 
 # D4 a worktree run that only creates a branch (no PR, no gh) still leaves a delta
-@test "D4 branch-delta: a new local branch with no HEAD move and no gh -> done" {
+case_D4() {
   local repo="$WORK/rd4"; mkrepo "$repo"
   echo "report only" > "$WORK/pd4.txt"
   seed_transcript nd4 "  RUNNER_DONE"
@@ -462,9 +523,10 @@ GHEOF
   [ "$status" -eq 0 ]
   [ "$(jverdict nd4)" = "done" ]
 }
+run_case "D4 branch-delta: a new local branch with no HEAD move and no gh -> done" case_D4
 
 # D5 a gated no-delta row is not relaunched by the next `queue run` over the same tsv
-@test "D5 no-delta-idempotence: the second run over the same tsv opens no second window" {
+case_D5() {
   local repo="$WORK/rd5"; mkrepo "$repo"
   echo "report only" > "$WORK/pd5.txt"
   seed_transcript nd5 "  RUNNER_DONE"
@@ -476,3 +538,8 @@ GHEOF
   [ "$(grep -c 'new-window slug=nd5' "$QLOG")" -eq 1 ]
   [ "$(awk -F'\t' '$2=="nd5"' "$JOURNAL" | wc -l | tr -d ' ')" -eq 1 ]
 }
+run_case "D5 no-delta-idempotence: the second run over the same tsv opens no second window" case_D5
+
+echo
+if [ "$fail" -gt 0 ]; then echo "test-queue: $pass passed, $fail FAILED ->$failed_names"; exit 1; fi
+echo "test-queue: all $pass passed"

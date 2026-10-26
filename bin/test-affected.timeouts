@@ -29,10 +29,25 @@ test-wrap-merge 250
 test-board-work 238
 test-wrap-apply 236
 test-wrap-ci 186
+lib-stats-test-anomalies-advisor 180  # hand-set: 12-32 s warm on a 14-core host, 126 s cold under load 50; every call is a uv run
+lib-stats-test-ceremony-lens 180  # hand-set: 12-32 s warm on a 14-core host, 126 s cold under load 50; every call is a uv run
+lib-stats-test-feedback 180  # hand-set: 12-32 s warm on a 14-core host, 126 s cold under load 50; every call is a uv run
+lib-stats-test-memory-lens 180  # hand-set: 12-32 s warm on a 14-core host, 126 s cold under load 50; every call is a uv run
+lib-stats-test-sessions-digest 180  # hand-set: 12-32 s warm on a 14-core host, 126 s cold under load 50; every call is a uv run
 test-config-registry 164
 test-wrap-pull 152
 test-wrap-carry 148
 test-install-modules 126
+lib-stats-test-defect-correlation 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-deviation-rate 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-docs-wiring 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-gate-yield 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-kit-gates-cost 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-ledger-cli 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-mega-durations 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-render-skill 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-review-yield 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
+lib-stats-test-schema-parity 120  # hand-set: every call is a uv run; a cold env under load 50 ran ledger-cli past 60 s (4 s warm)
 test-lane-telemetry 120
 test-adopt 118
 test-kit-foldin-hooks 118
@@ -48,10 +63,32 @@ test-turn-cap 82
 test-money-gate-parity 68
 test-repohygiene 68
 test-install-clis 66
+lib-stats-test-schema-conform 60
 test-gate-ledger-inherit 60
 test-gate-ledger-plan-record 64
 test-wrap-report-lint 64
 test-tier4-close 62
+lib-goal-test-megagoals 60
+lib-plugin-check-smoke 60
+lib-session-audit-smoke 60
+lib-session-intel-smoke 60
+lib-session-observe-smoke 60
+lib-session-observe-test-vps-report 60
+lib-session-test-handoffs 60
+lib-session-test-parse-transcript 60
+lib-skill-curator-test-async 60
+lib-skill-curator-test-curate 60
+lib-skill-curator-test-hook-async 60
+lib-skill-curator-test-install 60
+lib-skill-curator-test-promote 60
+lib-skill-curator-test-reentrancy 60
+lib-skill-curator-test-reviewer 60
+lib-skill-curator-test-signal-gate 60
+lib-skill-curator-test-staging-gate 60
+lib-skill-curator-test-surface 60
+lib-skill-curator-test-transcript-parse 60
+lib-telemetry-smoke 60
+lib-worktree-provision-smoke 60
 test-advisor 60
 test-agent-effectiveness 60
 test-attempt-state 60
@@ -162,6 +199,7 @@ test-proof-verdict-hint 60
 test-proof-visual-evidence 60
 test-proof-visual-gate 60
 test-prose-rag-adapter 60
+test-queue 60
 test-quiz-gate 60
 test-redteam-gate 60
 test-reflect-drain 60
@@ -183,6 +221,7 @@ test-run-lock 60
 test-runs-dashboard 60
 test-security-hardening 60
 test-self-grill-watcher 60
+test-session-recall 60
 test-ship-gate-coverage-map 60
 test-ship-gate-fail-closed 60
 test-ship-gate-profiles 60
@@ -198,6 +237,7 @@ test-staging-stage 60
 test-stats-no-persist 60
 test-subagent-panes 60
 test-suite-knob 60
+test-suites-collect 60
 test-sync 60
 test-sync-cron-install 60
 test-sync-cron-launcher 60

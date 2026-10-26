@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Over-test for the render skill (SPEC-128 test plan): trigger-fires, queries-via-02
 # (mocked JSON in, formatted surface out, no re-read), both surfaces, and the
 # load-bearing single-data-path negative control. render.py is pure (no I/O, no

@@ -12,7 +12,7 @@
 #
 # Isolation: every run points KIT_LEDGER_DIR at a temp dir, so the sidecars and the journal land
 # under it and the real machine state is never read or written. The queue is driven through the
-# same stub mux tests/test-queue.bats uses (MUX_CMD), so no real UI and no real `claude`.
+# same stub mux tests/test-queue.sh uses (MUX_CMD), so no real UI and no real `claude`.
 #
 # Run: bash tests/test-runaway-guards.sh   (exit 0 = all checks green)
 

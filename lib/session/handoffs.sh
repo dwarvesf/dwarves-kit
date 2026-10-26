@@ -196,7 +196,10 @@ _list_one() {
   local rows=()
   for f in "${files[@]}"; do
     local mtime age rel excerpt liveness
-    mtime="$(stat -f '%m' "$f" 2>/dev/null || stat -c '%Y' "$f" 2>/dev/null)"
+    # GNU stat first: on Linux `stat -f %m` is a filesystem query that exits 0 and prints several lines
+    mtime="$(stat -c '%Y' "$f" 2>/dev/null || true)"
+    case "$mtime" in ''|*[!0-9]*) mtime="$(stat -f '%m' "$f" 2>/dev/null || true)" ;; esac
+    case "$mtime" in ''|*[!0-9]*) mtime="$now" ;; esac
     age=$(( (now - mtime) / 86400 ))
     [ -n "$days" ] && [ "$age" -lt "$days" ] && continue
     rel="${f#"$repo"/}"

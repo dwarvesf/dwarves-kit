@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Over-test for the `ledger` CLI (SPEC-127 test plan). Self-contained: builds a fixture
 # set for ALL 4 source shapes (pipe-log kit corpus + sqlite tide + json tg-cleanup +
 # markdown learned-ledger), points every source env var at it, and asserts hand-verified

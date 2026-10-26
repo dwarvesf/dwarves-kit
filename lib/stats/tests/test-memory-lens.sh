@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test + NEVER-DELETE NC for `memory_lens`/`memories`/`ledger
 # memory-sweep`/`_detect_memory_hygiene` (SPEC-136 test plan).
 #
@@ -105,16 +106,20 @@ RuntimeError, a real bug found via the first real-corpus run against `~server/..
 notes).
 EOF
 
-cat > "$GITREPO/.claude/memory/unreadable-abs-path-note.md" <<'EOF'
----
-name: unreadable-abs-path-note
----
-
-See `/var/root/Library/Application Support/fixture-file` for context; an absolute path whose
-parent dir is unreadable on this host makes Path.exists() RAISE PermissionError instead of
-returning False. That is untestable-here, not dead: the sweep must skip it (no ref, no crash),
-found via the first ops-toolkit real-corpus run.
-EOF
+# An absolute path whose parent dir the user cannot search makes Path.exists() RAISE PermissionError
+# instead of returning False. The fixture builds that condition itself (a chmod 000 dir under the temp
+# root) so it holds on any host; it used to name /var/root/..., which is unreadable on macOS only and
+# simply absent on Linux (exists() False, so the note read as dead). Root bypasses chmod, so as root
+# the dir stays readable and the assertion below is skipped.
+LOCKED="$FIX/locked"
+mkdir -p "$LOCKED"; : > "$LOCKED/fixture-file"; chmod 000 "$LOCKED"
+{
+  printf -- '---\nname: unreadable-abs-path-note\n---\n\n'
+  printf 'See `%s/fixture-file` for context; an absolute path whose\n' "$LOCKED"
+  printf 'parent dir is unreadable on this host makes Path.exists() RAISE PermissionError instead of\n'
+  printf 'returning False. That is untestable-here, not dead: the sweep must skip it (no ref, no crash),\n'
+  printf 'found via the first ops-toolkit real-corpus run.\n'
+} > "$GITREPO/.claude/memory/unreadable-abs-path-note.md"
 
 cat > "$GITREPO/.claude/memory/MEMORY.md" <<'EOF'
 # fixture memory index
@@ -237,7 +242,8 @@ has "M-flag-fence-note dead=0 (flag skipped, no crash)" "|flag-fence-note|note|d
 has "M-prose-path-note dead=0 (no backticks, not extracted)" "|prose-path-note|note|dead=0|stale=False" "$SCAN_OUT"
 has "M-repo-relative-skip-note dead=0 (bare relative path SKIPPED, repo store)" "|repo-relative-skip-note|note|dead=0|stale=False" "$SCAN_OUT"
 has "M-unresolvable-tilde-user-note dead=2 (two unresolvable ~user refs, RuntimeError caught, flagged dead, no crash)" "|unresolvable-tilde-user-note|note|dead=2|stale=False" "$SCAN_OUT"
-hasnt "M-unreadable-abs-path-note not flagged dead (PermissionError path skipped as untestable, no crash)" "|unreadable-abs-path-note|note|dead=1" "$SCAN_OUT"
+if [ "$(id -u)" = 0 ]; then echo "SKIP  M-unreadable-abs-path-note (running as root: chmod 000 does not block root)"
+else hasnt "M-unreadable-abs-path-note not flagged dead (PermissionError path skipped as untestable, no crash)" "|unreadable-abs-path-note|note|dead=1" "$SCAN_OUT"; fi
 REPO_NAME="$(basename "$GITREPO")"
 has "M-repo MEMORY.md dead=2 (missing-note link + orphan tombstone)" "repo:${REPO_NAME}|MEMORY|index|dead=2" "$SCAN_OUT"
 has "M-builtin-abs-note dead=0 (absolute path under a real root, live)" "|builtin-abs-note|note|dead=0|stale=False" "$SCAN_OUT"
@@ -397,6 +403,7 @@ has "O7-placeholder-glob-skipped OK (<name>/*.conf/{a,b} never a literal path)" 
 has "O8-prose-scratchpad-flags-nothing OK (no-link MEMORY.md flags 0, DEC-010)" "O8-prose-scratchpad-flags-nothing=OK" "$OVER"
 has "O8-real-index-flags-orphan OK (a real link index still flags its orphan + missing link)" "O8-real-index-flags-orphan=OK" "$OVER"
 
+chmod 755 "$LOCKED" 2>/dev/null   # let the temp root be removed
 echo
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

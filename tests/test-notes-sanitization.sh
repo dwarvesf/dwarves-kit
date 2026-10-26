@@ -11,7 +11,7 @@
 #   C) the protected-path gate                 NC: an ordinary file written is not gated
 #   D) fail-closed behavior                    NC: with perl present, the row launches normally
 #
-# Isolation: KIT_LEDGER_DIR points at a temp dir, the mux is the same stub tests/test-queue.bats
+# Isolation: KIT_LEDGER_DIR points at a temp dir, the mux is the same stub tests/test-queue.sh
 # uses, so no real UI, no real claude, and no real machine state is read or written.
 #
 # Run: bash tests/test-notes-sanitization.sh   (exit 0 = all checks green)

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # test-kit-gates-cost.sh -- rung-4 redteam cost checkpoint (ops-toolkit
 # research/2026-07-18-rung4-cost-checkpoint.md). Validates `kit_gates`'s new `cost` column:
 # a phase-scoped `| TOKENS | ... phase=<gate> |` line (emitted per round by

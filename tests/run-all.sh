@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# run-all.sh -- run every tests/test-*.sh and report each.
+# run-all.sh -- run every suite and report each: tests/test-*.sh plus the module suites under
+# lib/<m>/tests/ (test-*.sh and smoke.sh). tests/lib/suites.sh defines the collection, shared
+# with bin/test-affected; a module suite goes by its path-derived id (lib-stats-test-feedback).
 #
 # CI used to list one step per suite by hand. That list drifted to 74 of 131 files, so 57
 # suites never ran anywhere and four of them had been red on master for some time. A green
@@ -94,6 +96,8 @@ suite_timeout() {
 # kit_timeout: GNU timeout, else a perl one, so a stock macOS enforces the limits too.
 source "$KIT_DIR/tests/lib/timeout.sh"
 _timeout() { kit_timeout "$@"; }
+# suite_list / suite_id / suite_path: what counts as a suite, shared with bin/test-affected.
+source "$KIT_DIR/tests/lib/suites.sh"
 
 # --- worker mode -------------------------------------------------------------
 # The script re-invokes ITSELF as the xargs worker, so the parallel runner needs
@@ -102,7 +106,7 @@ _timeout() { kit_timeout "$@"; }
 # path per runner, which two concurrent suites would interleave into nonsense.
 if [ "${1:-}" = "--run-one" ]; then
   suite="$2"; outdir="$3"
-  name="$(basename "$suite" .sh)"
+  name="$(suite_id "$suite")"
   # Whole seconds via date, not EPOCHREALTIME: Apple ships bash 3.2, which has neither
   # that variable nor the arithmetic to make sub-second numbers worth the trouble. The
   # stamp is written unconditionally; only the collate loop cares whether --time was given.
@@ -174,10 +178,12 @@ if [ "$MODE" = "--changed" ]; then
     echo "run-all: --changed found no diff against $(git rev-parse --short "$base"); running everything"
   else
     PICKED="$OUTDIR/picked"
-    awk '$1 ~ /^tests\/test-.*\.sh$/ {print $1}' "$listing" | sort -u >"$PICKED"
-    named=$(awk '$1 ~ /^tests\/test-.*\.sh$/ && $0 !~ /\(always\)/ {print $1}' "$listing" | sort -u | wc -l | tr -d ' ')
+    # A picked path is a suite when it has a suite's shape: tests/test-*.sh or a module suite.
+    suite_re='^(tests/test-[^/]*|lib/([^/]+/){1,2}tests/(test-[^/]*|smoke))\.sh$'
+    awk -v re="$suite_re" '$1 ~ re {print $1}' "$listing" | sort -u >"$PICKED"
+    named=$(awk -v re="$suite_re" '$1 ~ re && $0 !~ /\(always\)/ {print $1}' "$listing" | sort -u | wc -l | tr -d ' ')
     nchanged=$(sed -n 's/^test-affected: \([0-9]*\) changed files.*/\1/p' "$listing")
-    grep -l '^# always:' tests/test-*.sh >>"$PICKED" 2>/dev/null
+    suite_list | xargs grep -l '^# always:' >>"$PICKED" 2>/dev/null
     sort -u -o "$PICKED" "$PICKED"
     # A picked `# runner:` file only relays sibling suites; the runner itself is
     # skipped below, so a pick naming it (bin/test-affected's meta_input picks
@@ -220,7 +226,7 @@ if [ "$MODE" = "--failed" ]; then
   : >"$PICKED"
   _dropped=""
   for _n in $_failed_all; do
-    if [ -f "tests/$_n.sh" ]; then printf 'tests/%s.sh\n' "$_n" >>"$PICKED"; else _dropped="$_dropped $_n"; fi
+    if _p="$(suite_path "$_n")"; then printf '%s\n' "$_p" >>"$PICKED"; else _dropped="$_dropped $_n"; fi
   done
   if [ ! -s "$PICKED" ]; then
     if [ -s "$_failed_err" ]; then echo "run-all: --failed: $(sed 's/^suite-times: //' "$_failed_err" | head -1); nothing run"
@@ -228,7 +234,7 @@ if [ "$MODE" = "--failed" ]; then
     exit 0
   fi
   _nfailed="$(wc -l <"$PICKED" | tr -d ' ')"
-  grep -l '^# always:' tests/test-*.sh >>"$PICKED" 2>/dev/null
+  suite_list | xargs grep -l '^# always:' >>"$PICKED" 2>/dev/null
   sort -u -o "$PICKED" "$PICKED"
   echo "run-all: --failed: $_nfailed suites whose latest run did not pass${_dropped:+ (gone from disk, skipped:$_dropped)}, $(( $(wc -l <"$PICKED" | tr -d ' ') - _nfailed )) always-on added"
   sed 's/^/  /' "$PICKED"
@@ -246,9 +252,8 @@ parallellist="$OUTDIR/parallel"
 seriallist="$OUTDIR/serial"
 : >"$runlist"; : >"$parallellist"; : >"$seriallist"
 skipped=0
-for t in tests/test-*.sh; do
-  [ -f "$t" ] || continue
-  name="$(basename "$t" .sh)"
+for t in $(suite_list); do
+  name="$(suite_id "$t")"
   [ -n "$ONLY" ] && case "$name" in *"$ONLY"*) : ;; *) continue ;; esac
   [ -n "$PICKED" ] && ! grep -qxF -- "$t" "$PICKED" && continue
   # A `# runner:` file only relays sibling suites, which the same glob already
@@ -286,7 +291,7 @@ echo "run-all: $count suites, $JOBS at a time${n_serial:+, $n_serial serial}"
 # --all outside CI is the expensive run; say how long the history expects it to take.
 # Silent without a history (or without the helper), never a failure.
 if [ "$MODE" = "--all" ] && [ -z "${CI:-}" ] && [ "${KIT_RUN_ALL:-}" = "1" ] && [ -f "$KIT_DIR/tests/lib/suite-times.sh" ]; then
-  sed 's|.*/||; s|\.sh$||' "$runlist" | bash "$KIT_DIR/tests/lib/suite-times.sh" expected "$JOBS" 2>/dev/null || true
+  while IFS= read -r t; do suite_id "$t"; done <"$runlist" | bash "$KIT_DIR/tests/lib/suite-times.sh" expected "$JOBS" 2>/dev/null || true
 fi
 _load_start="$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}')"
 [ -n "$_load_start" ] || _load_start="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
@@ -332,7 +337,7 @@ keep_failed_log() {  # $1 = suite name, $2 = its captured log
   return 0
 }
 while IFS= read -r t; do
-  name="$(basename "$t" .sh)"
+  name="$(suite_id "$t")"
   log="$OUTDIR/$name.log"
   rc="$(cat "$OUTDIR/$name.status" 2>/dev/null || echo "missing")"
   # One history row per suite (suite, seconds, exit); suite-times.sh adds the time, sha and load.
@@ -393,7 +398,7 @@ if [ "$TIME" = 1 ]; then
   echo ""
   echo "run-all: slowest:"
   while IFS= read -r t; do
-    name="$(basename "$t" .sh)"
+    name="$(suite_id "$t")"
     printf '%s %s\n' "$(cat "$OUTDIR/$name.time" 2>/dev/null || echo 0)" "$name"
   done <"$runlist" | sort -rn | head -10 | while read -r s n; do printf '  %ss %s\n' "$s" "$n"; done
 fi
