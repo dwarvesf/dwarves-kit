@@ -4,6 +4,8 @@ To use the kit, read the repo [`README.md`](../README.md) and [`QUICKSTART.md`](
 
 Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_done = true` and `lane_gates = true` into a fresh `.kit.toml`, so an adopted repo has both gates on; a raw `install.sh` leaves every gate off. `install.sh` and `lib/adopt.sh` also run the one migration of old kit logs into the durable ledger root (`lib/telemetry/kit-migrate.sh`).
 
+The kit's own board, staging buffer and mega-goals live in the private `dwarves-kit-internal` repo; a maintainer links them in as a local `_meta` symlink, and a public clone has none.
+
 ## Entry docs
 
 | Path | What it is |

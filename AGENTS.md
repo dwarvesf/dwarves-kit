@@ -65,6 +65,7 @@ ledger and the ship-gate, so route past them.
    `/kit:assign --next` flow). The BACKLOG is the board; its Status column is the state
    machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, + parked/
    dropped). Operator-named work is unchanged; pull is an additional trigger, never a daemon.
+   The kit's own board, staging buffer and mega-goals live in the private `dwarves-kit-internal` repo; a maintainer links them in as a local `_meta` symlink, and a public clone has none. Board commands on a clone without it print one line naming the missing file.
 1. **Classify the type, then size the lane.** `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/classify/task-type-classify.sh" classify "<task>"`
    first: `spec-feature` picks a lane below; any other type (incident / reconcile / operate /
    planning / learning / eval / research / review / doc / migration / data-tool) runs its TYPE LOOP per

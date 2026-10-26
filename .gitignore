@@ -78,3 +78,6 @@ _meta/backlog-staging.md.lock
 /docs/verification/gauntlet/**/transcript.jsonl
 /docs/verification/gauntlet/**/fixture-repo.tar.gz
 /docs/verification/gauntlet/**/*.tar.gz
+
+# The kit's own board lives in the private dwarves-kit-internal repo; a local `_meta` symlink points at it.
+/_meta

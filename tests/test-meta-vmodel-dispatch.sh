@@ -412,7 +412,7 @@ fi
 # vocabulary carries the claimed state. A drop on any leg makes pull a phantom.
 TOTAL=$((TOTAL + 1))
 if [ -x "$KIT_DIR/lib/board/backlog.sh" ] && grep -qF -- '--next' "$KIT_DIR/commands/assign.md" \
-   && grep -qF '`claimed`' "$KIT_DIR/_meta/BACKLOG.md"; then
+   && bash "$KIT_DIR/lib/board/backlog.sh" states 2>/dev/null | grep -qx 'claimed'; then
   echo -e "  ${GREEN}PASS${NC} backlog kanban wired: lib/board/backlog.sh + assign --next + claimed state (SPEC-055)"
   PASS=$((PASS + 1))
 else

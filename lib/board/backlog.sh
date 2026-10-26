@@ -372,8 +372,12 @@ main() {
   # Every verb but `states` reads BACKLOG_FILE; a wrapper pointing it at a moved or
   # misspelled path used to fail deep inside _rows()'s awk call with a bare "can't open
   # file" and exit 2, naming neither the variable nor the wrapper as the likely cause.
-  if [ "$sub" != "states" ] && [ ! -r "$BACKLOG_FILE" ]; then
-    echo "backlog.sh: BACKLOG_FILE names no readable file: $BACKLOG_FILE, check the board wrapper's path" >&2
+  # dedupe-all and lint take their own file argument; they never read BACKLOG_FILE then, so a
+  # kit install with no default board (a fresh public clone has no _meta/) still runs them.
+  local need_default=1
+  case "$sub" in dedupe-all|lint) [ -n "${1:-}" ] && need_default=0 ;; esac
+  if [ "$sub" != "states" ] && [ "$need_default" -eq 1 ] && [ ! -r "$BACKLOG_FILE" ]; then
+    echo "backlog.sh: no board at $BACKLOG_FILE (the kit's own board is not in the public tree; set BACKLOG_FILE or pass a file)" >&2
     return 1
   fi
   case "$sub" in

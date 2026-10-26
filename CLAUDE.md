@@ -34,6 +34,8 @@ The kit ships its own slash commands (`/kit:start` ... `/kit:retro` ... `/kit:ki
 
 ## Repository structure
 
+The kit's own board, staging buffer and mega-goals live in the private `dwarves-kit-internal` repo; a maintainer links them in as a local `_meta` symlink, and a public clone has none.
+
 See `docs/reference/project-structure.md` (canonical) and `docs/reference/architecture.md` (component fit). Do not maintain a third copy here.
 
 ## Code quality rules

@@ -35,7 +35,7 @@ When the argument is freeform intent (does NOT match `^ID-[0-9]+$`), run these o
 
 ### Step 1b: Resolve the item (ID-first path)
 
-Read `$ARGUMENTS` for the `ID-NNN`. Find that row in the `_meta/BACKLOG.md` Active queue (the Schema section there defines the columns). If the id is absent, say so, list the open queue ids, and stop. (An argument that looks like an ID but is not in the queue is a typo'd ID, not a freeform intent: report "unknown id", do NOT silently create a freeform row from it.)
+Read `$ARGUMENTS` for the `ID-NNN`. Find that row in the `_meta/BACKLOG.md` Active queue (the Schema section there defines the columns); with no `_meta/BACKLOG.md` in this checkout, say there is no board and stop. If the id is absent, say so, list the open queue ids, and stop. (An argument that looks like an ID but is not in the queue is a typo'd ID, not a freeform intent: report "unknown id", do NOT silently create a freeform row from it.)
 
 ### Step 2: Idempotency check
 

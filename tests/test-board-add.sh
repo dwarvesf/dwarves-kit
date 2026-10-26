@@ -251,7 +251,22 @@ chk "lint is clean afterwards" "$([ "$(bl "$BZ" lint)" = "(no lint findings)" ];
 before="$(shasum -a 256 "$BZ" | cut -d' ' -f1)"
 python3 "$NORM" "$BZ" >/dev/null; python3 "$NORM" --check "$BZ" >/dev/null
 chk "a second run changes nothing and --check exits 0" "$([ "$?" -eq 0 ] && [ "$(shasum -a 256 "$BZ" | cut -d' ' -f1)" = "$before" ]; echo $?)"
-chk "the kit's own board has no shape findings" "$([ "$(bl "$KIT_DIR/_meta/BACKLOG.md" lint)" = "(no lint findings)" ]; echo $?)"
+# A fixture board in the kit's own shape (the real one is not in the public tree).
+FX="$TMPD/fixture-board.md"
+printf '# Task Backlog\n\n## Active queue\n\n| ID | Title | Source | Target artifact | Lane | Status |\n|----|-------|--------|-----------------|------|--------|\n| ID-2 | second | s | t | normal | shipped [#2] |\n| ID-1 | first | s | t | normal | queued |\n' > "$FX"
+chk "a well-formed fixture board has no shape findings" "$([ "$(bl "$FX" lint)" = "(no lint findings)" ]; echo $?)"
+
+echo ""
+echo "== no default board (a public kit clone has no _meta/): one line, never a crash =="
+NOBOARD="$TMPD/absent/BACKLOG.md"
+out="$(bl "$NOBOARD" board 2>&1)"; rc=$?
+chk "a verb that needs the default board exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "and names the missing file on one line" "$out" "no board at $NOBOARD"
+chk "and prints exactly one line" "$([ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" -eq 1 ]; echo $?)"
+chk "states needs no board" "$([ "$(bl "$NOBOARD" states | head -1)" = "queued" ]; echo $?)"
+chk "lint <file> reads its own file, not the default board" "$([ "$(bl "$NOBOARD" lint "$FX")" = "(no lint findings)" ]; echo $?)"
+printf '| ID-3 | dup | s | t | normal | queued |\n| ID-3 | dup | s | t | normal | shipped |\n' >> "$FX"
+chk_has "dedupe-all <file> sweeps its own file with no default board" "$(bl "$NOBOARD" dedupe-all "$FX" 2>&1)" "ID-3"
 
 echo ""
 echo "== $TOTAL run, $PASS passed, $FAIL failed =="
