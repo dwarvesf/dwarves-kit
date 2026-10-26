@@ -41,6 +41,8 @@ decided:
 
 `rev` is the review round letter, shown on the cover, the index and every title block. `decided` is the list of calls made so far, shown as "Decided in rev C".
 
+`fz: 1.3` is read by `doc-figures render` only: it draws each figure at 1.3 times its natural size, so labels read larger. The drawing set ignores it.
+
 ## Layout hints
 
 Every hint is optional. Sheets are a grid: `at: [col, row]` puts an element in that cell, counted from 0 at the top left. Edges run at right angles through the gutters between cells, so give every element its own cell and leave a free cell where a long edge must pass.
