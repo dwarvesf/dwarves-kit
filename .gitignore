@@ -72,3 +72,9 @@ tests/.cache/
 
 # Retired staging lock: the staging lock now lives in the tmpdir (lib/reflect/staging-format.py), never beside the buffer.
 _meta/backlog-staging.md.lock
+
+# Gauntlet bulk run artifacts live in a release asset, not git (docs/verification/gauntlet/CORPUS.md).
+# An unpacked corpus or a fresh run's transcripts and tarballs must never be committed by accident.
+/docs/verification/gauntlet/**/transcript.jsonl
+/docs/verification/gauntlet/**/fixture-repo.tar.gz
+/docs/verification/gauntlet/**/*.tar.gz
