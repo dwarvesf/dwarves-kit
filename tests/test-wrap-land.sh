@@ -1904,6 +1904,8 @@ out="$("$WRAP" land "$LWT_TC1" 2>&1)"; rc=$?
 CALLS_TC1="$(cat "$GH_STUB_CALLS")"
 chk "TC1: land exits 0" "$rc"
 chk_has "TC1: reports the absorbed proof" "$out" "already landed: content already on origin/main; nothing to push, no PR opened"
+chk "TC1: the last stdout line is the LAND outcome" \
+  "$([ "$(printf '%s\n' "$out" | tail -1)" = "LAND: already landed (content already on origin/main) pull=ok worktree=removed" ]; echo $?)"
 chk_no "TC1: never calls pr create" "$CALLS_TC1" "pr create"
 chk_no "TC1: never pushes the branch" "$out" "pushed feat/land"
 chk_has "TC1: deletes the matching origin branch" "$out" "deleted feat/land on origin"
@@ -2285,7 +2287,7 @@ chk "PB1: exits 0" "$rc"
 chk_has "PB1: the body opens with the title as the summary" "$calls" "--body feat: the landed change"
 chk_has "PB1: the body carries the proof section" "$calls" "## Proof of done"
 chk_has "PB1: the body carries the captured output" "$calls" "t: all 3 passed"
-chk_has "PB1: the land ends on the PROOF OF DONE block" "$(printf '%s\n' "$out" | tail -4)" "PROOF OF DONE"
+chk_has "PB1: the land ends on the PROOF OF DONE block, then the one LAND line" "$(printf '%s\n' "$out" | tail -5)" "PROOF OF DONE"
 chk_has "PB1: the block names the proof file" "$out" "  proof: docs/verification/land.md"
 chk_has "PB1: the block names the PR" "$out" "  PR:    https://github.com/o/r/pull/42"
 chk_has "PB1: the block shows the captured output" "$out" "    | t: all 3 passed"
@@ -2984,6 +2986,8 @@ chk_has "draft_new_pr_is_draft_with_proof: the body carries the captured output"
 chk_has "draft_new_pr_is_draft_with_proof: reports the push" "$out" "pushed feat/land"
 chk_has "draft_new_pr_is_draft_with_proof: reports the draft" "$out" "opened draft PR #42"
 chk_has "draft_new_pr_is_draft_with_proof: reads isDraft back" "$DR7_CALLS" "pr view 42"
+chk "draft_new_pr_is_draft_with_proof: the last stdout line is the LAND outcome, after the proof block" \
+  "$([ "$(printf '%s\n' "$out" | tail -1)" = "LAND: draft #42 opened" ] && printf '%s\n' "$out" | tail -2 | head -1 | grep -qv 'LAND:'; echo $?)"
 
 echo "--- draft_stays_open: no merge, worktree and branch kept, URL and proof block printed"
 chk "draft_stays_open: no pr merge call" "$(dr_calls '^pr merge')"
@@ -3143,6 +3147,90 @@ chk "draft_wrap_md_uses_verb: the land --draft line carries --body-file" \
 chk "draft_wrap_md_uses_verb: the land --draft line runs the installed verb, not the worktree copy" \
   "$([ "$(grep -c 'cd <wt> && bin/wrap land --draft' "$DR_MD")" -eq 0 ]; echo $?)"
 } # end sec_draft
+
+# ===========================================================================
+sec_outcome() {
+echo "=== land: every run ends on one LAND: outcome line ==="
+# ===========================================================================
+# Real git, `gh` stubbed, the same wiring as sec_happy. The line is the LAST stdout line, so a
+# caller reads the outcome with `| tail -1`; the refusal text stays on stderr, the exit codes stay.
+oc_last() { printf '%s\n' "$1" | tail -1; }
+oc_count() { printf '%s\n' "$1" | grep -c '^LAND: '; }
+oc_land() { # oc_land <name> [VAR=val ...] [-- land flags] -- one land of $OC_WT, stdout and stderr merged
+  local name="$1"; shift
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$OC_WT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-$name" \
+    GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$@" "$WRAP" land "$OC_WT" ${OC_FLAGS:-} 2>&1
+}
+
+echo "--- outcome_merged: a merged land ends on the merged line, after the proof block"
+build_land oc1
+OC_WT="$(cd "$TMPD/ld-repo-oc1/wt" && pwd -P)"
+mkdir -p "$OC_WT/docs/verification"
+printf '# Verification\nNEGATIVE CONTROL\nCommand: `bash t.sh`\nExit: 0\nOutput:\nt: all 3 passed\nVerdict: PASS\n' \
+  > "$OC_WT/docs/verification/land.md"
+git -C "$OC_WT" add -A; git -C "$OC_WT" commit -qm "docs: proof of done" >/dev/null 2>&1
+OC1_SHA="$(git -C "$TMPD/ld-bare-oc1" rev-parse main 2>/dev/null)"
+out="$(OC_FLAGS= oc_land oc1)"; rc=$?
+OC1_SHA="$(git -C "$TMPD/ld-bare-oc1" rev-parse main)"
+chk "outcome_merged: exits 0" "$rc"
+chk "outcome_merged: the last line is the merged outcome" \
+  "$([ "$(oc_last "$out")" = "LAND: merged #42 (${OC1_SHA:0:7}) pull=ok worktree=removed" ]; echo $?)"
+chk "outcome_merged: exactly one LAND line" "$([ "$(oc_count "$out")" -eq 1 ]; echo $?)"
+chk_has "outcome_merged: the proof block is still printed" "$out" "PROOF OF DONE"
+chk "outcome_merged: the proof block comes before the LAND line" \
+  "$([ "$(printf '%s\n' "$out" | grep -n 'PROOF OF DONE' | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n '^LAND: ' | cut -d: -f1)" ]; echo $?)"
+chk_has "outcome_merged: the tree-verified line is unchanged" "$out" "merged #42 (${OC1_SHA}): tree verified"
+
+echo "--- outcome_no_pull: --no-pull reads pull=skipped"
+build_land oc2
+OC_WT="$(cd "$TMPD/ld-repo-oc2/wt" && pwd -P)"
+out="$(OC_FLAGS=--no-pull oc_land oc2)"; rc=$?
+OC2_SHA="$(git -C "$TMPD/ld-bare-oc2" rev-parse main)"
+chk "outcome_no_pull: exits 0" "$rc"
+chk "outcome_no_pull: the last line says pull=skipped" \
+  "$([ "$(oc_last "$out")" = "LAND: merged #42 (${OC2_SHA:0:7}) pull=skipped worktree=removed" ]; echo $?)"
+
+echo "--- outcome_pull_blocked: a main checkout on another branch reads pull=blocked and keeps exit 2"
+build_land oc3
+OC_WT="$(cd "$TMPD/ld-repo-oc3/wt" && pwd -P)"
+git -C "$TMPD/ld-repo-oc3" checkout -q -b elsewhere
+out="$(OC_FLAGS= oc_land oc3)"; rc=$?
+OC3_SHA="$(git -C "$TMPD/ld-bare-oc3" rev-parse main)"
+chk "outcome_pull_blocked: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "outcome_pull_blocked: PULL BLOCKED is still printed" "$out" "PULL BLOCKED"
+chk "outcome_pull_blocked: the last line says pull=blocked" \
+  "$([ "$(oc_last "$out")" = "LAND: merged #42 (${OC3_SHA:0:7}) pull=blocked worktree=removed" ]; echo $?)"
+
+echo "--- outcome_refused_dirty: a dirty worktree refuses, stdout still ends on the refused line"
+build_land oc4
+OC_WT="$(cd "$TMPD/ld-repo-oc4/wt" && pwd -P)"
+echo scratch > "$OC_WT/untracked.txt"
+out="$(OC_FLAGS= oc_land oc4)"; rc=$?
+chk "outcome_refused_dirty: exits 1, as before" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "outcome_refused_dirty: the refusal text is still printed" "$out" "is dirty"
+chk "outcome_refused_dirty: the last line is the refused outcome" \
+  "$([ "$(oc_last "$out")" = "LAND: refused (preflight, exit 1)" ]; echo $?)"
+OC4_STDOUT="$(env GH_STUB_OPEN_PRS='[]' "$WRAP" land "$OC_WT" 2>/dev/null)"
+chk "outcome_refused_dirty: the LAND line is on stdout, the refusal text is not" \
+  "$([ "$OC4_STDOUT" = "LAND: refused (preflight, exit 1)" ]; echo $?)"
+
+echo "--- outcome_refused_pr: a PR another author owns refuses at the pr step"
+build_land oc5
+OC_WT="$(cd "$TMPD/ld-repo-oc5/wt" && pwd -P)"
+out="$(OC_FLAGS= oc_land oc5 GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 7 main other)")"; rc=$?
+chk "outcome_refused_pr: exits 2, as before" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "outcome_refused_pr: the refusal text is still printed" "$out" "PR REFUSED"
+chk "outcome_refused_pr: the last line names the step and exit" \
+  "$([ "$(oc_last "$out")" = "LAND: refused (pr, exit 2)" ]; echo $?)"
+chk "outcome_refused_pr: exactly one LAND line" "$([ "$(oc_count "$out")" -eq 1 ]; echo $?)"
+
+echo "--- outcome_usage: a usage error still exits 64 and ends on the refused line"
+out="$("$WRAP" land 2>&1)"; rc=$?
+chk "outcome_usage: exits 64, as before" "$([ "$rc" -eq 64 ]; echo $?)"
+chk "outcome_usage: the last line is the refused outcome" \
+  "$([ "$(oc_last "$out")" = "LAND: refused (preflight, exit 64)" ]; echo $?)"
+} # end sec_outcome
 
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
