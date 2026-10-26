@@ -237,6 +237,7 @@ test-staging-stage 60
 test-stats-no-persist 60
 test-subagent-panes 60
 test-suite-knob 60
+test-suites-collect 60
 test-sync 60
 test-sync-cron-install 60
 test-sync-cron-launcher 60
