@@ -22,17 +22,14 @@ Dated working records that nothing reads at runtime:
 
 ## Read an old file
 
-Every removed file is kept by the annotated tag `history/2026-10-27`.
+The public history was squashed into one commit for the release. The full pre-squash history, every old tag (including `history/2026-10-27`) and every removed file live in the private `dwarvesf/dwarves-kit-internal` repo, on branch `archive/master-pre-squash`. Maintainers with access read an old file there:
 
 ```
-git fetch origin tag history/2026-10-27
-git show history/2026-10-27:docs/verification/advisor.md
-git ls-tree -r --name-only history/2026-10-27 docs/retro
+git clone git@github.com:dwarvesf/dwarves-kit-internal.git
+git -C dwarves-kit-internal show history/2026-10-27:docs/verification/advisor.md
 ```
 
-On GitHub: `https://github.com/dwarvesf/dwarves-kit/tree/history/2026-10-27`.
-
-Specs, decisions, the changelog and the board still cite removed paths. Those paths resolve at the tag. Living docs and code comments cite them as `history/2026-10-27:<path>`.
+Specs, decisions and the changelog still cite removed paths, and living docs and code comments cite them as `history/2026-10-27:<path>`. Those paths resolve in the private archive.
 
 ## New work
 
@@ -40,4 +37,4 @@ Nothing changes for new work. Proof of done still goes in `docs/verification/`, 
 
 ## Restore
 
-To bring a removed file back, check it out of the tag: `git checkout history/2026-10-27 -- <path>`. To undo the whole prune, revert its squash commit.
+To bring a removed file back, copy it from the private archive at `history/2026-10-27`.
