@@ -28,7 +28,8 @@ Output:
 NOT ok - a verdict in a 3-space indented fence is ignored (want rc=0; got rc=2)
 NOT ok - a verdict in a 2-space indented fence is ignored (want rc=0; got rc=2)
 NOT ok - a verdict in a 1-space indented tilde fence is ignored (want rc=0; got rc=2)
-pass=57 fail=3
+NOT ok - an indented fence holding SHIP does not clear a real DO NOT SHIP (want rc=2; got rc=0)
+pass=56 fail=4
 Verdict: RED on the unfixed lib, GREEN on the fix
 ```
 Both lib files were reverted to master for the red run and restored from HEAD after it; `git status` was clean.

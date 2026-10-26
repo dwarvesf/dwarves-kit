@@ -83,7 +83,7 @@ case_push "a verdict in a 2-space indented fence is ignored" i2 '\n## Review\n##
 case_push "a verdict in a 1-space indented tilde fence is ignored" i3 '\n## Review\n### Verdict: SHIP\n\n ~~~\n Verdict: DO NOT SHIP\n ~~~\n' 0 ''
 case_push "a heading inside an indented fence does not end the Review section" i4 '\n## Review\n### Verdict: DO NOT SHIP\n\n- notes:\n\n  ```\n  ## Notes\n  ```\n\n### Verdict: SHIP\n' 0 ''
 case_push "a fence marker indented 4 spaces is code, not a fence: the verdict after it still blocks" i5 '\n## Review\n\n    ```\n\n### Verdict: DO NOT SHIP\n' 2 'DO NOT SHIP'
-case_push "a real verdict after an indented fence still counts" i6 '\n## Review\n\n  ```\n  Verdict: SHIP\n  ```\n\n### Verdict: DO NOT SHIP\n' 2 'DO NOT SHIP'
+case_push "an indented fence holding SHIP does not clear a real DO NOT SHIP" i6 '\n## Review\n### Verdict: DO NOT SHIP\n\n  ```\n  Verdict: SHIP\n  ```\n' 2 'DO NOT SHIP'
 
 # the spec is read as committed at the pushed head, not as edited in the working tree
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" c1 '\n## Review\n\n### Verdict: DO NOT SHIP\n'
