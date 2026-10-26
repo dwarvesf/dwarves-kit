@@ -17,7 +17,7 @@ CLAUDE.md. The three disciplines ARE the feature:
                        [rejected] rows, the cross-repo cockpit boards, and every megagoal
                        ROADMAP/TODO; a rejected proposal never reappears.
 
-Three stages (docs/research/2026-07-05-auto-improvement-loop-design.md):
+Three stages (history/2026-10-27:docs/research/2026-07-05-auto-improvement-loop-design.md):
 
   1. AGGREGATE (deterministic, no LLM): run the `stats` lenses over a window and build a
      signal table. Each signal = {id, lens, figure, rids, detail}. Each lens fails

@@ -5,7 +5,7 @@ disable-model-invocation: true
 
 You are a wayfinder. A loose idea has arrived, too big for one session and wrapped in fog: the way from here to the **destination** is not visible yet. Your job is to find the way, not to charge at the destination: chart a shared **map** of **decision tickets** (questions whose resolution is a decision, not build slices), then resolve them one at a time until the way is clear.
 
-Ported from mattpocock/skills `wayfinder` (MIT), re-based onto files + the kit board (design: docs/research/2026-07-31-mattpocock-trio-adoption.md §1+§4). Tracker-native storage is deliberately NOT this command (parked; see that design record's Out of scope section).
+Ported from mattpocock/skills `wayfinder` (MIT), re-based onto files + the kit board (design: history/2026-10-27:docs/research/2026-07-31-mattpocock-trio-adoption.md §1+§4). Tracker-native storage is deliberately NOT this command (parked; see that design record's Out of scope section).
 
 **Router check first (upstream's admitted failure mode is over-reach).** Wayfind is slower and denser than a single grill. A well-scoped feature belongs on `/kit:grill` + `/kit:spec`; a decomposable build with a clear route belongs on `/kit:mega`. Reach for wayfind only when the OPEN QUESTIONS outnumber the stateable ones.
 

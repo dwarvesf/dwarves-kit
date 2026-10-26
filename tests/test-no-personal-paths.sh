@@ -45,12 +45,10 @@ else
 fi
 
 # --------------------------------------------------------------- 2. TREE
-# These three files quote the patterns as data: two leak-guard tests and this guard's
-# own proof, whose negative-control transcript has to show the string it caught. Skip
-# them by name; matching the pattern is their job, not a leak.
+# These two files quote the patterns as data: two leak-guard tests. Skip them by name;
+# matching the pattern is their job, not a leak.
 SELF="tests/test-no-personal-paths.sh"
 GUARD="tests/test-kit-foldin-hooks.sh"
-PROOF="docs/verification/no-personal-paths.md"
 
 OWNER="tieu""bao"   # split so this file is not itself a hit in a plain tree grep
 
@@ -61,7 +59,7 @@ OWNER="tieu""bao"   # split so this file is not itself a hit in a plain tree gre
 LEAKS="$(git ls-files -z \
   | xargs -0 grep -IHn -F -e "/Users/$OWNER" -e "workspace/$OWNER" -e "Hans-Air" \
       -e "mini-$OWNER" 2>/dev/null \
-  | grep -v -e "^$SELF:" -e "^$GUARD:" -e "^$PROOF:")"
+  | grep -v -e "^$SELF:" -e "^$GUARD:")"
 if [ -z "$LEAKS" ]; then
   ok "no operator path or hostname anywhere in the tree"
 else

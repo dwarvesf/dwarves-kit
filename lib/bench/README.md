@@ -6,7 +6,7 @@ executor, later x modules x tool), scores each cell with the task's own
 hand-verified check script, and appends one immutable JSONL row per cell.
 Comparing models, workflows, or tools is then a GROUP BY over one fact table.
 
-Design brief: `docs/briefs/DECISION-BRIEF-bench-plane.md`. Metric contract:
+Design brief: `history/2026-10-27:docs/briefs/DECISION-BRIEF-bench-plane.md`. Metric contract:
 `docs/METRICS.md` (what is measured, why, and on which surface it is shown).
 Board rows: ID-420 (config stamping), ID-421 (this module), ID-422 (signal
 registry + tool suites).
@@ -278,7 +278,7 @@ Reviewer 7 on a short-lived spec.
 A `fewer` signal is only meaningful evidence when `<base-ref>` predates the
 capability the signal names. Run it against a base that already carries that
 capability, and control ties or beats treatment, so the signal fails by
-construction, not from a regression: `docs/verification/r7-quiet-calibration.md`
+construction, not from a regression: `history/2026-10-27:docs/verification/r7-quiet-calibration.md`
 hit exactly this, three `-any` signals FAILing against `origin/master` because
 master already carried the sustainability lens the fix under test only
 reworded one branch of. Pick a base before the lens landed, or drop the

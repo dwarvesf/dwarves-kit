@@ -58,19 +58,19 @@ Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_don
 
 ## Records
 
-Dated records keep their paths and are never rewritten. A record that names an old path stays as it was.
+Dated records keep their paths and are never rewritten. A record that names an old path stays as it was; a path removed in the release prune resolves at the history tag (see [`HISTORY.md`](HISTORY.md)).
 
 | Path | What it is |
 |---|---|
 | [`specs/`](specs/) | One spec per feature; also the live spec store the hooks read |
 | [`decisions/`](decisions/) | Architecture decision records, superseded in place |
-| [`briefs/`](briefs/) | Pre-spec decision briefs and shared context |
-| [`implementation-notes/`](implementation-notes/) | Per-spec delta logs written during a build |
-| [`verification/`](verification/) | Proof-of-done records; `verification/README.md` is the marker the ship gate keys on, so never move it |
-| [`retro/`](retro/) | Per-cycle retrospectives |
-| [`research/`](research/) | Dated deep scans; `research/foundations/` holds the undated early notes |
-| [`absorption/`](absorption/README.md) | The upstream absorption ritual and its dated reports |
-| [`audits/`](audits/) | One-off audit reports and the skillspector baseline |
+| [`briefs/`](briefs/) | The decision-brief template and shared context |
+| [`implementation-notes/`](implementation-notes/) | Per-spec delta logs written during a build; new work adds its own |
+| [`verification/`](verification/) | Proof-of-done records; `verification/README.md` is the marker the ship gate keys on, so never move it. Keeps the gauntlet corpus (`verification/gauntlet/`) and the files the gates and tests read at runtime (task-type registry, test-design standard, rejected-findings ledger, counts) |
+| [`retro/`](retro/) | Per-cycle retrospectives; new work adds its own |
+| [`research/`](research/) | `research/foundations/` holds the undated early notes the research agents read |
+| [`absorption/`](absorption/README.md) | The upstream absorption ritual and its report template |
 | [`releases/`](releases/) | Per-version release artifacts |
+| [`HISTORY.md`](HISTORY.md) | What the release prune removed, and how to read an old file from the history tag |
 
 The release history is the root [`CHANGELOG.md`](../CHANGELOG.md). No counts live in this map on purpose; enumerate specs with `bash lib/spec/spec-index.sh`.

@@ -44,7 +44,7 @@ Pinned non-Credits extras (from the SPEC-014 survey set, repos not in the Credit
 | `mattpocock/skills` | `CHANGELOG.md` MINOR version bump; also any commit subject matching `Add\|graduate\|promote\|rename .* skill\|ship.*plugin` | monthly |
 | `zvadaadam/az-skills` | closed-PR titles matching `Add * skill`, or any PR touching `scripts/install.sh` / `.githooks/` (install-mechanism changes alter how absorbing works) | quarterly |
 
-Last-seen markers are maintained in the research record's watch-markers table (`docs/research/2026-07-25-skills-repos-onboarding-absorption.md`, updated after each check), not duplicated here, so this registry never goes stale between checks. A fired signal is a REASON to read, never an auto-absorb; it still routes through the gate above.
+Last-seen markers are maintained in the research record's watch-markers table (`history/2026-10-27:docs/research/2026-07-25-skills-repos-onboarding-absorption.md`, updated after each check), not duplicated here, so this registry never goes stale between checks. A fired signal is a REASON to read, never an auto-absorb; it still routes through the gate above.
 
 **Since-last-run baseline.** Lane B detects "changed" per repo by comparing its current HEAD SHA (`gh api repos/{owner}/{repo}/commits/HEAD --jq .sha`) to the SHA recorded in the most recent prior proposal's footer; the first run flags every repo as new and records the baseline. WebFetch has no diff capability, so the SHA ledger is the baseline.
 

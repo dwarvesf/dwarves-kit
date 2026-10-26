@@ -555,7 +555,7 @@ source for which gates a lane *requires*; `lib/gate/gate-ledger.sh` reads them t
   ledger under `docs/verification/generated/<rid>.md`, surfacing the OUTCOME marker above
   (Caught/Duration columns) when present and degrading gracefully when absent; it hard-refuses
   any out-path whose basename is `proof-of-done.md` (the canonical stays hand-authored) and
-  confines its resolved path under `docs/verification/generated/` (path-traversal hardening,
+  confines its resolved path under the `generated/` directory of `docs/verification/` (path-traversal hardening,
   SPEC-134). Full convention: `docs/verification/README.md` "Generators write run ledgers,
   never the canonical."
 
@@ -696,7 +696,7 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   (significant-but-low-worthiness, `verdict=wave`, no human response ever follows) -- the exact
   gap ADR-0031 Refinement §2/§4 names as needing to be tracked, not silently dropped. A later
   human `debt-response` (engage/defer/wave) forward-carries this recorded marker automatically
-  (the TIER-4-close seam fix, `docs/verification/debt-ledger-response-seam.md`). Remaining,
+  (the TIER-4-close seam fix, `history/2026-10-27:docs/verification/debt-ledger-response-seam.md`). Remaining,
   honestly-scoped limit: `record` fires only on `gate`/gated-final PRs (the same scope
   `quiz-gate.sh tap` has always had, per ADR-0031 §2); a non-gate ship still writes no debt-ledger
   marker at all -- that scope was never widened by this change, see SPEC-136 "Approaches

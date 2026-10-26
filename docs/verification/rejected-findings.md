@@ -36,7 +36,7 @@ the path the finding was raised against, repo-relative.
 `sql-injection:tools/notify.py`) has a different finding-key and is NOT a match: it always
 fires as a fresh finding. Matching on the file path alone (ignoring the slug) is one failure
 mode SPEC-144's load-bearing negative control proves against; see
-`docs/verification/spec-144-review-findings-memory.md`.
+`history/2026-10-27:docs/verification/spec-144-review-findings-memory.md`.
 
 **Consult with a pipe-anchored search, never a bare substring search.** Every row's
 finding-key cell is delimited by ` | ` on both sides (standard table formatting, one leading

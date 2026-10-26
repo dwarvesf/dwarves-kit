@@ -314,7 +314,7 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 
 **Phase:** understanding (the AFTER gate, ADR-0031 §2)
 **Reads:** a git ref (`$ARGUMENTS`: a commit / PR / spec), the ACTUAL diff via `lib/explain.sh`, plus recorded test results under `docs/verification/`
-**Writes:** a literate-diff explainer artifact under `docs/verification/explain-command/`, background -> goal + intuition -> a prose-ORDERED diff (reading order, not git alphabetical) -> a diagram
+**Writes:** a literate-diff explainer artifact at `docs/verification/explain-command/<slug>-explainer.md`, background -> goal + intuition -> a prose-ORDERED diff (reading order, not git alphabetical) -> a diagram
 **When to invoke:** after a significant change ships, when you want to UNDERSTAND it (stay a participant in the next loop) instead of click-to-merge a raw diff. Advisory, never blocks (engage / defer / wave).
 **Composes:** `narrate-log` (the prose arc) + `svg-knowledge-diagram` (a richer figure); the kit does not reinvent pedagogy.
 **Common gotcha:** the explainer is grounded in the diff, NOT the agent's narrative, if the commit message or your recollection contradicts the code, the diff wins. The 5-question quiz built ON this artifact is a separate step (`deep-understand`); this command produces the material, not the quiz.

@@ -121,7 +121,7 @@ BEST VARIANT of one thing (search-select)?
   or the round cap hits.
 
   This fixes the engine's real cost problem. N parallel model dispatches every round cost too
-  much when most findings are mechanical. See `docs/research/2026-07-30-loop-engine-prior-art.md`
+  much when most findings are mechanical. See `history/2026-10-27:docs/research/2026-07-30-loop-engine-prior-art.md`
   for the worked cost comparison.
 
 - **Campaign / worklist iteration.** Use this when you drive an existing loop across many
@@ -157,7 +157,7 @@ BEST VARIANT of one thing (search-select)?
   improved, what plateaued, which variant won. Kit targets already queued for this shape, and
   their corpus bar (10-30+ real transcripts, not yet met): `docs/reference/PHILOSOPHY.md` "AutoResearch
   optimization". Full source verification and adoption verdict:
-  `docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
+  `history/2026-10-27:docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
 
 ## Step 2b: The loop's survival set (mandatory before "designed")
 

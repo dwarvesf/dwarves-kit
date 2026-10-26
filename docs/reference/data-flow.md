@@ -125,7 +125,7 @@ It collapses whitespace per field, so an embedded newline in extracted text cann
 `## [staged]` block. C5 of the kit contract requires the module to be LOADED, not merely named,
 and its negative control plants a private renderer. The only second copy of the grammar is the
 `.jq` twin, pinned to the Python on goldens by `tests/test-staging-format-jq.sh`. The incident
-behind this rule: `docs/retro/RETRO-2026-10-25-data-flow-incidents.md`.
+behind this rule: `history/2026-10-27:docs/retro/RETRO-2026-10-25-data-flow-incidents.md`.
 
 ---
 
@@ -164,7 +164,7 @@ Why one resolver matters: a plugin reinstall wipes `~/.claude/dwarves-kit/`. Any
 defaults there loses its history. The queue journal IS the queue's idempotency state, so a wipe
 re-runs completed work. That is why SPEC-097 exists and why C6 of the kit contract lints for it.
 The hook logs follow the same root (`lib/telemetry/hook-log-dir.sh`). History:
-`docs/retro/RETRO-2026-10-25-data-flow-incidents.md`.
+`history/2026-10-27:docs/retro/RETRO-2026-10-25-data-flow-incidents.md`.
 
 ---
 

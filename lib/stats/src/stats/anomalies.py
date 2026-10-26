@@ -677,7 +677,7 @@ def _ops_toolkit_root() -> str | None:
 def _staging_env(canonical: str, legacy: str) -> str | None:
     """Read the canonical env name, falling back to the legacy `CC_*` name with
     a one-line deprecation on stderr. The kit's naming invariant bans host-agent
-    prefixes (docs/verification/kit-foldin-hooks.md renamed the legacy backlog vars to
+    prefixes (history/2026-10-27:docs/verification/kit-foldin-hooks.md renamed the legacy backlog vars to
     BACKLOG_STAGE_* once already); stats entered the kit after that sweep and kept the
     banned name, so board/reflect/hooks/session-audit and stats addressed the SAME two
     files under different env names. Canonical wins; the alias keeps existing setups

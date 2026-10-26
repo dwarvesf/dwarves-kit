@@ -471,7 +471,7 @@ is_on_review_axis() {
 # or skills/foo-validate/ fails here the moment it lands, without anyone
 # updating this test. Grandfathered names predate this widening and are pinned
 # pending the operator decisions recorded in
-# docs/research/2026-08-01-naming-reconciliation.md (visible debt, not license):
+# history/2026-10-27:docs/research/2026-08-01-naming-reconciliation.md (visible debt, not license):
 #   spec-validate -- finding 3 / proposal "/kit:spec-validate -> /kit:spec-team"
 #                    (a dedicated migration PR with a legacy alias window).
 RETIRED_GRANDFATHERED="spec-validate"

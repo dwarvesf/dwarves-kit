@@ -14,6 +14,6 @@ entry = "lens-eval.sh"
 language = "bash, jq, claude CLI"
 
 [links]
-brief = "docs/briefs/DECISION-BRIEF-bench-plane.md"
+brief = "history/2026-10-27:docs/briefs/DECISION-BRIEF-bench-plane.md"
 metrics = "lib/bench/docs/METRICS.md"
 board = ["ID-420", "ID-421", "ID-422"]

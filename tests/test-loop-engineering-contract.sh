@@ -4,7 +4,7 @@
 # Pins the contract claims of skills/loop-engineering/SKILL.md, a prompt-file
 # skill with no prior spec or test coverage. One assertion per SPEC-209 Test
 # plan row (rows 1-27; row 28 is the one-time recorded live negative control,
-# see docs/verification/backfill-loop-engineering.md). Exact-string pins are
+# see history/2026-10-27:docs/verification/backfill-loop-engineering.md). Exact-string pins are
 # the point: the tested contract IS the prose, so a reword (or a re-wrap: the
 # body is hard-wrapped, several pins are single-physical-line fragments) breaks
 # the row and prompts a re-verify (same stance as SPEC-208).

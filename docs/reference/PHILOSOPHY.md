@@ -353,7 +353,7 @@ If a component has been unused for 30 days (no contractor reports using it, no s
 
 ### AutoResearch optimization
 
-Corrected citation (2026-07-31): the real source is [github.com/karpathy/autoresearch](https://github.com/karpathy/autoresearch). It tunes ONE numeric metric (`val_bpb`, a training loss) with a serial hill-climb: mutate the current best, `git commit` on improvement, `git reset` on failure, loop forever until a human interrupts it. It has no LLM-as-judge step anywhere. The three-file contract and the LLM-judged scoring below are this kit's own extension, not something the Karpathy repo demonstrates. Full comparison and adoption verdict: `docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
+Corrected citation (2026-07-31): the real source is [github.com/karpathy/autoresearch](https://github.com/karpathy/autoresearch). It tunes ONE numeric metric (`val_bpb`, a training loss) with a serial hill-climb: mutate the current best, `git commit` on improvement, `git reset` on failure, loop forever until a human interrupts it. It has no LLM-as-judge step anywhere. The three-file contract and the LLM-judged scoring below are this kit's own extension, not something the Karpathy repo demonstrates. Full comparison and adoption verdict: `history/2026-10-27:docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
 
 This kit's own extension applies the same "search variants, keep the best" idea to targets that have no cheap numeric metric, so it swaps in an LLM-as-judge score, and it never runs unbounded (see "Loop boundaries" above, an unbounded outer loop is declined territory here regardless of source):
 
@@ -483,7 +483,7 @@ external or embedded capability rather than standalone tools.
 
 **A conforming proposal looks like:** plain-files-first core + one script that works with the kit
 deleted + ONE generated per-host adapter + a manifest entry declaring what it EXPOSES
-(`docs/research/2026-07-25-packaging-prior-art-refresh.md`). Acceptance test: delete the kit, every
+(`history/2026-10-27:docs/research/2026-07-25-packaging-prior-art-refresh.md`). Acceptance test: delete the kit, every
 tool still works; delete a tool, the kit is missing one capability, never broken. **It would
 reject:** a capability that only exists inside the plugin; a module whose file format only makes
 sense with the orchestrator running (the BMAD-pack shape); hand-maintained per-harness copies.
