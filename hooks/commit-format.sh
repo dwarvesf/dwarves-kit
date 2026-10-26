@@ -41,6 +41,9 @@ elif [[ "$CMD" =~ -[[:alpha:]]*m[[:space:]]*\"([^\"]*)\" ]]; then SUBJ="${BASH_R
 elif [[ "$CMD" =~ -[[:alpha:]]*m[[:space:]]*\'([^\']*)\' ]]; then SUBJ="${BASH_REMATCH[1]}"
 fi
 [ -z "$SUBJ" ] && exit 0
+# One -m value may hold subject + blank line + body; git treats only the first line as the subject.
+SUBJ="${SUBJ%%$'\n'*}"
+[ -z "$SUBJ" ] && exit 0
 
 # Tool-generated subjects pass through.
 case "$SUBJ" in
