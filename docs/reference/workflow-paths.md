@@ -21,7 +21,7 @@ GENERATED projection. This file enumerates every entry point and where each path
 
 Enforcement marks: `HARD` = a rule that code really blocks on (a hook or lib exits 2), listed in `docs/reference/hard-rules.tsv` and pinned by `tests/test-meta-hard-claims.sh`; a gate that is off by default says so in that registry's `gate` column; `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are where autonomous runs stop for a human: safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline. The pipeline is run by the command text, so `ship-gate` checks only that its gate was recorded. Other hooks block too (see the registry); everything else advises.
 
-Stage grouping (Shape / Build / Watch / Check / Reflect) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
+Stage grouping (Shape / Build / Watch / Check / Reflect) follows the five stages in `docs/reference/lifecycle.md`. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
 
 ## 2 · Flow topology (the one big picture)
 
@@ -534,7 +534,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 ## 6 · How to regenerate
 
 1. Re-derive the backbone from `docs/research/2026-07-31-feature-trigger-map.md` (or regenerate that file first per its own Method section: enumerate `commands/`, `agents/`, `skills/*/SKILL.md`, `hooks/*.sh` by `ls`, never trust a doc's count).
-2. Take stage grouping from the README's "The five stages" section; take flow shapes from `docs/WORKFLOW.md` "Flow and loop reference"; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
+2. Take stage grouping from `docs/reference/lifecycle.md` "The five stages"; take flow shapes from `docs/WORKFLOW.md` "Flow and loop reference"; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
 3. Take hook events from `hooks/hooks.json` and root `settings.json` (same wiring, two install paths; `statusline` rides the `statusLine` key, not a hook event). Live wiring wins over any doc claim: this pass found `tool-policy-guard` wired at PreToolUse `*` in both files although the trigger map called it unwired; it stays inert until a `tool-policy.json` exists.
 4. Every live feature gets exactly one line in section 5; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
 5. Re-derive the System topology (section 3) from the finished path index: the `[H]`/`[I]`/`[E]`/`[D]` marks give the actor and dispatch edges; the store hand-offs come from each path's write target and the command that reads it next. Invent no edge the index does not show.

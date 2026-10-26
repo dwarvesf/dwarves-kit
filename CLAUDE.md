@@ -34,7 +34,7 @@ The kit ships its own slash commands (`/kit:start` ... `/kit:retro` ... `/kit:ki
 
 ## Repository structure
 
-See `docs/MANUAL.md` "Project structure" section (canonical) and `docs/reference/architecture.md` (component fit). Do not maintain a third copy here.
+See `docs/reference/project-structure.md` (canonical) and `docs/reference/architecture.md` (component fit). Do not maintain a third copy here.
 
 ## Code quality rules
 

@@ -214,8 +214,8 @@ entry point (a bug-lane loop), not a linear phase between Reflect and the next c
 
 ## The V-model lens
 
-> The ASCII V below is the canonical rendering. For a rendered vector version, see
-> [`docs/figures/v-model.svg`](figures/v-model.svg). (The README figure is the 10-second view of the loop; this section + the SVG are the full V.)
+> The ASCII V below is the canonical rendering. The rendered figure is
+> [`docs/figures/v-model.png`](figures/v-model.png), generated from `docs/figures/MODEL.md`. (The README figure is the 10-second view of the loop; this section and that figure are the full V.)
 
 The cycle table above is the canonical phase list. This section reads it as a **V**.
 The **left arm BUILDS**: each phase produces an artifact and statically reviews it
@@ -851,17 +851,17 @@ Per change-type, the companion docs that must move with it. This covers the enum
 | `commands/*` (new) | `docs/MANUAL.md` (a `### /kit:<name>` section), `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh` |
 | `agents/*` | `docs/MANUAL.md` agents table, `tests/test-meta.sh` frontmatter checks |
 | `settings.json` (hook wiring) | `docs/reference/hooks.md`, `docs/MANUAL.md` (Troubleshooting), `install.sh` merge logic |
-| `install.sh` | README install block, `docs/MANUAL.md` "Install options and modules", `tests/` |
+| `install.sh` | README install block, `docs/reference/install.md`, `tests/` |
 | `templates/rules/*` | `docs/MANUAL.md` "Path-scoped rules", `docs/reference/architecture.md` |
-| `lib/*` | `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md`, `tests/test-meta.sh` + `tests/test-hooks.sh` (helper unit tests) |
-| `bin/*` (stable consumer entrypoints, SPEC-184) | `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md`, `lib/adopt.sh` (the injected CLAUDE.md block references `bin/`), `tests/test-stable-interface.sh` |
-| `skills/*` | `docs/MANUAL.md` "Skills" table |
+| `lib/*` | `docs/reference/project-structure.md`, `docs/reference/architecture.md`, `tests/test-meta.sh` + `tests/test-hooks.sh` (helper unit tests) |
+| `bin/*` (stable consumer entrypoints, SPEC-184) | `docs/reference/project-structure.md`, `docs/reference/architecture.md`, `lib/adopt.sh` (the injected CLAUDE.md block references `bin/`), `tests/test-stable-interface.sh` |
+| `skills/*` | `docs/reference/skills.md` table |
 | `examples/hello-spec/*` | `examples/hello-spec/README.md`, the downstream-template note |
 | a PHILOSOPHY principle | `docs/reference/PHILOSOPHY.md`, `commands/kit-health.md` reject-list |
 | a new `docs/decisions/` ADR | `docs/reference/architecture.md` cross-refs |
 | a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
-| **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md` |
-| **a new top-level file under the kit root** | **this doc-impact map (WORKFLOW.md)**, `docs/MANUAL.md` "Project structure", `docs/reference/architecture.md` |
+| **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, `docs/reference/project-structure.md`, `docs/reference/architecture.md` |
+| **a new top-level file under the kit root** | **this doc-impact map (WORKFLOW.md)**, `docs/reference/project-structure.md`, `docs/reference/architecture.md` |
 | `AGENTS.md` (kit root) | `CLAUDE.md` + `WORKFLOW.md` pointers (must not drift), `examples/hello-spec/AGENTS.md` (downstream template), `commands/assign.md` (the six-section projection reads its zones), `tests/test-meta.sh` |
 | any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` version, `tool.toml` version, `docs/retro/v<ver>.md` |
 

@@ -9,7 +9,7 @@ Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_don
 | Path | What it is |
 |---|---|
 | [`QUICKSTART.md`](QUICKSTART.md) | Install, adopt a repo, run your first `/kit:` cycle |
-| [`MANUAL.md`](MANUAL.md) | Every command, hook and agent, plus recovery steps |
+| [`MANUAL.md`](MANUAL.md) | The command reference: every command and agent, plus how to drive the kit by intent and recovery steps |
 | [`WORKFLOW.md`](WORKFLOW.md) | The lifecycle contract: lanes, gates and loops (root `WORKFLOW.md` points here) |
 | [`SYSTEM-DESIGN.md`](SYSTEM-DESIGN.md) | The system design model, rendered as the UML set in `design/` |
 
@@ -25,6 +25,13 @@ Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_don
 | Path | What it is |
 |---|---|
 | [`reference/architecture.md`](reference/architecture.md) | Components, state model and the verification pipeline |
+| [`reference/lifecycle.md`](reference/lifecycle.md) | The loop, the closed-loop idea, the command sequence and the five stages |
+| [`reference/install.md`](reference/install.md) | Install layers, the module table, plugin, Codex and bash install |
+| [`reference/skills.md`](reference/skills.md) | The skills roster |
+| [`reference/project-structure.md`](reference/project-structure.md) | The directory layout of the kit repo |
+| [`reference/operations.md`](reference/operations.md) | Testing, CI, the weekly scheduler, external tools and the codebase index |
+| [`reference/roadmap.md`](reference/roadmap.md) | Work the kit defers on purpose |
+| [`reference/credits.md`](reference/credits.md) | Where each pattern came from; `/kit:absorb` audits it |
 | [`reference/data-flow.md`](reference/data-flow.md) | How data moves: signals, ledgers and the module map |
 | [`reference/execution-planes.md`](reference/execution-planes.md) | The four engines that run agents and their trust models |
 | [`reference/kit-contract.md`](reference/kit-contract.md) | The rules every module, tool and skill must satisfy |
@@ -37,7 +44,7 @@ Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_don
 | [`reference/hard-rules.tsv`](reference/hard-rules.tsv) | The hard-rule registry and what enforces each rule |
 | [`reference/hermes-layering.md`](reference/hermes-layering.md) | How the thin Hermes skills in `integrations/hermes/` sit on top of the kit |
 | [`reference/wrap.md`](reference/wrap.md) | Which `wrap` verb to use in which situation |
-| [`reference/PHILOSOPHY.md`](reference/PHILOSOPHY.md) | Design principles, target user, the rejection list |
+| [`reference/PHILOSOPHY.md`](reference/PHILOSOPHY.md) | Design principles, target user, fit check, the rejection list |
 | [`../lib/config/modules.tsv`](../lib/config/modules.tsv) | The module table `install.sh` and `lib/adopt.sh` both read |
 | [`impl-playbook/`](impl-playbook/) | Per-language rules the review agents cite |
 | [`patterns/`](patterns/) | Reusable loop and brief patterns |
@@ -47,7 +54,7 @@ Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_don
 | Path | What it is |
 |---|---|
 | [`design/kit-uml.html`](design/kit-uml.html) | The UML drawing set rendered from `SYSTEM-DESIGN.md` |
-| [`figures/`](figures/) | Guide figures, rendered from `figures/MODEL.md`; `v-model.svg` is the full V |
+| [`figures/`](figures/) | Guide figures, rendered from `figures/MODEL.md` |
 
 ## Records
 

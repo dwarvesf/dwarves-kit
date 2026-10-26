@@ -674,7 +674,7 @@ CLAUDE_PLUGIN_ROOT="$NSEMPTY" bash "$NS/lib/adopt.sh" "$NSTARGET" >/dev/null 2>&
 if [ "$r11" -eq 0 ] && cmp -s "$NSTARGET/AGENTS.md" "$POINTER"; then ok "no source contract"; else no "no source contract (rc=$r11)"; fi
 
 # T9: the cost script reads both transcript shapes.
-J2="docs/verification/gauntlet/2026-09-01-onboarding-campaign/J2/transcript.jsonl"
+J2="tests/fixtures/onboarding-cost/omp-transcript.jsonl"  # synthetic omp shape; the real gauntlet transcripts live in a release asset (docs/verification/gauntlet/CORPUS.md)
 OJ="$(bash lib/adopt/onboarding-cost.sh "$J2" 2>&1)"
 CCU='"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":1}'
 CCY="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; CCN="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
@@ -682,7 +682,7 @@ printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content
   "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}" > "$CCY"
 printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",$CCU,\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/h/src/main.js\"}}]}}" > "$CCN"
 OY="$(bash lib/adopt/onboarding-cost.sh "$CCY" 2>&1)"; ON="$(bash lib/adopt/onboarding-cost.sh "$CCN" 2>&1)"
-if echo "$OJ" | grep -qx 'turns 47' && echo "$OJ" | grep -qx 'tokens 2971254' && echo "$OJ" | grep -qx 'contract read: yes' \
+if echo "$OJ" | grep -qx 'turns 3' && echo "$OJ" | grep -qx 'tokens 600' && echo "$OJ" | grep -qx 'contract read: yes' \
   && echo "$OY" | grep -qx 'contract read: yes' && echo "$OY" | grep -qx 'turns 1' && echo "$OY" | grep -qx 'tokens 116' \
   && echo "$ON" | grep -qx 'contract read: no'; then
   ok "onboarding-cost reads the omp and Claude Code transcript shapes"

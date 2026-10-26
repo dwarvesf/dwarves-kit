@@ -81,9 +81,9 @@ else
   echo "  No log directory yet (hooks haven't fired)"
 fi
 
-# 9. Source citations in the MANUAL credits
-CREDITS=$(sed -n '/## Credits/,/## /p' ~/.claude/dwarves-kit/docs/MANUAL.md | grep -c '\[')
-echo "Source citations in MANUAL: $CREDITS"
+# 9. Source citations in the credits page
+CREDITS=$(grep -c '^- \[' ~/.claude/dwarves-kit/docs/reference/credits.md)
+echo "Source citations in credits: $CREDITS"
 
 # 10. TODOs/FIXMEs in hook scripts
 TODOS=$(grep -r "TODO\|FIXME" ~/.claude/dwarves-kit/hooks/ 2>/dev/null | wc -l | tr -d ' ')
