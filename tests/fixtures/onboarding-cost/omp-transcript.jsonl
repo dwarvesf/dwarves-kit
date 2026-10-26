@@ -1,0 +1,8 @@
+{"type":"session","version":3,"id":"fixture","cwd":"/work"}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Read /work/CARD.md."}]}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"read","arguments":{"path":"/work/AGENTS.md"}}],"usage":{"input":10,"output":5,"totalTokens":100}}}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"toolCall","id":"c2","name":"read","arguments":{"path":"/work/CARD.md"}}],"usage":{"input":10,"output":5,"totalTokens":200}}}
+{"type":"turn_start"}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"input":10,"output":5,"totalTokens":300}}}

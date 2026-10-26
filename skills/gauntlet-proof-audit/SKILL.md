@@ -23,7 +23,7 @@ never rewrites a historical record; it reports discrepancies for the operator.
 |---|---|
 | Item set | `git ls-files 'docs/verification/gauntlet/*/ROUNDS.md' 'docs/verification/gauntlet/*/*-ROUNDS.md' 'docs/verification/gauntlet/*/AB-ROUNDS.md'` (committed records only; a room copy's own ROUNDS is untracked and never enters the set) |
 | Contract | every CLAIM in the record is backed by its committed EVIDENCE: markers well-formed; recorded verdict == committed `checker-output.txt`; findings count reconciles with the rows; scrub clean (no resolved credential VALUE in committed evidence; a bare `op://` pointer is allowed, not a leak); run-dir grammar conforms; a quoted finding string is present in the cited transcript |
-| Evidence class | Tier 1: the committed record files themselves via grep/wc/diff. Tier 2: `kit:audit-scanner` reads a quoted finding against the transcript. Evidence gitignored as a room artifact (transcript pruned) = UNTESTABLE → UNSURE |
+| Evidence class | Tier 1: the committed record files themselves via grep/wc/diff. Tier 2: `kit:audit-scanner` reads a quoted finding against the transcript. Evidence gitignored as a room artifact (transcript pruned) = UNTESTABLE → UNSURE. Transcripts are not in git: unpack the corpus per `docs/verification/gauntlet/CORPUS.md` before Tier 2 |
 | Apply mechanics | REPORT-first: a genuine discrepancy is FLAGGED with a dated correction note appended to the record (never a silent rewrite of the historical claim); UNSURE/DANGER listed in the PR body; REMOVE is disallowed (a record is evidence, not deleted) |
 
 ## Process
@@ -66,7 +66,10 @@ never rewrites a historical record; it reports discrepancies for the operator.
 4. **Tier 2, judgment pass, model-read, only where it earns its cost.** Dispatch `kit:audit-scanner`
    (its tools roster physically cannot write) for two cases only: a record Tier 1 flagged (judge
    how deep the drift goes), or a quoted finding whose exact wording needs matching against the
-   transcript it cites (`transcript.jsonl` / `transcript.md`). Skip Tier 2 for every record Tier 1
+   transcript it cites (`transcript.jsonl` / `transcript.md`). Transcripts ship as a release asset,
+   not in git: if the cited `transcript.jsonl` is absent, fetch and unpack the corpus first per
+   `docs/verification/gauntlet/CORPUS.md` (`gh release download` + `tar -x`, sha256 checked); if it
+   cannot be fetched, the quote axis is UNSURE with evidence "corpus not unpacked", never OK. Skip Tier 2 for every record Tier 1
    cleared with no quote-matching need; most records never need it.
 
 5. **Verdict each record** with the audit-loop grammar: OK / FLAG / UNSURE / DANGER. **REMOVE is

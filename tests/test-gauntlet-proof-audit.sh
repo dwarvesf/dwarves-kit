@@ -62,6 +62,25 @@ grep -qi 'op://.*pointer is allowed\|op://.*NOT a leak\|pointer, allowed' "$SKIL
 grep -qiE 'REMOVE is (never used|disallowed)' "$SKILL"; assert "SKILL disallows REMOVE" $?
 grep -q 'lib/gauntlet/stats.sh' "$SKILL"; assert "SKILL delegates marker grammar to stats.sh" $?
 
+# 5. Corpus-out: bulk transcripts live in a release asset described by CORPUS.md. stats.sh
+#    must say so when none are unpacked, and stay quiet when one is.
+CORPUS="$KIT_DIR/docs/verification/gauntlet/CORPUS.md"
+[ -f "$CORPUS" ]; assert "CORPUS.md exists" $?
+grep -qE 'Asset sha256 \| `[0-9a-f]{64}`' "$CORPUS"; assert "CORPUS.md carries the asset sha256" $?
+grep -q 'gh release download' "$CORPUS" && grep -q 'tar -xzf' "$CORPUS"; assert "CORPUS.md carries fetch and unpack steps" $?
+TRACKED_MOVED=0
+while IFS= read -r p; do
+  git -C "$KIT_DIR" ls-files --error-unmatch "docs/verification/gauntlet/$p" >/dev/null 2>&1 && TRACKED_MOVED=$((TRACKED_MOVED+1))
+done < <(sed -nE 's/^\| `([^`]+)` \| `[0-9a-f]{64}` \| [0-9]+ \|$/\1/p' "$CORPUS")
+[ "$TRACKED_MOVED" -eq 0 ]; assert "no file listed in CORPUS.md is tracked in git ($TRACKED_MOVED)" $?
+SR="$(_mk)"; mkdir -p "$SR/docs/verification/gauntlet/2026-09-01-corpus-x/round-1"
+printf '| Probe | claude |\n[[QL-VERDICT round=1 clean=true findings=0]]\n' > "$SR/docs/verification/gauntlet/2026-09-01-corpus-x/ROUNDS.md"
+SOUT="$(cd "$SR" && bash "$KIT_DIR/lib/gauntlet/stats.sh" 2>&1)"; SRC=$?
+[ "$SRC" -eq 0 ] && echo "$SOUT" | grep -q 'corpus not unpacked'; assert "stats.sh reports an unpacked-corpus gap and still renders" $?
+printf '{"type":"result"}\n' > "$SR/docs/verification/gauntlet/2026-09-01-corpus-x/round-1/transcript.jsonl"
+SOUT="$(cd "$SR" && bash "$KIT_DIR/lib/gauntlet/stats.sh" 2>&1)"
+! echo "$SOUT" | grep -q 'corpus not unpacked'; assert "stats.sh is quiet when a transcript is present" $?
+
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]
