@@ -24,7 +24,10 @@ curate_inventory() {
     grep -qiE '^(pinned|cc-si-protected):[[:space:]]*true' "$d/SKILL.md" && pinned=true
     # first non-frontmatter, non-heading paragraph
     para="$(awk 'BEGIN{fm=0} /^---[[:space:]]*$/{fm++; next} fm>=2 && NF && $0 !~ /^#/ {print; exit}' "$d/SKILL.md")"
-    mt="$(stat -f %m "$d/SKILL.md" 2>/dev/null || stat -c %Y "$d/SKILL.md" 2>/dev/null || echo 0)"
+    # GNU stat first: on Linux `stat -f %m` is a filesystem query that exits 0 and prints several lines
+    mt="$(stat -c %Y "$d/SKILL.md" 2>/dev/null || true)"
+    case "$mt" in ''|*[!0-9]*) mt="$(stat -f %m "$d/SKILL.md" 2>/dev/null || true)" ;; esac
+    case "$mt" in ''|*[!0-9]*) mt=0 ;; esac
     arr="$(jq -c --arg n "$name" --arg de "$desc" --arg p "$para" --argjson mt "${mt:-0}" --argjson pin "$pinned" \
       '. + [{name:$n, description:$de, first_para:$p, mtime:$mt, pinned:$pin}]' <<<"$arr")"
   done
