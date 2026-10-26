@@ -161,14 +161,15 @@ STRAY_PLANNING=$(grep -rn '\.planning' "$KIT_DIR/commands/" "$KIT_DIR/hooks/" 2>
 assert_eq "no .planning/ refs in commands/ or hooks/ (fallback removed)" "0" "$STRAY_PLANNING"
 
 # SPEC-005: the state model is documented (the dual-mode detection itself is
-# behavior-tested in test-hooks.sh). Backlog schema + architecture state-model
-# section + the goal-registry ADR must exist; agents/ carry no stray .planning ref.
+# behavior-tested in test-hooks.sh). The backlog status vocabulary (the board itself is not
+# in the public tree) + architecture state-model section + the goal-registry ADR must
+# exist; agents/ carry no stray .planning ref.
 TOTAL=$((TOTAL + 1))
-if grep -qF '## Schema' "$KIT_DIR/_meta/BACKLOG.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} BACKLOG.md has the Active-queue Schema section (SPEC-005)"
+if bash "$KIT_DIR/lib/board/backlog.sh" states 2>/dev/null | grep -qx 'claimed'; then
+  echo -e "  ${GREEN}PASS${NC} backlog.sh states carries the Active-queue status vocabulary (SPEC-005)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} BACKLOG.md missing the Schema section"
+  echo -e "  ${RED}FAIL${NC} backlog.sh states lost the status vocabulary"
   FAIL=$((FAIL + 1))
 fi
 

@@ -68,7 +68,7 @@ If the user runs `/kit:next` again:
 
 ## Edge cases
 
-- **All tasks done**: "All tasks in the spec are complete. Run `/kit:review` for code review, then `/kit:ship` to merge." Then surface the `_meta/BACKLOG.md` Active queue (read-only; the Schema there defines the columns) as "what's left next", plus any `.claude/goals/` drafts (top-level `*.md` only; archived drafts under `.claude/goals/done/` are skipped), so the next item can be picked with `/kit:assign ID-NNN`. Degrade gracefully on a malformed queue; never mutate.
+- **All tasks done**: "All tasks in the spec are complete. Run `/kit:review` for code review, then `/kit:ship` to merge." Then surface the `_meta/BACKLOG.md` Active queue (read-only; the Schema there defines the columns) as "what's left next", plus any `.claude/goals/` drafts (top-level `*.md` only; archived drafts under `.claude/goals/done/` are skipped), so the next item can be picked with `/kit:assign ID-NNN`. Skip the queue when the checkout has no `_meta/BACKLOG.md`. Degrade gracefully on a malformed queue; never mutate.
 - **No spec found**: "No spec found. Run `/kit:spec` to generate one first."
 - **Ambiguous spec** (several live `docs/specs/` specs, no single branch match): list them and ask which to work on; do not pick one silently (mirrors the hooks' `spec:ambiguous(...)`).
 - **Blocked task**: "TASK-[ID] depends on TASK-[X] which is not yet done. Complete TASK-[X] first, or choose a different task."
