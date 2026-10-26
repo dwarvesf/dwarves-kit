@@ -115,3 +115,43 @@ bash tests/run-all.sh --only verbatim-rows
 ## Rollback
 
 Revert the commit; no other file references `lib/gate/verbatim-rows.sh` yet.
+
+## Addendum: `--words` mode
+
+Change: `verbatim-rows.sh --words [--ignore-headings] <ref> <orig> <new>` compares the word
+sequence of the original with the new file, ignoring whitespace and line breaks, YAML
+frontmatter in both files, and standalone list or quote markers. Whole-line row matching
+cannot check prose that was reformatted (headings added, paragraphs split, lines reflowed)
+in a source kept word for word. Row mode is untouched.
+
+```
+$ bash tests/test-verbatim-rows.sh
+=== AC5: --words, reformat keeping every word -> exit 0 ===
+  PASS reflow with headings ignored exits 0 (rc=0)
+  PASS reflow reports 0 changes
+  PASS added heading without --ignore-headings exits 1 (rc=1)
+  PASS added heading is named as inserted
+  PASS row mode rejects the same reflow (rc=1)
+=== AC6: --words, dropped or changed word -> exit 1, names it ===
+  PASS dropped word exits 1 (rc=1)
+  PASS dropped word 'lazy' is named
+  PASS context shows the neighbouring words
+  PASS changed word exits 1 (rc=1)
+  PASS changed word is shown as forest -> jungle
+=== AC7: --words, usage and read errors -> exit 2 ===
+  PASS unreadable new file exits 2 (rc=2)
+  PASS --words bad ref exits 2 (rc=2)
+  PASS --words with two new paths exits 2 (rc=2)
+  PASS --ignore-headings without --words exits 2 (rc=2)
+=== 25/25 passed ===
+
+$ bash tests/run-all.sh --only verbatim-rows
+test-verbatim-rows                             ok
+```
+
+Negative control: the word-diff exit `sys.exit(1 if changes else 0)` was mutated to
+`sys.exit(0)` (backup copy kept, restored with `cp` and confirmed byte-identical with `cmp`).
+Under the mutation the suite went RED, 22/25, with the three change-detection cases failing
+(added heading, dropped word, changed word); after restore it is 25/25 again.
+
+Rollback: revert the commit; row mode never changed.

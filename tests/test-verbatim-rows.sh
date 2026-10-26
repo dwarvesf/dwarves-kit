@@ -7,6 +7,10 @@
 # AC2  one truncated row -> exit 1, and the bad row is named in the output.
 # AC3  --pattern override: a non-default row marker is picked up correctly.
 # AC4  bad ref -> exit 2.
+# AC5  --words: a reformat (headings, split paragraphs, reflowed lines, quote markers) that
+#      keeps every word -> exit 0.
+# AC6  --words: a dropped or changed word -> exit 1, and the word is named with context.
+# AC7  --words: usage and read errors exit 2.
 #
 # Fixture: a throwaway git repo in mktemp, one commit holding the "original" index file.
 # "New" files are plain files on disk (as the real usage is: committed original vs. a
@@ -81,6 +85,70 @@ echo ""
 echo "=== usage error -> exit 2 ==="
 OUT="$(bash "$SCRIPT" 2>&1)"; RC=$?
 assert "no args exits 2 (rc=$RC)" "$([ "$RC" -eq 2 ] && echo 0 || echo 1)" "$OUT"
+
+echo ""
+echo "=== AC5: --words, reformat keeping every word -> exit 0 ==="
+cat > "$FX/essay.md" <<'EOF'
+---
+title: Essay
+---
+The quick brown fox jumps over the lazy dog and keeps running
+through the forest until night falls. Then it sleeps.
+> quoted line stays
+EOF
+git -C "$FX" add essay.md
+git -C "$FX" commit -q -m "essay original"
+cat > "$FX/essay-reflow.md" <<'EOF'
+---
+title: A different title
+---
+# Added heading
+
+The quick brown fox jumps
+over the lazy dog
+
+and keeps running through the forest until night falls.
+
+## Another added heading
+
+Then it sleeps.
+
+> quoted line
+> stays
+EOF
+OUT="$(cd "$FX" && bash "$SCRIPT" --words --ignore-headings HEAD essay.md "$FX/essay-reflow.md" 2>&1)"; RC=$?
+assert "reflow with headings ignored exits 0 (rc=$RC)" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)" "$OUT"
+assert "reflow reports 0 changes" "$(printf '%s' "$OUT" | grep -q 'changes: 0' && echo 0 || echo 1)" "$OUT"
+# Without --ignore-headings the added heading words are insertions.
+OUT="$(cd "$FX" && bash "$SCRIPT" --words HEAD essay.md "$FX/essay-reflow.md" 2>&1)"; RC=$?
+assert "added heading without --ignore-headings exits 1 (rc=$RC)" "$([ "$RC" -eq 1 ] && echo 0 || echo 1)" "$OUT"
+assert "added heading is named as inserted" "$(printf '%s' "$OUT" | grep -q 'INSERTED.*Another added heading' && echo 0 || echo 1)" "$OUT"
+# Row mode on the same reflow fails whole-line matching: the gap --words fills.
+OUT="$(cd "$FX" && bash "$SCRIPT" HEAD essay.md "$FX/essay-reflow.md" --pattern '^The quick' 2>&1)"; RC=$?
+assert "row mode rejects the same reflow (rc=$RC)" "$([ "$RC" -eq 1 ] && echo 0 || echo 1)" "$OUT"
+
+echo ""
+echo "=== AC6: --words, dropped or changed word -> exit 1, names it ==="
+sed 's/ lazy / /' "$FX/essay-reflow.md" > "$FX/essay-drop.md"
+OUT="$(cd "$FX" && bash "$SCRIPT" --words --ignore-headings HEAD essay.md "$FX/essay-drop.md" 2>&1)"; RC=$?
+assert "dropped word exits 1 (rc=$RC)" "$([ "$RC" -eq 1 ] && echo 0 || echo 1)" "$OUT"
+assert "dropped word 'lazy' is named" "$(printf '%s' "$OUT" | grep -q 'DELETED.*\[-lazy +(none)\]' && echo 0 || echo 1)" "$OUT"
+assert "context shows the neighbouring words" "$(printf '%s' "$OUT" | grep -q 'over the \[-lazy' && echo 0 || echo 1)" "$OUT"
+sed 's/forest/jungle/' "$FX/essay-reflow.md" > "$FX/essay-change.md"
+OUT="$(cd "$FX" && bash "$SCRIPT" --words --ignore-headings HEAD essay.md "$FX/essay-change.md" 2>&1)"; RC=$?
+assert "changed word exits 1 (rc=$RC)" "$([ "$RC" -eq 1 ] && echo 0 || echo 1)" "$OUT"
+assert "changed word is shown as forest -> jungle" "$(printf '%s' "$OUT" | grep -q 'REPLACED.*\[-forest +jungle\]' && echo 0 || echo 1)" "$OUT"
+
+echo ""
+echo "=== AC7: --words, usage and read errors -> exit 2 ==="
+OUT="$(cd "$FX" && bash "$SCRIPT" --words HEAD essay.md "$FX/missing.md" 2>&1)"; RC=$?
+assert "unreadable new file exits 2 (rc=$RC)" "$([ "$RC" -eq 2 ] && echo 0 || echo 1)" "$OUT"
+OUT="$(cd "$FX" && bash "$SCRIPT" --words not-a-real-ref essay.md "$FX/essay-reflow.md" 2>&1)"; RC=$?
+assert "--words bad ref exits 2 (rc=$RC)" "$([ "$RC" -eq 2 ] && echo 0 || echo 1)" "$OUT"
+OUT="$(cd "$FX" && bash "$SCRIPT" --words HEAD essay.md "$FX/essay-reflow.md" "$FX/essay-drop.md" 2>&1)"; RC=$?
+assert "--words with two new paths exits 2 (rc=$RC)" "$([ "$RC" -eq 2 ] && echo 0 || echo 1)" "$OUT"
+OUT="$(cd "$FX" && bash "$SCRIPT" --ignore-headings HEAD MEMORY.md "$FX/new-ok.md" 2>&1)"; RC=$?
+assert "--ignore-headings without --words exits 2 (rc=$RC)" "$([ "$RC" -eq 2 ] && echo 0 || echo 1)" "$OUT"
 
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
