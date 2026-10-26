@@ -54,7 +54,7 @@ Two install-time facts. `lib/adopt.sh` (`/kit:adopt`) seeds `[gate] proof_of_don
 | Path | What it is |
 |---|---|
 | [`design/kit-uml.html`](design/kit-uml.html) | The UML drawing set rendered from `SYSTEM-DESIGN.md` |
-| [`figures/`](figures/) | Guide figures, rendered from `figures/MODEL.md`; `v-model.svg` is the full V |
+| [`figures/`](figures/) | Guide figures, rendered from `figures/MODEL.md` |
 
 ## Records
 

@@ -635,7 +635,7 @@ opposite directions: overlays install on the engine, every kit writes knowledge 
 the tree. The engine never calls an overlay and never branches on a kit name; a vertical
 feature that needs engine code becomes an absorption row. The cross-repo map, the
 install matrix, and the release policy live in the forge program repo
-(`docs/reference/architecture.md`, `docs/design/kit-distribution.md`, `docs/design/kit-versioning.md`).
+(`docs/architecture.md`, `docs/design/kit-distribution.md`, `docs/design/kit-versioning.md`).
 
 ## SDLC state machine
 

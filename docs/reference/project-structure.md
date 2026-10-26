@@ -34,7 +34,7 @@ dwarves-kit/
   lib/board/board-run.sh              The single-board-row dispatch path, backing `board.sh run <ID>`: reads the row's Item + Notes through `backlog.sh row` (the board's own parser; same no-row / duplicate-id refusals as `get`), scaffolds the MINIMAL mega-goal dir `lib/queue/orchestrate.sh` expects (one `- [ ] SG-NN <item> , auto` ROADMAP line, POINTER_PROMPT.md seeded from the row, a `goals/01-*.md` contract with `Model:`/`**Branch:**` headers, HANDOFF.md + DECISIONS.md stubs) under the repo's megagoals convention (`--dir` > `megagoal_root:` CLAUDE.md hint > first in-use root in canonical order > `_meta/megagoals/<id-slug>/` default), then prints the exact `orchestrate.sh run <dir>` command. It never launches a session itself; `--exec` composes the launch and forwards args after `--` (e.g. `-- --dry-run`). Idempotent: an existing file is reported `kept`, never overwritten (the `board init` created/kept convention).
   skills/                       Claude-triggered skills (one folder per skill; roster in `docs/reference/skills.md`)
   templates/rules/              Path-scoped coding-standard templates (`templates/` also holds the guide template)
-  integrations/                 Terminal and tool adapters (claude-code, hermes, raycast, warp)
+  integrations/                 Tool adapters (claude-code, hermes)
   output-styles/                Kit-shipped Claude Code output styles
   deploy/macos/                 The weekly scheduler LaunchAgent and its runbook
   .codex-plugin/                Codex plugin manifest
