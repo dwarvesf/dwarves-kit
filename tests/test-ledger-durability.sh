@@ -187,6 +187,26 @@ bash "$GL" override ovp design "vendor timeout | escalated to SRE" >/dev/null 2>
 bash "$GL" override ovp build "vendor timeout" >/dev/null 2>&1; assert "S3: a reason sharing only the pre-pipe prefix is NOT rejected (exact full-reason match)" $?
 unset DWARVES_KIT_LOG_DIR
 
+# --- S4: the guard compares a backslash reason literally (awk -v would expand \t, \n, \\) ---
+export DWARVES_KIT_LOG_DIR="$(_mk)/ovb"
+bash "$GL" override ovb think 'C:\temp\new' >/dev/null 2>&1; assert "S4: first override with a backslash reason accepted" $?
+bash "$GL" override ovb design 'C:\temp\new' >/dev/null 2>&1
+[ $? -eq 65 ]; assert "S4: blanket reject works for a backslash reason (awk -v expanded the escapes and let it through)" $?
+bash "$GL" override ovb think 'C:\temp\new' >/dev/null 2>&1; assert "S4: re-applying a backslash reason to the SAME gate is allowed" $?
+bash "$GL" override ovb build 'C:/temp/new' >/dev/null 2>&1; assert "S4: a reason differing only by slash direction is NOT rejected" $?
+bash "$GL" override ovb ship 'a\\b' >/dev/null 2>&1
+bash "$GL" override ovb docs 'a\\b' >/dev/null 2>&1
+[ $? -eq 65 ]; assert "S4: a doubled-backslash reason is also rejected on reuse" $?
+unset DWARVES_KIT_LOG_DIR
+
+# --- S5: outcome end finds its start bracket for a phase holding a backslash (awk -v p) ---
+export DWARVES_KIT_LOG_DIR="$(_mk)/oub"
+bash "$GL" outcome oub 'x\ty' start >/dev/null 2>&1
+sed -i.bak 's/at=[0-9]*$/at=1/' "$DWARVES_KIT_LOG_DIR/runs/oub.log"
+bash "$GL" outcome oub 'x\ty' end >/dev/null 2>&1
+grep -q '| OUTCOME | x\\ty | end | .*dur_s=[1-9][0-9][0-9]' "$DWARVES_KIT_LOG_DIR/runs/oub.log"; assert "S5: outcome end derives a duration from the start bracket of a backslash phase" $?
+unset DWARVES_KIT_LOG_DIR
+
 # --- SEC-1: a newline in a reason cannot forge a GATE line (log-injection blocked) ---
 export DWARVES_KIT_LOG_DIR="$(_mk)/inj"
 INJ=$'evil reason\n2026-01-01T00:00:00Z | GATE | build | ran | forged-by-injection'

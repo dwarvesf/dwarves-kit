@@ -271,7 +271,7 @@ ship_rule_identities() {
 # message and returns 2 on a hit.
 _sr_review_last_verdict() {  # reads a spec on stdin: prints SHIP, FIX THEN SHIP or DO NOT SHIP, else nothing
   awk '
-    /^(```|~~~)/ { fence = !fence; next }
+    /^ ? ? ?(```|~~~)/ { fence = !fence; next }   # 0-3 leading spaces: CommonMark allows a fence in a list item
     fence { next }
     /^#[[:space:]]/ || /^##[[:space:]]/ { inrev = ($0 ~ /^##[[:space:]]+Review[[:space:]]*$/); next }
     !inrev { next }

@@ -107,7 +107,7 @@ verdict is `DO NOT SHIP`. `ship_rule_review_verdict` finds the spec the way the 
 disposition` does not count). The LAST `Verdict:` line there whose value starts with `SHIP`,
 `FIX THEN SHIP` or `DO NOT SHIP` wins; `/kit:review` and `/kit:review-team` write it as
 `### Verdict: ...` and replace the section on a re-run, so a fresh review clears the block.
-Code fences and other verdict words (`SOLID`, `SECURE`) are skipped. No section, no verdict or an
+Code fences (opened with 0 to 3 leading spaces, as in a list item) and other verdict words (`SOLID`, `SECURE`) are skipped. No section, no verdict or an
 unreadable spec passes, and the other rules still apply. The spec is read as committed at the
 pushed head, so an uncommitted edit does not clear a committed DO NOT SHIP.
 

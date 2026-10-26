@@ -485,7 +485,8 @@ outcome() {
   case "$policy" in ""|close|escalate|continue) ;; *) echo "outcome: policy must be close|escalate|continue (got '$policy')" >&2; return 64;; esac
   local start_epoch="" dur=0
   if [ -f "$f" ]; then
-    start_epoch="$(awk -F' [|] ' -v p="$phase" '
+    start_epoch="$(KIT_AWK_P="$phase" awk -F' [|] ' '
+      BEGIN { p = ENVIRON["KIT_AWK_P"] }   # ENVIRON, not -v: -v expands backslash escapes
       $2=="OUTCOME" && $3==p && $4=="start" {
         n=split($5,a," "); for(i=1;i<=n;i++){split(a[i],kv2,"="); if(kv2[1]=="at") v=kv2[2]}
       } END{print v}' "$f")"
@@ -512,7 +513,8 @@ outcome_read() {
   [ -f "$f" ] || { echo "(no ledger for '$rid')" >&2; return 1; }
   local filter=""
   [ -n "$want" ] && filter="$(normalize_phase "$want")"
-  awk -F' [|] ' -v want="$filter" '
+  KIT_AWK_WANT="$filter" awk -F' [|] ' '
+    BEGIN { want = ENVIRON["KIT_AWK_WANT"] }   # ENVIRON, not -v: -v expands backslash escapes
     $2=="OUTCOME" && $4=="start" { started[$3]=1; if(!($3 in ord)) ord[$3]=++seq }
     $2=="OUTCOME" && $4=="end" {
       n=split($5,a," "); c=""; d=""; p2=""
@@ -540,7 +542,10 @@ override() {
   # in this run is one pasted across all gates, which defeats the per-gate audit trail --
   # reject it (exit 65). Re-applying the same reason to the SAME phase (idempotent re-run)
   # is fine. Split on ' | ' so fields line up with the write format below.
-  if [ -f "$f" ] && awk -F' [|] ' -v p="$phase" -v r="$reason" '
+  # The phase and reason travel in ENVIRON, not awk -v: -v expands backslash escapes, so a
+  # reason like C:\temp\new never equalled its literal ledger text and the guard let it through.
+  if [ -f "$f" ] && KIT_AWK_P="$phase" KIT_AWK_R="$reason" awk -F' [|] ' '
+        BEGIN { p = ENVIRON["KIT_AWK_P"]; r = ENVIRON["KIT_AWK_R"] }
         $2=="GATE" && $4=="override" && $3!=p {
           rr=$5; for (i=6; i<=NF; i++) rr=rr " | " $i   # reason may contain " | "
           if (rr==r) found=1

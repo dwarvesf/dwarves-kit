@@ -77,6 +77,14 @@ case_push "a history bullet after the verdict is ignored" o10 '\n## Review\n### 
 case_push "a history bullet does not clear a DO NOT SHIP" o11 '\n## Review\n### Verdict: DO NOT SHIP\n\n- Verdict: SHIP (round 1)\n' 2 'DO NOT SHIP'
 case_push "Verdict after fixes: SHIP reads as SHIP" o9 '\n## Review\n### Verdict: DO NOT SHIP\n\nVerdict after fixes: SHIP\n' 0 ''
 
+# a fence indented 1-3 spaces (a list item) is still a fence: CommonMark allows up to 3
+case_push "a verdict in a 3-space indented fence is ignored" i1 '\n## Review\n### Verdict: SHIP\n\n- Example:\n\n   ```\n   Verdict: DO NOT SHIP\n   ```\n' 0 ''
+case_push "a verdict in a 2-space indented fence is ignored" i2 '\n## Review\n### Verdict: SHIP\n\n- Example:\n\n  ```\n  Verdict: DO NOT SHIP\n  ```\n' 0 ''
+case_push "a verdict in a 1-space indented tilde fence is ignored" i3 '\n## Review\n### Verdict: SHIP\n\n ~~~\n Verdict: DO NOT SHIP\n ~~~\n' 0 ''
+case_push "a heading inside an indented fence does not end the Review section" i4 '\n## Review\n### Verdict: DO NOT SHIP\n\n- notes:\n\n  ```\n  ## Notes\n  ```\n\n### Verdict: SHIP\n' 0 ''
+case_push "a fence marker indented 4 spaces is code, not a fence: the verdict after it still blocks" i5 '\n## Review\n\n    ```\n\n### Verdict: DO NOT SHIP\n' 2 'DO NOT SHIP'
+case_push "a real verdict after an indented fence still counts" i6 '\n## Review\n\n  ```\n  Verdict: SHIP\n  ```\n\n### Verdict: DO NOT SHIP\n' 2 'DO NOT SHIP'
+
 # the spec is read as committed at the pushed head, not as edited in the working tree
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" c1 '\n## Review\n\n### Verdict: DO NOT SHIP\n'
 sed -i.bak 's/DO NOT SHIP/SHIP/' "$R/docs/specs/SPEC-001-c1.md"; command rm -f "$R/docs/specs/SPEC-001-c1.md.bak"
