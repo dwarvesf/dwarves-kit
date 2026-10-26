@@ -721,6 +721,15 @@ assert_exit "allows a clean conventional subject" 0 $RC
 RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"fix(x): y\" -m \"a long body line that is well over seventy-two characters and must not trip the check\""}}')
 assert_exit "allows long body via second -m (subject-only lint)" 0 $RC
 
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"fix(hooks): short subject\n\nA long body line that is well over seventy-two characters and must not trip the subject length check.\n\nSecond paragraph.\""}}')
+assert_exit "allows long body inside one multi-line -m (first line is the subject)" 0 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"feat(debug): add the bug lane and a guess-fix guard plus extras over the x\n\nshort body\""}}')
+assert_exit "blocks 74-char first line of a multi-line -m" 2 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"random first line\n\nfeat: valid looking body\""}}')
+assert_exit "blocks non-conventional first line of a multi-line -m" 2 $RC
+
 RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit"}}')
 assert_exit "allows editor commit (no -m)" 0 $RC
 
