@@ -8,7 +8,7 @@ not a doc sweep. This page is the bridge: it maps each surviving jargon term to
 the everyday word so a new reader never has to learn a coined concept to
 understand the docs.
 
-Source of the ranked list: `docs/research/2026-07-16-plain-words-inventory.md`.
+Source of the ranked list: `history/2026-10-27:docs/research/2026-07-16-plain-words-inventory.md`.
 
 ## Semantic-everywhere terms (ID-293, rename deferred)
 

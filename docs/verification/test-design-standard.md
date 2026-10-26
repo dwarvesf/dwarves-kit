@@ -100,7 +100,7 @@ above applies, most commonly `spec-feature`'s BDD matrix. It never replaces the 
 category matrix or artifact shape; it augments it with a column plus the floor rule ("config
 asserts lie; a behavior claim keeps a real-model probe") and the two hard don'ts (never
 downgrade a behavior/security claim below `behavioral`; never let a `smoke` run gate a ship).
-See `commands/test-plan.md` Step 1c and `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md`.
+See `commands/test-plan.md` Step 1c and `history/2026-10-27:docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md`.
 
 ## 6. Sign-off checklist (the gate before you call it done)
 

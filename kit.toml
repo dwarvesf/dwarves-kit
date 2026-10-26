@@ -223,7 +223,7 @@ memory_tidy      = false        # [consumer] the unattended biweekly memory-audi
 
 # =============== TEAM COLLABORATION (designed, not built , all off) ===============
 # Source: the operator's personal-tools repo, `_meta/megagoals/team-mode/` (ROADMAP + DESIGN-01..07),
-#         docs/research/2026-07-04-team-collab-workflow-proposal.md (v3).
+#         history/2026-10-27:docs/research/2026-07-04-team-collab-workflow-proposal.md (v3).
 # Held until kit-modularity ships; install.sh rejects team_mode until then.
 
 [team]

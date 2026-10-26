@@ -1,5 +1,10 @@
 # Archived mega-goals (kit history)
 
+The archived folders were removed from the tree for the public release and live at the
+annotated tag `history/2026-10-27` (see [`docs/HISTORY.md`](../../docs/HISTORY.md)). Read one with
+`git show history/2026-10-27:_meta/megagoals/_archive/<slug>/ROADMAP.md`. The text below describes
+what the archive held.
+
 Completed mega-goals whose subject is **this kit** , the harness-ops engine, its
 orchestrator, gates, review memory, absorptions, and the understanding gate.
 

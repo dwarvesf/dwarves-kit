@@ -7,7 +7,7 @@ kill the line of work. Today each node names that decision in its own local word
 concept underneath those words so the DECISION TYPE is comparable across nodes, without
 replacing any node's own verdict grammar.
 
-Absorbed from openclaw/acpx's pr-triage decision tree (`docs/research/2026-07-25-acpx-absorption.md`).
+Absorbed from openclaw/acpx's pr-triage decision tree (`history/2026-10-27:docs/research/2026-07-25-acpx-absorption.md`).
 Fills PHILOSOPHY.md N5's stated gap: "failure semantics for mid-graph nodes unnamed."
 
 ## The three policies

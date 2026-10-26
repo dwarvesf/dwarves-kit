@@ -4,7 +4,7 @@
 # Pins the contract claims of skills/memory-tidy/SKILL.md, a prompt-file skill
 # with no prior spec or test coverage. One assertion per SPEC-208 Test plan row
 # (rows 1-25; row 26 is the one-time recorded live negative control, see
-# docs/verification/backfill-memory-tidy.md). Exact-string pins are the point:
+# history/2026-10-27:docs/verification/backfill-memory-tidy.md). Exact-string pins are the point:
 # the tested contract IS the prose, so a reword breaks the row and prompts a
 # re-verify (same stance as tests/test-test-writer-contract.sh).
 #

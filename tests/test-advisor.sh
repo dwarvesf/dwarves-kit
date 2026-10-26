@@ -63,7 +63,7 @@ fi
 # zero such rows across 96 rid logs even on runs whose free-text ACTION line described an
 # advisor pass. These are grep-based regression pins so a future edit cannot silently drop the
 # emit, its fail-open fallback, or the rid-convention statement from either dispatch site. The
-# ledger-observatory kit_gates parse lives in docs/verification/advisor-visibility.md (that tool
+# ledger-observatory kit_gates parse lives in history/2026-10-27:docs/verification/advisor-visibility.md (that tool
 # is in a sibling repo, not available to this repo's CI).
 #
 #   AC1  review-team.md Step 2b carries the emit with the exact mode=P5/findings=/actor= grammar,

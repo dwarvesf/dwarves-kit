@@ -6,7 +6,7 @@
 # target is executable, so temp policy fixtures drive real invocations with hook
 # JSON on stdin, asserting exit codes and stderr. One assert per SPEC-212 Test
 # plan row (rows 1-22; row 23 is the one-time recorded live negative control,
-# see docs/verification/backfill-tool-policy-guard.md).
+# see history/2026-10-27:docs/verification/backfill-tool-policy-guard.md).
 #
 # Hygiene: every invocation sets KIT_TOOL_POLICY explicitly AND HOME to an empty
 # mktemp home, so neither the machine's real default-path policy nor an

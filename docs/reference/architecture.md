@@ -455,7 +455,7 @@ a deterministic segment handoff that re-dispatches the SAME sub-goal; `0` disabl
 `TURN_CAP_SEGMENTS` (default **10**, `[mega].turn_cap_segments`; the stuck-loop bound).
 The ceiling pairs with the stall watchdog, which is the LEASE (`WATCHDOG_STALL_SECS` alerts on
 a lapsed lease and never kills; only the ceiling stops a segment). Full design +
-exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `docs/verification/orchestrate-wavefront.md`.
+exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `history/2026-10-27:docs/verification/orchestrate-wavefront.md`.
 
 Also in the env surface: `MULTIPLEXER` (default off; with waves, each wave session runs in a tmux window the operator can watch), `TIER4_CLOSE` (default on; when every box is checked the run does a close pass and holds the final human gate), `lib/queue/harness.sh` (resolves the CLI-agent vendor to its headless argv) and `lib/queue/orca-backend.sh` (loaded only under `--backend orca`).
 

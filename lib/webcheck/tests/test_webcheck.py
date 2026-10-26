@@ -3,7 +3,7 @@
 
 Run: bash tests/test-webcheck.sh from the kit root, or `pytest lib/webcheck/tests` .
 Ported from ops-toolkit tools/seo-geo-check; the geo-probe half stayed behind
-(see docs/implementation-notes/SPEC-232-web-drift.md).
+(see history/2026-10-27:docs/implementation-notes/SPEC-232-web-drift.md).
 """
 import inspect
 import io

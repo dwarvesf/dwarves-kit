@@ -45,7 +45,7 @@ A tier that does not apply reports so and drops out of the denominator. It is ne
 
 - It does not fix anything. It reads.
 - It does not run JavaScript. That is the point: it sees what a non-browser agent sees.
-- It does not measure answer-engine citations. That half stayed in ops-toolkit; see `docs/implementation-notes/SPEC-232-web-drift.md`.
+- It does not measure answer-engine citations. That half stayed in ops-toolkit; see `history/2026-10-27:docs/implementation-notes/SPEC-232-web-drift.md`.
 - It does not follow a URL that came from remote content off the audited host. See `SPEC.md` for the full SSRF invariant table.
 
 ## Files

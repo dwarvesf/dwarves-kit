@@ -42,7 +42,7 @@ INTERPRETATION layer: "your data is free forever; our reading of it is the produ
 | Upstream absorb machinery + seed watch | absorb | shipped (+ID-403) |
 | Tool-selection ladders, BASIC set (browser use, memory, computer use, rendering, model routing: which tool when) | ladders (new) | dropped ID-418 |
 | North-star alignment lens (proposals state the criterion they serve) | advisor | shipped (+ID-397) |
-| Skill fleet: cross-runtime registry + `fleet sync` (one skill body -> every harness) + `fleet render` | fleet (new) | dropped ID-431/432 · [dropped design](../research/2026-08-25-fleet-design/) |
+| Skill fleet: cross-runtime registry + `fleet sync` (one skill body -> every harness) + `fleet render` | fleet (new) | dropped ID-431/432 · dropped design: `history/2026-10-27:docs/research/2026-08-25-fleet-design/` |
 
 ## Craft (perpetual license + update stream)
 
@@ -54,7 +54,7 @@ INTERPRETATION layer: "your data is free forever; our reading of it is the produ
 | Tool-selection ladders, MAINTAINED library (updated as the ecosystem moves; part of the stream) | ladders | dropped ID-418 |
 | Private update channel + pack marketplace access | install | dropped ID-426 (supersedes dropped ID-410) |
 | Ambient module self-suggest | onboard | dropped ID-405 |
-| Fleet skills ride the stream (maintained skills propagate to every harness in one pull) | fleet | dropped ID-431 · [dropped design](../research/2026-08-25-fleet-design/PRIVATE-STREAM.md) |
+| Fleet skills ride the stream (maintained skills propagate to every harness in one pull) | fleet | dropped ID-431 · dropped design: `history/2026-10-27:docs/research/2026-08-25-fleet-design/PRIVATE-STREAM.md` |
 
 ## Crew (per-seat, annual, flat)
 

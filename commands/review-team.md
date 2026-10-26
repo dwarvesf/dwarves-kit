@@ -235,7 +235,7 @@ previously-rejected `bare-except:tools/notify.py` matches ONLY a fresh finding w
 finding-key. A different defect at the SAME file (a different slug) is a different finding-key
 and is NOT a match -- it always stays in the main findings set. Matching on file path alone
 would wrongly suppress every future novel defect at a file that has ANY prior rejection; see
-`docs/verification/spec-144-review-findings-memory.md` for the proof (a deliberately-broken
+`history/2026-10-27:docs/verification/spec-144-review-findings-memory.md` for the proof (a deliberately-broken
 file-only match rule going RED, restored to finding-key matching going GREEN).
 
 ### Step 3b: Validate verdict-driving findings

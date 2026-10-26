@@ -25,5 +25,5 @@ Open questions: whether session-recall's second-level message-shape paths should
 Context: the open question above.
 Decision: `_msg(entry)` in `lib/session/recall/session_recall.py` returns the message when it is a dict and `{}` otherwise; `_role`, `searchable_text` and `opening_ask` all read through it.
 Why: one helper instead of three inline checks, so the untrusted-shape rule lives once per module, matching how `iter_entries()` owns the top-level case.
-Impact: no output change for valid input; proof in `docs/verification/recall-message-shape.md`.
+Impact: no output change for valid input; proof in `history/2026-10-27:docs/verification/recall-message-shape.md`.
 Open questions: none.

@@ -196,12 +196,11 @@ assert "AC6 no hook blocks merge on the quiz (0 hook refs to quiz-gate, got $HOO
   "$([ "$HOOK_BLOCK" -eq 0 ] && echo 0 || echo 1)"
 
 # ---------------------------------------------------------------------------
-# Capture the fixture-A quiz as the proof artifact. REFA is a fresh SHA every run (a new temp
-# repo per invocation), so normalize it to a fixed placeholder -- else the committed sample
-# rewrites on every test run and leaves the tree dirty (ID-830).
+# Capture the fixture-A quiz as a scratch sample (the old committed sample lives at tag
+# history/2026-10-27). REFA is a fresh SHA every run, so normalize it to a fixed placeholder;
+# the sample goes to a temp dir so a run never writes into the tree (ID-830).
 # ---------------------------------------------------------------------------
-PROOF_DIR="$KIT_DIR/docs/verification/quiz-gate"
-mkdir -p "$PROOF_DIR"
+PROOF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 { printf '# Sample quiz (fixture A, ref %s)\n\n' "$REFA"; printf '%s\n' "$QOUT"; } \
   | sed "s/${REFA}/deadbeefdeadbeefdeadbeefdeadbeefdeadbeef/g" > "$PROOF_DIR/sample-quiz.md"
 
