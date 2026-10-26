@@ -60,7 +60,7 @@ dwarves-kit/
     research/                   foundations/ (the undated early notes the research agents read); dated deep-scans are added as new work needs them
     briefs/ / absorption/       The decision-brief template and shared context; the absorption ritual and its report template
     HISTORY.md                  What the release prune removed, and how to read an old file from the history tag
-  _meta/BACKLOG.md              Phased task backlog
+  _meta -> dwarves-kit-internal   Not in this repo: the kit's own board lives in the private dwarves-kit-internal repo; a maintainer links it as a local `_meta` symlink (gitignored)
 ```
 
 For the full file listing including individual agent, hook and command names, run `git ls-files` or browse the repo on GitHub.

@@ -11,7 +11,7 @@ Dated working records that nothing reads at runtime:
 - `docs/research/`: the dated scans (`research/foundations/` stays)
 - `docs/briefs/`: the dated briefs (the brief template, `CONTEXT.md` and the docs rewrite ledger stay)
 - `docs/absorption/`: the dated reports (the ritual README and `TEMPLATE.md` stay)
-- `_meta/megagoals/_archive/`: the closed mega-goal folders
+- `_meta/megagoals/_archive/`: the closed mega-goal folders (the whole `_meta/` tree has since moved to the private `dwarves-kit-internal` repo)
 
 ## What stays
 

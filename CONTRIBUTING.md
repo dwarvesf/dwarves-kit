@@ -50,7 +50,7 @@ Beyond the table, see [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY
 
 ## Process
 
-1. Open an issue first if the change is non-trivial. We may already have it on the parking lot in `_meta/BACKLOG.md` or have rejected it before.
+1. Open an issue first if the change is non-trivial. We may already have it on the maintainers' backlog or have rejected it before. The kit's own board, staging buffer and mega-goals live in the private `dwarves-kit-internal` repo; a maintainer links them in as a local `_meta` symlink, and a public clone has none.
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/run-all.sh` locally before the PR. It runs the suites your diff touches plus the always-on lints, about 1 to 2 minutes. CI runs nothing on a push or a pull request, so a red suite reaches master unless you catch it here. If your change touches hook behavior, add an assertion to `tests/test-hooks.sh`.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); see "Where an ID may appear" below.
