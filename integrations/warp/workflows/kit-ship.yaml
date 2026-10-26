@@ -1,6 +1,0 @@
-name: "Kit: Ship"
-command: claude "/kit:ship"
-tags:
-  - dwarves-kit
-  - kit
-description: Run the ship pipeline (review gate, tests, version bump, changelog, PR). Opens an interactive Claude Code session with the prompt pre-filled.

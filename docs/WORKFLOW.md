@@ -214,8 +214,8 @@ entry point (a bug-lane loop), not a linear phase between Reflect and the next c
 
 ## The V-model lens
 
-> The ASCII V below is the canonical rendering. For a rendered vector version, see
-> [`docs/figures/v-model.svg`](figures/v-model.svg). (The README figure is the 10-second view of the loop; this section + the SVG are the full V.)
+> The ASCII V below is the canonical rendering. The rendered figure is
+> [`docs/figures/v-model.png`](figures/v-model.png), generated from `docs/figures/MODEL.md`. (The README figure is the 10-second view of the loop; this section and that figure are the full V.)
 
 The cycle table above is the canonical phase list. This section reads it as a **V**.
 The **left arm BUILDS**: each phase produces an artifact and statically reviews it
