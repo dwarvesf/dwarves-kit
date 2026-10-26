@@ -398,7 +398,25 @@ _land_ignored_guard() {
 # branch, an open non-draft PR, a new PR with no proof and no --body-file, and the ship-gate
 # hook) it pushes, opens or adopts a DRAFT PR, prints the URL and the proof block, and returns.
 # It never marks the PR ready, merges, tidies, pulls or writes a Ship record; the worktree stays.
+#
+# Every run ends on ONE `LAND:` line on stdout, after everything else, so a caller reads the
+# outcome with `| tail -1`: `merged #<n> (<sha7>) pull=<ok|blocked|skipped> worktree=<removed|kept>`,
+# `already landed (<proof>) pull=.. worktree=..`, `draft #<n> opened`, or `refused (<step>, exit <rc>)`.
+# The refusal text itself stays on stderr where it was printed; the exit code is unchanged.
 cmd_land() {
+  _LAND_STEP=preflight _LAND_KIND="" _LAND_REF="" _LAND_PULL=skipped _LAND_WT=kept
+  local rc
+  _land_run "$@"; rc=$?
+  case "$_LAND_KIND" in
+    merged)  echo "LAND: merged ${_LAND_REF} pull=${_LAND_PULL} worktree=${_LAND_WT}" ;;
+    already) echo "LAND: already landed (${_LAND_REF}) pull=${_LAND_PULL} worktree=${_LAND_WT}" ;;
+    draft)   echo "LAND: draft ${_LAND_REF} opened" ;;
+    *)       echo "LAND: refused (${_LAND_STEP}, exit ${rc})" ;;
+  esac
+  return "$rc"
+}
+
+_land_run() {
   local wt="" title="" body_file="" verify="" arg count=0 want="" flags_given=0
   local draft=0 with_ci_given=0 verify_given=0 nopull_given=0
   NO_PULL=0
@@ -501,6 +519,7 @@ cmd_land() {
   [ -z "$proof_base" ] || [ -n "$body_file" ] || proof_body="$(_land_proof_body "$wt" "$proof_base" "$title" "$tip" "$url")"
 
   echo "land ${branch} -> ${def} (${wt})"
+  _LAND_STEP=pr-lookup
 
   # A full-lane run opens the PR before land runs (evidence, review), so land checks for
   # that PR first: `gh pr create` on an already-open branch just refuses. Fork entries
@@ -565,6 +584,7 @@ cmd_land() {
       *) echo "     LAND REFUSED: origin/${branch} could not be confirmed: ${ls_out}" >&2; return 2 ;;
     esac
     echo "     already landed: ${proof}; nothing to push, no PR opened"
+    _LAND_STEP=tidy
     # A still-open PR (wrap merge's <branch>-squash fallback leaves the original open on
     # purpose) is reported, never closed as a side effect of deleting its branch.
     if [ "$open_count" -ge 1 ]; then
@@ -572,12 +592,14 @@ cmd_land() {
       return 2
     fi
     # Nothing ran in the tree since the proof, so the only state the removal accepts is clean.
+    _LAND_KIND=already _LAND_REF="$proof"
     _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "$origin_probe" ""
     return $?
   fi
 
   # A gitignored file under what the branch touches is invisible to the dirty check and to a
   # clean checkout alike: refuse before anything is pushed or opened.
+  _LAND_STEP=guard
   _land_ignored_guard "$wt" "$proof_base" "$branch" || return 1
 
   # A title-only body skips the repo's PR template (and any check that reads it), so a NEW
@@ -620,6 +642,7 @@ cmd_land() {
     fi
   fi
 
+  _LAND_STEP=push
   git -C "$wt" push origin "$branch"; rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
@@ -628,6 +651,7 @@ cmd_land() {
   echo "     pushed ${branch} ($(_short "$tip"))"
 
   local created n pr_ref=""
+  _LAND_STEP=pr
   if [ "$open_count" -gt 1 ]; then
     echo "     PR REFUSED: ${open_count} open PRs for ${branch}" >&2; return 2
   elif [ "$open_count" -eq 1 ]; then
@@ -704,6 +728,7 @@ cmd_land() {
   # verify, Ship record, tidy) may run. The worktree stays for the operator's review.
   if [ "$draft" -eq 1 ]; then
     echo "     draft PR: ${pr_ref:-#${n}}"
+    _LAND_KIND=draft _LAND_REF="#${n}"
     echo "     worktree kept: ${wt}"
     [ -z "$proof_base" ] || _land_proof_block "$wt" "$proof_base" "${pr_ref:-#${n}}"
     return 0
@@ -714,6 +739,7 @@ cmd_land() {
   # bounded wait. With the gate off (the default), or on a repo without the label, the
   # merge runs as it always did; under the gate, a label that could not be set refuses
   # rather than merging untested.
+  _LAND_STEP=checks
   if _ci_on_merge; then
     _ci_label_sync "$url" "$n"; rc=$?
     case "$rc" in
@@ -725,6 +751,7 @@ cmd_land() {
 
   _land_pr_checks_gate "$wt" "$url" "$n" || return 2
 
+  _LAND_STEP=merge
   _gh_merge_retry "$n" "$url" "$tip"; rc=$?
   if [ "$rc" -ne 0 ]; then
     # A refusal worth answering is CONFLICTING and nothing else: the branch is already
@@ -849,9 +876,11 @@ cmd_land() {
   if [ "$state" != "MERGED" ]; then
     echo "     MERGE FAILED #${n}: state is '${state:-unknown}', not MERGED" >&2; return 2
   fi
+  _LAND_STEP=verify
   local tv; tv="$(_tree_verify "$wt" "$def" "$tip" "$sha")"
   case "$tv" in
-    OK) echo "     merged #${n} (${sha}): tree verified" ;;
+    OK) echo "     merged #${n} (${sha}): tree verified"
+        _LAND_KIND=merged _LAND_REF="#${n} ($(_short "$sha"))" ;;
     MISMATCH*)
       echo "     merged #${n} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
       return 3 ;;
@@ -900,6 +929,7 @@ cmd_land() {
   # is the last thing the operator (and the agent's final report) sees.
   local proof_block=""
   [ -z "$proof_base" ] || proof_block="$(_land_proof_block "$wt" "$proof_base" "${pr_ref:-#${n}}")"
+  _LAND_STEP=tidy
   _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored"; rc=$?
   [ -z "$proof_block" ] || printf '%s\n' "$proof_block"
   return "$rc"
@@ -957,14 +987,16 @@ _land_tidy() {
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
   if [ "$NO_PULL" = 1 ]; then
     echo "     SKIP pull: --no-pull"
+    _LAND_PULL=skipped
   elif [ "$cur" != "$def" ]; then
     echo "     PULL BLOCKED: ${repo} is on '${cur:-<detached>}', not ${def}"
-    blocked=1
+    blocked=1; _LAND_PULL=blocked
   elif _land_ff_pull "$repo"; then
     echo "     pulled ${repo}: $(git -C "$repo" log --oneline -1 2>/dev/null)"
+    _LAND_PULL=ok
   else
     echo "     PULL BLOCKED: pull --ff-only refused in ${repo}, nothing was stashed or reset"
-    blocked=1
+    blocked=1; _LAND_PULL=blocked
   fi
 
   # The pull and the origin delete above can cost network round trips, and `-f -f` below
@@ -1001,6 +1033,7 @@ _land_tidy() {
     return 2
   fi
   echo "     removed worktree ${wt}"
+  _LAND_WT=removed
   if git -C "$repo" branch -D "$branch" >/dev/null 2>&1; then
     echo "     deleted ${branch}"
   else
