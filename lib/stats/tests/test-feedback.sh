@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Over-test for the feedback loop (SPEC-129 test plan). Self-contained: builds SOURCE-file
 # fixtures (kit pipe-logs + a tide sqlite) with hand-verified values, points every source env
 # var at them, runs the REAL end-to-end path (source -> `ledger rebuild` lens -> `ledger

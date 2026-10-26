@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test for `impl_notes` / `ledger deviation-rate` / the `unknown-density`
 # anomaly (SPEC-133 test plan). The upstream-unknowns half of the benchmark.
 #

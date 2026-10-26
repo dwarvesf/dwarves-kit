@@ -45,7 +45,7 @@ lib/board/README.md
 lib/board/SPEC
 lib/board/docs/proof-of-done.md
 
-# queue: SPEC-148 lives at repo docs/specs/; its tests are repo-root tests/test-queue.bats (C4 ok).
+# queue: SPEC-148 lives at repo docs/specs/; its tests are repo-root tests/test-queue.sh (C4 ok).
 lib/queue/README.md
 lib/queue/SPEC
 lib/queue/docs/proof-of-done.md

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test for `kit_gates` / `ledger gate-yield` (SPEC-131 test plan).
 #
 # Unlike the other test-*.sh files (which build their fixture inline in $(mktemp -d) every

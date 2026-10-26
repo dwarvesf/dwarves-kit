@@ -11,8 +11,10 @@
 #   --list        print the selection and the reason for each (self | references <path> |
 #                 module <mod> | reads <path>), plus UNCOVERED files; run nothing
 #   --no-cache    ignore recorded PASSes (a PASS is still recorded)
-# Selection: a changed tests/test-*.sh -> itself; any other changed file -> every
-# tests/test-*.sh naming its repo-relative path. A non-source file (docs, fixtures) matches
+# Suites: tests/test-*.sh and the module suites under lib/<m>/tests/ (tests/lib/suites.sh, shared with
+# run-all.sh). A change under lib/<m>/ also picks that module's suites, with the reason `module lib/<m>`.
+# Selection: a changed suite -> itself; any other changed file -> every
+# suite naming its repo-relative path. A non-source file (docs, fixtures) matches
 # only a full-path reference, never inside a longer path or a comment. A source (lib/, hooks/,
 # bin/, commands/, skills/, agents/) matches by full path, or by a basename over 5 chars only
 # where the suite runs or sources it (`bash|sh|source|. <name>`, `$VAR/<name>`, a direct call);
@@ -52,13 +54,25 @@ else
 fi
 _timeout() { kit_timeout "$@"; }
 
+# suite_list / suite_id / is_suite / suite_owner: what counts as a suite, shared with tests/run-all.sh.
+# A tree without the helper (a throwaway fixture kit) has the tests/test-*.sh suites only.
+if [ -f "$SELF_DIR/../tests/lib/suites.sh" ]; then
+  # shellcheck source=tests/lib/suites.sh
+  . "$SELF_DIR/../tests/lib/suites.sh"
+else
+  suite_list() { local f; for f in tests/test-*.sh; do [ -f "$f" ] && printf '%s\n' "$f"; done; return 0; }
+  is_suite() { case "$1" in tests/test-*.sh) return 0 ;; esac; return 1; }
+  suite_id() { basename "$1" .sh; }
+  suite_owner() { return 0; }
+fi
+
 # Worker mode: the script re-invokes itself, as tests/run-all.sh does, so the batch needs no second
 # file. `--run-one <outdir> <suite> <limit> <key>`: run one suite under its limit with its own log,
 # seconds and exit status, and record the PASS cache entry the moment it passes (an interrupted run
 # keeps what finished). It always exits 0; the status file carries the verdict and is written last.
 if [ "${1:-}" = "--run-one" ]; then
   out="$2"; suite="$3"; limit="$4"; key="${5:-}"
-  name="$(basename "$suite" .sh)"
+  name="$(suite_id "$suite")"
   t0="$(date +%s)"; rc=0
   _timeout "$limit" bash "$suite" >"$out/$name.log" 2>&1 || rc=$?
   echo "$(( $(date +%s) - t0 ))" >"$out/$name.secs"
@@ -339,28 +353,32 @@ record_pickers() {  # $1 = the changed path, $2 = pairs line count before it was
   tail -n +"$(($2 + 1))" "$TMP/pairs" | cut -f1 | awk -v p="$1" '{ printf "%s\t%s\n", $0, p }' >>"$TMP/pickers"
 }
 : >"$TMP/pairs"; : >"$TMP/uncovered"; : >"$TMP/pickers"
+# Every suite (tests/test-*.sh and the module suites under lib/<m>/tests/), and for each module suite
+# its module (lib/<m>): a change anywhere under that module picks it.
+SUITE_FILES="$(suite_list)"
+for t in $SUITE_FILES; do o="$(suite_owner "$t")"; [ -z "$o" ] || printf '%s\t%s\n' "$t" "$o"; done >"$TMP/owners"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   n0="$(wc -l <"$TMP/pairs" | tr -d ' ')"
-  case "$f" in
-    tests/test-*.sh)
-      [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"
-      meta_pick "$f" "" >>"$TMP/pairs" || true
-      record_pickers "$f" "$n0"
-      continue ;;
-  esac
+  if is_suite "$f"; then
+    [ -f "$f" ] && printf '%s\tself\n' "$f" >>"$TMP/pairs"
+    meta_pick "$f" "" >>"$TMP/pairs" || true
+    record_pickers "$f" "$n0"
+    continue
+  fi
   if is_source "$f"; then
     b="$(basename "$f")"
     [ "${#b}" -gt 5 ] || b=""
-    hits="$(refs_run "$f" "$b" tests/test-*.sh || true)"
+    hits="$(refs_run "$f" "$b" $SUITE_FILES || true)"
   else
-    hits="$(refs_exact "$f" tests/test-*.sh || true)"
+    hits="$(refs_exact "$f" $SUITE_FILES || true)"
     if [ "$f" = kit.toml ] && [ -n "$hits" ]; then
       # shellcheck disable=SC2046
       hits="$(kit_toml_narrow $hits || true)"
     fi
   fi
-  # A lib/<mod>/ change also picks the suites named for the module: tests/test-<mod>*.sh.
+  # A lib/<mod>/ change also picks the suites named for the module: tests/test-<mod>*.sh, and the
+  # module's own suites: every suite under lib/<mod>/, sub-tool suites such as lib/session/audit/tests/ included.
   # lib/wrap/ is split one suite per module: wrap-<stem>.sh -> test-wrap-<stem>.sh only,
   # report-lint.sh -> test-wrap-report-lint.sh, and the shared wrap.sh / wrap-common.sh
   # fan out to every standalone suite. The compatibility runner (tests/test-wrap.sh)
@@ -393,7 +411,9 @@ while IFS= read -r f; do
       for t in tests/test-"$mod"*.sh; do
         [ -f "$t" ] || continue
         printf '%s\tmodule lib/%s\n' "$t" "$mod" >>"$TMP/pairs"; covered=1
-      done ;;
+      done
+      owned="$(awk -F'\t' -v f="$f" 'index(f, $2 "/") == 1 { print $1 "\tmodule " $2 }' "$TMP/owners")"
+      if [ -n "$owned" ]; then printf '%s\n' "$owned" >>"$TMP/pairs"; covered=1; fi ;;
   esac
   if [ -n "$hits" ]; then
     covered=1
@@ -475,7 +495,7 @@ cache_key() {
 
 # The suite's own line in bin/test-affected.timeouts (tests/run-all.sh reads the same file); empty when unlisted.
 listed_timeout() {
-  local name; name="$(basename "$1" .sh)"
+  local name; name="$(suite_id "$1")"
   if [ -r "$SELF_DIR/test-affected.timeouts" ]; then
     awk -v n="$name" '$1 == n && $2 ~ /^[0-9]+$/ { print $2; exit }' "$SELF_DIR/test-affected.timeouts"
   fi
@@ -518,7 +538,7 @@ P=0 C=0 F=0 T=0 N=0
 RUN_T0="$(date +%s)"
 while IFS= read -r t; do
   N=$((N + 1))
-  name="$(basename "$t" .sh)"
+  name="$(suite_id "$t")"
   key="$(cache_key "$t")"
   if [ -n "$CDIR" ] && grep -q '^PASS ' "$CDIR/$key" 2>/dev/null; then
     : >"$RES/$name.cached"; continue
@@ -551,7 +571,7 @@ if [ -t 2 ] && [ $((NPAR + NSER)) -gt 0 ]; then echo >&2; fi
 
 # --- collate in selection order, so the report never depends on the finish order ---
 while IFS= read -r t; do
-  name="$(basename "$t" .sh)"
+  name="$(suite_id "$t")"
   if [ -f "$RES/$name.cached" ]; then echo "CACHED $t"; C=$((C + 1)); continue; fi
   limit="$(cat "$RES/$name.limit")"
   rc="$(cat "$RES/$name.rc" 2>/dev/null || echo missing)"

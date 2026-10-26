@@ -48,10 +48,9 @@ jobs:
         with:
           fetch-depth: 0   # the known-hash list check walks AGENTS.md history
 
-      # uv, scoped to lib/stats (the kit-gates-cost test needs `uv run stats`). Pinned to
-      # release SHA per the same supply-chain policy as checkout above. This does not adopt
-      # the rest of lib/stats/tests/*.sh into CI (a pre-existing, wider gap out of scope
-      # here); it only wires the one new test this PR added.
+      # uv, for the lib/stats suites (they call `uv run stats`; run-all.sh collects them with the
+      # other module suites under lib/<m>/tests/ and skips them where uv is missing). Pinned to
+      # release SHA per the same supply-chain policy as checkout above.
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
       # jq ships preinstalled on both hosted images, so the step below only verifies it.

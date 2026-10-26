@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test for `rejected_findings` / `ledger review-yield` (SPEC-137 test plan).
 #
 # Points at a COMMITTED fixture tree (tests/fixtures/review-yield/), same precedent

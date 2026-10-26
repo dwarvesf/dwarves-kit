@@ -27,7 +27,9 @@ echo "[1] sign_request == independent hmac.ts-equivalent reimplementation"
 got="$(python3 - "$BIN" <<'PY'
 import sys, hashlib, hmac
 from importlib.machinery import SourceFileLoader
-m = SourceFileLoader("ccvr", sys.argv[1]).load_module()
+import importlib.util
+_ld = SourceFileLoader("ccvr", sys.argv[1]); _sp = importlib.util.spec_from_loader("ccvr", _ld)
+m = importlib.util.module_from_spec(_sp); sys.modules["ccvr"] = m; _ld.exec_module(m)  # load_module() is gone in newer Pythons
 
 KEY_STR = "test-key-32-bytes-base64-abcdEFGH"
 TS, HOST, BODY = 1700000000, "cc-air", b"hello-body-bytes"
@@ -47,7 +49,9 @@ echo "[2] key_bytes strips trailing whitespace (matches keyFromSecret/load_key)"
 got="$(python3 - "$BIN" <<'PY'
 import sys
 from importlib.machinery import SourceFileLoader
-m = SourceFileLoader("ccvr", sys.argv[1]).load_module()
+import importlib.util
+_ld = SourceFileLoader("ccvr", sys.argv[1]); _sp = importlib.util.spec_from_loader("ccvr", _ld)
+m = importlib.util.module_from_spec(_sp); sys.modules["ccvr"] = m; _ld.exec_module(m)  # load_module() is gone in newer Pythons
 print(m.key_bytes("abc \n").decode() == "abc")
 PY
 )"
@@ -57,7 +61,9 @@ echo "[3] negative control: wrong key produces a DIFFERENT signature"
 got="$(python3 - "$BIN" <<'PY'
 import sys
 from importlib.machinery import SourceFileLoader
-m = SourceFileLoader("ccvr", sys.argv[1]).load_module()
+import importlib.util
+_ld = SourceFileLoader("ccvr", sys.argv[1]); _sp = importlib.util.spec_from_loader("ccvr", _ld)
+m = importlib.util.module_from_spec(_sp); sys.modules["ccvr"] = m; _ld.exec_module(m)  # load_module() is gone in newer Pythons
 a = m.sign_request(m.key_bytes("right-key"), 1700000000, "cc-air", b"body")
 b = m.sign_request(m.key_bytes("WRONG-key"), 1700000000, "cc-air", b"body")
 print(a != b)
@@ -69,7 +75,9 @@ echo "[4] distill: headline metrics from this-branch report json shape"
 got="$(python3 - "$BIN" <<'PY'
 import sys
 from importlib.machinery import SourceFileLoader
-m = SourceFileLoader("ccvr", sys.argv[1]).load_module()
+import importlib.util
+_ld = SourceFileLoader("ccvr", sys.argv[1]); _sp = importlib.util.spec_from_loader("ccvr", _ld)
+m = importlib.util.module_from_spec(_sp); sys.modules["ccvr"] = m; _ld.exec_module(m)  # load_module() is gone in newer Pythons
 report = {
   "files": 42,
   "skills": [{"skill":"prose-rag","count":5,"errors":1}],
@@ -99,7 +107,9 @@ echo "[5] distill defensive: richer (PR #333/#337) fields read via .get()"
 got="$(python3 - "$BIN" <<'PY'
 import sys
 from importlib.machinery import SourceFileLoader
-m = SourceFileLoader("ccvr", sys.argv[1]).load_module()
+import importlib.util
+_ld = SourceFileLoader("ccvr", sys.argv[1]); _sp = importlib.util.spec_from_loader("ccvr", _ld)
+m = importlib.util.module_from_spec(_sp); sys.modules["ccvr"] = m; _ld.exec_module(m)  # load_module() is gone in newer Pythons
 report = {"files":1,"friction":{"total":7},"cost":{"total_usd":1.23,"cache_hit_ratio":0.88}}
 d = m.distill(report)
 assert d["friction_count"] == 7, d

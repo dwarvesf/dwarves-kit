@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # test-schema-parity.sh -- regression guard for the schema-drift bug: adapters.py's
 # column-name lists and materialize.py's CREATE TABLE DDL used to be two independently
 # hand-synced definitions with nothing checking they agreed on names/order, so a

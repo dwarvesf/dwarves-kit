@@ -38,7 +38,9 @@ check() {
 }
 
 echo "== Tier A: a real line copied from a live kit ledger =="
-real_line="$(grep -m1 '| START |' "$HOME/.local/state/dwarves-kit/logs/runs"/*.log 2>/dev/null | head -1 | sed 's/^[^:]*\.log://')"
+# `|| true`: with pipefail a missing ledger dir (grep exits 2) or many logs (head closes the pipe, grep
+# dies of SIGPIPE) ended the suite before any assertion; no live line means the fixture fallback below.
+real_line="$(grep -m1 '| START |' "$HOME/.local/state/dwarves-kit/logs/runs"/*.log 2>/dev/null | head -1 | sed 's/^[^:]*\.log://' || true)"
 if [ -z "$real_line" ]; then
   echo "SKIP  no live kit run ledger found on this machine; falling back to a fixture line"
   real_line="2026-07-02T18:52:48Z | START | lane=normal classified=normal type=spec-feature ctype=spec-feature repo=dwarves-kit"

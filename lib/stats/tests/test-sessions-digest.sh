@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Over-test for the `sessions`/`safety` adapters + `ledger digest` (SPEC-135 test plan).
 # Self-contained: builds session transcript jsonl fixtures + a secret-guard log fixture +
 # (for the digest bridge) a kit_gates run-ledger + a generated git repo, points every source

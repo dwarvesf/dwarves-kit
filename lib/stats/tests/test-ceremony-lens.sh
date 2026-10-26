@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Over-test for the ceremony lens: `stats ceremony` (gate counts, windows, progress, subagent
 # dispatch and token reader, fixture exclusion) and the `ceremony_share` anomaly.
 # Self-contained, same harness as test-anomalies-advisor.sh: every source env var points at a

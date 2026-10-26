@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test for `ledger mega-durations` (goal 05K, the original
 # "where does the 2-3h go" ask, folded into the ledger-observatory move).
 #

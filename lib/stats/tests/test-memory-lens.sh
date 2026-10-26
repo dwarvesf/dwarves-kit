@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test + NEVER-DELETE NC for `memory_lens`/`memories`/`ledger
 # memory-sweep`/`_detect_memory_hygiene` (SPEC-136 test plan).
 #

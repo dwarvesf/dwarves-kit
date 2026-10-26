@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Golden-fixture + over-test for `git_fixes` / `ledger defect-correlation` (SPEC-132 test plan).
 #
 # Unlike test-gate-yield.sh (which points at a COMMITTED fixture ledger dir), this fixture is

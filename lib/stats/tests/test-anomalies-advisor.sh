@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # Over-test for the ceremony / token-runaway / serial-when-parallel anomaly detectors
 # (SPEC-134 test plan). Self-contained: builds kit_gates fixtures (run-ledger log files, same
 # grammar adapters.py parses) + a generated git repo (same precedent as

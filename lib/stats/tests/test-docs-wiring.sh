@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# requires: uv
 # The SG-05 no-orphan wiring check (kit-hardening c6fbd99 bug class): proves every claim the
 # docs make actually dispatches, and that the check itself is falsifiable (the OVER-CLAIM
 # negative control, D-nc, must genuinely catch a fabricated claim, not just "always pass").
