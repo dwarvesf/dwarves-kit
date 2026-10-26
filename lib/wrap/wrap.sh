@@ -9,7 +9,8 @@
 #   wrap.sh merge [--apply] [--no-pull] [--pr N [--rebase-stacked]] [--with-ci] [--verify C] <repo>|--repo <owner>/<name>   merges ONE own green PR (--pr: a named draft; --repo: no checkout, gh-only, local steps skipped)
 #   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify C]   one hand-made worktree, landed
 #   wrap.sh land  <worktree> --draft [--title T] [--body-file F]   push, open a draft PR, stop: no merge, no tidy
-#   wrap.sh start <repo> <branch> [--carry [<path>...]]     one hand-made worktree, started
+#   wrap.sh start <repo> <branch> [--pick <branch>]... [--carry [<path>...]]  one hand-made worktree, started
+#       --pick <branch> (repeatable) cherry-picks that branch's commits past origin/<default> into it, in order, before any --carry; a conflict aborts, keeps earlier picks, exits 2
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
@@ -45,6 +46,14 @@
 #   uncommitted changes, tracked and untracked, into the worktree `start` just created, via a
 #   named `git stash push -u`, applied by identity, never by index. Nothing dirty in scope is
 #   not a refusal; an index.lock held by another writer is, and leaves the worktree in place.
+#   start's --pick <branch> (repeatable, argument order) cherry-picks the commits that branch
+#   carries past its merge base with origin/<default> into the new worktree. A branch found
+#   neither locally nor on origin refuses by name before any pick; one with no commits to pick
+#   prints a note and continues; a conflict aborts that cherry-pick, names the files and the
+#   commits already picked, keeps the earlier picks, and exits 2. Conflicts are never resolved.
+#   With --carry the picks run first, whatever the flag order (carry onto a picked tree is
+#   safe, a pick onto carried dirt is not); a failed pick skips the carry. Success prints
+#   `picked <branch>: <n> commits` per branch on stderr; stdout stays the worktree path.
 #
 # Verify a change in the shape commands/wrap.md runs it: step 5 passes `--own` on a shared
 # repo, so a test or real-repo run of the bare form alone misses that path. The first origin
@@ -141,7 +150,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 for _m in common scan apply pull carry ci merge land start log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,42p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 

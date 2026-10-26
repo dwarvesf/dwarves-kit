@@ -2,7 +2,7 @@
 
 # --------------------------------------------------------------------------- start
 
-# cmd_start <repo> <branch> [--carry [<path>...]] -- the start half `land` finishes.
+# cmd_start <repo> <branch> [--pick <branch>]... [--carry [<path>...]] -- the start half `land` finishes.
 # Sessions repeatedly hand-run "worktree off origin/<default> with a fresh branch" when the
 # main checkout is dirty or foreign; this is that step as a verb. It resolves the repo's
 # default branch through the same `_default_branch` helper every other verb uses, fetches it
@@ -23,18 +23,32 @@
 # once the worktree exists exactly as it would without the flag: `_start_carry` (below) owns
 # that half. A carry refusal (a foreign index.lock, or an apply conflict) never undoes the
 # worktree; the worktree is the point that already landed.
+#
+# --pick <branch> (repeatable) folds a worker branch into the new worktree: for each one, in
+# argument order, `_start_pick` cherry-picks the commits the branch carries past its merge base
+# with origin/<default>. Picks run BEFORE --carry whatever the flag order on the command line:
+# a cherry-pick onto a tree already holding carried edits is unsafe, while carrying onto the
+# picked, committed tree is safe (a carry that collides with a picked file keeps its stash).
+# A pick refusal or conflict skips the carry and leaves the main checkout's edits untouched.
+# Like a carry refusal, a pick refusal never undoes the worktree and exits 2.
 cmd_start() {
   local repo="" branch="" carry=0 ncarry=0 seen_repo=0 seen_branch=0 arg
-  local carry_paths
+  local carry_paths npick=0 pick_branches
   while [ $# -gt 0 ]; do
     arg="$1"
     case "$arg" in
       --carry)
         carry=1; shift
-        while [ $# -gt 0 ]; do
+        while [ $# -gt 0 ] && [ "$1" != "--pick" ]; do
           _reject_packed start "$1" || return 64
           ncarry=$(( ncarry + 1 )); carry_paths[ncarry]="$1"; shift
         done
+        ;;
+      --pick)
+        [ $# -ge 2 ] && case "$2" in -*) false ;; esac \
+          || { echo "wrap.sh start: --pick needs a branch name" >&2; return 64; }
+        _reject_packed start "$2" || return 64
+        npick=$(( npick + 1 )); pick_branches[npick]="$2"; shift 2
         ;;
       -*) echo "wrap.sh start: unknown flag '${arg}'" >&2; return 64 ;;
       *)
@@ -47,7 +61,7 @@ cmd_start() {
     esac
   done
   [ "$seen_repo" = 1 ] && [ "$seen_branch" = 1 ] \
-    || { echo "usage: wrap.sh start <repo> <branch> [--carry [<path>...]]" >&2; return 64; }
+    || { echo "usage: wrap.sh start <repo> <branch> [--pick <branch>]... [--carry [<path>...]]" >&2; return 64; }
   _is_repo "$repo" || { echo "wrap.sh start: ${repo} is not a git repo" >&2; return 64; }
   # git records a worktree fully resolved, so the printed path resolves the same way.
   repo="$(cd "$repo" 2>/dev/null && pwd -P)" \
@@ -91,6 +105,9 @@ cmd_start() {
   git -C "$repo" worktree add -b "$branch" "$wt" "origin/${def}" >/dev/null 2>&1 \
     || { echo "wrap.sh start: git worktree add refused ${wt} (${branch} at origin/${def})" >&2; return 1; }
   printf '%s\n' "$wt"
+  if [ "$npick" -gt 0 ]; then
+    _start_pick "$repo" "$wt" "$def" "${pick_branches[@]}" || return $?
+  fi
   [ "$carry" = 1 ] || return 0
   if [ "$ncarry" -gt 0 ]; then
     _start_carry "$repo" "$wt" "$branch" "${carry_paths[@]}"
@@ -151,3 +168,68 @@ _start_carry() {
   return 2
 }
 
+
+# _start_pick <repo> <wt> <default> <branch>... -- the --pick half. Resolves every branch first
+# (local ref, then origin's tracking ref, then a live fetch of that one branch), so a missing
+# one refuses by name before any commit is picked. Then, per branch in argument order, it
+# cherry-picks one at a time the non-merge commits between `merge-base origin/<default>
+# <branch>` and the branch tip, oldest first. A branch with none prints a note and continues.
+# A conflict is never resolved: the pick is aborted, the files and the commits already picked
+# are named, the worktree keeps its earlier picks, and the verb exits 2 like a carry refusal.
+# A commit that turns out empty against the new base (its change is already on origin) is
+# skipped, not a conflict. stdout stays clean: the caller captured the path already.
+_start_pick() {
+  local repo="$1" wt="$2" def="$3"; shift 3
+  local b ref tip base c n files done_list="" i
+  local refs=()
+
+  for b in "$@"; do
+    ref=""
+    if _ref_exists "$repo" "refs/heads/${b}"; then ref="refs/heads/${b}"
+    elif _ref_exists "$repo" "refs/remotes/origin/${b}"; then ref="refs/remotes/origin/${b}"
+    elif git -C "$repo" ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1 \
+         && git -C "$repo" fetch -q origin "+refs/heads/${b}:refs/remotes/origin/${b}" 2>/dev/null; then
+      ref="refs/remotes/origin/${b}"
+    fi
+    if [ -z "$ref" ]; then
+      echo "wrap.sh start: --pick branch ${b} does not exist locally or on origin; nothing picked, the worktree exists at ${wt}" >&2
+      return 2
+    fi
+    refs+=("$ref")
+  done
+
+  i=0
+  for b in "$@"; do
+    ref="${refs[$i]}"; i=$(( i + 1 ))
+    tip="$(git -C "$repo" rev-parse "$ref" 2>/dev/null)"
+    base="$(git -C "$repo" merge-base "origin/${def}" "$tip" 2>/dev/null)" || base=""
+    if [ -z "$base" ]; then
+      echo "wrap.sh start: --pick branch ${b} shares no history with origin/${def}; the worktree exists at ${wt}" >&2
+      return 2
+    fi
+    n=0
+    while read -r c; do
+      [ -n "$c" ] || continue
+      if git -C "$wt" cherry-pick "$c" >/dev/null 2>&1; then
+        n=$(( n + 1 )); done_list="${done_list} $(_short "$c")"
+        continue
+      fi
+      files="$(git -C "$wt" diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')"
+      if [ -z "$files" ]; then
+        # No unmerged path: the commit is empty on this base. Drop it and go on.
+        git -C "$wt" cherry-pick --skip >/dev/null 2>&1 || git -C "$wt" cherry-pick --abort >/dev/null 2>&1
+        continue
+      fi
+      git -C "$wt" cherry-pick --abort >/dev/null 2>&1
+      echo "PICK CONFLICT ${b}: ${files% }" >&2
+      echo "  conflicting commit: $(_short "$c")" >&2
+      echo "  already picked in ${wt}:${done_list:- (none)}" >&2
+      echo "  cherry-pick aborted, earlier picks kept, nothing resolved; any --carry was skipped" >&2
+      return 2
+    done < <(git -C "$repo" rev-list --reverse --topo-order --no-merges "${base}..${tip}" 2>/dev/null)
+    if [ "$n" -eq 0 ]; then echo "pick ${b}: nothing to pick" >&2
+    else echo "picked ${b}: ${n} commits" >&2
+    fi
+  done
+  return 0
+}
