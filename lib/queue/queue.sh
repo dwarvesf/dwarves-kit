@@ -481,7 +481,7 @@ _mux_enter() {  # slug
 _mux_wait_ready() {  # slug
   local slug="$1" waited=0
   while [ "$waited" -lt "$QUEUE_STARTUP_SECS" ]; do
-    _mux_capture "$slug" 2>/dev/null | grep -qE 'bypass permissions|^[[:space:]]*[>❯]' && return 0
+    _mux_capture "$slug" 2>/dev/null | grep -qE 'bypass permissions|^[[:space:]]*(>|❯)' && return 0
     sleep 2; waited=$((waited + 2))
   done
   return 0
@@ -503,8 +503,10 @@ _mux_submit() {  # slug
   while [ "$tries" -lt 5 ]; do
     _mux_enter "$slug"
     sleep "$QUEUE_SUBMIT_SETTLE_SECS"
-    # submitted iff no line renders a prompt char with content still after it
-    _mux_capture "$slug" 2>/dev/null | grep -qE '^[[:space:]]*[>❯][[:space:]]*[^[:space:]]' || return 0
+    # submitted iff no line renders a prompt char with content still after it. The prompt char is an
+    # alternation, never a bracket class: under a C locale (launchd, cron) a bracket holds the three
+    # BYTES of the multibyte char, so a bare `❯ ` reads as a prompt with content after it.
+    _mux_capture "$slug" 2>/dev/null | grep -qE '^[[:space:]]*(>|❯)[[:space:]]*[^[:space:]]' || return 0
     tries=$((tries + 1))
   done
   _warn "queue: $slug submit unconfirmed after $tries tries; the goal may still be sitting unsubmitted in the window."
