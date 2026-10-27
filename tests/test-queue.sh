@@ -356,6 +356,21 @@ case_T10() {
 }
 run_case "T10 submit-bare-prompt: bare prompt exits after one Enter" case_T10
 
+# T10c submit-bare-prompt-c-locale: the same bare prompt under a C locale, the locale a launchd or
+# cron job (the nightly regression) runs in. A bracket class holds the 3 BYTES of the multibyte
+# prompt char there, so the bare `❯ ` read as pending and burned all 5 Enters.
+case_T10c() {
+  . "$QUEUE"
+  printf '❯ \n' > "$QSTUB/s8c.transcript"
+  LC_ALL=C _mux_submit s8c
+  [ "$(grep -c 'enter slug=s8c' "$QLOG")" -eq 1 ]
+  # a box-drawing line (also starts with byte E2) is not a prompt either
+  printf '\xe2\x94\x80\xe2\x94\x80\n' > "$QSTUB/s8d.transcript"
+  LC_ALL=C _mux_submit s8d
+  [ "$(grep -c 'enter slug=s8d' "$QLOG")" -eq 1 ]
+}
+run_case "T10c submit-bare-prompt-c-locale: bare prompt exits after one Enter under LC_ALL=C" case_T10c
+
 # =============================================================================================
 # T11 goal-over-budget: a pointer whose /goal line exceeds the interactive 4000-char cap fails
 # fast to `error`, with NO window ever opened -- pins the fix for the silent-strand bug (an
