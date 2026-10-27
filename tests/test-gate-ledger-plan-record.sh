@@ -284,5 +284,15 @@ gl record-batch b7 full think >/dev/null 2>&1; RC=$?
 gl record-batch b7 full think=ran:"x" think=ran:"y" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 64 ] && [ -z "$(ledger_of b7)" ] && assert "RB7 a phase given twice exits 64" 0 || assert "RB7 a phase given twice exits 64 (got $RC)" 1
 
+# RB8: a backslash override reason is compared literally, so two phases sharing it exit 65 and write nothing.
+new_log
+OUT="$(gl record-batch b8 full think=override:'C:\temp\new' design=override:'C:\temp\new' 2>&1)"; RC=$?
+[ "$RC" -eq 65 ] && assert "RB8 a shared backslash override reason exits 65" 0 || assert "RB8 a shared backslash override reason exits 65 (got $RC: $OUT)" 1
+[ -z "$(ledger_of b8)" ] && assert "RB8 the refused backslash batch writes nothing, START included" 0 || assert "RB8 the refused backslash batch writes nothing (got: $(ledger_of b8))" 1
+new_log
+gl record-batch b8 full think=override:'C:\temp\new' design=override:'C:\temp\old' >/dev/null 2>&1; RC=$?
+ledger_of b8 | grep -qF '| GATE | think | override | C:\temp\new' \
+  && assert "RB8 distinct backslash reasons are written verbatim" 0 || assert "RB8 distinct backslash reasons are written verbatim (rc=$RC: $(ledger_of b8))" 1
+
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ] || exit 1
