@@ -1,0 +1,7 @@
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:01.000Z", "message": {"role": "user", "content": "draft the plan"}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-10-22T10:00:02.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Write", "input": {"file_path": "/scratch/plan.md", "content": "# plan v1\n- first cut\n"}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:03.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-10-22T10:00:04.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Write", "input": {"file_path": "/scratch/other.md", "content": "unrelated\n"}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:05.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-10-22T10:00:06.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "revising"}, {"type": "tool_use", "id": "toolu_x", "name": "Write", "input": {"file_path": "/scratch/plan.md", "content": "# plan v2\n- second cut, no trailing newline"}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:07.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}

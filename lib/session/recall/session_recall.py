@@ -37,7 +37,7 @@ def _repo_root():
 
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
-from parse_transcript import load, parse_lines  # noqa: E402  (load re-exported: session-recall's own public `load`)
+from parse_transcript import iter_entries, load, parse_lines  # noqa: E402  (load re-exported: session-recall's own public `load`)
 
 
 # --- parsing --------------------------------------------------------------
@@ -607,18 +607,91 @@ def last_fenced_block(text: str, tag: str):
     return found
 
 
+# --- --written: the last content a session wrote to one path --------------------
+
+_HEREDOC_RE = re.compile(
+    r"""cat[ \t]+>\|?[ \t]*(?P<path>"[^"\n]*"|'[^'\n]*'|[^\s<>|;&'"]+)[ \t]*"""
+    r"""<<(?P<dash>-?)[ \t]*(?P<q>['"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)(?P=q)[ \t]*\n""")
+
+
+def heredoc_body(command: str, path: str):
+    """Body of the last `cat > PATH <<'TAG'` (or `cat >| PATH`, quoted or bare tag and
+    path) heredoc in `command` that writes exactly `path`, or None. A heredoc with no
+    closing TAG line is skipped. The body is verbatim: an unquoted tag would have
+    expanded `$vars` in the shell, which a transcript cannot replay."""
+    found, pos = None, 0
+    while True:
+        m = _HEREDOC_RE.search(command, pos)
+        if not m:
+            return found
+        lines = command[m.end():].split("\n")
+        for i, line in enumerate(lines):
+            if (line.lstrip("\t") if m.group("dash") else line) == m.group("tag"):
+                break
+        else:
+            pos = m.end()
+            continue
+        target = m.group("path")
+        if len(target) >= 2 and target[0] == target[-1] and target[0] in "'\"":
+            target = target[1:-1]
+        if target == path:
+            found = "".join(ln + "\n" for ln in lines[:i])
+        pos = m.end() + sum(len(ln) + 1 for ln in lines[:i + 1])
+
+
+def written_content(entries, path: str):
+    """(kind, content, later_edits) for the last content a session wrote to exactly
+    `path`, or None. `kind` is "Write" (last Write tool_use on that file_path) or, only
+    when no Write matched, "heredoc" (last Bash `cat > PATH <<'TAG'`). `later_edits` counts
+    Edit calls on the path after the chosen write: reported, never applied. `entries` is
+    consumed once, so a streaming iterator never sits in memory whole."""
+    last_write = last_heredoc = None  # (sequence number, content)
+    edits = []  # sequence numbers of Edit calls on `path`
+    seq = 0
+    for entry in entries:
+        if _role(entry) != "assistant":
+            continue
+        content = _msg(entry).get("content")
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if not isinstance(b, dict) or b.get("type") != "tool_use":
+                continue
+            inp = b.get("input")
+            if not isinstance(inp, dict):
+                continue
+            seq += 1
+            name = b.get("name")
+            if name == "Write" and inp.get("file_path") == path and isinstance(inp.get("content"), str):
+                last_write = (seq, inp["content"])
+            elif name == "Edit" and inp.get("file_path") == path:
+                edits.append(seq)
+            elif name == "Bash" and isinstance(inp.get("command"), str):
+                body = heredoc_body(inp["command"], path)
+                if body is not None:
+                    last_heredoc = (seq, body)
+    if last_write:
+        kind, (at, text) = "Write", last_write
+    elif last_heredoc:
+        kind, (at, text) = "heredoc", last_heredoc
+    else:
+        return None
+    return kind, text, sum(1 for e in edits if e > at)
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = tail = final = fence_tag = out_path = None
+    file = project = tail = final = fence_tag = out_path = written = session = None
     search_all = as_json = sessions = False
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     max_bytes = FINAL_MAX_BYTES
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
              "[--sessions] [--limit N] [--json] [--tail PREFIX] "
-             "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]]\n")
+             "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]] "
+             "[--written PATH (--file F | --session PREFIX) [--out FILE]]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -635,6 +708,10 @@ def main(argv=None) -> int:
             tail = next(it, None)
         elif a == "--final":
             final = next(it, None)
+        elif a == "--written":
+            written = next(it, None)
+        elif a == "--session":
+            session = next(it, None)
         elif a == "--fence":
             fence_tag = next(it, None)
         elif a == "--out":
@@ -683,6 +760,48 @@ def main(argv=None) -> int:
     if "--out" in argv and not out_path:
         sys.stderr.write(usage)
         return 2
+    if session is not None and written is None:
+        sys.stderr.write(usage)
+        return 2
+    if written is not None:
+        # --written takes --file or --session and --out; every other mode flag is a conflict
+        if (not written or written.startswith("-") or final is not None or query or sessions
+                or tail is not None or as_json or fence_tag is not None or max_bytes != FINAL_MAX_BYTES
+                or (file is None) == (session is None) or not (file or session or "").strip()
+                or (session or "x").startswith("-") or (out_path or "x").startswith("-")):
+            sys.stderr.write(usage)
+            return 2
+        try:
+            path, _ = resolve_tail_target(session, project=project) if session is not None else (file, None)
+        except TailResolutionError as e:
+            sys.stderr.write(e.message)
+            return e.code
+        if out_path is not None and os.path.realpath(out_path) == os.path.realpath(path):
+            sys.stderr.write("session-recall: --out must not be the transcript being read\n")
+            return 2
+        try:
+            found = written_content(iter_entries(path, errors="replace"), written)
+        except OSError as e:
+            sys.stderr.write(f"session-recall: {e}\n")
+            return 1
+        if found is None:
+            sys.stderr.write(f"session-recall: no Write or heredoc of {written!r} in {path}\n")
+            return 1
+        _, text, later_edits = found
+        if later_edits:
+            sys.stderr.write(f"NOTE: {later_edits} later Edit call(s) on this path are not applied\n")
+        if out_path is not None:
+            try:
+                with open(out_path, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+            except OSError as e:
+                sys.stderr.write(f"session-recall: {e}\n")
+                return 1
+            sys.stdout.write(f"wrote {len(text.encode('utf-8'))} bytes to {out_path}\n")
+            return 0
+        sys.stdout.write(text)
+        return 0
+
     if final is None and (fence_tag is not None or out_path is not None
                           or max_bytes != FINAL_MAX_BYTES):
         sys.stderr.write(usage)

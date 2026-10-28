@@ -9,3 +9,6 @@
 !fixtures/final-backtick.jsonl
 !fixtures/final-tilde.jsonl
 !fixtures/final-no-text.jsonl
+!fixtures/written-write.jsonl
+!fixtures/written-heredoc.jsonl
+!fixtures/written-edit.jsonl

@@ -1,0 +1,7 @@
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:08.000Z", "message": {"role": "user", "content": "save the notes"}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-10-22T10:00:09.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {"command": "cat > /scratch/other.md <<'EOF'\nnot this one\nEOF\n"}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:10.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-10-22T10:00:11.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {"command": "mkdir -p /scratch && cat > /scratch/notes.md <<'EOF'\nnotes v1\nEOF\necho done"}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:12.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-10-22T10:00:13.000Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {"command": "cat >| /scratch/notes.md <<EOT\nnotes v2\n  indented line\n\nafter blank\nEOT\n"}}]}}
+{"type": "user", "isSidechain": false, "timestamp": "2026-10-22T10:00:14.000Z", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}

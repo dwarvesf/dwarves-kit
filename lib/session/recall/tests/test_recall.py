@@ -25,6 +25,9 @@ FINAL_TILDE = os.path.join(ROOT, "fixtures", "final-tilde.jsonl")         # ~~~~
 FINAL_NO_TEXT = os.path.join(ROOT, "fixtures", "final-no-text.jsonl")     # assistant turns with no text at all
 RESULT_JSON = os.path.join(ROOT, "fixtures", "result-json.jsonl")         # two assistant msgs; the last: prose + one JSON object
 RESULT_BAD_JSON = os.path.join(ROOT, "fixtures", "result-bad-json.jsonl")  # last assistant msg holds a malformed {...}
+WRITTEN_WRITE = os.path.join(ROOT, "fixtures", "written-write.jsonl")     # two Writes to /scratch/plan.md, one other
+WRITTEN_HEREDOC = os.path.join(ROOT, "fixtures", "written-heredoc.jsonl")  # Bash heredocs to /scratch/notes.md, no Write
+WRITTEN_EDIT = os.path.join(ROOT, "fixtures", "written-edit.jsonl")       # Edit, Write, then two Edits on /scratch/plan.md
 
 
 def _slurp(path):
@@ -789,6 +792,105 @@ class TestRecall(unittest.TestCase):
         res = self._final(RESULT_JSON, "--out", RESULT_JSON)
         self.assertEqual(res.returncode, 2)
         self.assertEqual(_sha(RESULT_JSON), before)
+
+
+    # --- --written: the last content a session wrote to one path -----------------
+
+    def _written(self, path, *extra):
+        return subprocess.run([sys.executable, BIN, "--written", path, *extra],
+                              capture_output=True, text=True)
+
+    def test_written_last_write_wins_and_is_verbatim(self):
+        res = self._written("/scratch/plan.md", "--file", WRITTEN_WRITE)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout, "# plan v2\n- second cut, no trailing newline")
+        self.assertEqual(res.stderr, "")
+        # a different path in the same transcript reads its own content
+        self.assertEqual(self._written("/scratch/other.md", "--file", WRITTEN_WRITE).stdout, "unrelated\n")
+
+    def test_written_heredoc_fallback_takes_last_and_keeps_body_verbatim(self):
+        res = self._written("/scratch/notes.md", "--file", WRITTEN_HEREDOC)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout, "notes v2\n  indented line\n\nafter blank\n")
+        # the first heredoc alone (other path) and the echo after it never leak in
+        self.assertEqual(self._written("/scratch/other.md", "--file", WRITTEN_HEREDOC).stdout, "not this one\n")
+
+    def test_written_heredoc_forms(self):
+        body = lambda cmd: r.heredoc_body(cmd, "/t/x")
+        self.assertEqual(body("cat > /t/x <<'A'\nl1\nA\n"), "l1\n")
+        self.assertEqual(body('cat >| "/t/x" <<"A"\nl1\nA\n'), "l1\n")
+        self.assertEqual(body("cat > /t/x <<-A\n\tl1\n\tA\n"), "\tl1\n")
+        self.assertEqual(body("cat > /t/x <<'A'\nl1\n"), None)          # never closed
+        self.assertEqual(body("cat >> /t/x <<'A'\nl1\nA\n"), None)     # append is not a write of the whole file
+        self.assertEqual(body("cat > /t/xy <<'A'\nl1\nA\n"), None)     # exact path only
+
+    def test_written_write_beats_a_later_heredoc(self):
+        entries = [
+            {"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": "Write", "input": {"file_path": "/t/x", "content": "from write\n"}}]}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": "cat > /t/x <<'E'\nfrom heredoc\nE\n"}}]}},
+        ]
+        self.assertEqual(r.written_content(iter(entries), "/t/x")[:2], ("Write", "from write\n"))
+
+    def test_written_later_edits_are_noted_on_stderr_not_applied(self):
+        res = self._written("/scratch/plan.md", "--file", WRITTEN_EDIT)
+        self.assertEqual(res.returncode, 0)
+        self.assertEqual(res.stdout, "# plan base\n")
+        self.assertEqual(res.stderr, "NOTE: 2 later Edit call(s) on this path are not applied\n")
+        # no Edit after the write: no NOTE
+        self.assertEqual(self._written("/scratch/plan.md", "--file", WRITTEN_WRITE).stderr, "")
+
+    def test_written_no_match_exits_1_with_one_stderr_line(self):
+        res = self._written("/scratch/never.md", "--file", WRITTEN_WRITE)
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(res.stdout, "")
+        self.assertEqual(len(res.stderr.strip().splitlines()), 1)
+        self.assertIn("/scratch/never.md", res.stderr)
+        self.assertEqual(self._written("/scratch/plan.md", "--file", os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
+
+    def test_written_combinations_and_missing_source_exit_2(self):
+        for extra in (["--file", WRITTEN_WRITE, "somequery"], ["--file", WRITTEN_WRITE, "--sessions"],
+                      ["--file", WRITTEN_WRITE, "--tail", "abc"], ["--file", WRITTEN_WRITE, "--final", WRITTEN_WRITE],
+                      ["--file", WRITTEN_WRITE, "--json"], ["--file", WRITTEN_WRITE, "--fence", "md"],
+                      ["--file", WRITTEN_WRITE, "--max-bytes", "5"], ["--file", WRITTEN_WRITE, "--session", "abc"],
+                      [], ["--file", ""], ["--session", "-x"], ["--file", WRITTEN_WRITE, "--out", "-x"]):
+            self.assertEqual(self._written("/scratch/plan.md", *extra).returncode, 2, extra)
+        self.assertEqual(self._written("").returncode, 2)
+        self.assertEqual(self._written("-x", "--file", WRITTEN_WRITE).returncode, 2)
+        # --session is only for --written
+        p = subprocess.run([sys.executable, BIN, "--session", "abc"], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 2)
+
+    def test_written_out_writes_exact_bytes_and_never_clobbers_the_transcript(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "plan.md")
+            res = self._written("/scratch/plan.md", "--file", WRITTEN_WRITE, "--out", out)
+            self.assertEqual(res.returncode, 0)
+            self.assertEqual(_slurp(out), "# plan v2\n- second cut, no trailing newline")
+            self.assertEqual(res.stdout, f"wrote {len(_slurp(out).encode())} bytes to {out}\n")
+        before = _sha(WRITTEN_WRITE)
+        res = self._written("/scratch/plan.md", "--file", WRITTEN_WRITE, "--out", WRITTEN_WRITE)
+        self.assertEqual(res.returncode, 2)
+        self.assertEqual(_sha(WRITTEN_WRITE), before)
+
+    def test_written_session_prefix_resolves_like_tail(self):
+        with tempfile.TemporaryDirectory() as home:
+            proj = os.path.join(home, "-proj")
+            os.makedirs(proj)
+            for name in ("abc111", "abc222", "def333"):
+                with open(WRITTEN_WRITE, "rb") as src, open(os.path.join(proj, name + ".jsonl"), "wb") as dst:
+                    dst.write(src.read())
+            code = ("import sys; sys.path.insert(0, %r); import session_recall as r; r.PROJECTS = %r; "
+                    "raise SystemExit(r.main(sys.argv[1:]))" % (ROOT, home))
+            run = lambda *a: subprocess.run([sys.executable, "-c", code, "--written", "/scratch/plan.md", *a],
+                                            capture_output=True, text=True)
+            ok = run("--session", "def")
+            self.assertEqual((ok.returncode, ok.stdout), (0, "# plan v2\n- second cut, no trailing newline"))
+            amb = run("--session", "abc")
+            self.assertEqual(amb.returncode, 2)
+            self.assertIn("ambiguous", amb.stderr)
+            self.assertEqual(run("--session", "zzz").returncode, 1)
 
 
     def test_determinism(self):
