@@ -134,6 +134,31 @@ session-recall --final <task.output> --max-bytes 20000      # stdout cap, defaul
 - The key list in the summary is cleaned and redacted like a `--tail` line. The file is
   untrusted data: nothing in it is executed, only parsed.
 
+## --written: a file a session wrote, after its tmp dir is gone
+
+```
+session-recall --written /private/tmp/x/plan.md --file <transcript.jsonl>      # content to stdout
+session-recall --written /private/tmp/x/plan.md --session <id-prefix>          # resolve the transcript like --tail
+session-recall --written /private/tmp/x/plan.md --file <transcript.jsonl> --out plan.md
+```
+
+Prints the last content the session wrote to exactly that path, streamed line by line
+through the transcript (never loaded whole).
+
+- The content is the `content` of the last `Write` tool call whose `file_path` equals PATH. With
+  no `Write`, the fallback is the last `Bash` call holding `cat > PATH <<'TAG'` or
+  `cat >| PATH <<'TAG'` (quoted or bare tag and path), and the heredoc body is printed.
+- A later `Edit` on the same path is never applied. One stderr line says how many were skipped:
+  `NOTE: N later Edit call(s) on this path are not applied`.
+- `--session PREFIX` resolves with the same rules as `--tail PREFIX` (`--project` narrows it;
+  an ambiguous prefix is exit 2). Give exactly one of `--file` and `--session`.
+- `--out FILE` writes the content and prints `wrote N bytes to FILE`; it refuses to overwrite the
+  transcript (exit 2). Output is verbatim: no added newline, no redaction, no DATA marker.
+  An unquoted heredoc tag would have expanded `$vars` in the shell; the body is printed as typed.
+- No match: one stderr line naming the path, exit 1. A missing transcript also exits 1.
+  `--written` cannot combine with a query, `--sessions`, `--tail`, `--final`, `--json`,
+  `--fence`, or `--max-bytes` (exit 2).
+
 ## Layout
 
 ```
@@ -142,6 +167,7 @@ session_recall.py         the search module (stdlib only; shares SG-01's JSONL p
 fixtures/seed.jsonl  synthetic seed transcript (zero PII; shared with SG-01)
 fixtures/final-*.jsonl  --final cases (backtick and tilde fences, no-text transcript)
 fixtures/result-*.jsonl  --final --json cases (valid and malformed object in the last reply)
+fixtures/written-*.jsonl  --written cases (Write, heredoc fallback, later Edits)
 tests/test_recall.py
 docs/proof-of-done.md
 ```
