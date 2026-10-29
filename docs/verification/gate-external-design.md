@@ -2,13 +2,14 @@
 
 One gate-ledger entry cites a design record in another GitHub repo and satisfies the design-side full-lane gates (think, design, design-critique, spec, validate, design-record). Spec: `docs/specs/SPEC-414-gate-external-design.md`.
 
-## Proof of done: a console-workers-shaped auth diff through the real ship-gate
+## Green runs
 
-A scratch adopted repo (`docs/verification/README.md`, `[gate] lane_gates = true`) carries branch `feat/relay-seal` that adds `workers/playdate-relay/src/auth.ts`, the same hard path the real relay PRs hit (`lane-classify.sh floor ~/workspace/consolelabs/console-workers 0f308e1~1 99009ec` prints `full auth: workers/playdate-relay/src/auth.ts`). The ledger holds `ran` lines for test-plan, build, review, docs, ship and reflect. The hook is the real `hooks/ship-gate.sh`; `gh` is the real CLI against the real `consolelabs/playdate-agent`. No stub.
-
-Run: `bash proof.sh <kit-root>` (the script is reproduced by the steps below; output verbatim, the kit checkout path shown as `<kit-root>`).
+Run 1, the proof of done: a console-workers-shaped auth diff through the real ship-gate hook. A scratch adopted repo (`docs/verification/README.md`, `[gate] lane_gates = true`) carries branch `feat/relay-seal` adding `workers/playdate-relay/src/auth.ts`, the hard path the real relay PRs hit (`lane-classify.sh floor ~/workspace/consolelabs/console-workers 0f308e1~1 99009ec` prints `full auth: workers/playdate-relay/src/auth.ts`). The ledger holds `ran` lines for test-plan, build, review, docs, ship and reflect. The hook is the real `hooks/ship-gate.sh`, and `gh` is the real CLI against the real `consolelabs/playdate-agent`; no stub. The kit checkout path shows as `<kit-root>`.
 
 ```
+Command: bash proof.sh <kit-root>
+Exit: 0
+Output:
 $ lane-classify floor (the diff):
 full auth: workers/playdate-relay/src/auth.ts
 
@@ -65,23 +66,71 @@ hook exit=0
 2026-10-29T18:04:00Z | GATE | reflect | ran | relay reflect evidence
 2026-10-29T18:04:01Z | GATE | external-design | cite | consolelabs/playdate-agent@7e3e190e854c23ecc4571f203970cd993d08b041:docs/specs/SPEC-099-nope.md | forged by hand
 2026-10-29T18:04:03Z | GATE | external-design | cite | consolelabs/playdate-agent@7e3e190e854c23ecc4571f203970cd993d08b041:docs/specs/SPEC-005-relay-link-and-seal.md | re
+Verdict: PASS
 ```
 
-Reading: step 1 blocks (exit 2) and the message names the new verb. Steps 2 and 3 show the verb refuses a bare string (64) and a path missing at the commit (1), writing nothing. Step 4 shows a hand-appended bogus cite line does not pass on its text: the push re-verifies and blocks (exit 2) with the `EXTERNAL-DESIGN:` reason inside the gap list. Step 5: one real entry, and the same push exits 0. The six per-gate overrides the relay branches needed are gone.
+Reading: step 1 blocks (exit 2) and names the new verb. Steps 2 and 3: the verb refuses a bare string (64) and a path missing at the commit (1), writing nothing. Step 4: a hand-appended bogus cite line does not pass on its text; the push re-verifies and blocks (exit 2) with the `EXTERNAL-DESIGN:` reason in the gap list. Step 5: one real entry, and the same push exits 0. The six per-gate overrides the relay branches needed are gone.
 
-## Tests
+Run 2, the new suite (stubbed `gh` through `GH_CMD`, no network), also green under macOS `/bin/bash` 3.2:
 
-- `bash tests/test-gate-external-design.sh`: `external-design: 71/71 passed`, also under macOS `/bin/bash` 3.2 (stubbed `gh` through `GH_CMD`, no network).
-- `bash tests/run-all.sh --changed origin/master`: `run-all: all 91 suites passed, 0 skipped for missing tooling`.
+```
+Command: bash tests/test-gate-external-design.sh
+Exit: 0
+Output:
+external-design: 71/71 passed
+Verdict: PASS
+```
 
-## Negative controls
+Run 3, the dev loop:
 
-| Mutation | Red cases |
-|---|---|
-| `_ext_covered` returns 0 without calling `_ext_verify` | 13 red, among them `check: a bogus citation fails full`, `cache: a failing check on an aged ledger is not cached`, `ship-gate: a bogus citation blocks the auth diff` |
-| `EXTERNAL_COVERS="$INHERITABLE"` (test-plan added to the covered set) | 2 red: `check: test-plan is never covered`, `pin: the covered set is exactly the six design-side gates` |
+```
+Command: bash tests/run-all.sh --changed origin/master
+Exit: 0
+Output:
+run-all: all 91 suites passed, 0 skipped for missing tooling
+Verdict: PASS
+```
 
-Both mutations were reverted; the suite went back to green.
+(An earlier pass of Run 3 failed `test-no-personal-paths` on this file's home path. The path is now `<kit-root>`, and the output above is from the rerun after the review fixes.)
+
+## Negative control
+
+Mutation: `_ext_covered` accepts the first citation without calling `_ext_verify`. A second hand mutation, `EXTERNAL_COVERS="$INHERITABLE"` (test-plan added to the covered set), turned `check: test-plan is never covered` and `pin: the covered set is exactly the six design-side gates` red, and was reverted.
+
+## Negative control (negctl)
+## Negative control (negctl)
+Command: bash tests/test-gate-external-design.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS ship-gate: the hint sits after the override line
+    PASS ship-gate: one external-design entry passes the auth diff
+    PASS ship-gate: a second push re-verifies (the stub now answers 404, the push blocks)
+    PASS ship-gate: the EXTERNAL-DESIGN line sits in the indented gap list after the MISSING-GATE lines
+    PASS ship-gate: a bogus citation blocks the auth diff
+    PASS ship-gate: the lane-check block names the external-design verb
+    PASS ship-gate: a merged-PR citation passes the full-lane spec plus auth diff
+    PASS ship-gate: six per-gate overrides still pass
+  
+  external-design: 71/71 passed
+
+Mutation: perl -pi -e 's/^    why="\$\(_ext_verify "\$c" 2>&1\)" && return 0/    return 0/' lib/gate/gate-ledger.sh
+Changed: lib/gate/gate-ledger.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS ship-gate: one external-design entry passes the auth diff
+    FAIL ship-gate: a second push re-verifies (the stub now answers 404, the push blocks) (rc: 0 out: cited consolelabs/playdate-agent@7e3e190e854c23ecc4571f203970cd993d08b041:docs/specs/SPEC-005-relay-link-and-seal.md: covers think design design-critique spec validate design-record err: )
+  tests/test-gate-external-design.sh: line 21: [: : integer expected
+    FAIL ship-gate: the EXTERNAL-DESIGN line sits in the indented gap list after the MISSING-GATE lines (rc: 0 out: cited consolelabs/playdate-agent@7e3e190e854c23ecc4571f203970cd993d08b041:docs/specs/SPEC-005-relay-link-and-seal.md: covers think design design-critique spec validate design-record err: )
+    FAIL ship-gate: a bogus citation blocks the auth diff (rc: 0 out: cited consolelabs/playdate-agent@7e3e190e854c23ecc4571f203970cd993d08b041:docs/specs/SPEC-005-relay-link-and-seal.md: covers think design design-critique spec validate design-record err: )
+    PASS ship-gate: the lane-check block names the external-design verb
+    PASS ship-gate: a merged-PR citation passes the full-lane spec plus auth diff
+    PASS ship-gate: six per-gate overrides still pass
+  
+  external-design: 58/71 passed
+
+Restore: git checkout HEAD -- lib/gate/gate-ledger.sh
+Exit: 0 (green after restore)
+Verdict: PASS
 
 ## Test plan coverage
 
