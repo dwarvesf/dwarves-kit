@@ -148,12 +148,15 @@ None. `gh` is already a kit dependency (`/kit:ship`, `/kit:wrap`, orchestrate).
 ### Phase 1: Ledger
 
 - [ ] TASK-001: `_ext_parse`, `_ext_verify` and the `external-design` verb in `lib/gate/gate-ledger.sh`, plus the header usage line. Accept: the verb writes exactly one cite line for a verifying citation; it writes nothing and exits 64 on a bare string, a short sha, a `..` segment and a non-PR URL; it writes nothing and exits 1 when `gh` reports 404, a dir, `merged=false`, or `gh` is missing.
-- [ ] TASK-002: `check()` covers the six gates through a verified cite line; the cache never stores a failure for a ledger with a cite line; `progress()` and `descent()` treat a cite line as disposing the six. Accept: `check full` passes on a ledger with one cite line plus ran lines for the per-branch gates; it fails with `EXTERNAL-DESIGN:` when the stub `gh` turns the same citation into a 404; `test-plan` is never covered; a stub that sleeps is killed within the bound; `--offline` makes no `gh` call; `lane-telemetry.sh` passes `--offline`.
+- [ ] TASK-002 (needs TASK-001): the `check()` covered-gate branch and its cache rule. Accept: `check full` passes on a ledger with one cite line plus ran lines for test-plan, build, review, docs, ship and reflect; the same ledger fails with one `EXTERNAL-DESIGN:` line and six MISSING-GATE lines when the stub `gh` answers 404; test-plan is never covered; after a failing check on a ledger with a cite line, a second check calls `gh` again (no cached failure).
+- [ ] TASK-003 (needs TASK-002): the `--offline` flag on `check`, accepted in either order with `--kit-lanes`, and `lane-telemetry.sh` passing it. Accept: `check full <rid> --offline` passes a parsing citation with zero `gh` calls; `check full <rid> --kit-lanes --offline` and `--offline --kit-lanes` behave the same; `rg -n 'check .*--offline' lib/telemetry/lane-telemetry.sh` has one hit.
+- [ ] TASK-004 (needs TASK-001): `progress()` and `descent()` dispose the six covered gates at the cite line. Accept: `progress <rid> full` on a ledger with grill, a cite line and test-plan points at build; `descent <rid> full` on that ledger prints `descent clean`; neither calls `gh`.
 
 ### Phase 2: Ship boundary
 
-- [ ] TASK-003: hint line in `hooks/ship-gate.sh` (lane check) and `lib/gate/ship-rules.sh` (`ship_rule_floor`) when a gap names a covered phase. Accept: the floor block message for a hard-path diff with no design gates names `external-design`.
-- [ ] TASK-004: `tests/test-gate-external-design.sh`, the hook-level proof (a console-workers-shaped auth diff passes ship-gate with one cite line, fails with a bogus citation), docs (`lib/gate/README.md`, `docs/MANUAL.md` gate-ledger rows, the `mega-merge.sh` "no gh calls" comment), CHANGELOG.
+- [ ] TASK-005 (needs TASK-002): hint line in `hooks/ship-gate.sh` (lane check) and `lib/gate/ship-rules.sh` (`ship_rule_floor`) when a gap names a covered phase. Accept: the floor block message for a hard-path diff with no design gates names `external-design <rid>`; the lane-check block message for a full-lane spec with no design gates names it too.
+- [ ] TASK-006 (needs TASK-001 to TASK-005): `tests/test-gate-external-design.sh`. Accept: it holds a named case for edge cases 1 to 13 and 16 to 17, plus `hook: one cite line passes the auth diff`, `hook: a bogus citation blocks the auth diff`, `hook: six per-gate overrides still pass`, and `hook: a second push re-verifies` (the stub flips 200 to 404 between two hook runs on one ledger, the second blocks); every case runs with `GH_CMD` pointing at a stub and no network.
+- [ ] TASK-007 (needs TASK-006): docs. `lib/gate/README.md` and `docs/MANUAL.md` gate-ledger rows, the `mega-merge.sh` "no gh calls" comment, CHANGELOG, and `bash lib/registry/feature-registry.sh generate docs/reference/FEATURES.md`. Accept: `bash lib/registry/feature-registry.sh check docs/reference/FEATURES.md` exits 0; `rg -n external-design docs/MANUAL.md lib/gate/README.md CHANGELOG.md` has a hit in each.
 
 ## After state
 
@@ -201,10 +204,11 @@ none
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
 | GitHub or `gh` unreachable at push | `EXTERNAL-DESIGN: ... did not verify: gh: ...` on the block | Retry the push, or record per-gate overrides; fail closed by design |
-| `gh` hangs inside the hook | push latency | each call is killed at 4 s, at most 2 citations per `check()`; a timeout is unverified |
-| Slow GitHub call inside the hook | push latency; up to 2 x distinct citations calls per push (lane check, then floor) | the check cache stores the pass, so a second push on the same ledger costs no call |
+| `gh` hangs inside the hook | push latency | each call is killed at 4 s, at most 2 citations per `check()`, so at most 16 s across the lane check and the floor; a timeout is unverified |
+| Every push re-verifies | up to 2 x 2 `gh` calls per push (lane check, then floor) | expected: ship-gate appends OUTCOME lines to the ledger before each check, so the check cache never holds a pass for a pushed rid; the cost is a few hundred ms per call |
 | Lane telemetry scanning every ledger over the network | telemetry run time | telemetry calls `check --offline`, so it makes no `gh` call |
-| Cited repo deleted or force-pushed later | nothing, while the check cache holds the pass | verified once, trusted until the ledger changes (the cache key is the ledger file id); a deleted design repo must not re-block a shipped branch |
+| Cited repo deleted, made private, or the token loses access | a later push of the branch blocks with `EXTERNAL-DESIGN: ... did not verify` | record per-gate overrides for that rid; a merged PR is unaffected because nothing re-pushes it |
+| GitHub down or rate limited (403) at push | the block names the `gh api` error | wait and retry, or per-gate overrides; an unattended mega-merge holds the merge |
 | Private repo the token cannot see | `gh` answers 404 or 403, so the block names the `gh api` failure | grant the token read on the design repo, or use per-gate overrides |
 
 ## Out of Scope
