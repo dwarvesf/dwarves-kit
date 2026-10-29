@@ -51,8 +51,15 @@
 #                                       write one override line per spec-level gate (think..test-plan)
 #                                       whose LAST state in the parent ledger is ran; refuses and
 #                                       writes nothing otherwise; never build/review/docs/ship/reflect
-#   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate has a ran|override entry; else 1
-#                                       (--kit-lanes reads the kit root lane data only)
+#   external-design <rid> <owner/repo@<40-hex commit>:<path> | https://github.com/<o>/<r>/pull/<n>> <reason>
+#                                       one cite line for a design record in another GitHub repo; it
+#                                       satisfies think..design-record (never test-plan) while the
+#                                       citation verifies through `gh api`; refuses and writes nothing
+#                                       on a bad citation (64) or one that does not verify (1)
+#   check    <lane> <rid> [--kit-lanes] [--offline]  exit 0 if every required gate has a ran|override
+#                                       entry, or a design-side gate a verified cite line covers; else 1
+#                                       (--kit-lanes reads the kit root lane data only; --offline counts a
+#                                       parsing citation without gh, for display and telemetry readers)
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
@@ -620,14 +627,20 @@ _check_cache_put() {  # <prefix> <fp> <ctime> <result>
 }
 
 # exit 0 if every required (measure-twice) gate has a ran|override entry; else 1 + list gaps.
+# A design-side gate (EXTERNAL_COVERS) with no line of its own also passes on a cite line whose
+# citation verifies now. --offline (display and telemetry readers only, never a ship path): a cite
+# line that parses counts, no gh call, and the verdict cache is neither read nor written.
 check() {
-  local kl=""; if [ "${3:-}" = "--kit-lanes" ]; then kl=1; fi
-  local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes]" >&2; return 64; }
+  local kl="" offline=0 a
+  for a in "${3:-}" "${4:-}"; do
+    case "$a" in --kit-lanes) kl=1 ;; --offline) offline=1 ;; "") ;; *) echo "usage: check <lane> <rid> [--kit-lanes] [--offline]" >&2; return 64 ;; esac
+  done
+  local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes] [--offline]" >&2; return 64; }
   # Cache lookup first. Only a known lane with a usable rid and a stat-able ledger is ever cached,
   # so an unknown lane, an empty rid name or a missing ledger always takes the full path below.
   local tab=$'\t' safe ck_id="" ck_fp="" ck_prefix="" ck_res="" ck_phases="" ck_phase="" ck_ctime="" ck_f=""
-  case " $LANE_NAMES " in
-    *" $lane "*)
+  case "$offline: $LANE_NAMES " in
+    0:*" $lane "*)
       safe="$(runid "$rid")"
       if [ -n "$safe" ]; then
         ck_f="$(ledger_file "$rid")"
@@ -662,14 +675,25 @@ check() {
     return 1
   fi
   local f; f="$(ledger_file "$rid")"
-  local missing=0 phase missing_phases=""
+  local missing=0 phase missing_phases="" ext="" ext_why=""   # ext: "" not judged yet, ok, no
   while IFS= read -r phase; do
     [ -n "$phase" ] || continue
     if [ ! -f "$f" ] || ! awk -F' [|] ' -v p="$phase" '$2=="GATE" && $3==p && ($4=="ran"||$4=="override"){f=1} END{exit !f}' "$f"; then
+      case " $EXTERNAL_COVERS " in
+        *" $phase "*)
+          if [ -z "$ext" ]; then
+            ext=no; [ -f "$f" ] && ext_why="$(_ext_covered "$f" "$offline" 2>&1)" && ext=ok
+          fi
+          [ "$ext" = ok ] && continue ;;
+      esac
       echo "MISSING-GATE: $phase (required for lane '$lane'; no ran/override entry in the ledger)" >&2
       missing=1; missing_phases="$missing_phases${missing_phases:+,}$phase"
     fi
   done <<< "$req"
+  # Why each citation failed, after the gaps it explains. A failure that hangs on a citation
+  # (GitHub down, a 403) is not cached: a retry must re-verify.
+  [ "$missing" -eq 0 ] || [ -z "$ext_why" ] || printf '%s\n' "$ext_why" >&2
+  if [ "$ext" = no ] && [ -f "$f" ] && [ -n "$(_ext_cites "$f")" ]; then ck_prefix=""; fi
   if [ -n "$ck_prefix" ]; then
     if [ "$missing" -eq 0 ]; then ck_res=pass; else ck_res="fail:$missing_phases"; fi
     ck_ctime="${ck_id##*"$tab"}"
@@ -1060,6 +1084,123 @@ inherit() {
   return 0
 }
 
+# External design citation: a design record in ANOTHER GitHub repo stands in for the design-side
+# gates of this run, one ledger line for all of them:
+#   <ts> | GATE | external-design | cite | <citation> | <reason>
+# A citation is pinned and checkable: <owner>/<repo>@<40-hex commit>:<path> (a file at that
+# commit), or https://github.com/<owner>/<repo>/pull/<n> (a merged PR). check() verifies it again
+# whenever a covered gate has no line of its own, so a hand-appended cite line never passes on its
+# text. Verification is `gh api` (GH_CMD is the test seam) and fails closed: no gh, no auth, no
+# network, or a call past its time bound = not verified. The line is no weaker than the six
+# overrides it replaces (they pass on text alone); it adds a pointer a machine checks.
+# The covered set is inherit's set minus test-plan: the change's own tests live in this repo.
+EXTERNAL_COVERS="${INHERITABLE% test-plan}"
+# A killed hook fails open, so every gh call is bounded: 4 s each, at most 2 citations per check().
+EXT_TIMEOUT_MAX=4
+EXT_MAX_TRIES=2
+
+# _ext_parse <citation>: syntax only, no network. Prints "path<TAB>owner/repo<TAB>sha<TAB>path" or
+# "pr<TAB>owner/repo<TAB>number"; exit 1 on anything else (a bare string, a short sha or a branch,
+# a `.`/`..` segment, any character outside the grammar, so no newline or " | " reaches the ledger).
+_ext_parse() {
+  local c="$1" name='[A-Za-z0-9_.-]+' repo sha path seg
+  if [[ "$c" =~ ^https://github\.com/($name/$name)/pull/([1-9][0-9]{0,8})$ ]]; then
+    repo="${BASH_REMATCH[1]}"; _ext_repo_ok "$repo" || return 1
+    printf 'pr\t%s\t%s\n' "$repo" "${BASH_REMATCH[2]}"; return 0
+  fi
+  [[ "$c" =~ ^($name/$name)@([0-9a-f]{40}):(.+)$ ]] || return 1
+  repo="${BASH_REMATCH[1]}"; sha="${BASH_REMATCH[2]}"; path="${BASH_REMATCH[3]}"
+  _ext_repo_ok "$repo" || return 1
+  [ "${#path}" -le 300 ] || return 1
+  [[ "$path" =~ ^[A-Za-z0-9_.@+-]+(/[A-Za-z0-9_.@+-]+)*$ ]] || return 1
+  for seg in ${path//\// }; do case "$seg" in .|..) return 1 ;; esac; done
+  printf 'path\t%s\t%s\t%s\n' "$repo" "$sha" "$path"
+}
+_ext_repo_ok() { case "/$1/" in */./*|*/../*) return 1 ;; esac; return 0; }
+
+# _ext_gh <out-file> <args...>: run `gh <args>` with stdout+stderr to <out-file>, killed after the
+# bound (macOS has no `timeout`). KIT_EXT_TIMEOUT_SECS may lower the bound, never raise it.
+# Returns gh's exit code, or 124 on a timeout.
+_ext_gh() {
+  local out="$1" lim pid t=0; shift
+  lim="${KIT_EXT_TIMEOUT_SECS:-$EXT_TIMEOUT_MAX}"
+  case "$lim" in ''|*[!0-9]*) lim="$EXT_TIMEOUT_MAX" ;; esac
+  [ "$lim" -le "$EXT_TIMEOUT_MAX" ] || lim="$EXT_TIMEOUT_MAX"
+  "${GH_CMD:-gh}" "$@" > "$out" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$t" -ge $((lim * 10)) ]; then
+      kill "$pid" 2>/dev/null || true; sleep 0.2; kill -9 "$pid" 2>/dev/null || true   # TERM, then KILL for one that traps it
+      wait "$pid" 2>/dev/null || true; return 124
+    fi
+    sleep 0.1; t=$((t + 1))
+  done
+  wait "$pid"
+}
+
+# _ext_verify <citation>: exit 0 when the cited record exists (a file at the commit, or a merged PR);
+# else exit 1 with one line on stderr naming why. Both the exit code and the exact printed value
+# count: `gh api` prints a 404 body on stdout.
+_ext_verify() {
+  local parsed kind repo a b out rc=0 tmp
+  parsed="$(_ext_parse "$1")" || { echo "not a citation (<owner>/<repo>@<40-hex commit>:<path>, or https://github.com/<owner>/<repo>/pull/<n>)" >&2; return 1; }
+  IFS=$'\t' read -r kind repo a b <<< "$parsed"
+  command -v "${GH_CMD:-gh}" >/dev/null 2>&1 || { echo "gh not found, cannot verify" >&2; return 1; }
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit-ext.XXXXXX")" || { echo "no temp file, cannot verify" >&2; return 1; }
+  if [ "$kind" = pr ]; then
+    _ext_gh "$tmp" api "repos/$repo/pulls/$a" --jq .merged || rc=$?
+  else
+    _ext_gh "$tmp" api "repos/$repo/contents/$b?ref=$a" --jq 'if type=="object" then .type else "dir" end' || rc=$?
+  fi
+  out="$(tr -d '\000-\010\013-\037\177' < "$tmp" 2>/dev/null)"; command rm -f "$tmp"
+  out="$(printf '%s' "$out" | tr '\n\r\t' '   ')"   # control bytes stripped, one line: it reaches a block message
+  if [ "$rc" -eq 0 ]; then
+    [ "$kind" = pr ] && [ "$out" = true ] && return 0
+    [ "$kind" = path ] && [ "$out" = file ] && return 0
+    if [ "$kind" = pr ]; then echo "PR $repo#$a is not merged" >&2; else echo "$b at $repo@${a:0:12} is not a file" >&2; fi
+    return 1
+  fi
+  [ "$rc" -ne 124 ] || { echo "gh api timed out after ${EXT_TIMEOUT_MAX}s or less" >&2; return 1; }
+  echo "gh api failed (exit $rc): $(printf '%s' "$out" | cut -c1-160)" >&2
+  return 1
+}
+
+# _ext_cites <ledger>: the distinct citations of the ledger's cite lines, newest first.
+_ext_cites() {
+  awk -F' [|] ' '$2=="GATE" && $3=="external-design" && $4=="cite" { c[++n]=$5 }
+    END { for (i=n; i>=1; i--) if (!(c[i] in s)) { s[c[i]]=1; print c[i] } }' "$1"
+}
+
+# _ext_covered <ledger> <offline>: exit 0 when one cite line verifies (offline: parses), trying at
+# most EXT_MAX_TRIES citations. Each failure prints one EXTERNAL-DESIGN line on stderr.
+_ext_covered() {
+  local f="$1" offline="$2" c why n=0
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    if [ "$offline" = 1 ]; then _ext_parse "$c" >/dev/null && return 0; continue; fi
+    [ "$n" -lt "$EXT_MAX_TRIES" ] || { echo "EXTERNAL-DESIGN: more than $EXT_MAX_TRIES citations; the rest were not tried" >&2; return 1; }
+    n=$((n + 1))
+    why="$(_ext_verify "$c" 2>&1)" && return 0
+    echo "EXTERNAL-DESIGN: $(oneline "$c" | cut -c1-200) did not verify: $why" >&2
+  done < <(_ext_cites "$f")
+  return 1
+}
+
+# external-design <rid> <citation> <reason...>: write one cite line after the citation verifies.
+# Exit 64 (nothing written): bad args, an empty reason, a citation outside the grammar.
+# Exit 1 (nothing written): the citation does not verify. The same citation twice is a no-op.
+external_design() {
+  [ "$#" -ge 3 ] || { echo "usage: external-design <rid> <owner/repo@<40-hex commit>:<path> | https://github.com/<owner>/<repo>/pull/<n>> <reason>" >&2; return 64; }
+  local rid="$1" cit="$2" reason f why; shift 2
+  reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "external-design requires a reason" >&2; return 64; }
+  f="$(ledger_file "$rid")" || return 64
+  _ext_parse "$cit" >/dev/null || { echo "external-design: '$(oneline "$cit" | cut -c1-200)' is not a citation; use <owner>/<repo>@<40-hex commit>:<path> or https://github.com/<owner>/<repo>/pull/<n>; nothing written" >&2; return 64; }
+  if [ -f "$f" ] && grep -qxF "$cit" < <(_ext_cites "$f"); then echo "already cited: $cit"; return 0; fi
+  why="$(_ext_verify "$cit" 2>&1)" || { echo "external-design: $cit did not verify: $why; nothing written" >&2; return 1; }
+  append_run_line "$rid" "$(printf '%s | GATE | external-design | cite | %s | %s' "$(now)" "$cit" "$reason")"
+  echo "cited $cit: covers $EXTERNAL_COVERS"
+}
+
 # progress: plan x ledger -> one status line + checklist. A phase counts done when the
 # ledger carries ANY entry for it (ran, skipped-with-reason, override); the current step
 # is the first phase without one. Commands print this at phase entry.
@@ -1073,8 +1214,10 @@ progress() {
     idx="${pline%%.*}"; idx="$(printf '%s' "$idx" | tr -d ' ')"
     ph="$(printf '%s' "$pline" | awk '{print $2}')"
     total=$((total+1))
-    # disposed = ran / override / skipped WITH a reason; a bare skip stays visible as a gap
-    if [ -f "$f" ] && awk -F' [|] ' -v p="$ph" '$2=="GATE" && $3==p && ($4!="skipped" || (NF>=5 && $5!="")) {found=1} END{exit !found}' "$f"; then
+    # disposed = ran / override / skipped WITH a reason; a bare skip stays visible as a gap.
+    # A cite line disposes the EXTERNAL_COVERS phases (display only: never verified here).
+    if [ -f "$f" ] && awk -F' [|] ' -v p="$ph" -v cov=" $EXTERNAL_COVERS " '$2=="GATE" && $3==p && ($4!="skipped" || (NF>=5 && $5!="")) {found=1}
+         $2=="GATE" && $3=="external-design" && $4=="cite" && index(cov, " " p " ") {found=1} END{exit !found}' "$f"; then
       # a phase disposed AFTER the current pointer gets its own
       # marker (*), so an out-of-order ✓ can't mislead the at-a-glance read.
       if [ -n "$cur" ]; then
@@ -1116,13 +1259,17 @@ descent() {
   local plan_list; plan_list="$(plan "$lane" | awk '{print $2"="$3}' | tr '\n' ' ')" || return 0
   [ -n "$plan_list" ] || { echo "descent clean (no plan)"; return 0; }
   local out
-  out="$(awk -F' [|] ' -v plan="$plan_list" '
+  out="$(awk -F' [|] ' -v plan="$plan_list" -v cov="$EXTERNAL_COVERS" '
     BEGIN {
       n=split(plan, R, " ")
       for (i=1;i<=n;i++) if (R[i]!="") {
         split(R[i], kv, "="); P[i]=kv[1]; order[kv[1]]=i
         if (kv[2]=="lite") disposed[kv[1]]=1   # run-lite only; grill (intake) + required phases stay real checkpoints
       }
+    }
+    $2=="GATE" && $3=="external-design" && $4=="cite" {   # disposes the covered phases at its own timestamp
+      m=split(cov, C, " "); for (i=1; i<=m; i++) disposed[C[i]]=1
+      next
     }
     $2=="GATE" {
       p=$3; if (!(p in order)) next
@@ -1803,7 +1950,7 @@ _vr_dispatch() {
 # sessions reach for most. The other verbs print their own `usage:` line when called bare.
 usage() {
   cat <<'EOF'
-usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round} ...
+usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|external-design|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round} ...
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
   start --amend --lower --reason "<text>" <rid> <lighter-lane> ...   lowering needs both flags
@@ -1811,7 +1958,8 @@ usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|ou
   override <rid> <phase> <reason>
   record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
   debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
-  check <lane> <rid> [--kit-lanes]
+  external-design <rid> <owner/repo@<40-hex commit>:<path> | https://github.com/<owner>/<repo>/pull/<n>> <reason>
+  check <lane> <rid> [--kit-lanes] [--offline]
   plan <lane>
   progress <rid> <lane>
   rid                                  prints the rid derived from the current branch
@@ -1837,6 +1985,7 @@ case "$cmd" in
   plan-record) plan_record "$@" ;;
   record-batch) record_batch "$@" ;;
   inherit)  inherit "$@" ;;
+  external-design) external_design "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
   review-verdict) review_verdict "$@" ;;

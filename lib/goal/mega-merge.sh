@@ -76,8 +76,9 @@ _log() {  # rid text
   printf '%s | %s | %s\n' "$(now)" "$a" "$b" >> "$LOG_DIR/mega-merge.log" 2>/dev/null || true
 }
 
-# gate <rid> <lane> [--head <sha> [--base-tip <sha>]] -- DECISION ONLY. No gh calls, no writes
-# beyond a scratch spec file that is removed before return. Reuses
+# gate <rid> <lane> [--head <sha> [--base-tip <sha>]] -- DECISION ONLY. No gh calls of its own, no
+# writes beyond a scratch spec file that is removed before return (a ledger cite line makes check()
+# verify its external design citation through `gh api`, failing closed). Reuses
 # gate-ledger.sh check() byte-for-byte (same lane x phase matrix hooks/ship-gate.sh
 # enforces at push), so its ledger arm never drifts looser than the ship-gate's. The
 # ship-gate's full-lane implementation-notes check reads repo files and is NOT mirrored

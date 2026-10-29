@@ -201,8 +201,27 @@ ship_rule_floor() {
     printf '%s\n' "$gaps" | sed 's/^/  /'
     echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
     echo "  bash \"$ledger\" override $rid_q <phase> \"<reason>\""
+    ship_rule_external_hint "$gaps" "$ledger" "$rid_q"
   } >&2
   return 2
+}
+
+# ship_rule_external_hint <gaps> <ledger> <rid_q>: when a MISSING-GATE line names a design-side gate,
+# print the one-line way to cite a design record that lives in another repo. The covered set is read
+# from gate-ledger.sh the way it derives it (inherit's INHERITABLE minus test-plan), never a copy.
+ship_rule_external_hint() {
+  local covers ph
+  covers=$(sed -n 's/^INHERITABLE="\(.*\)"$/\1/p' "$2" 2>/dev/null | head -1)
+  covers="${covers% test-plan}"
+  [ -n "$covers" ] || return 0
+  for ph in $covers; do
+    if printf '%s\n' "$1" | grep -qE "^[[:space:]]*MISSING-GATE: $ph \\("; then
+      echo "Design gates ($covers) can rest on one design record in another GitHub repo, checked at push:"
+      echo "  bash \"$2\" external-design $3 <owner>/<repo>@<40-hex commit>:<path> \"<reason>\"   (or a merged PR URL)"
+      return 0
+    fi
+  done
+  return 0
 }
 
 # ship_rule_identities <root> <base> <head>: refuse a push whose new commits (base..head, so old history
