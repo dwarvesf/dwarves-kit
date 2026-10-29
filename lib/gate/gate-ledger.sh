@@ -639,7 +639,10 @@ check() {
   # Cache lookup first. Only a known lane with a usable rid and a stat-able ledger is ever cached,
   # so an unknown lane, an empty rid name or a missing ledger always takes the full path below.
   local tab=$'\t' safe ck_id="" ck_fp="" ck_prefix="" ck_res="" ck_phases="" ck_phase="" ck_ctime="" ck_f=""
-  case "$offline: $LANE_NAMES " in
+  # --offline skips the cache only for a ledger with a cite line (its verdict differs offline).
+  local ck_ok=0 ck_lf=""
+  if [ "$offline" = 1 ] && ck_lf="$(ledger_file "$rid" 2>/dev/null)" && [ -f "$ck_lf" ] && [ -n "$(_ext_cites "$ck_lf")" ]; then ck_ok=1; fi
+  case "$ck_ok: $LANE_NAMES " in
     0:*" $lane "*)
       safe="$(runid "$rid")"
       if [ -n "$safe" ]; then
@@ -682,7 +685,7 @@ check() {
       case " $EXTERNAL_COVERS " in
         *" $phase "*)
           if [ -z "$ext" ]; then
-            ext=no; [ -f "$f" ] && ext_why="$(_ext_covered "$f" "$offline" 2>&1)" && ext=ok
+            ext=no; [ -f "$f" ] && ext_why="$(_ext_covered "$f" "$offline" 2>&1)" && { ext=ok; ext_why=""; }
           fi
           [ "$ext" = ok ] && continue ;;
       esac
@@ -1118,15 +1121,21 @@ _ext_parse() {
 }
 _ext_repo_ok() { case "/$1/" in */./*|*/../*) return 1 ;; esac; return 0; }
 
-# _ext_gh <out-file> <args...>: run `gh <args>` with stdout+stderr to <out-file>, killed after the
-# bound (macOS has no `timeout`). KIT_EXT_TIMEOUT_SECS may lower the bound, never raise it.
-# Returns gh's exit code, or 124 on a timeout.
-_ext_gh() {
-  local out="$1" lim pid t=0; shift
-  lim="${KIT_EXT_TIMEOUT_SECS:-$EXT_TIMEOUT_MAX}"
+# _ext_lim: the per-call bound in seconds. KIT_EXT_TIMEOUT_SECS may lower it, never raise it.
+_ext_lim() {
+  local lim="${KIT_EXT_TIMEOUT_SECS:-$EXT_TIMEOUT_MAX}"
   case "$lim" in ''|*[!0-9]*) lim="$EXT_TIMEOUT_MAX" ;; esac
   [ "$lim" -le "$EXT_TIMEOUT_MAX" ] || lim="$EXT_TIMEOUT_MAX"
-  "${GH_CMD:-gh}" "$@" > "$out" 2>&1 &
+  printf '%s' "$lim"
+}
+
+# _ext_gh <out-file> <err-file> <args...>: run `gh <args>`, stdout and stderr to their own files,
+# killed after the bound (macOS has no `timeout`). Returns gh's exit code, or 124 on a timeout.
+# Only gh's direct child is killed; a helper it forked may outlive it, writing nowhere we read.
+_ext_gh() {
+  local out="$1" err="$2" lim pid t=0; shift 2
+  lim="$(_ext_lim)"
+  "${GH_CMD:-gh}" "$@" > "$out" 2> "$err" < /dev/null &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$t" -ge $((lim * 10)) ]; then
@@ -1147,20 +1156,24 @@ _ext_verify() {
   IFS=$'\t' read -r kind repo a b <<< "$parsed"
   command -v "${GH_CMD:-gh}" >/dev/null 2>&1 || { echo "gh not found, cannot verify" >&2; return 1; }
   tmp="$(mktemp "${TMPDIR:-/tmp}/kit-ext.XXXXXX")" || { echo "no temp file, cannot verify" >&2; return 1; }
+  # --hostname pins github.com: a GH_HOST set for an enterprise host must not answer for a github.com citation.
   if [ "$kind" = pr ]; then
-    _ext_gh "$tmp" api "repos/$repo/pulls/$a" --jq .merged || rc=$?
+    _ext_gh "$tmp" "$tmp.err" api "repos/$repo/pulls/$a" --hostname github.com --jq .merged || rc=$?
   else
-    _ext_gh "$tmp" api "repos/$repo/contents/$b?ref=$a" --jq 'if type=="object" then .type else "dir" end' || rc=$?
+    _ext_gh "$tmp" "$tmp.err" api "repos/$repo/contents/$b?ref=$a" --hostname github.com --jq 'if type=="object" then .type else "dir" end' || rc=$?
   fi
-  out="$(tr -d '\000-\010\013-\037\177' < "$tmp" 2>/dev/null)"; command rm -f "$tmp"
-  out="$(printf '%s' "$out" | tr '\n\r\t' '   ')"   # control bytes stripped, one line: it reaches a block message
+  # stdout alone decides; stderr only explains a failure. Control bytes stripped, one line: it reaches a block message.
+  out="$(tr -d '\000-\010\013-\037\177' < "$tmp" 2>/dev/null)"
+  [ "$rc" -eq 0 ] || out="$out $(tr -d '\000-\010\013-\037\177' < "$tmp.err" 2>/dev/null)"
+  command rm -f "$tmp" "$tmp.err"
+  out="$(printf '%s' "$out" | tr '\n\r\t' '   ')"
   if [ "$rc" -eq 0 ]; then
     [ "$kind" = pr ] && [ "$out" = true ] && return 0
     [ "$kind" = path ] && [ "$out" = file ] && return 0
     if [ "$kind" = pr ]; then echo "PR $repo#$a is not merged" >&2; else echo "$b at $repo@${a:0:12} is not a file" >&2; fi
     return 1
   fi
-  [ "$rc" -ne 124 ] || { echo "gh api timed out after ${EXT_TIMEOUT_MAX}s or less" >&2; return 1; }
+  [ "$rc" -ne 124 ] || { echo "gh api timed out after $(_ext_lim)s" >&2; return 1; }
   echo "gh api failed (exit $rc): $(printf '%s' "$out" | cut -c1-160)" >&2
   return 1
 }
@@ -1195,7 +1208,7 @@ external_design() {
   reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "external-design requires a reason" >&2; return 64; }
   f="$(ledger_file "$rid")" || return 64
   _ext_parse "$cit" >/dev/null || { echo "external-design: '$(oneline "$cit" | cut -c1-200)' is not a citation; use <owner>/<repo>@<40-hex commit>:<path> or https://github.com/<owner>/<repo>/pull/<n>; nothing written" >&2; return 64; }
-  if [ -f "$f" ] && grep -qxF "$cit" < <(_ext_cites "$f"); then echo "already cited: $cit"; return 0; fi
+  if [ -f "$f" ] && grep -qxF -- "$cit" < <(_ext_cites "$f"); then echo "already cited: $cit"; return 0; fi
   why="$(_ext_verify "$cit" 2>&1)" || { echo "external-design: $cit did not verify: $why; nothing written" >&2; return 1; }
   append_run_line "$rid" "$(printf '%s | GATE | external-design | cite | %s | %s' "$(now)" "$cit" "$reason")"
   echo "cited $cit: covers $EXTERNAL_COVERS"

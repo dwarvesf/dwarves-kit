@@ -258,3 +258,25 @@ Negative controls (dry trace):
 ## Open questions
 
 (none)
+
+## Review
+
+### Verdict: FIX THEN SHIP
+
+### Findings
+
+Fresh-context Opus review of `git diff master...HEAD -- lib hooks tests`. Every finding below is fixed on the branch and pinned by a case in `tests/test-gate-external-design.sh` where one applies.
+
+- Medium: `gh api` honoured `GH_HOST`, so a github.com citation could be checked on an enterprise host. Fixed: `--hostname github.com` on both calls.
+- Medium: gh stderr was read with stdout, so an update notice could fail a valid citation. Fixed: stdout alone decides; stderr only explains a failure.
+- Low: a failed citation was reported even after an older one verified. Fixed.
+- Low: the timeout message printed the ceiling, not the bound used. Fixed.
+- Low: `grep -qxF "$cit"` without `--` broke on an owner that starts with a dash. Fixed.
+- Low: `--offline` dropped the verdict cache for ledgers with no cite line. Fixed: it skips the cache only when a cite line exists.
+- Low: `ship_rule_large_spec` reads a raw validate line, so a cite line does not satisfy it. Documented in `lib/gate/README.md`.
+- Low: the covered-set pin used `source <(...)`, which reads nothing on bash 3.2. Fixed with `eval`.
+- Note: the kill reaches gh's direct child only. Documented at `_ext_gh`.
+
+### TODOs
+
+- Han: DEC-2, DEC-6, and whether waiver counters should count a cite line (see the implementation notes).

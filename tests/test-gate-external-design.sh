@@ -45,7 +45,7 @@ printf '%s\n' "$*" >> "$GH_LOG"
 if [ -f "$GH_LOG.hang" ]; then sleep 20; exit 0; fi
 if [ -f "$GH_LOG.down" ]; then echo 'gh: Not Found (HTTP 404)'; exit 1; fi
 case "$2" in
-  "repos/consolelabs/playdate-agent/contents/docs/specs/SPEC-005-relay-link-and-seal.md?ref=7e3e190e854c23ecc4571f203970cd993d08b041") echo file ;;
+  "repos/consolelabs/playdate-agent/contents/docs/specs/SPEC-005-relay-link-and-seal.md?ref=7e3e190e854c23ecc4571f203970cd993d08b041") echo file; echo "A new release of gh is available" >&2 ;;
   "repos/consolelabs/playdate-agent/contents/docs/specs?ref=7e3e190e854c23ecc4571f203970cd993d08b041") echo dir ;;
   "repos/consolelabs/playdate-agent/pulls/35") echo true ;;
   "repos/consolelabs/playdate-agent/pulls/36") echo false ;;
@@ -78,6 +78,11 @@ ok "verb: a file at a pinned commit is cited, exit 0" '[ "$RC" -eq 0 ]'
 ok "verb: exactly one cite line" '[ "$(n_cite r)" -eq 1 ]'
 ok "verb: the line format is exact" 'ledger_of r | grep -qxF "$(ledger_of r | head -1 | cut -d" " -f1) | GATE | external-design | cite | $GOOD | relay design lives in playdate-agent"'
 ok "verb: it names the covered gates" 'printf "%s" "$OUT" | grep -qF "$COVERS"'
+ok "verb: gh stderr noise on success does not fail the citation (stdout alone decides)" '[ "$(n_cite r)" -eq 1 ]'
+ok "verb: every gh call pins --hostname github.com" '[ "$(grep -c -- "--hostname github.com" "$GH_LOG")" -eq "$(n_calls)" ] && [ "$(n_calls)" -ge 1 ]'
+new_log; gate_line r think ran "a ledger exists, so the already-cited grep runs"; run external-design r "-o/x@$SHA:docs/x.md" "reason"
+ok "verb: an owner that starts with a dash is handled (no grep option injection)" '[ "$RC" -eq 1 ] && [ "$(n_cite r)" -eq 0 ] && ! printf "%s" "$ERR" | grep -qi "usage"'
+new_log; run external-design r "$GOOD" "first"
 run external-design r "$GOOD" "again"
 ok "verb: the same citation twice writes nothing new" '[ "$RC" -eq 0 ] && [ "$(n_cite r)" -eq 1 ] && printf "%s" "$OUT" | grep -qF "already cited"'
 
@@ -176,6 +181,9 @@ ok "check: a hand-appended bare string fails full" '[ "$RC" -eq 1 ]'
 new_log; branch_gates r; gate_line r external-design cite "$MISSING | bogus"; gate_line r external-design cite "$GOOD | real"
 run check full r
 ok "check: one real citation beside a bogus one covers" '[ "$RC" -eq 0 ]'
+new_log; for p in test-plan review docs ship reflect; do gate_line r "$p" ran "fixture $p"; done; gate_line r external-design cite "$GOOD | real, older"; gate_line r external-design cite "$MISSING | bogus, newer"
+run check full r
+ok "check: once a citation verifies, a failed one is not reported against an unrelated gap" '[ "$RC" -eq 1 ] && printf "%s" "$ERR" | grep -q "^MISSING-GATE: build " && ! printf "%s" "$ERR" | grep -q "^EXTERNAL-DESIGN: "'
 
 new_log; gate_line r external-design cite "$GOOD | real"
 for p in build review docs ship reflect; do gate_line r "$p" ran "fixture $p"; done
@@ -215,7 +223,7 @@ ok "progress/descent: no gh call" '[ "$(n_calls)" -eq 0 ]'
 
 echo "=== structural pins ==="
 
-COV="$(bash -c 'source <(sed -n "/^INHERITABLE=/p; /^EXTERNAL_COVERS=/p" "$1"); printf "%s" "$EXTERNAL_COVERS"' _ "$GL")"
+COV="$(bash -c 'eval "$(sed -n "/^INHERITABLE=/p; /^EXTERNAL_COVERS=/p" "$1")"; printf "%s" "$EXTERNAL_COVERS"' _ "$GL")"   # eval, not source <(...): bash 3.2
 ok "pin: the covered set is exactly the six design-side gates" '[ "$COV" = "$COVERS" ]'
 ok "pin: no ship path passes --offline" '! grep -n -- "--offline" "$KIT_DIR/hooks/ship-gate.sh" "$KIT_DIR/lib/gate/ship-rules.sh" "$KIT_DIR/lib/goal/mega-merge.sh"'
 ok "pin: lane telemetry passes --offline" '[ "$(grep -c "check \"\$lane\" \"\$rid\" --offline" "$KIT_DIR/lib/telemetry/lane-telemetry.sh")" -eq 1 ]'

@@ -85,6 +85,8 @@ A change can build on a design record kept in another GitHub repo: a spec or ADR
 
 The citation is pinned and checkable. It takes one of two forms: `<owner>/<repo>@<40-hex commit>:<path>`, where the path must be a file at that commit, or `https://github.com/<owner>/<repo>/pull/<n>`, where the PR must be merged. The verb verifies it through `gh api` before it writes; a bare string, a short sha or a branch name exits 64, and a citation that does not verify exits 1, both writing nothing. `check` verifies it again whenever a design-side gate has no line of its own, so the ship-gate checks the record at every push and a hand-appended cite line never passes on its text. Verification fails closed: no `gh`, no token access, no network, or a call past 4 s means unverified, and the block names why on an `EXTERNAL-DESIGN:` line. One `check` tries at most two citations, newest first. Per-gate overrides keep working; they are the fallback when GitHub is unreachable.
 
+A cite line counts only through `check`. The normal lane's large-spec rule (`ship_rule_large_spec`) reads a `validate` line directly, so a large normal-lane spec still needs its own validate record.
+
 What it attests: the record exists. It does not attest that the record is about this change; the reason and the PR review carry that. `check --offline` counts a citation that parses, with no network and no verdict cache, for display and telemetry readers; no ship path passes it.
 
 Records are append-only, redacted (no command bodies), and one physical line per call
