@@ -1,7 +1,7 @@
 # SPEC-414: one ledger entry cites a design record in another repo
 
 Generated: 2026-10-30
-Status: APPROVED
+Status: VALIDATED
 Lane: full
 Depth: standard (every fact is in gate-ledger.sh, ship-gate.sh, ship-rules.sh and two sampled GitHub API calls)
 Type: spec-feature
