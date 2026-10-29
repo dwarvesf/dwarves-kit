@@ -893,6 +893,143 @@ class TestRecall(unittest.TestCase):
             self.assertEqual(run("--session", "zzz").returncode, 1)
 
 
+    # --- --artifacts: the claude.ai Artifacts a session published ----------------
+
+    UUID_A = "11111111-aaaa-4bbb-8ccc-000000000001"
+    UUID_B = "22222222-aaaa-4bbb-8ccc-000000000002"
+    ACCOUNT = "fake.user@example.invalid"
+
+    def _artifact_transcript(self, d, name="abc12345-0000-0000-0000-000000000000.jsonl"):
+        """Account reminder, publish A, republish A, a `list` and a `read` call, a failed
+        publish, publish B with no description: one fixture covering every case."""
+        def use(i, ts, **inp):
+            return {"type": "assistant", "timestamp": ts, "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "id": i, "name": "Artifact", "input": inp}]}}
+
+        def result(i, ts, text):
+            return {"type": "user", "timestamp": ts, "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": i, "content": [{"type": "text", "text": text}]}]}}
+
+        ok = lambda u: f"Published at https://claude.ai/code/artifact/{u}"
+        entries = [
+            {"type": "user", "timestamp": "2026-10-28T08:00:00Z", "message": {"role": "user", "content": [
+                {"type": "text", "text": f"<system-reminder>\nThe user's email address is {self.ACCOUNT}. "
+                                         "Use it only to identify the user.\n</system-reminder>"}]}},
+            use("t1", "2026-10-28T09:00:00Z", file_path="/scratch/plan.html", description="first cut", icon="doc"),
+            result("t1", "2026-10-28T09:00:05Z", ok(self.UUID_A)),
+            use("t2", "2026-10-28T10:00:00Z", file_path="/scratch/plan.html", action="publish", url=f"https://claude.ai/code/artifact/{self.UUID_A}"),
+            result("t2", "2026-10-28T10:00:05Z", ok(self.UUID_A)),
+            use("t3", "2026-10-28T10:30:00Z", action="list"),
+            result("t3", "2026-10-28T10:30:01Z", f"1 artifact: https://claude.ai/code/artifact/{self.UUID_B}"),
+            use("t4", "2026-10-28T10:40:00Z", action="read", url=f"https://claude.ai/code/artifact/{self.UUID_B}"),
+            result("t4", "2026-10-28T10:40:01Z", "<html>page</html>"),
+            use("t5", "2026-10-28T11:00:00Z", file_path="/scratch/failed.html"),
+            result("t5", "2026-10-28T11:00:01Z", "Error: publish refused"),
+            use("t6", "2026-10-28T12:00:00Z", file_path="/scratch/board.html"),
+            result("t6", "2026-10-28T12:00:05Z", ok(self.UUID_B)),
+        ]
+        path = os.path.join(d, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(json.dumps(e) for e in entries) + "\n")
+        return path
+
+    def _artifacts(self, *extra):
+        return subprocess.run([sys.executable, BIN, "--artifacts", *extra], capture_output=True, text=True)
+
+    def test_artifacts_publish_with_result_url_and_account(self):
+        with tempfile.TemporaryDirectory() as d:
+            res = self._artifacts("--file", self._artifact_transcript(d), "--json")
+        self.assertEqual(res.returncode, 0)
+        rows = {x["url"]: x for x in json.loads(res.stdout)["artifacts"]}
+        board = rows[f"https://claude.ai/code/artifact/{self.UUID_B}"]
+        self.assertEqual((board["basename"], board["file"], board["session"]), ("board.html", "/scratch/board.html", "abc12345"))
+        self.assertEqual((board["timestamp"], board["description"], board["versions"]), ("2026-10-28T12:00:00Z", "", 1))
+        self.assertEqual(board["account"], self.ACCOUNT)
+
+    def test_artifacts_republish_dedupes_with_version_count(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = json.loads(self._artifacts("--file", self._artifact_transcript(d), "--json").stdout)["artifacts"]
+        plan = [x for x in rows if x["url"].endswith(self.UUID_A)]
+        self.assertEqual(len(plan), 1)
+        # latest timestamp wins, the first publish's description survives the empty one
+        self.assertEqual((plan[0]["versions"], plan[0]["timestamp"], plan[0]["description"]),
+                         (2, "2026-10-28T10:00:00Z", "first cut"))
+        self.assertEqual([x["basename"] for x in rows], ["board.html", "plan.html"])  # newest first
+
+    def test_artifacts_ignores_non_publish_actions_and_failed_publishes(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = json.loads(self._artifacts("--file", self._artifact_transcript(d), "--json").stdout)["artifacts"]
+        self.assertEqual(len(rows), 2)
+        self.assertNotIn("failed.html", [x["basename"] for x in rows])
+        # the list result names UUID_B too; only the real publish at 12:00 counts, one version
+        self.assertEqual([x["versions"] for x in rows if x["url"].endswith(self.UUID_B)], [1])
+
+    def test_artifacts_duplicated_tool_use_line_counts_once(self):
+        # a streamed message re-recorded: same tool_use id twice, each followed by its result
+        use = {"type": "assistant", "timestamp": "2026-10-28T09:00:00Z", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "dup", "name": "Artifact", "input": {"file_path": "/s/a.html"}}]}}
+        res = {"type": "user", "timestamp": "2026-10-28T09:00:05Z", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "dup", "content": f"at https://claude.ai/code/artifact/{self.UUID_A}"}]}}
+        again = {"type": "assistant", "timestamp": "2026-10-28T10:00:00Z", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "real2", "name": "Artifact", "input": {"file_path": "/s/a.html"}}]}}
+        res2 = {"type": "user", "timestamp": "2026-10-28T10:00:05Z", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "real2", "content": f"at https://claude.ai/code/artifact/{self.UUID_A}"}]}}
+        rows = r.dedupe_artifacts(r.artifact_publishes(iter([use, res, use, res, again, res2, res2]), "dup00000"))
+        self.assertEqual([(x["url"].endswith(self.UUID_A), x["versions"]) for x in rows], [(True, 2)])
+
+    def test_artifacts_text_output_names_account_url_and_data_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            res = self._artifacts("--file", self._artifact_transcript(d))
+        lines = res.stdout.splitlines()
+        self.assertEqual(lines[1], r.DATA_MARKER)
+        plan = next(ln for ln in lines if "plan.html" in ln)
+        self.assertEqual(plan, f"2026-10-28 10:00  abc12345  plan.html  https://claude.ai/code/artifact/{self.UUID_A}"
+                               f"  v2  {self.ACCOUNT}  first cut")
+        self.assertEqual(lines[-1], "# end of artifact data")
+
+    def test_artifacts_account_from_session_context_attachment_and_unknown(self):
+        def build(d, entries):
+            path = os.path.join(d, "ddd11111.jsonl")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(json.dumps(e) for e in entries) + "\n")
+            return path
+        pub = [{"type": "assistant", "timestamp": "2026-10-28T09:00:00Z", "message": {"role": "assistant", "content": [
+                   {"type": "tool_use", "id": "t", "name": "Artifact", "input": {"file_path": "/s/a.html"}}]}},
+               {"type": "user", "timestamp": "2026-10-28T09:00:01Z", "message": {"role": "user", "content": [
+                   {"type": "tool_result", "tool_use_id": "t", "content": f"at https://claude.ai/code/artifact/{self.UUID_A}"}]}}]
+        ctx = {"type": "attachment", "timestamp": "2026-10-28T08:00:00Z", "attachment": {
+            "type": "session_context", "context": {"userEmail": f"The user's email address is {self.ACCOUNT}. Use it only."}}}
+        with tempfile.TemporaryDirectory() as d:
+            known = json.loads(self._artifacts("--file", build(d, [ctx] + pub), "--json").stdout)["artifacts"][0]
+            unknown = json.loads(self._artifacts("--file", build(d, pub), "--json").stdout)["artifacts"][0]
+        self.assertEqual(known["account"], self.ACCOUNT)
+        self.assertEqual(unknown["account"], "")
+
+    def test_artifacts_filter_session_prefix_and_exit_codes(self):
+        with tempfile.TemporaryDirectory() as home:
+            proj = os.path.join(home, "-proj")
+            os.makedirs(proj)
+            self._artifact_transcript(proj, "abc12345-0.jsonl")
+            self._artifact_transcript(proj, "def67890-0.jsonl")
+            code = ("import sys; sys.path.insert(0, %r); import session_recall as r; r.PROJECTS = %r; "
+                    "raise SystemExit(r.main(sys.argv[1:]))" % (ROOT, home))
+            run = lambda *a: subprocess.run([sys.executable, "-c", code, "--artifacts", *a], capture_output=True, text=True)
+            one = json.loads(run("--session", "def", "--json").stdout)["artifacts"]
+            self.assertEqual({x["session"] for x in one}, {"def67890"})
+            both = json.loads(run("--project", "proj", "--json").stdout)["artifacts"]
+            self.assertEqual(len(both), 2)  # same URLs in two sessions dedupe; versions add up (1+1, 2+2)
+            self.assertEqual(sorted(x["versions"] for x in both), [2, 4])
+            only = json.loads(run("board", "--project", "proj", "--json").stdout)["artifacts"]
+            self.assertEqual([x["basename"] for x in only], ["board.html"])
+            self.assertEqual(run("--session", "zzz").returncode, 1)
+            self.assertEqual(run("nomatchzzz", "--project", "proj").stdout, "")
+        for extra in (["--sessions"], ["--tail", "abc"], ["--final", SEED], ["--out", "x"], ["--max-bytes", "5"],
+                      ["--fence", "md"], ["--file", SEED, "--session", "abc"], ["--session", "-x"]):
+            self.assertEqual(self._artifacts(*extra).returncode, 2, extra)
+        self.assertEqual(self._artifacts("--file", os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
+        self.assertEqual(self._written("/s/x", "--file", SEED, "--artifacts").returncode, 2)
+
+
     def test_determinism(self):
         a = subprocess.run([sys.executable, BIN, "backoff", "--file", SEED],
                            capture_output=True, text=True).stdout

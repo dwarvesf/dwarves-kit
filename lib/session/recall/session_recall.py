@@ -679,19 +679,154 @@ def written_content(entries, path: str):
     return kind, text, sum(1 for e in edits if e > at)
 
 
+# --- --artifacts: the claude.ai Artifacts a session published ---------------------
+
+_ARTIFACT_URL_RE = re.compile(r"https://claude\.ai/(?:code/)?artifact/[0-9A-Za-z-]+")
+_ACCOUNT_RE = re.compile(r"The user's email address is ([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+ARTIFACT_DESC_WIDTH = 80
+
+
+def _entry_text_for_account(entry) -> str:
+    """Text that can carry the session's account line: a turn's own text, plus the
+    `attachment` object of an attachment entry (where the session context lives)."""
+    text = searchable_text(entry)
+    att = entry.get("attachment")
+    if isinstance(att, dict):
+        text += "\n" + json.dumps(att, ensure_ascii=False)
+    return text
+
+
+def _result_text(block: dict) -> str:
+    rc = block.get("content")
+    if isinstance(rc, str):
+        return rc
+    if isinstance(rc, list):
+        return "\n".join(s.get("text") or "" for s in rc if isinstance(s, dict) and s.get("type") == "text")
+    return ""
+
+
+def artifact_publishes(entries, session: str):
+    """[{session, timestamp, file, url, description, account}] for every Artifact publish in
+    `entries` whose matching tool_result carries a claude.ai artifact URL, in conversation
+    order. A publish is an assistant `Artifact` tool_use with no `action` or `action ==
+    "publish"`; `list`, `read`, `pin` and the rest are skipped. A publish with no URL in its
+    result (it failed) is skipped. `account` is the email last seen in the session context
+    before the publish, or "". Each tool_use id counts once, so a line a transcript
+    re-records (same id) is one publish. `entries` is consumed once."""
+    pending = {}  # tool_use_id -> publish row awaiting its result
+    seen = set()  # tool_use ids already taken: a re-recorded line must not count twice
+    out = []
+    account = ""
+    for entry in entries:
+        role = _role(entry)
+        if role != "assistant":
+            m = _ACCOUNT_RE.search(_entry_text_for_account(entry))
+            if m:
+                account = m.group(1)
+        content = _msg(entry).get("content")
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if role == "assistant" and b.get("type") == "tool_use" and b.get("name") == "Artifact":
+                inp = b.get("input")
+                if not isinstance(inp, dict) or inp.get("action") not in (None, "publish"):
+                    continue
+                path = inp.get("file_path") if isinstance(inp.get("file_path"), str) else ""
+                desc = inp.get("description") if isinstance(inp.get("description"), str) else ""
+                if isinstance(b.get("id"), str) and b["id"] not in seen:
+                    seen.add(b["id"])
+                    pending[b["id"]] = {"session": session, "timestamp": _ts(entry), "file": path,
+                                        "description": desc, "account": account}
+            elif b.get("type") == "tool_result" and b.get("tool_use_id") in pending:
+                m = _ARTIFACT_URL_RE.search(_result_text(b))
+                row = pending.pop(b["tool_use_id"])
+                if m:
+                    out.append({**row, "url": m.group(0)})
+    return out
+
+
+def dedupe_artifacts(publishes):
+    """One row per URL, newest first: the latest publish's timestamp, session, file and
+    account, the newest non-empty description, and `versions`, how many publishes
+    carried that URL. Rows from several sessions merge by timestamp."""
+    rows = {}
+    for p in sorted(publishes, key=lambda x: x["timestamp"]):  # stable: ties keep conversation order
+        prev = rows.get(p["url"])
+        rows[p["url"]] = {**p, "versions": (prev["versions"] if prev else 0) + 1,
+                          "description": p["description"] or (prev["description"] if prev else "")}
+    out = []
+    for row in rows.values():
+        row["basename"] = os.path.basename(row["file"])
+        out.append({k: row[k] for k in ("session", "timestamp", "basename", "file", "url",
+                                        "description", "account", "versions")})
+    return sorted(out, key=lambda x: x["timestamp"], reverse=True)
+
+
+def render_artifacts(rows) -> str:
+    """One line per artifact, newest first, under a header and the DATA marker (a
+    description and a file name are model-written text, pasted into sessions)."""
+    lines = ["# artifacts, newest first (timestamps UTC)", DATA_MARKER]
+    for x in rows:
+        ts = x["timestamp"][:16].replace("T", " ")
+        ver = f"  v{x['versions']}" if x["versions"] > 1 else ""
+        acct = x["account"] or "account unknown"
+        desc = _clean_tail_text(x["description"], ARTIFACT_DESC_WIDTH)
+        lines.append(f"{ts}  {x['session']}  {_clean_tail_text(x['basename'], 60)}  {x['url']}{ver}  "
+                     f"{_clean_tail_text(acct, 60)}" + (f"  {desc}" if desc else ""))
+    lines.append("# end of artifact data")
+    return "\n".join(lines)
+
+
+def collect_artifacts(query, file=None, session=None, project=None, search_all=False, limit=50):
+    """Deduped artifact rows for the CLI, or (exit code, stderr message) when the source
+    cannot be read. One transcript (`--file`, `--session`) is read whole; otherwise the
+    project (or `--all`) transcripts are walked newest-first and the walk stops once
+    `limit` rows match, so a `versions` count there covers only the transcripts read.
+    `query` keeps rows whose file name, URL, description or account contains it."""
+    if session is not None:
+        try:
+            path, _ = resolve_tail_target(session, project=project)
+        except TailResolutionError as e:
+            return e.code, e.message
+        files = [path]
+    elif file is not None:
+        files = [file]
+    else:
+        files = sorted(resolve_files(project=project, search_all=search_all), key=lambda f: -os.path.getmtime(f))
+    q = query.lower()
+    publishes, rows = [], []
+    for f in files:
+        sid = os.path.basename(f)
+        sid = (sid[:-len(".jsonl")] if sid.endswith(".jsonl") else sid)[:8]
+        try:
+            publishes += artifact_publishes(iter_entries(f, errors="replace"), _clean_ctrl(sid))
+        except OSError as e:
+            if session is not None or file is not None:
+                return 1, f"session-recall: {e}\n"
+            continue
+        rows = [x for x in dedupe_artifacts(publishes)
+                if not q or q in " ".join((x["basename"], x["url"], x["description"], x["account"])).lower()]
+        if len(rows) >= limit:
+            break
+    return rows[:limit]
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     file = project = tail = final = fence_tag = out_path = written = session = None
-    search_all = as_json = sessions = False
+    search_all = as_json = sessions = artifacts = False
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     max_bytes = FINAL_MAX_BYTES
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
              "[--sessions] [--limit N] [--json] [--tail PREFIX] "
              "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]] "
-             "[--written PATH (--file F | --session PREFIX) [--out FILE]]\n")
+             "[--written PATH (--file F | --session PREFIX) [--out FILE]] "
+             "[--artifacts [<filter>] [--file F | --session PREFIX | --project SLUG | --all] [--limit N] [--json]]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -710,6 +845,8 @@ def main(argv=None) -> int:
             final = next(it, None)
         elif a == "--written":
             written = next(it, None)
+        elif a == "--artifacts":
+            artifacts = True
         elif a == "--session":
             session = next(it, None)
         elif a == "--fence":
@@ -760,12 +897,12 @@ def main(argv=None) -> int:
     if "--out" in argv and not out_path:
         sys.stderr.write(usage)
         return 2
-    if session is not None and written is None:
+    if session is not None and written is None and not artifacts:
         sys.stderr.write(usage)
         return 2
     if written is not None:
         # --written takes --file or --session and --out; every other mode flag is a conflict
-        if (not written or written.startswith("-") or final is not None or query or sessions
+        if (not written or written.startswith("-") or final is not None or query or sessions or artifacts
                 or tail is not None or as_json or fence_tag is not None or max_bytes != FINAL_MAX_BYTES
                 or (file is None) == (session is None) or not (file or session or "").strip()
                 or (session or "x").startswith("-") or (out_path or "x").startswith("-")):
@@ -800,6 +937,28 @@ def main(argv=None) -> int:
             sys.stdout.write(f"wrote {len(text.encode('utf-8'))} bytes to {out_path}\n")
             return 0
         sys.stdout.write(text)
+        return 0
+
+    if artifacts:
+        # --artifacts takes a filter, one source (--file, --session, else project/--all/cwd), --limit, --json
+        if (final is not None or tail is not None or sessions or fence_tag is not None
+                or out_path is not None or max_bytes != FINAL_MAX_BYTES
+                or (file is not None and session is not None) or (file is not None and not file.strip())
+                or (session is not None and (not session.strip() or session.startswith("-")))):
+            sys.stderr.write(usage)
+            return 2
+        rows = collect_artifacts(query, file=file, session=session, project=project,
+                                 search_all=search_all, limit=limit if limit is not None else 50)
+        if isinstance(rows, tuple):  # (exit code, stderr message)
+            sys.stderr.write(rows[1])
+            return rows[0]
+        if as_json:
+            payload = {"data_marker": DATA_MARKER, "artifacts": rows}
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        elif rows:
+            sys.stdout.write(render_artifacts(rows) + "\n")
+        else:
+            sys.stderr.write("session-recall: no artifact publishes found\n")
         return 0
 
     if final is None and (fence_tag is not None or out_path is not None
