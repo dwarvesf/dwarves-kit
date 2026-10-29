@@ -964,6 +964,19 @@ class TestRecall(unittest.TestCase):
         # the list result names UUID_B too; only the real publish at 12:00 counts, one version
         self.assertEqual([x["versions"] for x in rows if x["url"].endswith(self.UUID_B)], [1])
 
+    def test_artifacts_duplicated_tool_use_line_counts_once(self):
+        # a streamed message re-recorded: same tool_use id twice, each followed by its result
+        use = {"type": "assistant", "timestamp": "2026-10-28T09:00:00Z", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "dup", "name": "Artifact", "input": {"file_path": "/s/a.html"}}]}}
+        res = {"type": "user", "timestamp": "2026-10-28T09:00:05Z", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "dup", "content": f"at https://claude.ai/code/artifact/{self.UUID_A}"}]}}
+        again = {"type": "assistant", "timestamp": "2026-10-28T10:00:00Z", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "real2", "name": "Artifact", "input": {"file_path": "/s/a.html"}}]}}
+        res2 = {"type": "user", "timestamp": "2026-10-28T10:00:05Z", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "real2", "content": f"at https://claude.ai/code/artifact/{self.UUID_A}"}]}}
+        rows = r.dedupe_artifacts(r.artifact_publishes(iter([use, res, use, res, again, res2, res2]), "dup00000"))
+        self.assertEqual([(x["url"].endswith(self.UUID_A), x["versions"]) for x in rows], [(True, 2)])
+
     def test_artifacts_text_output_names_account_url_and_data_marker(self):
         with tempfile.TemporaryDirectory() as d:
             res = self._artifacts("--file", self._artifact_transcript(d))

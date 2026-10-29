@@ -711,8 +711,10 @@ def artifact_publishes(entries, session: str):
     order. A publish is an assistant `Artifact` tool_use with no `action` or `action ==
     "publish"`; `list`, `read`, `pin` and the rest are skipped. A publish with no URL in its
     result (it failed) is skipped. `account` is the email last seen in the session context
-    before the publish, or "". `entries` is consumed once."""
+    before the publish, or "". Each tool_use id counts once, so a line a transcript
+    re-records (same id) is one publish. `entries` is consumed once."""
     pending = {}  # tool_use_id -> publish row awaiting its result
+    seen = set()  # tool_use ids already taken: a re-recorded line must not count twice
     out = []
     account = ""
     for entry in entries:
@@ -733,7 +735,8 @@ def artifact_publishes(entries, session: str):
                     continue
                 path = inp.get("file_path") if isinstance(inp.get("file_path"), str) else ""
                 desc = inp.get("description") if isinstance(inp.get("description"), str) else ""
-                if isinstance(b.get("id"), str):
+                if isinstance(b.get("id"), str) and b["id"] not in seen:
+                    seen.add(b["id"])
                     pending[b["id"]] = {"session": session, "timestamp": _ts(entry), "file": path,
                                         "description": desc, "account": account}
             elif b.get("type") == "tool_result" and b.get("tool_use_id") in pending:
