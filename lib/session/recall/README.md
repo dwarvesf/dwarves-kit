@@ -159,6 +159,16 @@ through the transcript (never loaded whole).
   `--written` cannot combine with a query, `--sessions`, `--tail`, `--final`, `--json`,
   `--fence`, or `--max-bytes` (exit 2).
 
+## --artifacts: the Artifacts a session published
+
+```
+session-recall --artifacts --session <id-prefix>        # one session; same prefix rules as --tail
+session-recall --artifacts [<filter>] --project <slug>  # newest transcripts first; filter matches file, URL, description, account
+session-recall --artifacts --file <path.jsonl> --json   # objects: session, timestamp, basename, file, url, description, account, versions
+```
+
+One row per claude.ai artifact URL, newest first: UTC time, session id prefix, file name, URL, `vN` when republished, the account email the session ran under (`account unknown` when absent), a description cut at 80 characters. A publish is an `Artifact` call with no `action` or `action: "publish"` whose result carries the URL; `list`, `read` and failed publishes are skipped. Republishes of one URL collapse to the latest timestamp with a version count. The account matters: an artifact published under another account is not visible from this one. Output carries the DATA marker. No source flag walks the project (or `--all`) and stops at `--limit` (default 50) rows, so `versions` there counts only the transcripts read. It cannot combine with `--sessions`, `--tail`, `--final`, `--out`, `--fence`, or `--max-bytes` (exit 2).
+
 ## Layout
 
 ```
