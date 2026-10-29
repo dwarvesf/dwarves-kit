@@ -63,6 +63,7 @@ gate ledger record "$rid" Build ran "note"   # a gate decision
 gate ledger check full "$rid"                # exit 0 iff every required gate has ran|override
 gate ledger progress "$rid" full             # step k/n + checklist
 gate ledger inherit "$rid" full --from <spec-rid>   # a task branch carries its spec's gates
+gate ledger external-design "$rid" <owner>/<repo>@<40-hex commit>:<path> "why"   # design lives in another repo
 gate ledger record-batch "$rid" full think=ran:"design PR" reflect=override:"at wrap"   # several gates, one call
 ```
 
@@ -77,6 +78,16 @@ Each item carries its own evidence. `--evidence-default` fills any item with non
 A multi-task spec passes think, design, design-critique, spec, validate, design-record and test-plan once, on its own rid. Each task branch is its own rid, and the ship-gate checks the full lane on it. `inherit <rid> full --from <spec-rid>` writes one `override` line per spec-level gate, with the reason `inherited from <spec-rid>: <phase> ran there at <ts>`. It refuses, and writes nothing, unless the LAST GATE line for every one of those phases in the spec rid's ledger is `ran`. Build, review, docs, ship and reflect are never inherited.
 
 What it attests: a `ran` line is the last line for that phase in the named parent's ledger on this host. It does not attest approval, or that the task belongs to that spec. The verb is lead-only; no command, hook or skill calls it. A parent that itself inherited is refused, with the real spec rid named. A child that already inherited from a different parent exits 65. Re-running the same call is a no-op per phase already written. v1 serves the `full` lane only and reads the kit-root lane data, the same as the ship-gate's hard-path floor.
+
+### Design that lives in another repo
+
+A change can build on a design record kept in another GitHub repo: a spec or ADR in a sibling repo, or a merged design PR. `external-design <rid> <citation> <reason>` writes ONE line, `<ts> | GATE | external-design | cite | <citation> | <reason>`, and that line satisfies think, design, design-critique, spec, validate and design-record (inherit's set minus test-plan). It never covers test-plan, build, review, docs, ship or reflect: those belong to the change in this repo.
+
+The citation is pinned and checkable. It takes one of two forms: `<owner>/<repo>@<40-hex commit>:<path>`, where the path must be a file at that commit, or `https://github.com/<owner>/<repo>/pull/<n>`, where the PR must be merged. The verb verifies it through `gh api` before it writes; a bare string, a short sha or a branch name exits 64, and a citation that does not verify exits 1, both writing nothing. `check` verifies it again whenever a design-side gate has no line of its own, so the ship-gate checks the record at every push and a hand-appended cite line never passes on its text. Verification fails closed: no `gh`, no token access, no network, or a call past 4 s means unverified, and the block names why on an `EXTERNAL-DESIGN:` line. One `check` tries at most two citations, newest first. Per-gate overrides keep working; they are the fallback when GitHub is unreachable.
+
+A cite line counts only through `check`. The normal lane's large-spec rule (`ship_rule_large_spec`) reads a `validate` line directly, so a large normal-lane spec still needs its own validate record.
+
+What it attests: the record exists. It does not attest that the record is about this change; the reason and the PR review carry that. `check --offline` counts a citation that parses, with no network and no verdict cache, for display and telemetry readers; no ship path passes it.
 
 Records are append-only, redacted (no command bodies), and one physical line per call
 (`oneline()` collapses newlines, because a forged `| ran |` line would otherwise make

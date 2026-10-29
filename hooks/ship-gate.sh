@@ -543,6 +543,7 @@ if [ "$GRC" -ne 0 ]; then
     printf '%s\n' "$GAPS" | sed 's/^/  /'
     echo "Run the missing gate(s), or log an explicit override (recorded for audit):"
     echo "  bash \"$LEDGER\" override $SLUG_Q <phase> \"<reason>\""
+    ship_rule_external_hint "$GAPS" "$LEDGER" "$SLUG_Q"
     if [ -n "$NOTES_GAP" ]; then
       echo "For MISSING-NOTES: commit the implementation-notes file with its entries; a change with no deviations records one line:"
       echo "  No deviations; matches the spec verbatim"

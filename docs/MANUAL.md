@@ -610,6 +610,7 @@ bash lib/gate/gate-ledger.sh show    <rid>
   one closed-enum token: `reason=home-turf`, `reason=density-low`, or `reason=operator-wave`,
   optionally followed by `: <why>` (e.g. `reason=density-low: one-file doc fix`). Any other
   first token is refused at write time.
+- A design that lives in another GitHub repo: one `external-design <rid> <owner>/<repo>@<40-hex commit>:<path> "<reason>"` (or a merged PR URL) satisfies think, design, design-critique, spec, validate and design-record. The ship-gate verifies the citation through `gh api` at every push; a bare string never passes. See `lib/gate/README.md`, "Design that lives in another repo".
 - The full verb list (`start`, `debt`, `override`, `check`, ...) is the usage header of
   `lib/gate/gate-ledger.sh` itself; run it with no arguments to print it.
 

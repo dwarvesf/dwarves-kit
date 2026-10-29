@@ -142,7 +142,7 @@ _shipped_incomplete() {
     fi
     if [ -z "$verdict" ]; then
       dirty=1
-      if bash "$LIB_ROOT/gate/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1; then verdict=pass; else verdict=fail; fi
+      if bash "$LIB_ROOT/gate/gate-ledger.sh" check "$lane" "$rid" --offline >/dev/null 2>&1; then verdict=pass; else verdict=fail; fi
     fi
     [ -z "$id" ] || want_cache="$want_cache$rid$tab$id$tab$verdict$nl"
     [ "$verdict" = pass ] || printf '%s (%s)\n' "$rid" "$lane"
