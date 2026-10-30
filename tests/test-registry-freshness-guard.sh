@@ -175,7 +175,7 @@ RC13="$( cd "$T4" && printf '{"tool_input":{"command":"git push -u origin HEAD"}
 
 # 14. a diff touching ONLY a per-lib suite (lib/**/tests/*) that names a feature moves the
 # Tests column, so the arm must block it. The 2026-10 incident shape: a recall test edit
-# bumped the /kit:next row and pushed with no regeneration because the trigger list
+# bumped a Tests count and pushed with no regeneration because the trigger list
 # stopped at tests/test-*.sh.
 T14="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T14="$T14/kit"; mkkit "$T14"
 git -C "$T14" switch -qc feat/frg-libtest
