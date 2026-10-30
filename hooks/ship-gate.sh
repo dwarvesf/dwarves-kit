@@ -341,7 +341,8 @@ fi
 # Feature-registry freshness gate (kit repo only): docs/reference/FEATURES.md is a
 # generated projection whose inputs are the whole feature surface, including
 # tests/*.sh, lib/**/tests/** and docs/specs/SPEC-*.md (the Tests and Specs columns are
-# token greps). The trigger set comes from the generator (`input-pattern`), never a copy here. An author adding a test file has no reason to think about a docs
+# token greps). The trigger set comes from the generator (`input-pattern`), never a copy here.
+# An author adding a test file has no reason to think about a docs
 # projection, so the drift lands, the suite's pin goes red on master, and every
 # later merge commit inherits it (2026-09, fixed by hand a PR later). Regenerate
 # and byte-diff via the registry's own check verb, so the gate and the pin can
