@@ -173,6 +173,35 @@ RC13="$( cd "$T4" && printf '{"tool_input":{"command":"git push -u origin HEAD"}
   && ok "an install too old to scan another tree skips the arm with a note (exit 0)" \
   || no "a stale install should skip with a note (got $RC13)"
 
+# 14. a diff touching ONLY a per-lib suite (lib/**/tests/*) that names a feature moves the
+# Tests column, so the arm must block it. The 2026-10 incident shape: a recall test edit
+# bumped a Tests count and pushed with no regeneration because the trigger list
+# stopped at tests/test-*.sh.
+T14="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T14="$T14/kit"; mkkit "$T14"
+git -C "$T14" switch -qc feat/frg-libtest
+mkdir -p "$T14/lib/demo/tests"
+printf 'def test_x():\n    assert "demo-agent"\n' > "$T14/lib/demo/tests/test_demo.py"
+git -C "$T14" add -A; git -C "$T14" commit -qm "a lib-suite test naming a feature"
+[ "$(git -C "$T14" diff --name-only master HEAD | tr '\n' ' ')" = "lib/demo/tests/test_demo.py " ] \
+  && ok "fixture diff carries only the lib/**/tests file" || no "fixture diff should carry only the lib test"
+RC14="$(gate "$T14")"
+[ "$RC14" = 2 ] && ok "lib/**/tests-only diff that moves a Tests column -> blocked (exit 2)" \
+  || no "a lib/**/tests-only stale push should block (got $RC14)"
+
+# 15. same for a non-test-named script under tests/ (the generator globs tests/*.sh)
+T15="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T15="$T15/kit"; mkkit "$T15"
+git -C "$T15" switch -qc feat/frg-helper
+printf '#!/usr/bin/env bash\necho demo-agent\n' > "$T15/tests/helper.sh"
+git -C "$T15" add -A; git -C "$T15" commit -qm "a tests/ helper naming a feature"
+RC15="$(gate "$T15")"
+[ "$RC15" = 2 ] && ok "tests/*.sh helper that moves a Tests column -> blocked (exit 2)" \
+  || no "a tests/ helper stale push should block (got $RC15)"
+
+# 16. the gate's trigger set is the generator's own: input-pattern prints one ERE
+PAT16="$(bash "$KIT/$REG" input-pattern)"
+printf 'lib/x/tests/test_a.py\n' | grep -qE "$PAT16" && ! printf 'README.md\n' | grep -qE "$PAT16" \
+  && ok "input-pattern matches a lib test and rejects a non-input" || no "input-pattern should match lib tests only"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

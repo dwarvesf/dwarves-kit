@@ -340,8 +340,9 @@ fi
 
 # Feature-registry freshness gate (kit repo only): docs/reference/FEATURES.md is a
 # generated projection whose inputs are the whole feature surface, including
-# tests/test-*.sh and docs/specs/SPEC-*.md (the Tests and Specs columns are
-# token greps). An author adding a test file has no reason to think about a docs
+# tests/*.sh, lib/**/tests/** and docs/specs/SPEC-*.md (the Tests and Specs columns are
+# token greps). The trigger set comes from the generator (`input-pattern`), never a copy here.
+# An author adding a test file has no reason to think about a docs
 # projection, so the drift lands, the suite's pin goes red on master, and every
 # later merge commit inherits it (2026-09, fixed by hand a PR later). Regenerate
 # and byte-diff via the registry's own check verb, so the gate and the pin can
@@ -355,7 +356,8 @@ fi
 # itself is left to that CI pin. Escape hatch: DWARVES_KIT_SKIP_REGISTRY_FRESHNESS=1.
 # An install that predates FEATURE_REGISTRY_ROOT would scan its own tree and call every push stale.
 GATE_REG_OK=0
-grep -q FEATURE_REGISTRY_ROOT "$GATE_INSTALL/lib/registry/feature-registry.sh" 2>/dev/null && GATE_REG_OK=1
+grep -q FEATURE_REGISTRY_ROOT "$GATE_INSTALL/lib/registry/feature-registry.sh" 2>/dev/null \
+  && grep -q 'input-pattern' "$GATE_INSTALL/lib/registry/feature-registry.sh" 2>/dev/null && GATE_REG_OK=1
 if [ "$GATE_REG_OK" = 0 ] && [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/reference/FEATURES.md" ]; then
   echo "[advisory] registry freshness check skipped: the kit install at $GATE_INSTALL is too old to run it; update the install" >&2
 fi
@@ -363,10 +365,11 @@ if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/reference
    && [ "$GATE_REG_OK" = 1 ] \
    && [ "${DWARVES_KIT_SKIP_REGISTRY_FRESHNESS:-0}" != "1" ]; then
   FRBASE="$MBASE"
+  FRPAT=$(bash "$GATE_INSTALL/lib/registry/feature-registry.sh" input-pattern 2>/dev/null || true)
   FRDIFF=""
   [ -n "$FRBASE" ] && FRDIFF=$(git -C "$ROOT" diff --name-only "$FRBASE" "$PHEAD" 2>/dev/null || true)
   if [ -n "$FRDIFF" ] && ! grep -qx 'docs/reference/FEATURES\.md' < <(printf '%s\n' "$FRDIFF") \
-     && grep -qE '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/test-[^/]+\.sh|docs/specs/SPEC-[^/]+\.md)$' < <(printf '%s\n' "$FRDIFF") \
+     && [ -n "$FRPAT" ] && grep -qE "$FRPAT" < <(printf '%s\n' "$FRDIFF") \
      && ! grep -qx 'lib/registry/feature-registry\.sh' < <(printf '%s\n' "$FRDIFF"); then
     if ! FRMSG=$(FEATURE_REGISTRY_ROOT="$ROOT" bash "$GATE_INSTALL/lib/registry/feature-registry.sh" check "$ROOT/docs/reference/FEATURES.md" 2>&1); then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | registry-freshness | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
