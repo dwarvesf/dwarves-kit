@@ -32,6 +32,7 @@
 # Usage:
 #   feature-registry.sh generate [outfile]   # default: docs/reference/FEATURES.md
 #   feature-registry.sh check [--fix] [outfile]
+#   feature-registry.sh input-pattern        # ERE of every repo path the generator reads
 
 set -euo pipefail
 export LC_ALL=C
@@ -418,7 +419,17 @@ check() {
   return "$rc"
 }
 
+# input-pattern -- the repo-relative paths whose edits can move the projection, as one ERE.
+# hooks/ship-gate.sh reuses this to decide when to run `check`, so the gate and the generator
+# cannot drift apart. Keep it in step with what the scans above read: commands, agents, skills,
+# hooks (+ hooks.json and settings.json for events), specs, tests/*.sh, and every lib script
+# (lib/**/tests/** are test refs; any lib script may carry a `# kit-verb:` marker).
+input_pattern() {
+  printf '%s\n' '^(commands/[^/]+\.md|agents/[^/]+\.md|skills/[^/]+/SKILL\.md|hooks/[^/]+\.sh|hooks/hooks\.json|settings\.json|tests/[^/]+\.sh|docs/specs/SPEC-[^/]+\.md|lib/.+\.(sh|py))$'
+}
+
 case "${1:-}" in
+  input-pattern) input_pattern ;;
   generate) shift; generate "$@" ;;
   check)    shift; check "$@" ;;
   *) echo "usage: feature-registry.sh generate [outfile]" >&2
