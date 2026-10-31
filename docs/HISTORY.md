@@ -22,7 +22,7 @@ Dated working records that nothing reads at runtime:
 
 ## Read an old file
 
-The public history was squashed into one commit for the release. The full pre-squash history, every old tag (including `history/2026-10-27`) and every removed file live in the private `dwarvesf/dwarves-kit-internal` repo, on branch `archive/master-pre-squash`. Maintainers with access read an old file there:
+The public history was squashed into one commit for the release. The full pre-squash history, every old tag (including `history/2026-10-27`) and every removed file live in the private `dwarvesf/dwarves-kit-internal` repo, at tag `history/master-pre-squash`. Maintainers with access read an old file there:
 
 ```
 git clone git@github.com:dwarvesf/dwarves-kit-internal.git
