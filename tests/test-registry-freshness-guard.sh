@@ -202,6 +202,42 @@ PAT16="$(bash "$KIT/$REG" input-pattern)"
 printf 'lib/x/tests/test_a.py\n' | grep -qE "$PAT16" && ! printf 'README.md\n' | grep -qE "$PAT16" \
   && ok "input-pattern matches a lib test and rejects a non-input" || no "input-pattern should match lib tests only"
 
+# --- the codex trust-pin arm ------------------------------------------------
+
+# A fixture whose hooks/codex-hooks.json pins hooks/demo-hook.sh the way the real manifest does.
+mkpinned() { # $1=dir
+  mkkit "$1"
+  local h; h="$(shasum -a 256 "$1/hooks/demo-hook.sh" | awk '{print $1}')"
+  printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"hash_file \\"${PLUGIN_ROOT}/hooks/demo-hook.sh\\" | /usr/bin/grep -q '"'"'^%s '"'"' || exit 2"}]}]}}\n' "$h" > "$1/hooks/codex-hooks.json"
+  git -C "$1" add -A; git -C "$1" commit -qm "chore: pin the demo hook"
+}
+
+# 17. a hook script edited without a repin -> BLOCKED, and the refusal names the stale file
+T17="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T17="$T17/kit"; mkpinned "$T17"
+git -C "$T17" switch -qc feat/pin-stale
+printf '# edited\n' >> "$T17/hooks/demo-hook.sh"
+git -C "$T17" add -A; git -C "$T17" commit -qm "fix: edit a pinned hook"
+ERR17="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+RC17="$(gate "$T17" "$ERR17")"
+[ "$RC17" = 2 ] && grep -q 'stale pin: hooks/demo-hook.sh' "$ERR17" \
+  && ok "hook edited without a repin -> blocked, names the stale pin (exit 2)" \
+  || no "a stale pin should block with the stale pin line (got $RC17)"
+
+# 18. the same branch once repinned -> passes
+( cd "$T17" && bash "$KIT/lib/codex/repin.sh" "$T17" >/dev/null )
+git -C "$T17" add -A; git -C "$T17" commit -qm "fix: repin the demo hook"
+[ "$(gate "$T17")" = 0 ] && ok "hook edited and repinned -> pass (exit 0)" || no "a repinned branch should pass"
+
+# 19. the escape hatch skips the arm on the case-17 shape
+T19="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T19="$T19/kit"; mkpinned "$T19"
+git -C "$T19" switch -qc feat/pin-escape
+printf '# edited\n' >> "$T19/hooks/demo-hook.sh"
+git -C "$T19" add -A; git -C "$T19" commit -qm "fix: edit a pinned hook"
+RC19="$( cd "$T19" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" DWARVES_KIT_SKIP_CODEX_PIN=1 \
+    bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>&1; echo $? )"
+[ "$RC19" = 0 ] && ok "DWARVES_KIT_SKIP_CODEX_PIN=1 skips the arm (exit 0)" || no "the escape hatch should skip the arm (got $RC19)"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
