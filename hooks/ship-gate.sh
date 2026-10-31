@@ -385,6 +385,39 @@ if [ -f "$ROOT/lib/registry/feature-registry.sh" ] && [ -f "$ROOT/docs/reference
   fi
 fi
 
+# Codex trust-pin gate (kit repo only): hooks/codex-hooks.json pins the content hash of
+# every hook script it runs, so editing a hooks/*.sh without repinning turns
+# test-codex-hooks red on master (#1065, #1074). Same shape as the registry arm: a push
+# that moves a hook script or the manifest runs the install's `repin.sh check` against the
+# PUSHED commit (hooks/ archived from $PHEAD into a temp dir, so uncommitted edits and a
+# non-HEAD ref cannot change the verdict), never the repo's own copy. Blocks only on a
+# stale pin (repin exit 1 naming "stale pin:"); a pin-less or unparseable manifest is an advisory.
+# Escape hatch: DWARVES_KIT_SKIP_CODEX_PIN=1.
+GATE_PIN="$GATE_INSTALL/lib/codex/repin.sh"
+if [ -f "$ROOT/lib/codex/repin.sh" ] && [ -f "$ROOT/hooks/codex-hooks.json" ] && [ -f "$GATE_PIN" ] \
+   && [ "${DWARVES_KIT_SKIP_CODEX_PIN:-0}" != "1" ] && [ -n "${MBASE:-}" ] && [ -n "${PHEAD:-}" ] \
+   && grep -qE '^hooks/[A-Za-z0-9._-]+\.(sh|json)$' < <(git -C "$ROOT" diff --name-only "$MBASE" "$PHEAD" 2>/dev/null); then
+  PINTMP=$(mktemp -d "${TMPDIR:-/tmp}/kit-pin.XXXXXX" 2>/dev/null || true)
+  PINRC=2; PINMSG=""
+  if [ -n "$PINTMP" ] && git -C "$ROOT" archive "$PHEAD" hooks 2>/dev/null | tar -x -C "$PINTMP" 2>/dev/null; then
+    PINMSG=$(bash "$GATE_PIN" check "$PINTMP" 2>&1) && PINRC=0 || PINRC=$?
+  fi
+  [ -n "$PINTMP" ] && rm -rf "$PINTMP"
+  if [ "$PINRC" = 1 ] && grep -q 'stale pin:' <<<"$PINMSG"; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | codex-pin | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
+    {
+      echo "BLOCKED: codex trust pin. This push edits a hook script and hooks/codex-hooks.json no longer pins it:"
+      printf '%s\n' "$PINMSG" | head -20
+      echo "Repin and commit it:"
+      echo "  bash lib/codex/repin.sh"
+      echo "Escape: DWARVES_KIT_SKIP_CODEX_PIN=1."
+    } >&2
+    exit 2
+  elif [ "$PINRC" != 0 ]; then
+    echo "[advisory] codex pin check skipped: repin.sh could not judge the pushed hooks/ (exit $PINRC)" >&2
+  fi
+fi
+
 # Build-ran advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is
 # gitignored by design). The proof-gate BLOCKS behavioral diffs in adopted repos; this
