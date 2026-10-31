@@ -626,25 +626,58 @@ out="$(os_run apply --apply "$TMPD/osclone-app")"
 chk_has "origin second --apply finds nothing left" "$out" "no merged branches left on origin"
 
 
-echo "--- --own: the origin sweep still runs (it touches no local state)"
+os_wt() { # os_wt <name> <branch>... -- a clean worktree per branch, each with a squash-merged PR proof
+  local name="$1" clone="$TMPD/osclone-$1" b; shift
+  for b in "$@"; do
+    git -C "$clone" worktree add -q -b "$b" "$TMPD/oswt-$name-$b" "origin/$b" >/dev/null 2>&1
+    export "GH_STUB_MERGED_${b//[^A-Za-z0-9]/_}=[{\"headRefOid\":\"$(git -C "$clone" rev-parse "$b")\",\"baseRefName\":\"main\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+  done
+}
+echo "--- --own: the origin sweep considers only the branches the named worktrees held"
 build_os_repo own
-out="$(os_run apply --apply --own "$TMPD/no-such-wt" "$TMPD/osclone-own")"; rc=$?
+os_wt own gone
+out="$(os_run apply --apply --own "$TMPD/oswt-own-gone" "$TMPD/osclone-own")"; rc=$?
 chk "origin --own exits 0" "$rc"
-chk_has "origin --own still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
-chk "origin --own deleted gone" "$(os_has own gone && echo 1 || echo 0)"
+chk_has "origin --own prints the scope line" "$out" "-- origin branches (own scope: 1 named branches):"
+chk_has "origin --own counts only the named branch" "$out" "deleted 1 of 1 merged branches on origin"
+chk "origin --own deleted the named worktree's branch" "$(os_has own gone && echo 1 || echo 0)"
+chk "origin --own kept gone2, held by no named worktree" "$(os_has own gone2; echo $?)"
+chk "origin --own kept gone3, held by no named worktree" "$(os_has own gone3; echo $?)"
 chk "origin --own kept moved" "$(os_has own moved; echo $?)"
-echo "--- no-pull --own: the origin sweep still runs (it touches no local state)"
+echo "--- --own, dry run: names only the named branch"
+build_os_repo owndry
+os_wt owndry gone
+out="$(os_run apply --own "$TMPD/oswt-owndry-gone" "$TMPD/osclone-owndry")"
+chk_has "origin --own dry run counts one branch" "$out" "WOULD delete 1 merged branches on origin:"
+chk_no "origin --own dry run does not name gone2" "$out" "gone2"
+echo "--- --own naming no registered worktree: nothing on origin is a candidate"
+build_os_repo ownnone
+out="$(os_run apply --apply --own "$TMPD/no-such-wt" "$TMPD/osclone-ownnone")"; rc=$?
+chk "origin --own, no worktree exits 0" "$rc"
+chk_has "origin --own, no worktree prints a zero scope" "$out" "-- origin branches (own scope: 0 named branches):"
+chk "origin --own, no worktree kept gone" "$(os_has ownnone gone; echo $?)"
+echo "--- no --own: both merged branches go (the repo-wide sweep is unchanged)"
+build_os_repo ownall
+os_wt ownall gone
+out="$(os_run apply --apply --worktrees "$TMPD/osclone-ownall")"; rc=$?
+chk "origin repo-wide exits 0" "$rc"
+chk_has "origin repo-wide prints the plain header" "$out" "-- origin branches:"
+chk "origin repo-wide deleted the worktree's branch" "$(os_has ownall gone && echo 1 || echo 0)"
+chk "origin repo-wide also deleted gone2" "$(os_has ownall gone2 && echo 1 || echo 0)"
+echo "--- no-pull --own: the same scope"
 build_os_repo npo
-out="$(os_run apply --apply --no-pull --own "$TMPD/no-such-wt" "$TMPD/osclone-npo")"; rc=$?
+os_wt npo gone
+out="$(os_run apply --apply --no-pull --own "$TMPD/oswt-npo-gone" "$TMPD/osclone-npo")"; rc=$?
 chk "origin --no-pull --own exits 0" "$rc"
-chk_has "origin --no-pull --own still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
+chk_has "origin --no-pull --own reports the one named branch" "$out" "deleted 1 of 1 merged branches on origin"
 chk "origin --no-pull --own deleted gone" "$(os_has npo gone && echo 1 || echo 0)"
-chk "origin --no-pull --own kept moved" "$(os_has npo moved; echo $?)"
+chk "origin --no-pull --own kept gone2" "$(os_has npo gone2; echo $?)"
 chk_has "origin --no-pull --own skips the pull by name" "$out" "SKIP pull: --no-pull"
 build_os_repo npn
 out="$(os_run apply --apply --no-pull "$TMPD/osclone-npn")"
 chk_has "origin --no-pull, no --own: the origin sweep still reports the count" "$out" "deleted 3 of 3 merged branches on origin"
 chk_has "origin --no-pull, no --own: the local branch sweep is skipped" "$out" "SKIP branch sweep: --no-pull needs --own"
+unset GH_STUB_MERGED_gone
 echo "--- a failed PR read skips the sweep and deletes nothing"
 build_os_repo nolist
 out="$(GH_STUB_MERGED_ALL_RC=1 os_run apply --apply "$TMPD/osclone-nolist")"; rc=$?

@@ -58,6 +58,8 @@
 # Verify a change in the shape commands/wrap.md runs it: step 5 passes `--own` on a shared
 # repo, so a test or real-repo run of the bare form alone misses that path. The first origin
 # sweep shipped skipping `--own` and every shared repo kept its merged heads.
+# Under `--own` the origin sweep now covers only the branches the named worktrees held (the
+# session's own); plain `apply` and `--worktrees` sweep origin repo-wide.
 #
 # The write set is closed: branch delete under three proofs, `apply`'s origin delete of
 # merged branches, each leased to the tip it read (knob wrap.delete_merged_remote_branches),
