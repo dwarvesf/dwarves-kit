@@ -347,6 +347,9 @@ Each negative control runs on a mutated copy of `lib/wrap/wrap-apply.sh` (or `wr
 
 ## Touches
 - lib/wrap/**
+- lib/config/**
+- bin/**
+- docs/reference/**
 - commands/wrap.md
 - tests/test-wrap-apply.sh
 - kit.toml

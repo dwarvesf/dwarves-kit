@@ -7,6 +7,621 @@
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
+# ===========================================================================
+# apply --archive-worktrees: one function, so APPLY_ONLY=archive-wt runs this section alone
+# and AW_CASE=<case> runs one case of it (the negative controls use both). Every fixture is a
+# fresh bare origin plus clone under $TMPD; a worktree is aged by making its commits and
+# checkouts under GIT_COMMITTER_DATE (reflog entries take that time) and by touching its files
+# and its admin HEAD, commondir and locked to 2026-01-01.
+# ===========================================================================
+AW_DATE="$(date +%Y%m%d)"
+AW_OLD="2026-01-01T00:00:00"
+# The date is re-read per case: wrap names its ref from `date` at run time, and a run that
+# crosses midnight would otherwise miss every ref.
+aw_want() { [ -z "${AW_CASE:-}" ] || [ "$AW_CASE" = "$1" ] || return 1; AW_DATE="$(date +%Y%m%d)"; }
+aw_git() { GIT_COMMITTER_DATE="$AW_OLD" GIT_AUTHOR_DATE="$AW_OLD" git "$@"; }
+build_aw_repo() { # build_aw_repo <name>
+  local work="$TMPD/awwork-$1" bare="$TMPD/awbare-$1" clone="$TMPD/awclone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '.env\nnode_modules/\n.claude/rules/\n' > "$work/.gitignore"; echo base > "$work/a.txt"
+  git -C "$work" add -A; aw_git -C "$work" commit -q -m "chore: base"
+  git clone -q --bare "$work" "$bare"; git clone -q "$bare" "$clone"; gitc "$clone"
+  # The operator's global excludes file must not decide what a fixture ignores.
+  git -C "$clone" config core.excludesFile "$TMPD/aw-no-excludes"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+}
+aw_wt() { # aw_wt <name> <wt> <branch|-> [file] -- prints the worktree path; `-` is detached, an empty file makes no commit
+  local clone="$TMPD/awclone-$1" wt="$TMPD/awclone-$1/.claude/worktrees/$2" f="${4-$2.txt}"
+  if [ "$3" = - ]; then aw_git -C "$clone" worktree add -q --detach "$wt" origin/main >/dev/null 2>&1
+  else aw_git -C "$clone" worktree add -q -b "$3" "$wt" origin/main >/dev/null 2>&1; fi
+  if [ -n "$f" ]; then
+    echo "$2" > "$wt/$f"; git -C "$wt" add -- "$f"; aw_git -C "$wt" commit -q -m "feat: $2"
+  fi
+  printf '%s\n' "$wt"
+}
+aw_age() { # aw_age <wt>
+  local gd; gd="$(git -C "$1" rev-parse --path-format=absolute --git-dir)"
+  find "$1" -path "$1/.git" -prune -o -exec touch -h -t 202601010000 {} + 2>/dev/null
+  touch -t 202601010000 "$gd/HEAD" "$gd/commondir"
+  [ ! -e "$gd/locked" ] || touch -t 202601010000 "$gd/locked"
+}
+aw_run() { KIT_CONFIG_ROOT="${AW_ROOT:-$KIT_DIR}" GH_STUB_UNAUTH=1 "$WRAP" "$@" 2>&1; }
+aw_ref() { git -C "$TMPD/awbare-$1" rev-parse -q --verify "refs/heads/$2"; }
+aw_has() { git -C "$TMPD/awbare-$1" show-ref --verify --quiet "refs/heads/$2"; }
+aw_P() { printf '%s' "$TMPD_P/awclone-$1/.claude/worktrees/$2"; }
+aw_no_ref() { # aw_no_ref <label> <name> <ref>: origin must not hold the ref
+  chk "$1" "$(aw_has "$2" "$3" && echo 1 || echo 0)"
+}
+
+archive_wt_section() {
+local out rc wt wt2 wt3 tip before after bpid pid gd s miss t0 t1 t2 v n
+echo "=== apply --archive-worktrees: stale unmerged and detached worktrees ==="
+if ! command -v lsof >/dev/null 2>&1; then
+  echo "  NOTE: no lsof on this host; the sweep skips without it, so the section does not run"
+  return 0
+fi
+# The operator's global and system git config must not reach a fixture: a global
+# core.hooksPath would bypass the pre-push hooks below, and rebase.abbreviateCommands would
+# break the mid-rebase fixture. Restored when the section ends.
+local aw_cg="${GIT_CONFIG_GLOBAL-__unset__}" aw_cn="${GIT_CONFIG_NOSYSTEM-__unset__}"
+export GIT_CONFIG_GLOBAL="$TMPD/aw-no-gitconfig" GIT_CONFIG_NOSYSTEM=1
+
+# ---- G1: dry run and apply
+if aw_want archive_wt_dry_run; then
+  echo "--- AC-1 dry run previews a stale unmerged worktree and writes nothing"
+  build_aw_repo dry; wt="$(aw_wt dry held feat/held)"; aw_age "$wt"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-dry")"; rc=$?
+  chk "AC-1 dry run exits 0" "$rc"
+  chk_has "AC-1 dry run prints the WOULD line" "$out" \
+    "WOULD archive worktree $(aw_P dry held) [feat/held, 1 unique commits, 0 uncommitted paths, idle "
+  chk_has "AC-1 the WOULD line names the archive ref" "$out" "-> origin archive/feat-held-${AW_DATE}, then remove it"
+  chk "AC-1 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+  chk "AC-1 the branch stays" "$(git -C "$TMPD/awclone-dry" show-ref --verify --quiet refs/heads/feat/held; echo $?)"
+  aw_no_ref "AC-1 origin gained no archive ref" dry "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_dry_run_no_objects; then
+  echo "--- AC-2 a dry run on a dirty worktree writes no object"
+  build_aw_repo obj; wt="$(aw_wt obj dirty feat/dirty)"
+  echo untracked > "$wt/u.txt"; echo mod >> "$wt/a.txt"; aw_age "$wt"
+  before="$(git -C "$TMPD/awclone-obj" count-objects -v | awk '/^(count|in-pack):/')"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-obj")"
+  after="$(git -C "$TMPD/awclone-obj" count-objects -v | awk '/^(count|in-pack):/')"
+  chk_has "AC-2 dry run previews the dirty worktree" "$out" "[feat/dirty, 1 unique commits, 2 uncommitted paths"
+  chk "AC-2 the object store is unchanged" "$([ "$before" = "$after" ]; echo $?)"
+fi
+
+if aw_want archive_wt_branch_apply; then
+  echo "--- AC-3 apply archives a branch-held worktree, removes it, deletes the branch"
+  build_aw_repo br; wt="$(aw_wt br held feat/held)"
+  git -C "$TMPD/awclone-br" config branch.feat/held.remote origin; aw_age "$wt"
+  tip="$(git -C "$wt" rev-parse HEAD)"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-br")"; rc=$?
+  chk "AC-3 apply exits 0" "$rc"
+  chk_has "AC-3 apply reports the archive" "$out" \
+    "archived worktree $(aw_P br held) -> archive/feat-held-${AW_DATE} (${tip:0:7}); removed, feat/held deleted"
+  chk "AC-3 origin holds the branch tip" "$([ "$(aw_ref br "archive/feat-held-${AW_DATE}")" = "$tip" ]; echo $?)"
+  chk "AC-3 the worktree path is gone" "$([ ! -e "$wt" ]; echo $?)"
+  chk "AC-3 the branch is gone" "$(git -C "$TMPD/awclone-br" show-ref --verify --quiet refs/heads/feat/held && echo 1 || echo 0)"
+  chk "AC-3 the branch config is gone" "$(git -C "$TMPD/awclone-br" config --get branch.feat/held.remote >/dev/null && echo 1 || echo 0)"
+fi
+
+if aw_want archive_wt_detached_apply; then
+  echo "--- AC-4 apply archives a detached worktree with a commit origin lacks"
+  build_aw_repo det; wt="$(aw_wt det det -)"; aw_age "$wt"
+  tip="$(git -C "$wt" rev-parse HEAD)"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-det")"; rc=$?
+  chk "AC-4 apply exits 0" "$rc"
+  chk_has "AC-4 apply reports the detached archive" "$out" \
+    "archived worktree $(aw_P det det) -> archive/det-${AW_DATE} (${tip:0:7}); removed"
+  chk "AC-4 origin holds the detached HEAD" "$([ "$(aw_ref det "archive/det-${AW_DATE}")" = "$tip" ]; echo $?)"
+  chk "AC-4 the worktree path is gone" "$([ ! -e "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_dirty_snapshot; then
+  echo "--- AC-5 a dirty worktree is snapshotted: disk state on the tip, staged state one below"
+  build_aw_repo dirty; wt="$(aw_wt dirty dirty feat/dirty)"
+  tip="$(git -C "$wt" rev-parse HEAD)"
+  echo mod >> "$wt/a.txt"; echo w > "$wt/w.txt"
+  echo staged > "$wt/s.txt"; git -C "$wt" add s.txt; echo disk > "$wt/s.txt"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-dirty")"; rc=$?
+  s="archive/feat-dirty-${AW_DATE}"
+  chk "AC-5 apply exits 0" "$rc"
+  chk_has "AC-5 apply reports the archive" "$out" "archived worktree $(aw_P dirty dirty) -> ${s} ("
+  chk "AC-5 the tip holds the modified file" "$(git -C "$TMPD/awbare-dirty" show "${s}:a.txt" | grep -qx mod; echo $?)"
+  chk "AC-5 the tip holds the untracked file" "$([ "$(git -C "$TMPD/awbare-dirty" show "${s}:w.txt")" = w ]; echo $?)"
+  chk "AC-5 the tip holds the disk version of the staged file" "$([ "$(git -C "$TMPD/awbare-dirty" show "${s}:s.txt")" = disk ]; echo $?)"
+  chk "AC-5 the first parent holds the staged version" "$([ "$(git -C "$TMPD/awbare-dirty" show "${s}~1:s.txt")" = staged ]; echo $?)"
+  chk "AC-5 the second parent is the old HEAD" "$([ "$(git -C "$TMPD/awbare-dirty" rev-parse "${s}~2")" = "$tip" ]; echo $?)"
+  chk "AC-5 the worktree path is gone" "$([ ! -e "$wt" ]; echo $?)"
+  chk "AC-5 the branch is gone (its delete leased to HEAD, not the tip)" \
+    "$(git -C "$TMPD/awclone-dirty" show-ref --verify --quiet refs/heads/feat/dirty && echo 1 || echo 0)"
+fi
+
+# ---- G2: freshness and busy
+if aw_want archive_wt_fresh; then
+  echo "--- AC-6 a just-created worktree is fresh"
+  build_aw_repo fresh; wt="$(aw_wt fresh new feat/new)"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-fresh")"
+  chk_has "AC-6 the new worktree is fresh" "$out" "SKIP $(aw_P fresh new): fresh, idle 0h < 72h (wrap.archive_worktree_min_age_hours)"
+  aw_no_ref "AC-6 nothing pushed" fresh "archive/feat-new-${AW_DATE}"
+  chk "AC-6 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_fresh_by_dirty_mtime; then
+  echo "--- AC-7 an untracked file touched now keeps an aged worktree fresh"
+  build_aw_repo fdm; wt="$(aw_wt fdm held feat/held)"; aw_age "$wt"; echo now > "$wt/now.txt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-fdm")"
+  chk_has "AC-7 the worktree reads fresh" "$out" "SKIP $(aw_P fdm held): fresh, idle 0h"
+  aw_no_ref "AC-7 nothing pushed" fdm "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_live_lock; then
+  echo "--- AC-8 a lock naming a live pid keeps the worktree"
+  build_aw_repo lock; wt="$(aw_wt lock held feat/held)"
+  sleep 300 & pid=$!
+  git -C "$TMPD/awclone-lock" worktree lock --reason "claude agent x (pid ${pid} start y)" "$wt"
+  aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-lock")"
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  chk_has "AC-8 the live lock skips" "$out" "SKIP $(aw_P lock held): locked by live pid ${pid} (an agent is still running)"
+  aw_no_ref "AC-8 nothing pushed" lock "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_busy; then
+  echo "--- AC-9 a process with its cwd in the worktree keeps it"
+  build_aw_repo busy; wt="$(aw_wt busy held feat/held)"; aw_age "$wt"
+  (cd "$wt" && exec sleep 300) & bpid=$!
+  n=0; while [ "$(ps -o comm= -p "$bpid" 2>/dev/null)" != sleep ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$(( n + 1 )); done
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-busy")"
+  kill "$bpid" 2>/dev/null; wait "$bpid" 2>/dev/null
+  chk_has "AC-9 the busy worktree skips" "$out" "SKIP $(aw_P busy held): busy, held by pid"
+  aw_no_ref "AC-9 nothing pushed" busy "archive/feat-held-${AW_DATE}"
+  chk "AC-9 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_stale_after_reflog_expire; then
+  echo "--- AC-34 reflog expire resets logs/HEAD mtime but not the idle age"
+  build_aw_repo rx; wt="$(aw_wt rx held feat/held)"; aw_age "$wt"
+  git -C "$wt" reflog expire --all --expire=now
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-rx")"
+  chk_has "AC-34 still stale after reflog expire" "$out" "WOULD archive worktree $(aw_P rx held) [feat/held"
+fi
+
+# ---- G3: push, lease, read-back, change during the push
+if aw_want archive_wt_ref_exists; then
+  echo "--- AC-10 an archive ref already on origin, at an ancestor of the tip, refuses"
+  build_aw_repo rex; wt="$(aw_wt rex held feat/held)"; aw_age "$wt"
+  git -C "$TMPD/awclone-rex" push -q origin "refs/remotes/origin/main:refs/heads/archive/feat-held-${AW_DATE}"
+  before="$(aw_ref rex "archive/feat-held-${AW_DATE}")"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-rex")"; rc=$?
+  chk "AC-10 exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+  chk_has "AC-10 FAILED names the existing ref" "$out" \
+    "FAILED archive worktree $(aw_P rex held): origin archive/feat-held-${AW_DATE} already exists"
+  chk "AC-10 the ref did not move" "$([ "$(aw_ref rex "archive/feat-held-${AW_DATE}")" = "$before" ]; echo $?)"
+  chk "AC-10 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_lease_form; then
+  echo "--- AC-11 the push carries the create-only lease"
+  build_aw_repo lease; wt="$(aw_wt lease held feat/held)"; aw_age "$wt"
+  out="$(GIT_TRACE="$TMPD/aw-lease-trace" aw_run apply --apply --archive-worktrees "$TMPD/awclone-lease")"
+  chk_has "AC-11 archived" "$out" "archived worktree $(aw_P lease held)"
+  chk "AC-11 the traced push holds the create-only lease" \
+    "$(grep -F 'git push' "$TMPD/aw-lease-trace" | grep -qF -- "--force-with-lease=refs/heads/archive/feat-held-${AW_DATE}:"; echo $?)"
+fi
+
+if aw_want archive_wt_changed_during_push; then
+  echo "--- AC-15 a change during the push keeps the worktree"
+  build_aw_repo chg; wt="$(aw_wt chg held feat/held)"; aw_age "$wt"
+  mkdir -p "$TMPD/awclone-chg/.git/hooks"
+  printf '#!/bin/sh\necho changed >> "%s/a.txt"\n' "$wt" > "$TMPD/awclone-chg/.git/hooks/pre-push"
+  chmod +x "$TMPD/awclone-chg/.git/hooks/pre-push"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-chg")"; rc=$?
+  chk "AC-15 exits 0" "$rc"
+  chk_has "AC-15 kept, changed during the push" "$out" \
+    "kept $(aw_P chg held): archived to archive/feat-held-${AW_DATE}, but it changed during the push"
+  chk "AC-15 the worktree stays with the change" "$(grep -qx changed "$wt/a.txt"; echo $?)"
+  chk "AC-15 the ref holds the earlier state" \
+    "$(git -C "$TMPD/awbare-chg" show "archive/feat-held-${AW_DATE}:a.txt" | grep -qx changed && echo 1 || echo 0)"
+fi
+
+if aw_want archive_wt_push_refused; then
+  echo "--- AC-16 a refused push is FAILED and keeps the worktree"
+  build_aw_repo hook; wt="$(aw_wt hook held feat/held)"; aw_age "$wt"
+  mkdir -p "$TMPD/awclone-hook/.git/hooks"
+  printf '#!/bin/sh\necho "refusing: attribution check failed" >&2\nexit 1\n' > "$TMPD/awclone-hook/.git/hooks/pre-push"
+  chmod +x "$TMPD/awclone-hook/.git/hooks/pre-push"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-hook")"; rc=$?
+  chk "AC-16 exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+  chk_has "AC-16 FAILED quotes the hook" "$out" "FAILED archive worktree $(aw_P hook held): refusing: attribution check failed"
+  chk "AC-16 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+  aw_no_ref "AC-16 nothing on origin" hook "archive/feat-held-${AW_DATE}"
+  chk_has "AC-16 the rest of apply still ran" "$out" "-- pull:"
+fi
+
+if aw_want archive_wt_readback_mismatch; then
+  echo "--- AC-16b origin holding another commit after the push keeps the worktree"
+  build_aw_repo rb; wt="$(aw_wt rb held feat/held)"; aw_age "$wt"
+  s="$(git -C "$TMPD/awbare-rb" rev-parse main)"
+  mkdir -p "$TMPD/awbare-rb/hooks"
+  printf '#!/bin/sh\ngit update-ref refs/heads/archive/feat-held-%s %s\n' "$AW_DATE" "$s" > "$TMPD/awbare-rb/hooks/post-receive"
+  chmod +x "$TMPD/awbare-rb/hooks/post-receive"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-rb")"; rc=$?
+  chk "AC-16b exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+  chk_has "AC-16b FAILED names both commits" "$out" \
+    "FAILED archive worktree $(aw_P rb held): origin archive/feat-held-${AW_DATE} holds ${s:0:7}, not the archive tip"
+  chk "AC-16b the worktree stays" "$([ -d "$wt" ]; echo $?)"
+  chk "AC-16b the branch stays" "$(git -C "$TMPD/awclone-rb" show-ref --verify --quiet refs/heads/feat/held; echo $?)"
+fi
+
+# ---- G4a: ignored and secret paths, synced .claude copies
+if aw_want archive_wt_ignored_blocks; then
+  echo "--- AC-12 an ignored .env blocks the removal"
+  build_aw_repo ign; wt="$(aw_wt ign held feat/held)"; echo "K=1" > "$wt/.env"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-ign")"
+  chk_has "AC-12 SKIP names .env" "$out" "SKIP $(aw_P ign held): 1 ignored paths would be lost, first .env (never pushed, never deleted)"
+  chk "AC-12 .env stays on disk" "$([ -f "$wt/.env" ]; echo $?)"
+  aw_no_ref "AC-12 nothing pushed" ign "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_regenerable_ok; then
+  echo "--- AC-13 an ignored node_modules alone is regenerable"
+  build_aw_repo regen; wt="$(aw_wt regen held feat/held)"
+  mkdir -p "$wt/node_modules/x"; echo m > "$wt/node_modules/x/m.js"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-regen")"
+  chk_has "AC-13 archived" "$out" "archived worktree $(aw_P regen held) -> archive/feat-held-${AW_DATE}"
+  chk "AC-13 the worktree is gone" "$([ ! -e "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_secret_untracked; then
+  echo "--- AC-14 an untracked .env.local is never pushed"
+  build_aw_repo sec; wt="$(aw_wt sec held feat/held)"; echo "K=1" > "$wt/.env.local"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-sec")"
+  chk_has "AC-14 SKIP names the file" "$out" "SKIP $(aw_P sec held): uncommitted .env.local looks like a secret (never pushed)"
+  aw_no_ref "AC-14 nothing pushed" sec "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_secret_id_rsa; then
+  echo "--- AC-32 an untracked private key is never pushed; every pattern flags a sample"
+  build_aw_repo key; wt="$(aw_wt key held feat/held)"; echo k > "$wt/id_rsa"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-key")"
+  chk_has "AC-32 SKIP names the key" "$out" "SKIP $(aw_P key held): uncommitted id_rsa looks like a secret (never pushed)"
+  aw_no_ref "AC-32 nothing pushed" key "archive/feat-held-${AW_DATE}"
+  # One sample per pattern, run from a cwd holding a.pem: an unquoted glob would expand there.
+  mkdir -p "$TMPD/aw-globcwd"; : > "$TMPD/aw-globcwd/a.pem"
+  miss="$(cd "$TMPD/aw-globcwd" && bash -c 'source "$1/lib/wrap/wrap-common.sh"
+    for s in .env .env.prod app.env b.pem tls.key auth.p8 c.p12 c.pfx putty.ppk k.jks app.keystore v.kdbx k.asc k.gpg vpn.ovpn prod.tfvars s.tfstate my_secret.txt aws_credentials api_token.txt db_password pg_passwd id_rsa id_rsa.pub id_ed25519 id_ecdsa id_dsa .npmrc .netrc .pgpass .pypirc .htpasswd .s3cfg .boto .dockercfg .dev.vars .envrc auth.json kubeconfig service-account-prod.json x/.ssh/config x/.aws/config secrets/plain.txt; do
+      _secret_shaped "$s" || printf "MISS %s\n" "$s"
+    done
+    for s in README.md src/main.go keyboard.ts docs/a.txt; do _secret_shaped "$s" && printf "FALSE %s\n" "$s"; done; :' _ "$KIT_DIR")"
+  chk "AC-32 every pattern flags its sample, plain names pass (got: ${miss:-none})" "$([ -z "$miss" ]; echo $?)"
+fi
+
+if aw_want archive_wt_claude_synced; then
+  echo "--- AC-37 a .claude/ copy identical to the main checkout is regenerable; a differing one blocks"
+  build_aw_repo syn; mkdir -p "$TMPD/awclone-syn/.claude/rules"; echo rule > "$TMPD/awclone-syn/.claude/rules/x.md"
+  wt="$(aw_wt syn same feat/same)"; mkdir -p "$wt/.claude/rules"; echo rule > "$wt/.claude/rules/x.md"; aw_age "$wt"
+  wt2="$(aw_wt syn diff feat/diff)"; mkdir -p "$wt2/.claude/rules"; echo edited > "$wt2/.claude/rules/x.md"; aw_age "$wt2"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-syn")"
+  chk_has "AC-37a the identical copy archives" "$out" "archived worktree $(aw_P syn same) -> archive/feat-same-${AW_DATE}"
+  chk_has "AC-37b the differing copy blocks" "$out" "SKIP $(aw_P syn diff): 1 ignored paths would be lost, first .claude/rules"
+  chk "AC-37b the differing file stays" "$(grep -qx edited "$wt2/.claude/rules/x.md"; echo $?)"
+  aw_no_ref "AC-37b nothing pushed for it" syn "archive/feat-diff-${AW_DATE}"
+  build_aw_repo syn2; mkdir -p "$TMPD/awclone-syn2/.claude/rules"; echo rule > "$TMPD/awclone-syn2/.claude/rules/x.md"
+  wt3="$(aw_wt syn2 extra feat/extra)"; mkdir -p "$wt3/.claude/rules"
+  echo rule > "$wt3/.claude/rules/x.md"; echo mine > "$wt3/.claude/rules/y.md"; aw_age "$wt3"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-syn2")"
+  chk_has "AC-37c a file with no twin in the main checkout blocks" "$out" "SKIP $(aw_P syn2 extra): 1 ignored paths would be lost, first .claude/rules"
+  chk "AC-37c the extra file stays" "$([ -f "$wt3/.claude/rules/y.md" ]; echo $?)"
+fi
+
+# ---- G4c: embedded repositories and the staged secret
+if aw_want archive_wt_embedded_repo; then
+  echo "--- AC-30 an untracked nested clone blocks, dry run and apply"
+  build_aw_repo emb; wt="$(aw_wt emb held feat/held)"; git clone -q "$TMPD/awbare-emb" "$wt/nested"; aw_age "$wt"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-emb")"
+  chk_has "AC-30 dry run skips the embedded repo" "$out" "SKIP $(aw_P emb held): holds an embedded git repository (nested)"
+  chk_no "AC-30 dry run prints no WOULD" "$out" "WOULD archive worktree"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-emb")"
+  chk_has "AC-30 apply skips the embedded repo" "$out" "SKIP $(aw_P emb held): holds an embedded git repository (nested)"
+  chk "AC-30 nested/.git stays" "$([ -d "$wt/nested/.git" ]; echo $?)"
+  aw_no_ref "AC-30 nothing pushed" emb "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_embedded_repo_deep; then
+  echo "--- AC-30b a nested clone below an untracked directory blocks"
+  build_aw_repo deep; wt="$(aw_wt deep held feat/held)"
+  mkdir -p "$wt/outer"; echo f > "$wt/outer/f.txt"; git clone -q "$TMPD/awbare-deep" "$wt/outer/inner"; aw_age "$wt"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-deep")"
+  chk_has "AC-30b dry run names outer/inner" "$out" "SKIP $(aw_P deep held): holds an embedded git repository (outer/inner)"
+  chk_no "AC-30b dry run prints no WOULD" "$out" "WOULD archive worktree"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-deep")"
+  chk_has "AC-30b apply names outer/inner" "$out" "holds an embedded git repository (outer/inner)"
+  chk "AC-30b outer/inner/.git stays" "$([ -d "$wt/outer/inner/.git" ]; echo $?)"
+  aw_no_ref "AC-30b nothing pushed" deep "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_secret_staged; then
+  echo "--- AC-31 a staged-added .env, ignored on disk, is never pushed"
+  build_aw_repo stg; wt="$(aw_wt stg held feat/held)"; echo "K=1" > "$wt/.env"; git -C "$wt" add -f .env; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-stg")"
+  chk_has "AC-31 SKIP names .env" "$out" "SKIP $(aw_P stg held): uncommitted .env looks like a secret (never pushed)"
+  aw_no_ref "AC-31 nothing pushed" stg "archive/feat-held-${AW_DATE}"
+fi
+
+# ---- G4b: merge proof, nothing unique, protected, submodule, prunable
+if aw_want archive_wt_merged_left; then
+  echo "--- AC-17 a clean worktree whose content landed as a squash is left for --worktrees"
+  build_aw_repo sq; wt="$(aw_wt sq sq feat/sq)"
+  echo two > "$wt/two.txt"; git -C "$wt" add two.txt; aw_git -C "$wt" commit -q -m "feat: two"
+  git -C "$TMPD/awclone-sq" merge -q --squash feat/sq >/dev/null; aw_git -C "$TMPD/awclone-sq" commit -q -m "feat: squash"
+  git -C "$TMPD/awclone-sq" push -q origin main; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-sq")"
+  chk_has "AC-17 left for --worktrees" "$out" \
+    "SKIP $(aw_P sq sq): feat/sq proven merged (content already on origin/main), left for --worktrees"
+  aw_no_ref "AC-17 nothing pushed" sq "archive/feat-sq-${AW_DATE}"
+fi
+
+if aw_want archive_wt_nothing_unique; then
+  echo "--- AC-18 a clean detached worktree at origin/main is left alone"
+  build_aw_repo nu; wt="$(aw_wt nu det - "")"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-nu")"
+  chk_has "AC-18 nothing unique" "$out" "$(aw_P nu det): nothing unique, left alone"
+  chk "AC-18 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_protected; then
+  echo "--- AC-23 a worktree on a protected branch name is never a candidate"
+  build_aw_repo prot; wt="$(aw_wt prot m master)"; aw_age "$wt"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-prot")"
+  chk_has "AC-23 protected name skips" "$out" "SKIP $(aw_P prot m): master is the default or a protected branch name"
+  chk_no "AC-23 no WOULD line" "$out" "WOULD archive worktree"
+fi
+
+if aw_want archive_wt_submodule; then
+  echo "--- AC-24 an initialized submodule blocks"
+  build_aw_repo subm; wt="$(aw_wt subm held feat/held)"
+  git -C "$wt" -c protocol.file.allow=always submodule add -q "$TMPD/awbare-subm" sub >/dev/null 2>&1
+  aw_git -C "$wt" commit -q -m "chore: sub"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-subm")"
+  chk_has "AC-24 submodule skips" "$out" "SKIP $(aw_P subm held): holds an initialized submodule (sub)"
+  aw_no_ref "AC-24 nothing pushed" subm "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_prunable; then
+  echo "--- AC-25 a prunable record skips by name"
+  build_aw_repo prn; wt="$(aw_wt prn held feat/held)"; aw_age "$wt"; mv "$wt" "$TMPD/aw-prn-moved"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-prn")"
+  chk_has "AC-25 prunable skips" "$out" "SKIP $(aw_P prn held): prunable ("
+fi
+
+# ---- G4d: sequencer, unmerged or unborn, invoking worktree
+if aw_want archive_wt_sequencer; then
+  echo "--- AC-29 a worktree stopped mid-rebase skips"
+  build_aw_repo seq; wt="$(aw_wt seq held feat/held)"
+  echo two > "$wt/two.txt"; git -C "$wt" add two.txt; aw_git -C "$wt" commit -q -m "feat: two"
+  GIT_SEQUENCE_EDITOR='sed -i.bak 1s/^pick/edit/' aw_git -C "$wt" -c core.editor=true rebase -q -i HEAD~1 >/dev/null 2>&1
+  aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-seq")"
+  chk_has "AC-29 in progress skips" "$out" "SKIP $(aw_P seq held): a merge, rebase, cherry-pick, revert or bisect is in progress"
+  aw_no_ref "AC-29 nothing pushed" seq "archive/held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_invoking_wt; then
+  echo "--- AC-33 wrap run from inside a candidate never archives it"
+  build_aw_repo inv; wt="$(aw_wt inv held feat/held)"; aw_age "$wt"
+  out="$(cd "$wt" && aw_run apply --apply --archive-worktrees "$TMPD/awclone-inv")"
+  chk_has "AC-33 skips the invoking worktree" "$out" "SKIP $(aw_P inv held): wrap runs from inside it"
+  aw_no_ref "AC-33 nothing pushed" inv "archive/feat-held-${AW_DATE}"
+  chk "AC-33 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+fi
+
+if aw_want archive_wt_unmerged_unborn; then
+  echo "--- AC-35 an unmerged index and an unborn HEAD skip, exit 0"
+  build_aw_repo un; wt="$(aw_wt un uu feat/uu)"
+  echo one >> "$wt/a.txt"; git -C "$wt" stash -q; echo two >> "$wt/a.txt"; aw_git -C "$wt" commit -q -am "feat: two"
+  git -C "$wt" stash pop -q >/dev/null 2>&1; aw_age "$wt"
+  wt2="$TMPD/awclone-un/.claude/worktrees/orph"
+  git -C "$TMPD/awclone-un" worktree add -q --orphan -b feat/orph "$wt2" >/dev/null 2>&1
+  chk "AC-35 precondition: worktree add --orphan made the unborn worktree (git 2.42+)" "$([ -d "$wt2" ]; echo $?)"
+  echo x > "$wt2/x.txt" 2>/dev/null; aw_age "$wt2"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-un")"; rc=$?
+  chk "AC-35 exits 0" "$rc"
+  chk_has "AC-35 the unmerged index skips" "$out" "SKIP $(aw_P un uu): unmerged index or unborn HEAD (nothing to snapshot safely)"
+  chk_has "AC-35 the unborn HEAD skips" "$out" "SKIP $(aw_P un orph): unmerged index or unborn HEAD (nothing to snapshot safely)"
+  chk_no "AC-35 no snapshot failure" "$out" "snapshot failed"
+fi
+
+# ---- G5: flags, knob, busy-check availability
+if aw_want archive_wt_own_and_nopull; then
+  echo "--- AC-19 --own and --no-pull each skip the whole section"
+  build_aw_repo own; wt="$(aw_wt own held feat/held)"; aw_age "$wt"
+  out="$(aw_run apply --archive-worktrees --own "$TMPD/no-such-wt" "$TMPD/awclone-own")"
+  chk_has "AC-19 --own skips the section" "$out" "SKIP archive worktrees: --own scopes cleanup to the named worktrees"
+  chk_no "AC-19 --own previews nothing" "$out" "WOULD archive worktree"
+  out="$(aw_run apply --archive-worktrees --no-pull "$TMPD/awclone-own")"
+  chk_has "AC-19 --no-pull skips the section" "$out" "SKIP archive worktrees: --no-pull (a step 0 stop; other sessions' worktrees stay)"
+  chk_no "AC-19 --no-pull previews nothing" "$out" "WOULD archive worktree"
+fi
+
+if aw_want archive_wt_pull_only_refused; then
+  echo "--- AC-20 --pull-only refuses --archive-worktrees"
+  build_aw_repo po
+  out="$(aw_run apply --pull-only --archive-worktrees "$TMPD/awclone-po")"; rc=$?
+  chk "AC-20 exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+  chk_has "AC-20 names the flag" "$out" "--pull-only cannot combine with --archive-worktrees"
+fi
+
+if aw_want archive_wt_flag_off_no_section; then
+  echo "--- AC-21 the flag off prints no section"
+  build_aw_repo off; wt="$(aw_wt off held feat/held)"; aw_age "$wt"
+  out="$(aw_run apply "$TMPD/awclone-off")"
+  chk_no "AC-21 no archive worktrees section" "$out" "archive worktrees"
+fi
+
+if aw_want archive_wt_knob; then
+  echo "--- AC-22 the knob is root-only and validated"
+  build_aw_repo knob; wt="$(aw_wt knob held feat/held)"; aw_age "$wt"
+  mkdir -p "$TMPD/aw-knob-big" "$TMPD/aw-knob-bad"
+  printf '[wrap]\narchive_worktree_min_age_hours = 100000\n' > "$TMPD/aw-knob-big/kit.toml"
+  printf '[wrap]\narchive_worktree_min_age_hours = abc\n' > "$TMPD/aw-knob-bad/kit.toml"
+  printf '[wrap]\narchive_worktree_min_age_hours = 1\n' > "$TMPD/awclone-knob/.kit.toml"
+  out="$(cd "$TMPD/awclone-knob" && KIT_PROJECT_ROOT="$TMPD/awclone-knob" AW_ROOT="$TMPD/aw-knob-big" aw_run apply --apply --archive-worktrees "$TMPD/awclone-knob")"
+  chk_has "AC-22 a large root value keeps it fresh, the project value is ignored" "$out" "fresh, idle "
+  chk_has "AC-22 the line names the root value" "$out" "< 100000h"
+  aw_no_ref "AC-22 nothing pushed" knob "archive/feat-held-${AW_DATE}"
+  out="$(AW_ROOT="$TMPD/aw-knob-bad" aw_run apply --archive-worktrees "$TMPD/awclone-knob")"; rc=$?
+  chk_has "AC-22 a bad value skips the section by name" "$out" \
+    "SKIP archive worktrees: wrap.archive_worktree_min_age_hours=abc is not a whole number >= 1"
+  chk "AC-22 a bad value exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+  for v in 0 08 -1 1.5 1234567; do
+    printf '[wrap]\narchive_worktree_min_age_hours = %s\n' "$v" > "$TMPD/aw-knob-bad/kit.toml"
+    out="$(AW_ROOT="$TMPD/aw-knob-bad" aw_run apply --archive-worktrees "$TMPD/awclone-knob")"
+    chk_has "AC-22 the value $v is refused" "$out" "is not a whole number >= 1"
+  done
+fi
+
+if aw_want archive_wt_busy_unavailable; then
+  echo "--- AC-36 no busy check, no archive"
+  build_aw_repo nb; wt="$(aw_wt nb held feat/held)"; aw_age "$wt"
+  out="$(KIT_WRAP_SKIP_BUSY_CHECK=1 aw_run apply --apply --archive-worktrees "$TMPD/awclone-nb")"
+  chk_has "AC-36 KIT_WRAP_SKIP_BUSY_CHECK=1 skips the section" "$out" \
+    "SKIP archive worktrees: busy check unavailable (no lsof, or KIT_WRAP_SKIP_BUSY_CHECK=1)"
+  aw_no_ref "AC-36 nothing pushed with the check off" nb "archive/feat-held-${AW_DATE}"
+  # A PATH whose every directory holding lsof is replaced by a shadow without it.
+  local dir np="" ent sh=0
+  local IFS_OLD="$IFS"; IFS=:
+  for dir in $PATH; do
+    if [ -x "$dir/lsof" ]; then
+      sh=$(( sh + 1 )); mkdir -p "$TMPD/aw-nolsof-$sh"
+      for ent in "$dir"/*; do
+        [ "${ent##*/}" = lsof ] || ln -s "$ent" "$TMPD/aw-nolsof-$sh/${ent##*/}" 2>/dev/null
+      done
+      np="${np:+$np:}$TMPD/aw-nolsof-$sh"
+    else
+      np="${np:+$np:}$dir"
+    fi
+  done
+  IFS="$IFS_OLD"
+  out="$(PATH="$np" aw_run apply --apply --archive-worktrees "$TMPD/awclone-nb")"
+  chk_has "AC-36 no lsof on PATH skips the section" "$out" "SKIP archive worktrees: busy check unavailable"
+  aw_no_ref "AC-36 nothing pushed without lsof" nb "archive/feat-held-${AW_DATE}"
+fi
+
+
+# ---- build additions (review round): tree guards alone, snapshot shapes, parser, guards
+if aw_want archive_wt_tree_guards; then
+  echo "--- AC-38 the tree guards, called alone on built trees"
+  build_aw_repo tg; wt="$(aw_wt tg held feat/held)"
+  echo tok > "$wt/token.go"; echo s > "$wt/.env.sample"; git -C "$wt" add -f token.go .env.sample
+  aw_git -C "$wt" commit -q -m "chore: tracked"
+  s="$(git -C "$wt" rev-parse HEAD)"; t0="$(git -C "$wt" rev-parse "HEAD^{tree}")"
+  gd="$TMPD/aw-tg-idx"
+  t1="$(GIT_INDEX_FILE="$gd" bash -c 'git -C "$1" read-tree HEAD && git -C "$1" update-index --add --cacheinfo "160000,$2,sub" && git -C "$1" write-tree' _ "$wt" "$s")"; rm -f "$gd"
+  t2="$(GIT_INDEX_FILE="$gd" bash -c 'git -C "$1" read-tree HEAD && printf "K=1\n" > "$1/.env" && git -C "$1" update-index --add .env && git -C "$1" write-tree' _ "$wt")"; rm -f "$gd" "$wt/.env"
+  out="$(bash -c 'source "$1/lib/config/kit-config.sh"; source "$1/lib/wrap/wrap-common.sh"; source "$1/lib/wrap/wrap-apply.sh"
+    w="$2"; h="$3"
+    _wt_new_gitlink "$w" "$h" "$4" >/dev/null; echo "gitlink-new=$?"
+    _wt_new_gitlink "$w" "$h" "$5" >/dev/null; echo "gitlink-none=$?"
+    x=$(_wt_new_secret "$w" "$h" "$6"); echo "secret-added=$? $x"
+    x=$(_wt_new_secret "$w" "$h" "$5"); echo "secret-none=$? $x"
+    echo edited >> "$w/token.go"; echo edited >> "$w/.env.sample"
+    t=$(GIT_INDEX_FILE="$7" bash -c "git -C \"\$1\" read-tree HEAD && git -C \"\$1\" update-index token.go && git -C \"\$1\" write-tree" _ "$w"); rm -f "$7"
+    x=$(_wt_new_secret "$w" "$h" "$t"); echo "secret-modified-plain=$? $x"
+    t=$(GIT_INDEX_FILE="$7" bash -c "git -C \"\$1\" read-tree HEAD && git -C \"\$1\" update-index .env.sample && git -C \"\$1\" write-tree" _ "$w"); rm -f "$7"
+    x=$(_wt_new_secret "$w" "$h" "$t"); echo "secret-modified-strong=$? $x"' _ "$KIT_DIR" "$wt" "$s" "$t1" "$t0" "$t2" "$gd" 2>&1)"
+  chk_has "AC-38 a new gitlink is found" "$out" "gitlink-new=0"
+  chk_has "AC-38 HEAD's own tree has no new gitlink" "$out" "gitlink-none=1"
+  chk_has "AC-38 an added .env is found by name" "$out" "secret-added=0 .env"
+  chk_has "AC-38 HEAD's own tree adds no secret" "$out" "secret-none=1 "
+  chk_has "AC-38 an edited tracked token.go stays pushable" "$out" "secret-modified-plain=1 "
+  chk_has "AC-38 an edited tracked .env.sample is a secret" "$out" "secret-modified-strong=0 .env.sample"
+fi
+
+if aw_want archive_wt_snapshot_variants; then
+  echo "--- AC-39 unstaged-only and staged-only edits make one snapshot commit; a dirty detached worktree archives"
+  build_aw_repo var; wt="$(aw_wt var uns feat/uns)"; tip="$(git -C "$wt" rev-parse HEAD)"
+  echo mod >> "$wt/a.txt"; aw_age "$wt"
+  wt2="$(aw_wt var stg feat/stg)"; s="$(git -C "$wt2" rev-parse HEAD)"
+  echo mod >> "$wt2/a.txt"; git -C "$wt2" add a.txt; aw_age "$wt2"
+  wt3="$(aw_wt var dd -)"; t0="$(git -C "$wt3" rev-parse HEAD)"; echo n > "$wt3/n.txt"; aw_age "$wt3"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-var")"
+  chk "AC-39 unstaged-only: the tip's parent is HEAD" "$([ "$(git -C "$TMPD/awbare-var" rev-parse "archive/feat-uns-${AW_DATE}~1")" = "$tip" ]; echo $?)"
+  chk "AC-39 staged-only: the tip's parent is HEAD" "$([ "$(git -C "$TMPD/awbare-var" rev-parse "archive/feat-stg-${AW_DATE}~1")" = "$s" ]; echo $?)"
+  chk "AC-39 dirty detached: the basename names the ref and the tip holds the file" \
+    "$([ "$(git -C "$TMPD/awbare-var" show "archive/dd-${AW_DATE}:n.txt")" = n ] && [ "$(git -C "$TMPD/awbare-var" rev-parse "archive/dd-${AW_DATE}~1")" = "$t0" ]; echo $?)"
+fi
+
+if aw_want archive_wt_rename_parse; then
+  echo "--- AC-40 an intent-to-add rename is one record, not two"
+  build_aw_repo ren; wt="$(aw_wt ren held feat/held)"
+  mv "$wt/held.txt" "$wt/moved.txt"; git -C "$wt" add -N moved.txt; aw_age "$wt"
+  out="$(aw_run apply --archive-worktrees "$TMPD/awclone-ren")"
+  chk_has "AC-40 the rename counts once" "$out" "WOULD archive worktree $(aw_P ren held) [feat/held, 1 unique commits, 1 uncommitted paths"
+fi
+
+if aw_want archive_wt_skip_worktree; then
+  echo "--- AC-41 a skip-worktree entry hides an edit, so the worktree is kept"
+  build_aw_repo skw; wt="$(aw_wt skw held feat/held)"
+  git -C "$wt" update-index --skip-worktree a.txt; echo hidden >> "$wt/a.txt"; aw_age "$wt"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-skw")"
+  chk_has "AC-41 skip-worktree skips" "$out" "SKIP $(aw_P skw held): skip-worktree or assume-unchanged entries hide their edits"
+  chk "AC-41 the hidden edit stays" "$(grep -qx hidden "$wt/a.txt"; echo $?)"
+  aw_no_ref "AC-41 nothing pushed" skw "archive/feat-held-${AW_DATE}"
+fi
+
+if aw_want archive_wt_secret_modified; then
+  echo "--- AC-42 an edited tracked .env.sample blocks; an edited token.go does not"
+  build_aw_repo smod; wt="$(aw_wt smod envs feat/envs .env.sample)"; echo pasted >> "$wt/.env.sample"; aw_age "$wt"
+  wt2="$(aw_wt smod tok feat/tok token.go)"; echo edit >> "$wt2/token.go"; aw_age "$wt2"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-smod")"
+  chk_has "AC-42 the edited .env.sample skips" "$out" "SKIP $(aw_P smod envs): uncommitted .env.sample looks like a secret (never pushed)"
+  aw_no_ref "AC-42 nothing pushed for it" smod "archive/feat-envs-${AW_DATE}"
+  chk_has "AC-42 the edited token.go archives" "$out" "archived worktree $(aw_P smod tok) -> archive/feat-tok-${AW_DATE}"
+fi
+
+if aw_want archive_wt_locked_during_push; then
+  echo "--- AC-43 a lock taken during the push keeps the worktree"
+  build_aw_repo lkp; wt="$(aw_wt lkp held feat/held)"; aw_age "$wt"
+  sleep 300 & pid=$!
+  mkdir -p "$TMPD/awclone-lkp/.git/hooks"
+  printf '#!/bin/sh\ngit -C "%s" worktree lock --reason "claude agent x (pid %s start y)" "%s"\n' "$TMPD/awclone-lkp" "$pid" "$wt" > "$TMPD/awclone-lkp/.git/hooks/pre-push"
+  chmod +x "$TMPD/awclone-lkp/.git/hooks/pre-push"
+  out="$(aw_run apply --apply --archive-worktrees "$TMPD/awclone-lkp")"
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  chk_has "AC-43 kept after a lock during the push" "$out" \
+    "kept $(aw_P lkp held): archived to archive/feat-held-${AW_DATE}, but live pid ${pid} locked it during the push"
+  chk "AC-43 the worktree stays" "$([ -d "$wt" ]; echo $?)"
+fi
+
+# ---- TASK-H: usage and the command doc
+if aw_want archive_wt_usage_names_flag; then
+  echo "--- AC-26 --help documents the flag"
+  out="$("$WRAP" --help 2>&1)"
+  chk_has "AC-26 the usage line names the flag" "$out" "[--archive-worktrees]"
+  chk_has "AC-26 the header paragraph explains it" "$out" "apply --archive-worktrees (opt-in, never under --own or --no-pull)"
+fi
+
+if aw_want archive_wt_wrap_md_bullet; then
+  echo "--- AC-27 commands/wrap.md carries the bullet and the exception"
+  out="$(cat "$KIT_DIR/commands/wrap.md")"
+  chk_has "AC-27 step 5 bullet" "$out" "- \`--archive-worktrees\` is opt-in and never part of this step's default flow"
+  chk_has "AC-27 the never-remove exception" "$out" "The one exception is \`--archive-worktrees\`"
+fi
+if [ "$aw_cg" = __unset__ ]; then unset GIT_CONFIG_GLOBAL; else export GIT_CONFIG_GLOBAL="$aw_cg"; fi
+if [ "$aw_cn" = __unset__ ]; then unset GIT_CONFIG_NOSYSTEM; else export GIT_CONFIG_NOSYSTEM="$aw_cn"; fi
+}
+
+if [ "${APPLY_ONLY:-}" = archive-wt ]; then
+  archive_wt_section
+  echo
+  if [ "$FAIL" -gt 0 ]; then echo "test-wrap-apply: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
+  echo "test-wrap-apply: all $PASS passed"
+  exit 0
+fi
+
 # ------------------------------------------------- seed: the scan section's clones
 # clone-scan-main is this suite's dry-run repo: the monolith builds it in the scan
 # loop (lines 291-295); the loop's own scan asserts stay in test-wrap-scan.sh.
@@ -1276,6 +1891,9 @@ chk_no "pinned config: the fetch through the mapping succeeds" "$out" "fetch fai
 chk_has "pinned config: agent2 is proven merged after that fetch" "$out" "delete agent2 (ancestor of origin/main)"
 chk "pinned config: agent2 is gone" \
   "$(git -C "$IC" show-ref --verify --quiet refs/heads/agent2 && echo 1 || echo 0)"
+
+
+archive_wt_section
 
 
 echo

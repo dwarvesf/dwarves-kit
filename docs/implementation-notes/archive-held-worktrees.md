@@ -2,6 +2,53 @@
 
 Spec: `docs/specs/SPEC-415-archive-held-worktrees.md`. Validation round 1 warnings not folded into the spec, for the builder. Each line is a warning to handle during the build or log as a delta here.
 
+## Build delta (what the build did differently from the spec, and why)
+
+### Decisions and changes
+- The shared constant is `_SECRET_SHAPED_NAMES` (named for its meaning, round 4 R5), plus `_SECRET_SHAPED_DIRS` for path components (`secrets .ssh .aws .gnupg .kube .docker`, round 2 R1). The spec calls it `_ARCHIVE_SECRET_GUARD`.
+- The name list adds the round 2 and round 3 R1 entries except `*key*`: that glob matches `keyboard.ts` and `monkey.py`, so it would pile worktrees up again. `*.key` stays.
+- The secret scan covers added, renamed-to and untracked paths only (status `A?`, `R?`, `C?`, `??`; tree halves `diff-tree --no-renames --diff-filter=A`). A modified tracked file is already in the committed history the push carries unscanned (DEC-L). This follows the round 2 R2/R3/R5 note; the spec's E2 text still lists "modified".
+- `land`'s secret hint stays on its narrow list. Widening it changes `land` behavior with no `land` case (round 3 R4 offered either); `_secret_shaped` is used by the archive sweep alone.
+- `_ARCHIVE_IGNORED_REGENERABLE` adds `build .next coverage lib/*/bin/*-rs` (round 1 R4). It never reads land's list or `wrap.land_ignored_allow` (round 4 R1).
+- One status read per worktree (`--untracked-files=all --ignored=matching`, `--no-optional-locks`) feeds the dirty test, the unmerged test, the idle age, the embedded, ignored and secret guards (round 3 R5).
+- A path holding a newline or tab in that read skips the worktree (`an uncommitted path holds a newline or tab`): the newline lists cannot carry it.
+- Skip-worktree and assume-unchanged entries skip the worktree (round 1 R1), read by capture, never piped into `grep -q`.
+- The invoking checkout itself is skipped silently when `repo` is a linked worktree (round 3 R3), and `wtb = cur` compares only when both are non-empty (round 3 R6).
+- `_wt_trees` traps INT, TERM and HUP to remove its temp index (round 4 R2); the `ls-remote` pre-read and read-back match `refs/heads/<ref>` exactly (round 4 R2).
+- After the push the removal half re-reads HEAD, both trees, the ignored blockers and the embedded list, then the live lock, `lsof` and the worktree `index.lock`; any change prints a `kept` line (round 2 R2).
+- Snapshot and staged commit messages carry the slug, never a local path, and `[skip ci]` (round 1 R1, round 3 R1).
+- Every printed path and push error line goes through `_san` (round 1 R1, round 4 R1).
+- A deleted path's idle age uses its nearest existing parent directory; an unreadable time prints age 0, read as fresh (round 2 R2).
+- The branch-elsewhere line reads `kept <branch>: archived to <ref>, worktree removed, but the branch was checked out elsewhere during the push` (round 4 R3).
+- New AC-16b `archive_wt_readback_mismatch`: a bare `post-receive` hook moves the ref after the push, so the read-back compare has an isolated case and control (round 2 R4). The spec's AC-16 still names the stacked control.
+- The fixture builder pins `core.excludesFile` to a missing path: the operator's global excludes file ignored `.env.local` and turned AC-14 into an ignored-path SKIP.
+- `APPLY_ONLY=archive-wt` runs the new section alone and `AW_CASE=<case>` one case, so a negative control runs one case, not the whole suite.
+- Touches gains `lib/config/**`, `bin/**` and `docs/reference/**` (round 3 R4); the doc mentions at `bin/wrap:9`, `docs/reference/wrap.md:39`, `docs/reference/consumer-contract.md:88` and `lib/wrap/README.md:8` are updated (round 1 R4).
+- `lib/config/module-registry.md` registers `DWARVES_KIT_SKIP_CODEX_PIN`: an orphan from origin/master (#1075) turned `tests/test-config-registry.sh` red before this branch touched anything.
+
+### Review round (security, architecture, test-coverage lenses) folded in the build
+- The key family is now covered without a bare `*key*`: `*_rsa *_ed25519 *_ecdsa deploy_key* *apikey* *api_key* *api-key* *private*key* *_key.json *-key.json *serviceaccount*key*`.
+- An uncommitted EDIT of a tracked file is scanned against `_SECRET_STRONG_NAMES` (names never ordinary source: `.env*`, keys, keystores, `.netrc` and the like), in the status read and in the tree halves (`diff-tree --diff-filter=AMT`). An edited `token.go` stays pushable; an edited `.env.sample` does not. This narrows DEC-L.
+- `_wt_status` reads the second path of a worktree-side rename or copy (` R`, ` C`): an intent-to-add rename was parsed as two records with a garbage path.
+- The sweep probes `lsof -p $$` once per section: empty output means lsof failed, and `_wt_busy` would then read every worktree as idle. That prints `busy check unavailable (lsof returned nothing)`.
+- The skip-worktree match uses `[[:lower:]S]`: bash 3.2 in a UTF-8 locale collated `[a-z]` over `H` and skipped every worktree.
+- `_secret_shaped` and `_san` run `tr` under `env LC_ALL=C`, so an invalid UTF-8 byte cannot cut a name short.
+- `ls-files -v` and `ls-files -s` reads are checked; a failed read skips the worktree instead of passing its guard.
+- `_wt_trees` tracks the failing step with a flag, so `snapshot failed (...)` quotes git's own message.
+- `BUSY_MSG` goes through `_san` at both echo sites.
+- The knob is checked before the busy-check skips, as in the spec's order.
+- Tests: AC-22 now runs from the clone with `KIT_PROJECT_ROOT` (the project-value control could not go red before) and loops `0 08 -1 1.5 1234567`; the section pins `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_NOSYSTEM` and restores them; AC-9 waits for its holder to enter the worktree; `AW_DATE` is re-read per case; AC-35 asserts the orphan worktree exists; the section skips by name with no `lsof`.
+- New cases beyond the spec table: AC-37c (a `.claude/` file with no twin blocks), AC-38 `archive_wt_tree_guards` (both tree guards called alone on built trees, so the tree guards finally have an isolated control), AC-39 `archive_wt_snapshot_variants` (unstaged-only, staged-only, dirty detached), AC-40 `archive_wt_rename_parse`, AC-41 `archive_wt_skip_worktree`, AC-42 `archive_wt_secret_modified`, AC-43 `archive_wt_locked_during_push`.
+- Report lines the spec's list lacks: `git status failed`, `git ls-files failed`, `an uncommitted path holds a newline or tab`, `skip-worktree or assume-unchanged entries hide their edits`, `index.lock held by another writer`, `origin could not be read`, `snapshot tree unreadable`, `busy check unavailable (lsof returned nothing)`, and the post-push `kept` variants (live pid locked it, busy, index.lock held).
+- Accepted, not changed: `_archive_worktree_one` and `_archive_worktree_push` share their caller's locals through dynamic scope (the house style of `_apply_*`); `_wt_status` runs before the cheap freshness check; the busy check's ancestor exemption could spare a running session's own worktree when wrap runs from another directory.
+
+### Not done (logged, safe side)
+- No short-circuit to "already on origin" for a detached checkout whose tip sits on some `refs/remotes/origin/*` (round 3 R3): such a worktree still archives under its own ref.
+- Long-lived branch names (`develop`, `staging`, `release/*`) are not protected (round 4 R3); only the default, `main` and `master` are.
+- `_wt_lock_live` still reads EPERM as dead (round 4 R2); the Failure modes row stands.
+- No dry-run warning that a public origin receives the bytes (round 4 R1); the command doc says it once.
+- No size or path-count cap on the snapshot (round 1 R1, round 2 R2); a size refusal by the remote is a FAILED push and keeps the worktree.
+
 ## Reviewer 1
 - Skip-worktree and assume-unchanged edits are invisible to `git status` and lost on removal: SKIP a worktree where `ls-files -v` shows an `S` or a lowercase tag.
 - Sanitize every printed path with `tr '[:cntrl:]' '?'` before it reaches a report line.
