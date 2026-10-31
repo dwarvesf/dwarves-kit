@@ -207,6 +207,7 @@ printf 'lib/x/tests/test_a.py\n' | grep -qE "$PAT16" && ! printf 'README.md\n' |
 # A fixture whose hooks/codex-hooks.json pins hooks/demo-hook.sh the way the real manifest does.
 mkpinned() { # $1=dir
   mkkit "$1"
+  mkdir -p "$1/lib/codex"; cp "$KIT/lib/codex/repin.sh" "$1/lib/codex/repin.sh"
   local h; h="$(shasum -a 256 "$1/hooks/demo-hook.sh" | awk '{print $1}')"
   printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"hash_file \\"${PLUGIN_ROOT}/hooks/demo-hook.sh\\" | /usr/bin/grep -q '"'"'^%s '"'"' || exit 2"}]}]}}\n' "$h" > "$1/hooks/codex-hooks.json"
   git -C "$1" add -A; git -C "$1" commit -qm "chore: pin the demo hook"
@@ -237,6 +238,53 @@ RC19="$( cd "$T19" && printf '{"tool_input":{"command":"git push -u origin HEAD"
   | CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" DWARVES_KIT_SKIP_CODEX_PIN=1 \
     bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>&1; echo $? )"
 [ "$RC19" = 0 ] && ok "DWARVES_KIT_SKIP_CODEX_PIN=1 skips the arm (exit 0)" || no "the escape hatch should skip the arm (got $RC19)"
+
+# 20. a non-kit repo (no lib/codex/repin.sh) that carries a hooks/codex-hooks.json with no pins
+# is never blocked by the pin arm
+T20="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T20="$T20/repo"; mkkit "$T20"
+printf '{"hooks":{}}\n' > "$T20/hooks/codex-hooks.json"
+git -C "$T20" add -A; git -C "$T20" commit -qm "chore: add a pin-less manifest"
+git -C "$T20" switch -qc feat/pin-nonkit
+printf '# edited\n' >> "$T20/hooks/demo-hook.sh"
+git -C "$T20" add -A; git -C "$T20" commit -qm "fix: edit a hook in a non-kit repo"
+[ "$(gate "$T20")" = 0 ] && ok "non-kit repo with a pin-less manifest -> not blocked (exit 0)" \
+  || no "a non-kit repo must never be blocked by the pin arm"
+
+# 21. a kit repo whose manifest has no pins (repin exit 2) -> advisory, not a block
+T21="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T21="$T21/kit"; mkpinned "$T21"
+printf '{"hooks":{}}\n' > "$T21/hooks/codex-hooks.json"
+git -C "$T21" add -A; git -C "$T21" commit -qm "chore: drop the pins"
+git -C "$T21" switch -qc feat/pin-nopins
+printf '# edited\n' >> "$T21/hooks/demo-hook.sh"
+git -C "$T21" add -A; git -C "$T21" commit -qm "fix: edit a hook"
+ERR21="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+RC21="$(gate "$T21" "$ERR21")"
+[ "$RC21" = 0 ] && grep -q 'codex pin check skipped' "$ERR21" \
+  && ok "pin-less manifest (repin cannot judge) -> advisory line, not blocked (exit 0)" \
+  || no "a pin-less manifest should be an advisory (got $RC21): $(head -c 500 "$ERR21")"
+
+# 22. committed stale pin + an UNCOMMITTED repin in the working tree -> still blocked
+# (the arm judges the pushed commit, not the working tree)
+T22="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T22="$T22/kit"; mkpinned "$T22"
+git -C "$T22" switch -qc feat/pin-uncommitted-repin
+printf '# edited\n' >> "$T22/hooks/demo-hook.sh"
+git -C "$T22" add -A; git -C "$T22" commit -qm "fix: edit a pinned hook"
+bash "$KIT/lib/codex/repin.sh" "$T22" >/dev/null
+[ -n "$(git -C "$T22" status --porcelain)" ] || no "fixture should carry an uncommitted repin"
+[ "$(gate "$T22")" = 2 ] && ok "committed stale pin + uncommitted repin -> still blocked (exit 2)" \
+  || no "an uncommitted repin must not satisfy the gate"
+
+# 23. committed fresh pin + an UNCOMMITTED hook edit -> not blocked
+T23="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; T23="$T23/kit"; mkpinned "$T23"
+git -C "$T23" switch -qc feat/pin-uncommitted-edit
+printf '#!/bin/bash\n' > "$T23/hooks/other-hook.sh"
+( cd "$T23" && bash "$REG" generate docs/reference/FEATURES.md )
+git -C "$T23" add -A; git -C "$T23" commit -qm "feat: add an unpinned hook"
+printf '# scratch edit\n' >> "$T23/hooks/demo-hook.sh"
+ERR23="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+RC23="$(gate "$T23" "$ERR23")"
+[ "$RC23" = 0 ] && ok "committed fresh pin + uncommitted hook edit -> not blocked (exit 0)" \
+  || no "an uncommitted edit must not fail a fresh committed pin (got $RC23): $(head -c 500 "$ERR23")"
 
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
