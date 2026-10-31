@@ -98,3 +98,23 @@ Spec: `docs/specs/SPEC-415-archive-held-worktrees.md`. Validation round 1 warnin
 - Reword the Diagram's "no write happens before every guard" to "no write to the worktree, its branch or origin".
 - Compare `wtb = cur` only when both are non-empty.
 - Add the branch-elsewhere recheck to the Picture's post-push box, and name the repo-level `_write_guard` SKIP line.
+
+## Validation round 4
+
+### Worth doing during the build
+- R1: run `_secret_shaped` under `set -f`, with a case whose cwd holds `a.pem` that still flags `b.pem`; one table-driven case looping a sample per secret pattern; `_wt_ignored_blockers` never reads land's allow-list or `wrap.land_ignored_allow`; sanitize the `FAILED ... <first push error line>` text.
+- R2: `trap` in `_wt_snapshot` removes its temp index on interrupt; the `ls-remote` pre-read passes the full `refs/heads/<ref>` (a tail match false-positives on `refs/heads/foo/archive/x`).
+- R3: the AC-8 fixture also ages the admin `locked` file; the branch-elsewhere line reads `kept <b>`; say that the operator names the flag knowing origin receives all uncommitted, non-ignored bytes.
+- R5: name the shared constant for its meaning, `_SECRET_SHAPED_NAMES`, not for the archive sweep.
+
+### Everything else
+- R1: the `--no-optional-locks` rationale is wrong (idle age does not read the admin index); the real harm is rewriting a held worktree's index.
+- R1: the dry run should warn that a public origin receives the uncommitted bytes.
+- R2: add a Failure modes row for an interrupted `worktree remove` (partial directory, same-day wedge, data safe in the first ref).
+- R2: `_wt_lock_live` cannot tell EPERM from ESRCH; `ps -p` would.
+- R2: the same-day wedge after a transient read-back failure recovers the next day.
+- R3: long-lived branches (`develop`, `staging`, `release/*`) are not in the protected set.
+- R3: an Agent-tool lock pid can keep a subagent worktree from ever archiving (Failure modes row, safe side).
+- R4: TASK-B is the heaviest task; TASK-H touches about 10 files; E1 and E2 acceptance names cases G tasks write.
+- R5: Approach 2's "about 200 lines" understates the size.
+- R6: Picture drift, handled in the spec fold.

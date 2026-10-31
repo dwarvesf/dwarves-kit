@@ -30,7 +30,7 @@ The repo has no `CONTEXT.md` glossary; recent specs (SPEC-412) keep their terms 
 - archive tip: the commit the sweep pushes. For a clean worktree it is the worktree's HEAD. For a dirty one it is the snapshot commit.
 - snapshot commit: a commit built from a temporary index, never the worktree's own index. Its tree is the working tree as `git add -A` sees it (gitignored files excluded). Its parent is HEAD, or the staged commit when one exists.
 - staged commit: an extra commit, parent HEAD, holding the worktree's real index tree. Made only when that tree differs from both HEAD's tree and the snapshot tree, so a partly staged file keeps both versions.
-- regenerable ignored path: a gitignored path the archive sweep may delete with the worktree, because a build or install recreates it. The list is fixed in code (`_ARCHIVE_IGNORED_REGENERABLE`).
+- regenerable ignored path: a gitignored path the archive sweep may delete with the worktree, because a build or install recreates it, or the main checkout holds an identical copy. Two classes: the fixed list in code (`_ARCHIVE_IGNORED_REGENERABLE`), and an ignored path under `.claude/` whose every file is byte-identical to the same relative path in the main checkout (DEC-S).
 - create-only lease: `git push --force-with-lease=refs/heads/<ref>: <sha>:refs/heads/<ref>`. The empty expect means "the ref must not exist". The push is refused when it exists, even when a plain push would fast-forward it.
 
 ## Solution
@@ -66,9 +66,11 @@ Approach 2. The flag is opt-in and no default flow passes it, the same contract 
    |      |
    |      |  per registered worktree (git worktree list --porcelain -z)
    |      v
-   |    guards: --own / --no-pull / origin / fetch / knob, then per record:
+   |    guards: --own / --no-pull / origin / fetch / knob /
+   |            busy check available (DEC-R), then per record:
    |            prunable / main / invoking worktree ($PWD, cur) /
-   |            protected branch / merge-rebase in progress
+   |            protected branch / merge-rebase in progress /
+   |            unmerged index or unborn HEAD (DEC-Q)
    |      |
    |      v
    |    candidate?  clean: git cherry origin/<def> <HEAD> has a '+'
@@ -79,7 +81,8 @@ Approach 2. The flag is opt-in and no default flow passes it, the same contract 
    |    stale?  _wt_idle_secs >= min_age_hours * 3600
    |    lock pid alive?  busy (lsof)?  wt index.lock?  submodule?
    |    embedded git repo (?? dir at any depth holding .git)?
-   |    ignored non-regenerable?
+   |    ignored non-regenerable? (fixed list, or .claude/ copy identical
+   |                              to the main checkout: DEC-S)
    |    secret-shaped uncommitted path in git status (_ARCHIVE_SECRET_GUARD)?
    |      |   (every git status read: --no-optional-locks; the embedded and
    |      |    secret guards share one --untracked-files=all read)
@@ -143,7 +146,7 @@ Data shape on origin, one ref per archived worktree:
 None. The local half is reversible: every removed worktree is recoverable from its archive ref with `git worktree add <path> archive/<slug>-<date>`. The remote half is NOT: once a path reaches origin, deleting the ref does not undo the disclosure (clones, forks, caches and GitHub's own retention may keep it). That irreversible half is guarded for UNCOMMITTED paths by `_ARCHIVE_SECRET_GUARD` (DEC-I), and the embedded-repo guard (DEC-H) keeps nested repos out; both run before the push. Committed unique commits push unscanned, exactly as `--archive-unmerged` pushes them today (DEC-L, accepted risk). The Decision Log records all of it.
 
 ### Boundaries & failure modes
-Out of bounds: deleting archive refs, pruning registry entries whose directory is gone (`git worktree prune` owns that), and any worktree the sweep cannot prove idle, unlocked, idle in `lsof`, and fully captured on origin. See `## Failure modes`.
+Out of bounds: deleting archive refs, pruning registry entries whose directory is gone (`git worktree prune` owns that), and any worktree the sweep cannot prove idle, unlocked, idle in `lsof`, and fully captured on origin, or byte-identical in the main checkout for DEC-S paths. See `## Failure modes`.
 
 ## Technical Design
 
@@ -212,7 +215,7 @@ Dependencies: A, A2, B, C and H stand alone. D and E1 land together (D calls the
 
 - [ ] TASK-A: Extract the matcher body of `_land_ignored_allowed` into `_ignored_match <path> <entries>` in `lib/wrap/wrap-common.sh`. `_land_ignored_allowed` calls it with `${_LAND_IGNORED_BUILTIN} $(kit_config_get_root wrap.land_ignored_allow "")`. Acceptance: behavior-preserving; `bash tests/test-wrap-land.sh` stays green with no test edited.
 - [ ] TASK-A2: Add one shared constant `_ARCHIVE_SECRET_GUARD` in `lib/wrap/wrap-common.sh`, a space-separated basename glob list: `.env* *.pem *.key *secret* *credential* *token* id_rsa* id_ed25519* id_ecdsa* id_dsa* *.p12 *.pfx *.jks *.keystore .npmrc .netrc .pgpass *.kdbx auth.json *password* *passwd* .dev.vars .envrc`, and `_secret_shaped <path>` that matches the path's basename against it (case-insensitive, under `set -f`). `wrap-land.sh:366` uses it for its "looks like a secret" hint. Acceptance: `bash tests/test-wrap-land.sh` green; `archive_wt_secret_untracked`, `archive_wt_secret_id_rsa`.
-- [ ] TASK-B: Add `_wt_idle_secs <wt>` and `_wt_ignored_blockers <wt>` to `lib/wrap/wrap-apply.sh`. `_wt_idle_secs` reads the reflog entry time and the admin dir (`git -C <wt> rev-parse --path-format=absolute --git-dir`) per the idle-age term, reads status with `--no-optional-locks status --porcelain=v1 -z --untracked-files=all`, and uses `_mtime`. A future mtime counts as age 0. `_wt_ignored_blockers` reads `--no-optional-locks status --porcelain -z --ignored=matching --untracked-files=all`, keeps `!!` entries, strips a trailing `/`, and prints each path `_ignored_match` does not cover with `_ARCHIVE_IGNORED_REGENERABLE` (`node_modules .wrangler dist *.tsbuildinfo __pycache__ target .pytest_cache/ .venv/ .mypy_cache/ .ruff_cache/ .DS_Store tests/.cache .claude/session-state`). One more class counts as regenerable: an ignored path under `.claude/` whose every file is byte-identical (`cmp`) to the file at the same relative path in the main checkout (DEC-S). Acceptance: cases `archive_wt_fresh_by_dirty_mtime`, `archive_wt_ignored_blocks`, `archive_wt_regenerable_ok`.
+- [ ] TASK-B: Add `_wt_idle_secs <wt>` and `_wt_ignored_blockers <wt>` to `lib/wrap/wrap-apply.sh`. `_wt_idle_secs` reads the reflog entry time and the admin dir (`git -C <wt> rev-parse --path-format=absolute --git-dir`) per the idle-age term, reads status with `--no-optional-locks status --porcelain=v1 -z --untracked-files=all`, and uses `_mtime`. A future mtime counts as age 0. `_wt_ignored_blockers` reads `--no-optional-locks status --porcelain -z --ignored=matching --untracked-files=all`, keeps `!!` entries, strips a trailing `/`, and prints each path `_ignored_match` does not cover with `_ARCHIVE_IGNORED_REGENERABLE` (`node_modules .wrangler dist *.tsbuildinfo __pycache__ target .pytest_cache/ .venv/ .mypy_cache/ .ruff_cache/ .DS_Store tests/.cache .claude/session-state`). One more class counts as regenerable: an ignored path under `.claude/` whose every file is byte-identical (`cmp`) to the file at the same relative path in the main checkout (DEC-S). Acceptance: cases `archive_wt_claude_synced`, `archive_wt_fresh_by_dirty_mtime`, `archive_wt_ignored_blocks`, `archive_wt_regenerable_ok`.
 - [ ] TASK-C: Add `_wt_snapshot <wt>`. It copies the admin `index` (or starts from `read-tree HEAD` when there is none) to a `mktemp` file, writes the staged tree from that copy, runs `env GIT_INDEX_FILE=<abs tmp> git -C <wt> add -A`, writes the snapshot tree, and builds the staged commit (only when the staged tree differs from both HEAD's tree and the snapshot tree) and the snapshot commit with `commit-tree`. A clean worktree returns HEAD as the tip. It removes its temp file. Acceptance: case `archive_wt_dirty_snapshot`; the worktree's `status --porcelain` and HEAD are byte-identical before and after.
 
 ### Phase 2: The sweep
@@ -228,7 +231,7 @@ All G tasks write into one new section `=== apply --archive-worktrees ===` in `t
 - [ ] TASK-G1 (needs C, D, E2, F1, F2): the fixture builder `build_aw_repo` and the dry-run and apply cases: AC-1, AC-2, AC-3, AC-4, AC-5. Acceptance: those five cases green; each control red.
 - [ ] TASK-G2 (needs B, E2, G1): freshness and busy: AC-6, AC-7, AC-8, AC-9, AC-34. Acceptance: those five cases green; each control red.
 - [ ] TASK-G3 (needs F1, F2, G1): push, lease, change during push: AC-10, AC-11, AC-15, AC-16. Acceptance: those four cases green; each control red.
-- [ ] TASK-G4a (needs A, A2, B, E2, F1, F2, G1): ignored and secret paths: AC-12, AC-13, AC-14, AC-32. Acceptance: those cases green; each control red.
+- [ ] TASK-G4a (needs A, A2, B, E2, F1, F2, G1): ignored and secret paths: AC-12, AC-13, AC-14, AC-32, AC-37. Acceptance: those cases green; each control red.
 - [ ] TASK-G4c (needs A2, E2, F1, G1): embedded repos and the staged secret: AC-30, AC-30b, AC-31. Acceptance: those cases green; each control red.
 - [ ] TASK-G4b (needs E1, E2, G1): merge proof, nothing unique, protected, submodule, prunable: AC-17, AC-18, AC-23, AC-24, AC-25. Acceptance: those cases green; each control red.
 - [ ] TASK-G4d (needs E1, F2, G1): sequencer, unmerged or unborn, and invoking worktree: AC-29, AC-33, AC-35. Acceptance: those cases green; each control red.
@@ -287,6 +290,7 @@ none (the repo has no `docs/QUALITY.md`).
 | AC-34 | a worktree aged through `GIT_COMMITTER_DATE` and `touch -t`, then `git reflog expire --all` (which empties the aged reflog and sets `logs/HEAD` mtime to now): still stale, `WOULD archive worktree` | `archive_wt_stale_after_reflog_expire` | read the admin component from the `logs/HEAD` mtime: the worktree reads fresh, case red |
 | AC-35 | a stale worktree with a `UU` path (a conflicting `stash pop`), and a stale worktree on an unborn branch: each `SKIP ... unmerged index or unborn HEAD`, exit 0, nothing pushed | `archive_wt_unmerged_unborn` | delete the guard: `write-tree` fails, the line is `FAILED ... snapshot failed`, exit 2, case red |
 | AC-36 | `KIT_WRAP_SKIP_BUSY_CHECK=1`, and a PATH without `lsof`: each prints the section SKIP `busy check unavailable` and archives nothing | `archive_wt_busy_unavailable` | delete the section skip: `_wt_busy` answers "not busy" and the stale fixture is archived, case red |
+| AC-37 | (a) a stale unmerged worktree whose only ignored path is `.claude/rules/x.md`, identical to the main checkout's copy, is archived and removed; (b) the same with one differing file under `.claude/` prints `SKIP ... ignored paths would be lost` and keeps the file on disk | `archive_wt_claude_synced` | make the DEC-S class accept any `.claude/` path: case (b) is archived and the differing file is deleted, case red |
 | AC-29 | a stale detached worktree stopped mid-rebase (admin `rebase-merge/` present): `SKIP ... in progress`; nothing pushed | `archive_wt_sequencer` | delete the in-progress check: the partial state is archived, case red |
 | AC-26 | `wrap.sh --help` names `--archive-worktrees` | `archive_wt_usage_names_flag` | leave `_usage`'s sed range at `2,42`: the new line is cut, case red |
 | AC-27 | `commands/wrap.md` step 5 carries the `--archive-worktrees` bullet and the exception in the never-remove bullet | `archive_wt_wrap_md_bullet` | remove the bullet: case red |
@@ -365,6 +369,7 @@ Each negative control runs on a mutated copy of `lib/wrap/wrap-apply.sh` (or `wr
 - DEC-Q (validation round 3, must-address): an unmerged index or an unborn HEAD is a SKIP before the snapshot. Without it, `write-tree` or `commit-tree -p HEAD` fails on every run, so the worktree reports FAILED and exit 2 forever.
 - DEC-R (validation round 3, must-address): the busy check is required. With no `lsof` or `KIT_WRAP_SKIP_BUSY_CHECK=1`, the whole section skips, unlike `--worktrees`, which proceeds without it: this sweep pushes and removes unmerged work, so it fails closed. The cross-user pid blind spot is a Failure modes row.
 - DEC-S (validation round 3, must-address): an ignored path under `.claude/` is regenerable when every file in it is byte-identical to the same relative path in the main checkout. Live worktrees carry `.claude/rules/` copied from the main checkout (sampled), and the main checkout keeps the canonical copy, so removing the worktree loses nothing. A differing or extra file still blocks. Rejected: keep the SKIP (it would skip most real worktrees, so the pile-up stays); add `.claude/` wholesale (a hand-edited rule file there would be lost).
+- DEC-T (validation round 4, critical): DEC-S gets its own AC (AC-37, owned by TASK-B and G4a) with a control that widens the class to any `.claude/` path; the Terms entry, the Boundaries line and the Picture name the DEC-Q, DEC-R and DEC-S guards. No fifth round: the operator directed the build.
 - DEC-N (validation round 2, critical): TASK-E1 drops the invoking-worktree case (G4d owns AC-33); TASK-F splits into F1 (push half) and F2 (removal half); the G tasks split to at most five cases each (G4a, G4b, G4c, G4d, G5), and AC-26 and AC-27 move to TASK-H alone. D and E1 land together, and a code task closes in the same commit as the G task holding its cases.
 - DEC-G: skipped under `--own` and `--no-pull`. Reason: both mean "this session's scope only" or "a foreign writer is live"; an unscoped sweep over other sessions' worktrees contradicts both.
 
@@ -445,6 +450,7 @@ Dry traces, one per negative control. The code does not exist yet, so each trace
 - AC-34 (admin part read from the `logs/HEAD` mtime): after `reflog expire --all` that mtime is now, so idle age is 0 and the case sees `SKIP ... fresh`. It asserts `WOULD archive worktree`. Red.
 - AC-35 (guard deleted): the `UU` fixture reaches `_wt_snapshot`; `write-tree` on the copied index refuses unmerged entries, so the line is `FAILED ... snapshot failed` and `apply` exits 2. The case asserts the SKIP line and exit 0. Red. The unborn fixture fails the same way at `commit-tree -p HEAD`.
 - AC-36 (section skip deleted): with `KIT_WRAP_SKIP_BUSY_CHECK=1`, `_wt_busy` returns "not busy" (`wrap-apply.sh:124`), every other guard passes on the aged fixture, and the push lands. The case asserts no ref on the bare. Red.
+- AC-37 (class widened to any `.claude/` path): in fixture (b), `.claude/rules/x.md` differs from the main checkout's copy, so the real class blocks it. Widened, `_wt_ignored_blockers` prints nothing, the push lands, and `-f -f` deletes the file. The case asserts the SKIP line and that the file still exists. Red.
 - AC-29 (in-progress check deleted): the fixture starts a rebase that stops on a conflict-free `edit` step, so the worktree is detached with admin `rebase-merge/` present and a commit origin lacks. Without the check it is a candidate and is archived mid-rebase. The case asserts no ref on the bare. Red.
 - AC-26 (sed range unchanged): `_usage` prints lines 2 to 42; the new header lines sit past 42. The case greps `--help` output for `--archive-worktrees`. Red.
 - AC-27 (bullet removed): the case greps `commands/wrap.md` for `--archive-worktrees`; zero hits. Red.
