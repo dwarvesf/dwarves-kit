@@ -205,6 +205,12 @@ _apply_worktrees() {
       fi
     fi
     [ "$wt_c" = "$main_wt" ] && continue
+    # The named worktrees' branches are the whole scope of the origin sweep under --own, so they
+    # are read before any guard or removal can drop the worktree. A detached worktree adds nothing.
+    if [ -n "$OWN_SET" ]; then
+      wtb="$(git -C "$wt" branch --show-current 2>/dev/null)"
+      [ -z "$wtb" ] || OWN_BRANCHES="${OWN_BRANCHES}${wtb}"$'\n'
+    fi
     if [ -z "$OWN_SET" ] && [ "$WORKTREES" != 1 ]; then
       echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"; continue
     fi
@@ -427,14 +433,20 @@ _apply_archive_unmerged() {
 # (deleting a base closes the dependent PR). Everything else is kept without a line. Tips come
 # from `ls-remote`, not refs/remotes: a checkout whose fetch refspec names only the default
 # branch tracks a handful of origin's branches. Each delete is leased to the tip it read, so a
-# branch pushed to after the read is refused rather than lost.
+# branch pushed to after the read is refused rather than lost. Under --own the sweep considers
+# only the branches the named worktrees held (OWN_BRANCHES): a wrap cleans up its own session.
 # ponytail: a branch whose merged PR sits past the list cap is kept; raise the cap if that bites.
 _ORIGIN_PR_LIMIT=1000
 # Names per `git push`; the env override is a test seam for the chunk loop.
 _ORIGIN_DELETE_CHUNK=${WRAP_ORIGIN_DELETE_CHUNK:-100}
 _apply_origin_branches() {
-  local repo="$1" def="$2" ghs="$3" url merged open elig names n k left heads push_args
-  echo "-- origin branches:"
+  local repo="$1" def="$2" ghs="$3" url merged open elig names n k left heads push_args own_json="null"
+  if [ -n "$OWN_SET" ]; then
+    own_json="$(printf '%s' "$OWN_BRANCHES" | jq -R -s -c 'split("\n") | map(select(length > 0)) | unique')" || own_json="[]"
+    echo "-- origin branches (own scope: $(printf '%s' "$own_json" | jq 'length') named branches):"
+  else
+    echo "-- origin branches:"
+  fi
   case "$(git -C "$repo" config --get remote.origin.url)" in
     *github.com[:/]*) ;;
     *) echo "     SKIP origin sweep: origin is not a GitHub remote"; return 0 ;;
@@ -452,9 +464,10 @@ _apply_origin_branches() {
   fi
   # One "<name> <tip>" line per eligible branch.
   elig="$(git -C "$repo" ls-remote --heads origin 2>/dev/null \
-    | jq -R -r --argjson m "$merged" --argjson o "$open" --arg def "$def" '
+    | jq -R -r --argjson m "$merged" --argjson o "$open" --arg def "$def" --argjson own "$own_json" '
         split("\t") as [$tip, $ref] | ($ref | ltrimstr("refs/heads/")) as $b
         | select($b != $def)
+        | select($own == null or any($own[]; . == $b))
         | select(any($m[]; .isCrossRepository == false and .headRefName == $b and .headRefOid == $tip))
         | select(any($o[]; .headRefName == $b or .baseRefName == $b) | not)
         | "\($b) \($tip)"' 2>/dev/null)" \
@@ -553,9 +566,9 @@ _apply_repo() {
     # Opt-in and never under --own (see the function's own comment); a flag-off run prints
     # no new section, so the report is byte-identical to before this flag existed.
     [ "$ARCHIVE_UNMERGED" = 1 ] && _apply_archive_unmerged "$repo" "$def" "$cur" "$fetch_ok"
-    # Outside the --own scope on purpose: it touches no local ref or worktree, and its own
-    # proof (merged PR at the exact tip, no open PR on it) holds whoever owns the branch.
-    # Skipping it under --own left every shared repo's merged heads on origin.
+    # Under --own it considers only the branches the named worktrees held: a wrap's default
+    # cleanup is the current session, and other sessions' merged heads wait for a plain
+    # apply or --worktrees run. The same proof applies (merged PR at the exact tip, no open PR).
     _apply_origin_branches "$repo" "$def" "$ghs"
 
     # Any checked-out branch: the incident state is a shared main checkout sitting on a

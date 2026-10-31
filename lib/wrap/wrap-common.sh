@@ -159,6 +159,7 @@ TIPS_FILE=""
 TIPS_OVERRIDE=""
 OWN_SET=""   # newline-separated canonical paths from --own; empty = no scope
 OWN_SEEN=""  # canonical paths matched against the worktree list this run
+OWN_BRANCHES="" # newline-separated branches the named --own worktrees held, read before removal
 OWN_N=0      # count of --own flags; OWN_PATHS[1..OWN_N] holds the raw args
 
 # _write_guard <repo> -- 0 when the checkout is free to write, 1 when another writer holds
