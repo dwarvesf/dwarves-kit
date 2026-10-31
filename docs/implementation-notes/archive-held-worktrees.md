@@ -41,3 +41,23 @@ Spec: `docs/specs/SPEC-415-archive-held-worktrees.md`. Validation round 1 warnin
 ## Reviewer 5
 - Consider one shared `_archive_push` helper for both archive sweeps instead of duplicated push and read-back logic.
 - Derive the regenerable list from land's `_LAND_IGNORED_BUILTIN` minus its local-config and secret entries, so the two lists cannot drift.
+
+## Validation round 2
+
+### Reviewer 1
+- The secret guard's two tree halves (staged and snapshot `diff-tree`) have no isolated case; add one per half.
+- Widen `_ARCHIVE_SECRET_GUARD` with `*key*`, `*.tfvars`, `*.tfstate`, `kubeconfig*`, `.pypirc`, `.htpasswd`, `*.ovpn`, `*.gpg`, `service-account*.json`, and match the path components `secrets/ .ssh/ .aws/ .gnupg/ .kube/ .docker/`.
+- Print the first N sanitized uncommitted paths in the dry-run `WOULD` block.
+
+### Reviewers 2, 3, 5
+- Secret-name false positives (`tokenizer.py`, a modified tracked `token.go`) make worktrees pile up; restrict the name guard to added, renamed and untracked paths (`--diff-filter=AR` on the tree halves), and consider an allow knob later.
+- Add a Failure modes row for the secret SKIP (detection: the SKIP line; recovery: move or commit the file, re-run).
+- The status and tree secret checks overlap; state one rule for which runs in the dry run and which under `--apply`.
+- Assert the dry-run verdict equals the `--apply` verdict for the embedded and secret fixtures.
+
+### Reviewer 4
+- receive-pack's refusal of a ref created after its advertisement (the DEC-K reason for AC-11) has no live sample in `## Grounding`; add one.
+- AC-31's dry trace asserts an unsampled behavior (`add -A` keeping an ignored, already-staged `.env`), and its mutation is stacked; sample it and isolate the control if possible.
+
+### Reviewer 6
+- The recovery recipe needs `git fetch` first, and should say that uncommitted state returns as one or two commits, the branch returns under the archive name, and regenerable ignored paths do not return.
