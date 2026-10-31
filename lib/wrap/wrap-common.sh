@@ -98,6 +98,95 @@ _fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null; }
 
 _short() { printf '%s' "${1:0:7}"; }
 
+# _ignored_match <path> <entries> -- 0 when one of the space-separated <entries> covers
+# <path> (a `git status` entry, trailing `/` already stripped). Forms: no `/` globs the LAST
+# component only, never an ancestor; a trailing `/` covers the whole subtree under any
+# directory of that name; any other entry with a `/` globs the whole path or a leading run of
+# its components. Split under set -f so an entry such as `*.json` never expands against the
+# cwd. `land`'s ignored-file guard and `apply --archive-worktrees` each pass their own list.
+_ignored_match() {
+  local p="$1" entries="$2" entry name last prefix part comp rest restore="" hit=1
+  case "$-" in *f*) ;; *) restore=1; set -f ;; esac
+  last="${p##*/}"
+  for entry in $entries; do
+    case "$entry" in
+      */)
+        name="${entry%/}"
+        case "$name" in
+          */*) entry="$name" ;;
+          *) rest="$p"
+             while :; do
+               comp="${rest%%/*}"
+               # shellcheck disable=SC2254
+               case "$comp" in $name) hit=0; break ;; esac
+               case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
+             done
+             [ "$hit" -eq 0 ] && break
+             continue ;;
+        esac ;;
+      */*) ;;
+      *) # shellcheck disable=SC2254
+         case "$last" in $entry) hit=0; break ;; esac
+         continue ;;
+    esac
+    prefix=""; rest="$p"
+    while :; do
+      part="${rest%%/*}"
+      prefix="${prefix:+${prefix}/}${part}"
+      # shellcheck disable=SC2254
+      case "$prefix" in $entry) hit=0; break ;; esac
+      case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
+    done
+    [ "$hit" -eq 0 ] && break
+  done
+  [ -z "$restore" ] || set +f
+  return "$hit"
+}
+
+# _SECRET_SHAPED_NAMES -- basename globs (matched lower-cased) that name a credential or a
+# key file. _SECRET_SHAPED_DIRS -- path components that hold them. `apply --archive-worktrees`
+# never pushes an uncommitted path either list covers: the push is the one step a ref delete
+# cannot undo. A bare `*key*` is left out on purpose (keyboard.ts, monkey.py); the key family
+# is covered by the narrower globs instead. _SECRET_STRONG_NAMES is the subset that also
+# blocks an uncommitted EDIT of a tracked file: names that are never ordinary source.
+_SECRET_SHAPED_NAMES=".env* *.env *.pem *.key *.p8 *.p12 *.pfx *.ppk *.jks *.keystore *.kdbx *.asc *.gpg *.ovpn *.tfvars *.tfstate *secret* *credential* *token* *password* *passwd* id_rsa* id_ed25519* id_ecdsa* id_dsa* *_rsa *_ed25519 *_ecdsa deploy_key* *apikey* *api_key* *api-key* *private*key* *_key.json *-key.json *serviceaccount*key* .npmrc .netrc .pgpass .pypirc .htpasswd .s3cfg .boto .dockercfg .dev.vars .envrc auth.json kubeconfig* service-account*.json"
+_SECRET_SHAPED_DIRS="secrets .ssh .aws .gnupg .kube .docker"
+_SECRET_STRONG_NAMES=".env* *.env *.pem *.key *.p8 *.p12 *.pfx *.ppk *.jks *.keystore *.kdbx id_rsa* id_ed25519* id_ecdsa* id_dsa* *_rsa *_ed25519 *_ecdsa .npmrc .netrc .pgpass .pypirc .htpasswd .s3cfg .dev.vars .envrc kubeconfig*"
+
+# _secret_shaped <path> [strong] -- 0 when the path's basename matches _SECRET_SHAPED_NAMES
+# (with `strong`, _SECRET_STRONG_NAMES) or one of its directory components is in
+# _SECRET_SHAPED_DIRS. Case-insensitive, under set -f so a glob never expands against the cwd.
+_secret_shaped() {
+  local p base dir comp pat restore="" hit=1 names="$_SECRET_SHAPED_NAMES"
+  [ "${2:-}" = strong ] && names="$_SECRET_STRONG_NAMES"
+  # LC_ALL=C through env (never a bash variable): a UTF-8 locale makes tr stop at an invalid
+  # byte, which would cut a name short of the part the guard must see.
+  p="$(printf '%s' "$1" | env LC_ALL=C tr 'A-Z' 'a-z')"
+  base="${p##*/}"
+  case "$-" in *f*) ;; *) restore=1; set -f ;; esac
+  for pat in $names; do
+    # shellcheck disable=SC2254
+    case "$base" in $pat) hit=0; break ;; esac
+  done
+  if [ "$hit" -ne 0 ]; then
+    case "$p" in
+      */*) dir="${p%/*}/"
+           while [ -n "$dir" ]; do
+             comp="${dir%%/*}"; dir="${dir#*/}"
+             for pat in $_SECRET_SHAPED_DIRS; do
+               [ "$comp" = "$pat" ] && { hit=0; break 2; }
+             done
+           done ;;
+    esac
+  fi
+  [ -z "$restore" ] || set +f
+  return "$hit"
+}
+
+# _san <text> -- control characters replaced by `?`, so a path or an error line cannot
+# rewrite the report.
+_san() { printf '%s' "$1" | env LC_ALL=C tr '[:cntrl:]' '?'; }
+
 # _open_own_prs <repo-url> -- the open PRs the operator authored, as a JSON array.
 #
 # The author filter runs HERE, not on the server: `gh pr list --author` sends gh to the
@@ -151,6 +240,7 @@ _squash_verdict() {
 APPLY=0
 WORKTREES=0
 ARCHIVE_UNMERGED=0
+ARCHIVE_WORKTREES=0
 PULL_ONLY=0
 NO_PULL=0
 MODE="DRY-RUN"

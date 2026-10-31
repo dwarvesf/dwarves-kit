@@ -440,6 +440,13 @@ delete_merged_remote_branches = true  # [impl] step 5. true = `wrap apply --appl
                                  #        false = report `N merged branches left on origin` and
                                  #        delete nothing. `merge` never passes --delete-branch, so
                                  #        this is the only pass that clears merged heads on origin.
+archive_worktree_min_age_hours = 72  # [impl] step 5, only with `wrap apply --archive-worktrees`
+                                 #        (opt-in, the operator names it). A worktree is a
+                                 #        candidate only when idle at least this many hours: the
+                                 #        newest reflog entry, the admin HEAD, commondir and
+                                 #        locked mtimes, and every uncommitted path's mtime. A
+                                 #        whole number >= 1; anything else skips the sweep with
+                                 #        exit 2. Root-only: it widens a remote write.
 drain_staged = false            # [impl] step 7b tail. The ONE knob here whose default does NOT
                                  #        act, deliberately. Step 7b stages nothing, so a wrap owns
                                  #        no staged rows; true drains only rows the operator staged

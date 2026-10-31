@@ -227,48 +227,9 @@ _LAND_IGNORED_BUILTIN="node_modules .wrangler dist *.tsbuildinfo __pycache__ tar
 
 # _land_ignored_allowed <path> -- 0 when the built-in list or the operator's
 # wrap.land_ignored_allow covers <path> (a `git status` entry, trailing `/` already
-# stripped). Forms: no `/` globs the LAST component only, never an ancestor; a trailing `/`
-# allows the whole subtree under any directory of that name; any other entry with a `/`
-# globs the whole path or a leading run of its components. Split under set -f so an entry
-# such as `*.json` never expands against the cwd.
+# stripped). The entry forms are _ignored_match's (lib/wrap/wrap-common.sh).
 _land_ignored_allowed() {
-  local p="$1" entries entry name last prefix part comp rest restore="" hit=1
-  case "$-" in *f*) ;; *) restore=1; set -f ;; esac
-  entries="${_LAND_IGNORED_BUILTIN} $(kit_config_get_root wrap.land_ignored_allow "")"
-  last="${p##*/}"
-  for entry in $entries; do
-    case "$entry" in
-      */)
-        name="${entry%/}"
-        case "$name" in
-          */*) entry="$name" ;;
-          *) rest="$p"
-             while :; do
-               comp="${rest%%/*}"
-               # shellcheck disable=SC2254
-               case "$comp" in $name) hit=0; break ;; esac
-               case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
-             done
-             [ "$hit" -eq 0 ] && break
-             continue ;;
-        esac ;;
-      */*) ;;
-      *) # shellcheck disable=SC2254
-         case "$last" in $entry) hit=0; break ;; esac
-         continue ;;
-    esac
-    prefix=""; rest="$p"
-    while :; do
-      part="${rest%%/*}"
-      prefix="${prefix:+${prefix}/}${part}"
-      # shellcheck disable=SC2254
-      case "$prefix" in $entry) hit=0; break ;; esac
-      case "$rest" in */*) rest="${rest#*/}" ;; *) break ;; esac
-    done
-    [ "$hit" -eq 0 ] && break
-  done
-  [ -z "$restore" ] || set +f
-  return "$hit"
+  _ignored_match "$1" "${_LAND_IGNORED_BUILTIN} $(kit_config_get_root wrap.land_ignored_allow "")"
 }
 
 # _land_symlink_outside <wt> <path> -- 0 when <wt>/<path> is a symlink whose resolved target
