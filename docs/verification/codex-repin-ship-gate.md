@@ -94,3 +94,43 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 The control ran after the guard commit; the tree was clean afterwards.
+
+## Review fixes: guard judges the pushed commit
+
+hooks/ship-gate.sh:396-420 now (1) requires the lib/codex/repin.sh kit marker, (2) archives hooks/ from the pushed commit and checks that copy, (3) blocks only when repin names a stale pin (a pin-less manifest is an advisory), (4) reads the diff with `grep < <(git ...)`. Cases 20-23 in tests/test-registry-freshness-guard.sh pin it.
+
+### Green run
+```
+Command: bash tests/test-registry-freshness-guard.sh
+Exit: 0
+Output:
+  ok - hook edited without a repin -> blocked, names the stale pin (exit 2)
+  ok - hook edited and repinned -> pass (exit 0)
+  ok - non-kit repo with a pin-less manifest -> not blocked (exit 0)
+  ok - pin-less manifest (repin cannot judge) -> advisory line, not blocked (exit 0)
+  ok - committed stale pin + uncommitted repin -> still blocked (exit 2)
+  ok - committed fresh pin + uncommitted hook edit -> not blocked (exit 0)
+  PASS=26 FAIL=0
+Verdict: PASS
+```
+
+Also green after the edit and repin (`repin.sh check` exit 0): test-codex-hooks 94 passed, 0 failed; test-ship-gate-fail-closed 12/12, default-push 37/37, refs-block 11/11, profiles (3 profiles x allow+block), identities 11/11, command-words 44/44; test-gate-opt-in and test-gate-opt-out all pass.
+
+### Negative control (fix 2)
+```
+Command: bash tests/test-registry-freshness-guard.sh
+Mutation: check the working tree again (`check "$PINTMP"` -> `check "$ROOT"`) in hooks/ship-gate.sh
+Changed: hooks/ship-gate.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+  NOT ok - an uncommitted repin must not satisfy the gate
+  PASS=24 FAIL=2
+  NOT ok - an uncommitted edit must not fail a fresh committed pin (got 2)
+Restore: git checkout HEAD -- hooks/ship-gate.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+The control ran after the fix commit; the tree was clean afterwards.
+
+### Not proven
+- `lib/codex/repin.sh` exits 1 with no output (not 2) on a manifest with no pins, because `set -e` fires inside the PINNED pipeline. The gate therefore keys the block on the "stale pin:" line; repin.sh itself is untouched.
