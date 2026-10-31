@@ -61,3 +61,40 @@ Spec: `docs/specs/SPEC-415-archive-held-worktrees.md`. Validation round 1 warnin
 
 ### Reviewer 6
 - The recovery recipe needs `git fetch` first, and should say that uncommitted state returns as one or two commits, the branch returns under the archive name, and regenerable ignored paths do not return.
+
+## Validation round 3
+
+### Reviewer 1
+- Add `*.env *.p8 *.ppk *.asc .s3cfg .boto .dockercfg` to `_ARCHIVE_SECRET_GUARD`.
+- Snapshot and staged commit messages must not embed the absolute worktree path; use the slug.
+- Reword the invariant "Gitignored files are never pushed" to "the sweep never adds an ignored path not already in the index".
+- The clean or dirty decision must use the same explicit `--untracked-files=all` status read as the guards.
+
+### Reviewer 2
+- The "live worker missed" Failure modes row's detection is the `archived worktree ... (<sha7>)` report line, read after the fact.
+
+### Reviewer 3
+- Guard the canonical `repo` path too: a linked worktree can arrive as `repo` through `--under`.
+- Phase 1 tasks A, A2, B and C close with Phase 2, and B needs A.
+- Approach 3's rejection reason is stale after #1076 (step 5 now defaults to `--own`); restate it on the contract change.
+- TASK-H must also fix `commands/wrap.md:396` and the `:163` busy bullet.
+- Detached review checkouts whose tip is on any `refs/remotes/origin/*` should short-circuit as already on origin, or the archive namespace fills with duplicates; log it if not done.
+
+### Reviewer 4
+- Add rows for the new knob to `lib/config/module-registry.md` (Root-only keys table and module table), and add `lib/config/**` to Touches.
+- TASK-H runs after G1.
+- The `wrap-apply.sh:662` usage line belongs in TASK-D.
+- TASK-A2's widening changes land's hint: add a land case, or keep land's hint on the narrow list.
+- Pick one test section name and use it everywhere.
+- E2 does not need C.
+
+### Reviewer 5
+- Approach 3's tradeoff is stale (same as Reviewer 3).
+- One combined `status --porcelain=v1 -z --untracked-files=all --ignored=matching` read can feed the idle-age, embedded, secret and ignored guards; fix the "one git status" sentence to match.
+- The dry-run `<k> uncommitted paths` count comes from the status read, never from `_wt_snapshot`.
+- The create-only lease Terms entry should match the form AC-11 greps.
+
+### Reviewer 6
+- Reword the Diagram's "no write happens before every guard" to "no write to the worktree, its branch or origin".
+- Compare `wtb = cur` only when both are non-empty.
+- Add the branch-elsewhere recheck to the Picture's post-push box, and name the repo-level `_write_guard` SKIP line.
