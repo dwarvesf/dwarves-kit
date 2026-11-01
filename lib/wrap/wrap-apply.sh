@@ -337,7 +337,7 @@ _apply_branches() {
 
 # _archive_slug <branch> -- an origin-ref-safe slug: lower-case alnum runs joined by `-`,
 # trimmed of leading/trailing dashes. Same shape as `_carry_stray_file`'s file slug, so a
-# branch name carrying a `/` (e.g. feat/foo) collapses to one path segment under archive/.
+# branch name carrying a `/` (e.g. feat/foo) collapses to one path segment under refs/archive/.
 _archive_slug() {
   printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//'
 }
@@ -346,7 +346,7 @@ _archive_slug() {
 # (--archive-unmerged, never under --own) sweep: every local branch that is not the current
 # or default branch, is not held by a worktree, and carries at least one commit patch
 # origin/<default> lacks (`git cherry origin/<default> <branch>` shows a `+`) gets pushed to
-# a new origin archive/<slug>-<YYYYMMDD> ref and, only once that push lands, its local ref
+# a new origin refs/archive/<slug>-<YYYYMMDD> ref (hidden from the branch list) and, only once that push lands, its local ref
 # deleted. No force: an already-existing archive ref refuses the push and the branch stays
 # local, reported FAILED. A branch with zero unique patches is already covered by
 # `_apply_branches` above (an ancestor or a squash-merged proof) or is simply reported here
@@ -363,7 +363,7 @@ _apply_archive_unmerged() {
   if [ "$fetch_ok" != 1 ]; then
     echo "     SKIP archive sweep: fetch failed, stale data"; return 0
   fi
-  local b tip pushed cherry n slug ref err first
+  local b tip pushed cherry n slug ref err first rl
   # Full refs throughout, as in _merge_proof: a tag named like the branch once made the push
   # source ambiguous, and a bare origin/<def> can resolve a tag or local branch.
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
@@ -383,23 +383,26 @@ _apply_archive_unmerged() {
       echo "     ${b}: nothing unique, left for the merged sweep"; continue
     fi
     slug="$(_archive_slug "$b")"
-    ref="archive/${slug}-$(date +%Y%m%d)"
+    ref="refs/archive/${slug}-$(date +%Y%m%d)"
     if [ "$APPLY" != 1 ]; then
       echo "     WOULD archive ${b} -> origin ${ref} (${n} unique commits)"; continue
     fi
     if ! _write_guard "$repo"; then
       echo "     SKIP ${b}: index.lock held by another writer"; continue
     fi
-    if git -C "$repo" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
+    if ! rl="$(git -C "$repo" ls-remote origin "$ref" 2>/dev/null)"; then
+      echo "     FAILED archive ${b}: origin could not be read"; FAILURES=1; continue
+    fi
+    if [ -n "$(printf '%s\n' "$rl" | awk -v r="$ref" '$2 == r')" ]; then
       echo "     FAILED archive ${b}: origin ${ref} already exists"; FAILURES=1; continue
     fi
     tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}")"
-    if err="$(git -C "$repo" push origin "refs/heads/${b}:refs/heads/${ref}" 2>&1)"; then
+    if err="$(git -C "$repo" push "--force-with-lease=${ref}:" origin "refs/heads/${b}:${ref}" 2>&1)"; then
       # The local delete is leased to the tip read above, and only once origin holds that
       # tip: a commit made during the push, or an archive ref holding anything else, keeps
       # the branch.
-      pushed="$(git -C "$repo" ls-remote origin "refs/heads/${ref}" 2>/dev/null \
-        | awk -v r="refs/heads/${ref}" '$2 == r { print $1 }')"
+      pushed="$(git -C "$repo" ls-remote origin "$ref" 2>/dev/null \
+        | awk -v r="$ref" '$2 == r { print $1 }')"
       if [ -z "$tip" ] || [ "$pushed" != "$tip" ]; then
         echo "     FAILED archive ${b}: origin ${ref} holds $(_short "${pushed:-nothing}"), not the local tip $(_short "${tip:-unread}"); the branch stays"
         FAILURES=1
@@ -640,7 +643,7 @@ _wt_new_secret() {
 # 72), unlocked or locked by a dead pid, idle in lsof, and free of anything a removal would
 # lose that the push cannot carry: an embedded repo, a submodule, a non-regenerable ignored
 # path. Its tip, or a snapshot commit of its uncommitted files built from a temp index, goes to
-# a new origin archive/<slug>-<YYYYMMDD> through a create-only lease (never forced), is read
+# a new origin refs/archive/<slug>-<YYYYMMDD> (hidden from the branch list) through a create-only lease (never forced), is read
 # back, and only then is the worktree removed and its branch deleted, leased to the HEAD read
 # before the push. A secret-shaped uncommitted path is never pushed. The operator names the
 # flag knowing origin receives every uncommitted, non-ignored byte of an archived worktree.
@@ -802,7 +805,7 @@ _archive_worktree_one() {
   if [ -n "$wtb" ]; then slug="$(_archive_slug "$wtb")"; label="$(_san "$wtb")"
   else slug="$(_archive_slug "${wt_c##*/}")"; label="detached"; fi
   [ -n "$slug" ] || slug="wt"
-  ref="archive/${slug}-$(date +%Y%m%d)"
+  ref="refs/archive/${slug}-$(date +%Y%m%d)"
   if [ "$APPLY" != 1 ]; then
     echo "     WOULD archive worktree ${wt_s} [${label}, ${n} unique commits, ${WT_ST_N} uncommitted paths, idle ${h}h] -> origin ${ref}, then remove it"
     return
@@ -815,11 +818,11 @@ _archive_worktree_push() {
   local rl trees staged snap tip out rc err pushed head2 trees2 t
   if ! _write_guard "$repo"; then echo "     SKIP ${wt_s}: index.lock held by another writer"; return; fi
   # The full ref, matched exactly: ls-remote matches a pattern against ref TAILS, so
-  # refs/heads/foo/archive/x would answer a bare archive/x.
-  if ! rl="$(git -C "$repo" ls-remote origin "refs/heads/${ref}" 2>/dev/null)"; then
+  # refs/heads/foo/refs/archive/x would answer a bare refs/archive/x pattern.
+  if ! rl="$(git -C "$repo" ls-remote origin "$ref" 2>/dev/null)"; then
     echo "     FAILED archive worktree ${wt_s}: origin could not be read"; FAILURES=1; return
   fi
-  if [ -n "$(printf '%s\n' "$rl" | awk -v r="refs/heads/${ref}" '$2 == r')" ]; then
+  if [ -n "$(printf '%s\n' "$rl" | awk -v r="$ref" '$2 == r')" ]; then
     echo "     FAILED archive worktree ${wt_s}: origin ${ref} already exists"; FAILURES=1; return
   fi
   if ! trees="$(_wt_trees "$wt" "$gd")"; then
@@ -841,11 +844,11 @@ _archive_worktree_push() {
   done
   # Create-only lease: an empty expect means "the ref must not exist", so a ref made after the
   # pre-read is refused even where a plain push would fast-forward it. Never forced otherwise.
-  if ! err="$(git -C "$repo" push "--force-with-lease=refs/heads/${ref}:" origin "${tip}:refs/heads/${ref}" 2>&1)"; then
+  if ! err="$(git -C "$repo" push "--force-with-lease=${ref}:" origin "${tip}:${ref}" 2>&1)"; then
     err="$(printf '%s\n' "$err" | grep -v '^[[:space:]]*$' | head -1)"
     echo "     FAILED archive worktree ${wt_s}: $(_san "${err:-push refused}")"; FAILURES=1; return
   fi
-  pushed="$(git -C "$repo" ls-remote origin "refs/heads/${ref}" 2>/dev/null | awk -v r="refs/heads/${ref}" '$2 == r { print $1 }')"
+  pushed="$(git -C "$repo" ls-remote origin "$ref" 2>/dev/null | awk -v r="$ref" '$2 == r { print $1 }')"
   if [ -z "$pushed" ] || [ "$pushed" != "$tip" ]; then
     echo "     FAILED archive worktree ${wt_s}: origin ${ref} holds $(_short "${pushed:-nothing}"), not the archive tip $(_short "$tip")"
     FAILURES=1; return

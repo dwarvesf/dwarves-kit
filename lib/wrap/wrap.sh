@@ -35,8 +35,10 @@
 #
 #   apply --archive-unmerged (opt-in, never under --own) pushes every local branch that is
 #   not current/default/worktree-held and carries at least one commit patch origin/<default>
-#   lacks (git cherry origin/<default> <branch> shows a `+`) to origin archive/<slug>-<date>,
-#   then deletes the local branch once that push lands. No force; an existing archive ref
+#   lacks (git cherry origin/<default> <branch> shows a `+`) to origin refs/archive/<slug>-<date>,
+#   then deletes the local branch once that push lands. The ref lives under refs/archive/, not
+#   refs/heads/, so it stays out of GitHub's branch list; restore one with
+#   `git fetch origin refs/archive/<name>:refs/heads/<name>`. No force; an existing archive ref
 #   refuses the push. A branch with no unique patch is left for the merged-branch sweep above.
 #
 #   apply --archive-worktrees (opt-in, never under --own or --no-pull) archives each stale
@@ -45,7 +47,7 @@
 #   default 72). A live lock pid, an lsof holder, an embedded repo, a submodule, a secret-shaped
 #   uncommitted path, or an ignored path a removal would lose skips it; no lsof skips the whole
 #   section. The tip (dirty: a snapshot commit from a temp index) goes to origin
-#   archive/<slug>-<date> under a create-only lease, is read back, then the worktree is removed
+#   refs/archive/<slug>-<date> under a create-only lease, is read back, then the worktree is removed
 #   and its branch deleted, leased to the HEAD read before the push.
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
@@ -94,11 +96,11 @@
 # wrap.autoland_carry (default false) one `gh pr create --head` per carry branch with no open
 # PR plus one `merge --apply --pr` of it, with every write that verb owns,
 # `apply --archive-unmerged`'s one push per qualifying branch to a new origin
-# archive/<slug>-<date> ref, never forced, followed by one local `branch -D` only once that
+# refs/archive/<slug>-<date> ref, never forced, followed by one local `branch -D` only once that
 # push lands,
 # `apply --archive-worktrees`' object writes for a dirty worktree (a temp-index `add -A`, one
 # snapshot commit and at most one staged commit, the worktree's own index never touched), one
-# create-only leased push per archived worktree to a new origin archive/<slug>-<date> ref, and,
+# create-only leased push per archived worktree to a new origin refs/archive/<slug>-<date> ref, and,
 # once that ref reads back, one `worktree remove -f -f`, one leased `update-ref -d` of its
 # branch and one `config --remove-section branch.<name>`,
 # `start`'s one worktree add under `.claude/worktrees` on a new local branch, and `start
