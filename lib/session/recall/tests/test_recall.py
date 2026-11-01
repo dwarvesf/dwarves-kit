@@ -25,6 +25,7 @@ FINAL_TILDE = os.path.join(ROOT, "fixtures", "final-tilde.jsonl")         # ~~~~
 FINAL_NO_TEXT = os.path.join(ROOT, "fixtures", "final-no-text.jsonl")     # assistant turns with no text at all
 RESULT_JSON = os.path.join(ROOT, "fixtures", "result-json.jsonl")         # two assistant msgs; the last: prose + one JSON object
 RESULT_BAD_JSON = os.path.join(ROOT, "fixtures", "result-bad-json.jsonl")  # last assistant msg holds a malformed {...}
+REPLIES_BASIC = os.path.join(ROOT, "fixtures", "replies-basic.jsonl")     # two human turns, a tool result, a task notification, a sidechain reply
 WRITTEN_WRITE = os.path.join(ROOT, "fixtures", "written-write.jsonl")     # two Writes to /scratch/plan.md, one other
 WRITTEN_HEREDOC = os.path.join(ROOT, "fixtures", "written-heredoc.jsonl")  # Bash heredocs to /scratch/notes.md, no Write
 WRITTEN_EDIT = os.path.join(ROOT, "fixtures", "written-edit.jsonl")       # Edit, Write, then two Edits on /scratch/plan.md
@@ -1029,6 +1030,45 @@ class TestRecall(unittest.TestCase):
         self.assertEqual(self._artifacts("--file", os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
         self.assertEqual(self._written("/s/x", "--file", SEED, "--artifacts").returncode, 2)
 
+    # --- --replies: the final assistant text of every human turn ---------------------
+
+    def _replies(self, *extra):
+        return subprocess.run([sys.executable, BIN, "--replies", *extra],
+                              capture_output=True, text=True)
+
+    def test_replies_prints_last_text_per_human_turn(self):
+        res = self._replies(REPLIES_BASIC)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        rows = [json.loads(line) for line in res.stdout.splitlines()]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([x["turn"] for x in rows], [1, 2])
+        self.assertEqual({x["session"] for x in rows}, {"abcdef12"})
+        self.assertEqual(rows[0]["prompt"], "first question")
+        # the later task-notification is no turn: the reply after it still closes turn 1;
+        # the empty-text row, the tool-result row and the sidechain row change nothing
+        self.assertEqual(rows[0]["reply"], "noted the agent result")
+        self.assertEqual(len(rows[1]["prompt"]), 300)
+        self.assertTrue(rows[1]["prompt"].startswith("second question x"))
+        self.assertEqual(rows[1]["reply"], "second answer")
+
+    def test_replies_joins_text_blocks_and_skips_injected_prompts(self):
+        entries = r.load(REPLIES_BASIC)
+        self.assertEqual(r.turn_replies(entries[:7], "s")[0]["reply"], "first answer, part one\npart two")
+        for prefix in ("<system-reminder>x", "<command-name>/x</command-name>",
+                       "Base directory for this skill: /x", "<task-notification>x"):
+            extra = [{"type": "user", "message": {"role": "user", "content": prefix}},
+                     {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "r"}]}}]
+            self.assertEqual(r.turn_replies(extra, "s"), [], prefix)
+        meta = [{"type": "user", "isMeta": True, "message": {"role": "user", "content": "meta"}},
+                {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "r"}]}}]
+        self.assertEqual(r.turn_replies(meta, "s"), [])
+
+    def test_replies_errors_and_bad_combos(self):
+        self.assertEqual(self._replies(os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
+        for extra in (["--json"], ["--out", "x"], ["--fence", "md"], ["--sessions"], ["--tail", "abc"],
+                      ["--final", SEED], ["--max-bytes", "5"], ["--limit", "3"], ["--all"], ["query"]):
+            self.assertEqual(self._replies(REPLIES_BASIC, *extra).returncode, 2, extra)
+        self.assertEqual(self._replies().returncode, 2)
 
     def test_determinism(self):
         a = subprocess.run([sys.executable, BIN, "backoff", "--file", SEED],

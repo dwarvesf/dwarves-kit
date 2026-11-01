@@ -12,3 +12,4 @@
 !fixtures/written-write.jsonl
 !fixtures/written-heredoc.jsonl
 !fixtures/written-edit.jsonl
+!fixtures/replies-basic.jsonl
