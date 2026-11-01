@@ -546,6 +546,38 @@ def final_reply_text(entries):
     return None
 
 
+_REPLIES_SKIP_PREFIXES = ("<task-notification", "<system-reminder", "<command-",
+                          "Base directory for this skill")
+REPLIES_PROMPT_CAP = 300
+
+
+def turn_replies(entries, session: str):
+    """One dict per human turn that got an assistant reply: session, turn (1-based
+    count of human turns, unanswered ones included), prompt (capped), reply (the last
+    assistant text before the next human turn). A human turn is a non-meta, non-sidechain
+    `user` row with text and no tool_result, minus injected prompts (task notifications,
+    system reminders, slash-command echoes, skill preambles), which are not turns."""
+    turns = []  # [prompt, last_reply_or_None]
+    for entry in entries:
+        if entry.get("isMeta") or entry.get("isSidechain") or entry.get("isCompactSummary"):
+            continue
+        role = _role(entry)
+        msg = _msg(entry)
+        if role == "user":
+            if _tool_result_content(msg):
+                continue
+            text = _text_blocks(msg).strip()
+            if not text or text.startswith(_REPLIES_SKIP_PREFIXES):
+                continue
+            turns.append([text, None])
+        elif role == "assistant" and turns:
+            text = _text_blocks(msg)
+            if text.strip():
+                turns[-1][1] = text
+    return [{"session": session, "turn": n, "prompt": prompt[:REPLIES_PROMPT_CAP], "reply": reply}
+            for n, (prompt, reply) in enumerate(turns, 1) if reply is not None]
+
+
 FINAL_MAX_BYTES = 64 * 1024
 
 
@@ -817,7 +849,7 @@ def collect_artifacts(query, file=None, session=None, project=None, search_all=F
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = tail = final = fence_tag = out_path = written = session = None
+    file = project = tail = final = replies = fence_tag = out_path = written = session = None
     search_all = as_json = sessions = artifacts = False
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     max_bytes = FINAL_MAX_BYTES
@@ -825,6 +857,7 @@ def main(argv=None) -> int:
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
              "[--sessions] [--limit N] [--json] [--tail PREFIX] "
              "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]] "
+             "[--replies FILE] "
              "[--written PATH (--file F | --session PREFIX) [--out FILE]] "
              "[--artifacts [<filter>] [--file F | --session PREFIX | --project SLUG | --all] [--limit N] [--json]]\n")
     it = iter(argv)
@@ -843,6 +876,8 @@ def main(argv=None) -> int:
             tail = next(it, None)
         elif a == "--final":
             final = next(it, None)
+        elif a == "--replies":
+            replies = next(it, None)
         elif a == "--written":
             written = next(it, None)
         elif a == "--artifacts":
@@ -900,6 +935,25 @@ def main(argv=None) -> int:
     if session is not None and written is None and not artifacts:
         sys.stderr.write(usage)
         return 2
+    if replies is not None:
+        # --replies takes only its transcript; every other mode flag is a conflict
+        if (not replies.strip() or replies.startswith("-") or query or sessions or artifacts
+                or tail is not None or final is not None or written is not None or as_json
+                or fence_tag is not None or out_path is not None or max_bytes != FINAL_MAX_BYTES
+                or file is not None or session is not None or search_all or limit is not None):
+            sys.stderr.write(usage)
+            return 2
+        try:
+            entries = load(replies)
+        except OSError as e:
+            sys.stderr.write(f"session-recall: {e}\n")
+            return 1
+        sid = next((str(e["sessionId"]) for e in entries if e.get("sessionId")),
+                   os.path.basename(replies).rsplit(".", 1)[0])
+        for row in turn_replies(entries, _clean_ctrl(sid)[:8]):
+            sys.stdout.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return 0
+
     if written is not None:
         # --written takes --file or --session and --out; every other mode flag is a conflict
         if (not written or written.startswith("-") or final is not None or query or sessions or artifacts

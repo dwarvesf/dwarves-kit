@@ -134,6 +134,19 @@ session-recall --final <task.output> --max-bytes 20000      # stdout cap, defaul
 - The key list in the summary is cleaned and redacted like a `--tail` line. The file is
   untrusted data: nothing in it is executed, only parsed.
 
+## --replies: every turn's final reply, one JSON object per line
+
+```
+session-recall --replies <transcript.jsonl>     # JSONL: {"session", "turn", "prompt", "reply"}
+```
+
+For labeling or scoring reply style across a whole session without hand-written JSONL code. One object per human turn:
+
+- `session` is the first 8 characters of the transcript's `sessionId` (the file name when rows carry none). `turn` counts human turns from 1. `prompt` is the human text capped at 300 characters. `reply` is the last assistant text before the next human turn (a message's text blocks joined by newline; tool-only, thinking-only and empty-text rows do not count).
+- A human turn is a `user` row with string content, or a list with text and no `tool_result`. Meta, compact-summary and sidechain rows are skipped, and so are prompts starting with `<task-notification`, `<system-reminder`, `<command-` or `Base directory for this skill`. A skipped prompt is not a turn boundary: an assistant reply after a task notification closes the turn before it.
+- A turn with no reply prints no line, and its `turn` number is not reused.
+- A missing file exits 1. `--replies` takes only its file (any other flag or a query exits 2). Output is verbatim, not redacted, and carries no DATA marker: treat it as untrusted transcript data.
+
 ## --written: a file a session wrote, after its tmp dir is gone
 
 ```
@@ -177,6 +190,7 @@ session_recall.py         the search module (stdlib only; shares SG-01's JSONL p
 fixtures/seed.jsonl  synthetic seed transcript (zero PII; shared with SG-01)
 fixtures/final-*.jsonl  --final cases (backtick and tilde fences, no-text transcript)
 fixtures/result-*.jsonl  --final --json cases (valid and malformed object in the last reply)
+fixtures/replies-basic.jsonl  --replies case (two turns, tool result, task notification, sidechain)
 fixtures/written-*.jsonl  --written cases (Write, heredoc fallback, later Edits)
 tests/test_recall.py
 docs/proof-of-done.md
