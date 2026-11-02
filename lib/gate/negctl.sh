@@ -314,7 +314,9 @@ fi
 
 verdict="PASS"
 fail() { [ "$verdict" = "PASS" ] && verdict="FAIL: $1"; return 0; }
-run_test() { (cd "$root" && bash -c "$test_cmd") >"$out_file" 2>&1; }
+# Default dispositions for the suite: restore() ignores INT/TERM/HUP for good, and the
+# post-restore run would pass that on, so a suite's plain `kill` could not stop its servers.
+run_test() { (trap - INT TERM HUP; cd "$root" && bash -c "$test_cmd") >"$out_file" 2>&1; }
 snapshot() { git -C "$root" status --porcelain --untracked-files=all 2>/dev/null; }
 
 # $1 = needle path; remaining args (may be none) = haystack. bash 3.2 (macOS's /bin/bash)
@@ -397,7 +399,7 @@ restore() {
   # used to interrupt the checkout itself (restore_done was already 1, so a second EXIT-trap
   # invocation was a silent no-op) and leave the tree mutated. The body is idempotent (the
   # restore_done guard below), so re-entering it is always safe; the disposition is process-wide
-  # and deliberately never restored, since restore() is the last thing this script ever does.
+  # and deliberately never restored here; the confirmatory run_test after it resets its own.
   trap '' INT TERM HUP
   rm -f "$out_file"   # every exit path calls restore; a later run_test writes it afresh
   [ "$restore_done" -eq 1 ] && return 0

@@ -673,5 +673,15 @@ if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q 'Changed: t
   ok "subdir root restored, tree clean"
 else no "rc=$RC tree=$(git -C "$SREPO" status --porcelain) out=$OUT"; fi
 
+echo "[56] every test run gets default INT/TERM: restore() ignores them, the post-restore run must not inherit that"
+GREPO="$TMP/sigrepo"; mkrepo "$GREPO"
+SIGLOG="$TMP/sig.log"; : > "$SIGLOG"
+OUT="$(SIGLOG="$SIGLOG" bash "$NC" "$GREPO" 'echo run >> "$SIGLOG"; trap -p INT TERM >> "$SIGLOG"; bash test.sh' \
+  "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && [ "$(grep -c '^run$' "$SIGLOG")" -ge 3 ] \
+   && ! grep -q "''" "$SIGLOG" && clean "$GREPO"; then
+  ok "no test run saw INT/TERM ignored"
+else no "rc=$RC siglog=$(cat "$SIGLOG") out=$OUT"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
