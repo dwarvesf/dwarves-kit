@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with fourteen verbs:
+# touched, with fifteen verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
@@ -11,6 +11,8 @@
 #   wrap.sh land  <worktree> --draft [--title T] [--body-file F]   push, open a draft PR, stop: no merge, no tidy
 #   wrap.sh start <repo> <branch> [--pick <branch>]... [--carry [<path>...]]  one hand-made worktree, started
 #       --pick <branch> (repeatable) cherry-picks that branch's commits past origin/<default> into it, in order, before any --carry; a conflict aborts, keeps earlier picks, exits 2
+#   wrap.sh ship  <repo> <branch> --carry <path>... --message-file F [--title T] [--body-file F] [--proof-override "<reason>"] [--no-pull]   start --carry, commit the named paths, land
+#       an override is logged only when --proof-override gives the reason; every refusal start and land make still stops it, with their exit code
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
 #   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
@@ -109,6 +111,8 @@
 # `adopt`'s one `git add -A` and one commit in the worktree `start` created, one
 # override log append per repo, and every write `start` and `land` own; `adopt.sh`'s
 # own file writes happen in that worktree.
+# `ship`'s one `git add -- <named paths>` and one commit in the worktree `start` created, one
+# override log append only when --proof-override is given, and every write `start` and `land` own.
 # `rebase` rewrites its worktree's own local branch (one `git rebase origin/<default>`,
 # `--continue` per resolved stop, `--abort` on any refusal) and, once no rebase is stopped,
 # at most one regenerate commit there; it never pushes.
@@ -166,9 +170,9 @@ PROOF_LEDGER_SH="$LIB_ROOT/gate/proof-ledger.sh"
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
-for _m in common scan apply pull carry ci merge land start log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
+for _m in common scan apply pull carry ci merge land start ship log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,53p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- entry
 
@@ -181,6 +185,7 @@ main() {
     merge)          cmd_merge "$@" ;;
     land)           cmd_land "$@" ;;
     start)          cmd_start "$@" ;;
+    ship)           cmd_ship "$@" ;;
     log)            cmd_log "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     knowledge-root) cmd_knowledge_root "$@" ;;

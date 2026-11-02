@@ -9,6 +9,7 @@ The landing step after ship. One pass over every repo a session touched: report 
 - `merge`: merge one own green PR.
 - `land`: land one hand-made worktree.
 - `start`: open a worktree on a fresh branch, with `--pick` and `--carry`.
+- `ship` (`wrap ship`): `start --carry`, commit the named paths, an explicit-only proof override, then `land`, as one call.
 - `rebase`: a worktree branch onto `origin/<default>`, safe conflicts only.
 - `adopt`: adopt repos into the kit contract and land them.
 - `log`, `stage`, `knowledge-root`: the activity line, a staged candidate, and the fenced knowledge dir.
