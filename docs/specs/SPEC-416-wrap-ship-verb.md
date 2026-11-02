@@ -1,6 +1,6 @@
 # Spec: wrap ship composes start, commit, proof override and land
 Generated: 2026-11-02
-Status: DRAFT
+Status: VALIDATED
 Lane: normal
 Depth: standard (every fact is settled by reading `lib/wrap/wrap-start.sh`, `lib/wrap/wrap-land.sh` and `lib/wrap/wrap-adopt.sh`; the new verb composes verbs that already exist and tests)
 References: `lib/wrap/wrap-adopt.sh:_adopt_one` (imitate its order: start, stage, commit, recheck the committed diff, log the override, land; and its rule that the verb never removes what a failure leaves); `lib/wrap/wrap-land.sh:cmd_land` (the `_LAND_KIND`/`_LAND_REF`/`_LAND_PULL`/`_LAND_WT` globals it sets, which a same-shell caller reads instead of parsing output); `lib/wrap/wrap-start.sh:cmd_start` (its stdout contract: the worktree path is the only stdout line).
