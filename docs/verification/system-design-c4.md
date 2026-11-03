@@ -132,6 +132,10 @@ Verdict: PASS
 
 Both mutations were applied to a committed tree and restored with `git checkout HEAD --`; the green run after each restore is the one printed above.
 
+## Rollback
+
+The change classifies as stateful only because the diff and the example talk about databases and deployment. Nothing runs or persists: the engine renders a Markdown file into a static page. rollback: revert the merge commit. A model with no `type: c4` block renders exactly as before, since the c4 code only runs for that type.
+
 ## Not proven
 
 - The browser renderer (`template.html`, `rC4`) has no automated assertion beyond the build test grepping for it; its evidence is the captures above, read by eye.
