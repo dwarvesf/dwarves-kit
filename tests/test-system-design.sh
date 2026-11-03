@@ -30,6 +30,11 @@ chk "output contains the model title" "$(grep -qF -- "$title" "$OUT" 2>/dev/null
 chk "output embeds the base model" "$(grep -qF 'id="uml-base"' "$OUT" 2>/dev/null; echo $?)"
 chk "no build placeholder survives" "$([ -s "$OUT" ] && ! grep -q '__UML_\|__DELTA_JS__\|__LAYOUT_JS__\|__MODEL__\|__BASE_REF__\|__TITLE__' "$OUT"; echo $?)"
 
+C4="$SD/examples/marketplace-c4"
+bash "$SD/build" --model "$C4/SYSTEM-DESIGN.md" --base-file "$C4/SYSTEM-DESIGN.base.md" --out "$TMPD/c4.html" >"$TMPD/c4.log" 2>&1
+chk "build exits 0 on the C4 example with a base file" "$?"
+chk "C4 output embeds the c4 renderer and its sheets" "$(grep -qF 'function rC4' "$TMPD/c4.html" 2>/dev/null && grep -qF 'id: c4-containers' "$TMPD/c4.html" 2>/dev/null; echo $?)"
+
 echo "== refusals =="
 BAD="$TMPD/bad.md"
 printf '# Bad model\n\n</script><script>alert(1)</script>\n' > "$BAD"
