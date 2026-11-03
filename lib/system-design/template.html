@@ -131,7 +131,7 @@ a.zoom{cursor:pointer} a.zoom:hover .box{stroke-width:2.2}
 .t-case{font:500 calc(12.5px * var(--fz)) var(--body);fill:var(--ink)}
 .t-note{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
 .t-desc{font:400 calc(11px * var(--fz)) var(--body);fill:var(--ink-2)}
-.t-bnd{font:700 calc(11.5px * var(--fz)) var(--body);fill:var(--ink)}
+.t-bnd{font:600 calc(11.5px * var(--fz)) var(--body);fill:var(--ink)}
 .t-stereo{font:italic 400 calc(10.5px * var(--fz)) var(--body);fill:var(--ink-2)}
 .t-edge{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2);paint-order:stroke;stroke:var(--sheet);stroke-width:4px;stroke-linejoin:round}
 :where([class*="tone-"]) :is(.t-name,.t-note,.t-case,.t-stereo,.t-desc,.t-bnd){fill:var(--ti)}
@@ -203,7 +203,7 @@ function fonts(){
   const z = parseFloat(v('--fz')) || 1, px = n => (n * z).toFixed(2) + 'px';
   FONT = { name:`600 ${px(13)} ${v('--body')}`, case:`500 ${px(12.5)} ${v('--body')}`, stereo:`italic 400 ${px(10.5)} ${v('--body')}`,
     note:`400 ${px(10.5)} ${v('--mono')}`, edge:`400 ${px(10.5)} ${v('--mono')}`, col:`400 ${px(11.5)} ${v('--mono')}`, th:`600 ${px(12.5)} ${v('--mono')}`, sys:`700 ${px(15)} ${v('--display')}`,
-    desc:`400 ${px(11)} ${v('--body')}`, bnd:`700 ${px(11.5)} ${v('--body')}` };
+    desc:`400 ${px(11)} ${v('--body')}`, bnd:`600 ${px(11.5)} ${v('--body')}` };
 }
 const meas = (s,k) => { ctx.font = FONT[k]; return ctx.measureText(String(s)).width; };
 // Balanced wrap: one line when it fits in max, else the two-line split with the shortest longer line.
