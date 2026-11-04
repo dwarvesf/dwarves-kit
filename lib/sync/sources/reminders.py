@@ -55,15 +55,17 @@ function run(argv) {
   const plan = JSON.parse(argv[1]);
   const list = app.lists.byName(argv[0]);
   const rems = list.reminders;
-  const ids = rems.id();
-  const idx = {};
-  for (let i = 0; i < ids.length; i++) idx[ids[i]] = i;
+  // Resolve every write by id. A completed flip reorders the list, so a
+  // position read once before the loop points at a different reminder after
+  // the first write (measured: a plan for R1,R3,R5 completed R1,R4,R7).
+  const known = {};
+  for (const id of rems.id()) known[id] = true;
   for (const s of plan.setdone)
-    if (s.rid in idx) rems[idx[s.rid]].completed = s.done;
+    if (known[s.rid]) rems.byId(s.rid).completed = s.done;
   for (const r of plan.rename)
-    if (r.rid in idx) rems[idx[r.rid]].name = r.title;
+    if (known[r.rid]) rems.byId(r.rid).name = r.title;
   for (const b of plan.setbody)
-    if (b.rid in idx) rems[idx[b.rid]].body = b.body;
+    if (known[b.rid]) rems.byId(b.rid).body = b.body;
   const created = {};
   for (const c of plan.create) {
     const rem = app.Reminder({name: c.title, body: c.body});

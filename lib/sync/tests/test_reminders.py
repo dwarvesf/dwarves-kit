@@ -184,3 +184,13 @@ def test_item_tag_is_not_doubled_by_the_body_suffix():
     assert [c["title"] for c in payload["create"]] == [
         "ID-20 · Do it #u-hi", "ID-21 · Do it"]
     assert title_with_tags("ID-21 · Do it #u-hi", "plain") == "ID-21 · Do it"
+
+
+def test_apply_script_writes_by_id_never_by_position():
+    # A completed flip reorders the list, so a position read before the write
+    # loop hits the wrong reminder. Every write must resolve the item by id.
+    from sources import reminders
+    assert "byId(s.rid).completed" in reminders.JXA_APPLY
+    assert "byId(r.rid).name" in reminders.JXA_APPLY
+    assert "byId(b.rid).body" in reminders.JXA_APPLY
+    assert "rems[idx" not in reminders.JXA_APPLY
