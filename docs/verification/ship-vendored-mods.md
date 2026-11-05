@@ -85,3 +85,28 @@ The mutation was committed-state clean before it (the installer change was commi
 - Hook order between secrets-veil and the other mods in `CLAUDE_CODE_PLUGIN_DIRS`: not tested, so loop-detective and context-inspector may see tool output before secrets-veil masks it (the Failure excerpt and the raw export targets were removed for that reason).
 - The memory-lens and secrets-veil gating hooks have no `.catch`; `claude plugin validate` reports it for the audited copies and they are left as vendored.
 - `tsc` was run on loop-detective and context-inspector in a scratch copy with the engine types, not through the checkout.
+
+## Live load and the secrets-veil errored-run fix
+
+A live Claude Code 2.1.318 session loaded all four vendored mods with no plugin errors. It also showed a bug: a failing Bash command whose output held a masked value reached the model as "does not match its output shape". The fix ports upstream `ef7dbb6`.
+
+```
+Command: claude plugin test integrations/claude-code/secrets-veil
+Exit: 0
+Output:
+  (pass) a masked errored run comes back as deny with the masked text, no result, no ref
+  8 pass
+  0 fail
+Verdict: PASS
+```
+
+```
+Negative control: hooks/register.ts restored to its pre-fix version, then claude plugin test
+Output:
+  (fail) a masked errored run comes back as deny with the masked text, no result, no ref
+  (fail) a masked errored run with only a string result still yields a non-empty deny
+  6 pass
+  2 fail
+Restore: git checkout -- hooks/register.ts, back to 8 pass 0 fail
+Verdict: the new tests pin the fix
+```
