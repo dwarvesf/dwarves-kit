@@ -143,6 +143,8 @@ We believe every hook should be a readable shell script, not a compiled binary o
 2. Kit data (backlogs, ledgers, gate state) is read only through a kit bash CLI (`bin/board` and its siblings); the surface never parses a ledger or backlog file itself. Any other read is read-only and outside the kit: `git`, `gh`, a directory listing, or the consumer's own config such as its board registry.
 3. It keeps no state beyond a cache it can rebuild from those CLIs.
 
+**Vendored mods (a second scoped class, same folder).** `secrets-veil`, `memory-lens`, `loop-detective` and `context-inspector` are third-party mods the installer loads beside the board pane. They read no kit data and write no kit state, so the three conditions above (which bind the kit's own surface) do not apply to them. They are held to a different bar: each is pinned to a source commit, read in full before it is vendored, patched only as its `VENDORED.md` lists, and skipped by `install.sh` when the same plugin name is already loaded. They are safety, context and display aids, never kit gates.
+
 Hooks stay bash. A third kind of exception means revisiting this rule, not bending it.
 
 ### "Detect, don't dictate"

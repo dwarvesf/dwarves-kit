@@ -36,6 +36,52 @@ SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 BACKUP_DIR="$CLAUDE_DIR/backups"
 KIT_MARKER="dwarves-kit"
 
+# Claude Code mods shipped in integrations/claude-code/<name>/. One list drives the install, the
+# plugin-compat install and the uninstall; a mod's runtime parts are copied, its tests stay behind.
+KIT_MOD_BASE="integrations/claude-code"
+KIT_MODS="board-pane secrets-veil memory-lens loop-detective context-inspector"
+KIT_MOD_PARTS=".claude-plugin hooks src types LICENSE VENDORED.md"
+
+# kit_drop_mod_dirs <path>... -- remove each path from env.CLAUDE_CODE_PLUGIN_DIRS in settings.json
+# (every other entry stays) and drop the key when it ends empty.
+kit_drop_mod_dirs() {
+  [ -f "$SETTINGS_FILE" ] || return 0
+  local drop cleaned
+  drop=$(printf '%s\n' "$@" | jq -R . | jq -s . 2>/dev/null) || return 0
+  cleaned=$(jq --argjson d "$drop" '
+    if (.env.CLAUDE_CODE_PLUGIN_DIRS // null) == null then .
+    else
+      (.env.CLAUDE_CODE_PLUGIN_DIRS | split(":") | map(select(length > 0 and (. as $e | $d | index($e) | not)))) as $rest
+      | if ($rest | length) == 0 then del(.env.CLAUDE_CODE_PLUGIN_DIRS)
+        else .env.CLAUDE_CODE_PLUGIN_DIRS = ($rest | join(":")) end
+    end
+  ' "$SETTINGS_FILE" 2>/dev/null || true)
+  [ -n "$cleaned" ] && echo "$cleaned" | jq '.' > "$SETTINGS_FILE"
+  return 0
+}
+
+# kit_mod_skip_dup <name> -- when another entry of env.CLAUDE_CODE_PLUGIN_DIRS already loads a plugin
+# called <name> (its plugin.json name, else the folder name; a leading ~ is HOME), print one [skip]
+# line, drop the kit's own entries for <name> so it never loads twice, and return 0. Else return 1.
+kit_mod_skip_dup() {
+  local name="$1" own_copy="$CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE/$1" own_checkout="$KIT_DIR/$KIT_MOD_BASE/$1" entry resolved found
+  [ -f "$SETTINGS_FILE" ] || return 1
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    if [ "$entry" = "$own_copy" ] || [ "$entry" = "$own_checkout" ]; then continue; fi
+    case "$entry" in "~"|"~/"*) resolved="$HOME${entry#"~"}" ;; *) resolved="$entry" ;; esac
+    resolved="${resolved%/}"
+    found=$(jq -r '.name // empty' "$resolved/.claude-plugin/plugin.json" 2>/dev/null || true)
+    [ -n "$found" ] || found="${resolved##*/}"
+    if [ "$found" = "$name" ]; then
+      echo "[skip] $name already loaded from $entry"
+      kit_drop_mod_dirs "$own_copy" "$own_checkout"
+      return 0
+    fi
+  done < <(jq -r '(.env.CLAUDE_CODE_PLUGIN_DIRS // "") | split(":")[]' "$SETTINGS_FILE" 2>/dev/null)
+  return 1
+}
+
 # ============================================================
 # USAGE (--help / -h before any write; an unknown flag reuses it, exit 64)
 # ============================================================
@@ -47,7 +93,7 @@ usage: bash install.sh [--with <a,b,c>] [--prune] [--no-mods] [--force-both]
 
   --with <a,b,c>   enable opt-in modules (also --with=a,b,c); additive on re-run
   --prune          with --with: trim the enabled set to exactly the named modules
-  --no-mods        skip registering the board pane mod in settings.json
+  --no-mods        skip registering the Claude Code mods in settings.json
   --force-both     wire hooks even when the Claude Code plugin is installed
   --uninstall      remove kit hooks, commands, skills (must be the first argument)
   -h, --help       print this usage and exit 0
@@ -201,30 +247,27 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   fi
 
-  # Claude Code mods: drop only OUR path from env.CLAUDE_CODE_PLUGIN_DIRS (any other entry
-  # stays), drop the key when it ends empty, and remove the copied mod files. An in-place
-  # install (the clone IS ~/.claude/dwarves-kit) keeps its files: they are the repo's own.
-  KIT_MOD_PATH="$CLAUDE_DIR/dwarves-kit/integrations/claude-code/board-pane"
-  KIT_MOD_CHECKOUT="$KIT_DIR/integrations/claude-code/board-pane"
+  # Claude Code mods: drop only OUR paths (copy and checkout forms) from env.CLAUDE_CODE_PLUGIN_DIRS
+  # (any other entry stays), drop the key when it ends empty, and remove the copied mod files.
+  # An in-place install (the clone IS ~/.claude/dwarves-kit) keeps its files: they are the repo's own.
+  _mod_paths=()
+  for _m in $KIT_MODS; do
+    _mod_paths+=("$CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE/$_m" "$KIT_DIR/$KIT_MOD_BASE/$_m")
+  done
   if [ -f "$SETTINGS_FILE" ]; then
-    MODS_CLEANED=$(jq --arg p "$KIT_MOD_PATH" --arg c "$KIT_MOD_CHECKOUT" '
-      if (.env.CLAUDE_CODE_PLUGIN_DIRS // null) == null then .
-      else
-        (.env.CLAUDE_CODE_PLUGIN_DIRS | split(":") | map(select(length > 0 and . != $p and . != $c))) as $rest
-        | if ($rest | length) == 0 then del(.env.CLAUDE_CODE_PLUGIN_DIRS)
-          else .env.CLAUDE_CODE_PLUGIN_DIRS = ($rest | join(":")) end
-      end
-    ' "$SETTINGS_FILE" 2>/dev/null || true)
-    if [ -n "$MODS_CLEANED" ]; then
-      echo "$MODS_CLEANED" | jq '.' > "$SETTINGS_FILE"
-      echo "[ok] Removed the board pane mod path from settings.json env.CLAUDE_CODE_PLUGIN_DIRS"
-    fi
+    kit_drop_mod_dirs "${_mod_paths[@]}"
+    echo "[ok] Removed the Claude Code mod paths from settings.json env.CLAUDE_CODE_PLUGIN_DIRS"
   fi
-  if [ -d "$KIT_MOD_PATH" ] && [ "$(cd "$KIT_DIR" && pwd -P)" != "$(cd "$CLAUDE_DIR/dwarves-kit" 2>/dev/null && pwd -P || true)" ]; then
-    rm -rf "$KIT_MOD_PATH"
-    rmdir "$CLAUDE_DIR/dwarves-kit/integrations/claude-code" "$CLAUDE_DIR/dwarves-kit/integrations" 2>/dev/null || true
-    echo "[ok] Removed copied mod files: $KIT_MOD_PATH"
+  if [ "$(cd "$KIT_DIR" && pwd -P)" != "$(cd "$CLAUDE_DIR/dwarves-kit" 2>/dev/null && pwd -P || true)" ]; then
+    for _m in $KIT_MODS; do
+      if [ -d "$CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE/$_m" ]; then
+        rm -rf "$CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE/$_m"
+        echo "[ok] Removed copied mod files: $CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE/$_m"
+      fi
+    done
+    rmdir "$CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE" "$CLAUDE_DIR/dwarves-kit/integrations" 2>/dev/null || true
   fi
+  unset _m _mod_paths
 
   # Remove the module manifest (ID-277 SG-04); it is meaningless without an install.
   if [ -f "$CLAUDE_DIR/dwarves-kit/kit.toml" ]; then
@@ -456,9 +499,8 @@ kit_symlink_hardened() {
   mkdir -p "$(dirname "$linkname")"
   ln -sfn "$target" "$linkname"
 }
-# Claude Code mods (display only, integrations/claude-code/): the board pane loads in every
-# session through env.CLAUDE_CODE_PLUGIN_DIRS in settings.json. `--no-mods` skips it.
-KIT_MOD_REL="integrations/claude-code/board-pane"
+# Claude Code mods (integrations/claude-code/, list in KIT_MODS above): each loads in every
+# session through env.CLAUDE_CODE_PLUGIN_DIRS in settings.json. `--no-mods` skips them all.
 
 # kit_register_mod_dir <path> [<drop-path>] -- append <path> to env.CLAUDE_CODE_PLUGIN_DIRS
 # (':' joined, never duplicated, every other entry kept). <drop-path>, the same mod's other
@@ -475,9 +517,9 @@ kit_register_mod_dir() {
   ' "$SETTINGS_FILE" 2>/dev/null || true)
   if [ -n "$merged" ]; then
     echo "$merged" | jq '.' > "$SETTINGS_FILE"
-    echo "[ok] Board pane mod registered in settings.json env.CLAUDE_CODE_PLUGIN_DIRS: $path (opt out: --no-mods)"
+    echo "[ok] Mod ${path##*/} registered in settings.json env.CLAUDE_CODE_PLUGIN_DIRS: $path (opt out: --no-mods)"
   else
-    echo "[warn] Could not register the board pane mod; set CLAUDE_CODE_PLUGIN_DIRS=$path by hand"
+    echo "[warn] Could not register the ${path##*/} mod; add $path to CLAUDE_CODE_PLUGIN_DIRS by hand"
   fi
 }
 
@@ -554,12 +596,17 @@ if [ "$KIT_PLUGIN_PRESENT" -eq 1 ] && [ "$KIT_FORCE_BOTH" -eq 0 ]; then
   unset _mod _cli
   echo "[ok] CLI shims written to ~/.local/bin"
   echo ""
-  # The board pane runs live from this checkout, like the bin/lib symlinks above: no copy.
+  # The mods run live from this checkout, like the bin/lib symlinks above: no copy.
   if [ "$KIT_NO_MODS" -eq 1 ]; then
     echo "[skip] Claude Code mods not installed (--no-mods)"
-  elif [ -d "$KIT_DIR/$KIT_MOD_REL" ]; then
+  elif [ -d "$KIT_DIR/$KIT_MOD_BASE" ]; then
     [ -f "$SETTINGS_FILE" ] && { mkdir -p "$BACKUP_DIR"; cp "$SETTINGS_FILE" "$BACKUP_DIR/settings-pre-compat-$(date +%Y%m%d-%H%M%S).json"; }
-    kit_register_mod_dir "$KIT_DIR/$KIT_MOD_REL" "$CLAUDE_DIR/dwarves-kit/$KIT_MOD_REL"
+    for _m in $KIT_MODS; do
+      [ -d "$KIT_DIR/$KIT_MOD_BASE/$_m" ] || continue
+      kit_mod_skip_dup "$_m" && continue
+      kit_register_mod_dir "$KIT_DIR/$KIT_MOD_BASE/$_m" "$CLAUDE_DIR/dwarves-kit/$KIT_MOD_BASE/$_m"
+    done
+    unset _m
   fi
   echo ""
   echo "Legacy doc paths (bash ~/.claude/dwarves-kit/lib/*.sh) now resolve."
@@ -913,33 +960,42 @@ fi
 echo "[ok] Wrote kit.toml: $KIT_TOML"
 echo "[ok] Enabled modules: ${KIT_ENABLED_MODULES:-<spine-only>}"
 
-# 2c. Claude Code mods (display only, integrations/claude-code/): the board pane loads in
-# every session. The mod runs from the install dir, and its absolute path joins
-# env.CLAUDE_CODE_PLUGIN_DIRS in settings.json: appended with ':' to any existing value,
-# never duplicated, never clobbering another entry. `--no-mods` skips the whole step.
+# 2c. Claude Code mods (integrations/claude-code/, list in KIT_MODS): each loads in every
+# session. A mod runs from the install dir, and its absolute path joins env.CLAUDE_CODE_PLUGIN_DIRS
+# in settings.json: appended with ':' to any existing value, never duplicated, never clobbering
+# another entry. A mod whose plugin name is already loaded from another entry is skipped, so
+# one plugin never loads twice. `--no-mods` skips the whole step.
 # A pure marketplace install has no checkout to run this from, so it cannot register a second
-# plugin dir; the plugin-compat branch registers the checkout path instead. /kit:onboard discloses it.
-KIT_MOD_PATH="$CLAUDE_DIR/dwarves-kit/$KIT_MOD_REL"
+# plugin dir; the plugin-compat branch registers the checkout paths instead. /kit:onboard discloses it.
 if [ "$KIT_NO_MODS" -eq 1 ]; then
   echo "[skip] Claude Code mods not installed (--no-mods)"
-elif [ ! -d "$KIT_DIR/$KIT_MOD_REL" ]; then
-  echo "[skip] Claude Code mods not installed (no $KIT_MOD_REL in this checkout)"
+elif [ ! -d "$KIT_DIR/$KIT_MOD_BASE" ]; then
+  echo "[skip] Claude Code mods not installed (no $KIT_MOD_BASE in this checkout)"
 else
-  if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
-    echo "[ok] Kit is installed in place; board pane mod already at $KIT_MOD_PATH"
-  else
-    # Copy, never symlink (SPEC-066). Only what the mod loads: tests and generated types stay behind.
-    rm -rf "$KIT_MOD_PATH"
-    mkdir -p "$KIT_MOD_PATH"
-    for _part in .claude-plugin hooks types; do
-      [ -e "$KIT_DIR/$KIT_MOD_REL/$_part" ] && cp -R "$KIT_DIR/$KIT_MOD_REL/$_part" "$KIT_MOD_PATH/$_part"
-    done
-    unset _part
-    rm -rf "$KIT_MOD_PATH/.claude-plugin/types"
-    echo "[ok] Copied board pane mod into $KIT_MOD_PATH (pinned, SPEC-066)"
-  fi
-  # A checkout path left by an earlier plugin-compat run leaves the list: one plugin dir, one load.
-  kit_register_mod_dir "$KIT_MOD_PATH" "$KIT_DIR/$KIT_MOD_REL"
+  for _m in $KIT_MODS; do
+    _mod_rel="$KIT_MOD_BASE/$_m"
+    KIT_MOD_PATH="$CLAUDE_DIR/dwarves-kit/$_mod_rel"
+    if [ ! -d "$KIT_DIR/$_mod_rel" ]; then
+      echo "[skip] mod $_m not in this checkout"
+      continue
+    fi
+    kit_mod_skip_dup "$_m" && continue
+    if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
+      echo "[ok] Kit is installed in place; mod $_m already at $KIT_MOD_PATH"
+    else
+      # Copy, never symlink (SPEC-066). Only what the mod loads: tests and generated types stay behind.
+      rm -rf "$KIT_MOD_PATH"
+      mkdir -p "$KIT_MOD_PATH"
+      for _part in $KIT_MOD_PARTS; do
+        [ -e "$KIT_DIR/$_mod_rel/$_part" ] && cp -R "$KIT_DIR/$_mod_rel/$_part" "$KIT_MOD_PATH/$_part"
+      done
+      rm -rf "$KIT_MOD_PATH/.claude-plugin/types"
+      echo "[ok] Copied mod $_m into $KIT_MOD_PATH (pinned, SPEC-066)"
+    fi
+    # A checkout path left by an earlier plugin-compat run leaves the list: one plugin dir, one load.
+    kit_register_mod_dir "$KIT_MOD_PATH" "$KIT_DIR/$_mod_rel"
+  done
+  unset _m _mod_rel _part
 fi
 
 # 3. Symlink commands. Skipped when the kit is also installed as a Claude Code
@@ -1132,7 +1188,7 @@ done
 unset _mod
 echo "  Not enabled:${KIT_NOT_ENABLED} team_mode(reserved)"
 echo "  --with <modules> to opt in, --prune --with <modules> to trim, kit.toml: $KIT_TOML"
-echo "  --no-mods to skip the Claude Code board pane mod"
+echo "  --no-mods to skip the Claude Code mods"
 echo "Hooks wired into settings.json:"
 printf '%s\n' $KIT_ENABLED_HOOK_NAMES | sort -u | while read -r h; do [ -n "$h" ] && echo "  [hook] $h"; done
 echo "Hooks directory (all shipped, not all wired): $KIT_DIR/hooks/"
