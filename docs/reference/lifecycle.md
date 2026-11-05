@@ -127,7 +127,7 @@ Stages are metadata, not directories: each module keeps its name and install uni
 | Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror) |
 | Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet`, `wrap` |
 | Reflect | `reflect` (was `learn`), `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending an amendment of the stage taxonomy decision) |
-| (no stage) | `cosmetic` (statusline; orthogonal to the loop) |
+| (no stage) | `cosmetic` (statusline; orthogonal to the loop), `update_check` (newer-release notice; orthogonal to the loop) |
 
 Two modules honestly span stages: **board** (Shape's intake on one side, Reflect's staging/promote on the other) and **session** (Watch's capture, Reflect's harvest).
 

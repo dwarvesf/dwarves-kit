@@ -67,8 +67,8 @@ safety-gate.sh
 secrets-guard.sh
 ship-gate.sh
 spec-drift-guard.sh"
-EXPECT_DEFAULT="$(table_hooks_wired board)"
-assert_true "default install wires exactly spine + board's hooks (expected from the table: $(printf '%s' "$EXPECT_DEFAULT" | tr '\n' ' '))" "$([ "$WIRED1" = "$EXPECT_DEFAULT" ]; echo $?)"
+EXPECT_DEFAULT="$(table_hooks_wired board update_check)"
+assert_true "default install wires exactly spine + the core modules' hooks (board, update_check) (expected from the table: $(printf '%s' "$EXPECT_DEFAULT" | tr '\n' ' '))" "$([ "$WIRED1" = "$EXPECT_DEFAULT" ]; echo $?)"
 assert_true "default install wires all 6 spine hooks" "$([ -z "$(comm -23 <(printf '%s\n' "$EXPECT_SPINE") <(printf '%s\n' "$WIRED1"))" ]; echo $?)"
 assert_true "default install wires board-row-gate.sh (board is core)" "$({ trap '' PIPE; printf '%s\n' "$WIRED1" 2>/dev/null || :; } | grep -qx board-row-gate.sh; echo $?)"
 NON_DEFAULT="$(printf '%s\n' "$WIRED1" | grep -vFxf <(printf '%s\n' "$EXPECT_DEFAULT") || true)"
@@ -79,7 +79,7 @@ done
 assert_true "default install: session, advisor, cosmetic, money_gate and prose_rag hooks stay off (leaked:${NON_DEFAULT_LEAK:-none})" "$([ -z "${NON_DEFAULT_LEAK:-}" ]; echo $?)"
 assert_true "default install: kit.toml has team_mode = false" "$(grep -qx 'team_mode = false' "$H1/.claude/dwarves-kit/kit.toml"; echo $?)"
 OPT_TRUE="$(modules_section_true "$H1/.claude/dwarves-kit/kit.toml")"
-assert_true "default install: only board is recorded true in kit.toml [modules] (got: ${OPT_TRUE:-none})" "$([ "$OPT_TRUE" = "board" ]; echo $?)"
+assert_true "default install: only the core modules (board, update_check) are recorded true in kit.toml [modules] (got: $(printf '%s' "${OPT_TRUE:-none}" | tr '\n' ' '))" "$([ "$OPT_TRUE" = "$(printf 'board\nupdate_check')" ]; echo $?)"
 assert_true "default install announces the core modules" "$(grep -q 'Fresh install: core modules on by default: board' ${TMPDIR:-/tmp}/kitmod-h1.log; echo $?)"
 
 # ============================================================
@@ -100,8 +100,8 @@ echo "== NC --with board,stats: wires exactly those + records in kit.toml; re-ru
 H2="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 HOME="$H2" bash "$KIT_DIR/install.sh" --with board,stats >${TMPDIR:-/tmp}/kitmod-h2.log 2>&1
 WIRED2="$(wired_hooks "$H2/.claude/settings.json")"
-EXPECT_BOARD="$(table_hooks_wired board)"
-assert_true "--with board,stats wires spine + board's hooks from the table only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
+EXPECT_BOARD="$(table_hooks_wired board update_check)"
+assert_true "--with board,stats wires spine + the core modules' hooks from the table only" "$([ "$WIRED2" = "$EXPECT_BOARD" ]; echo $?)"
 assert_true "kit.toml records board = true" "$(grep -qx 'board = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records stats = true (hookless module, still recorded)" "$(grep -qx 'stats = true' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"
 assert_true "kit.toml records session = false (not requested)" "$(grep -qx 'session = false' "$H2/.claude/dwarves-kit/kit.toml"; echo $?)"

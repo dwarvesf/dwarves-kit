@@ -38,6 +38,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/anchor-root.sh $HOME/.claude/dwarves-kit/hooks/kit-update-notice.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [

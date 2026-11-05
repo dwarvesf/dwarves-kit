@@ -33,6 +33,7 @@
                                 #        tests/test-modules-table.sh. core = true, opt-in = false.
                                 #        Gates HOOKS + PATH CLI shims; commands/skills install regardless.
 board          = true           # core: board-row-gate; backlog-stage and intake-sweep stay inert until configured
+update_check   = true           # core: kit-update-notice SessionStart notice when a newer release exists; KIT_UPDATE_CHECK=0 also disables
 session        = false
 advisor        = false
 cosmetic       = false
