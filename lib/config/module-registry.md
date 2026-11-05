@@ -36,6 +36,7 @@ toggleable modules, not to every `[modules]` line in `kit.toml`.
 | session | Watch (Observe) | spanner: capture side (Watch) + harvest (Learn); `session audit` is the deep Watch pass (LLM audit, `run`) + a Learn-stage proposer (`triage`) |
 | advisor | Check (Govern) | |
 | cosmetic | (none) | orthogonal to the loop; statusline |
+| update_check | (none) | orthogonal to the loop; SessionStart notice that a newer kit release exists (`hooks/kit-update-notice.sh`) |
 | queue | Build (Execute) | |
 | stats | Watch (Observe) | |
 | quiz_gate | Build (Execute) | |
@@ -273,6 +274,9 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | KIT_CTX_WARN_PCT | env-only | `65` | [impl] | session | Percent of the context window at which the context-budget hook's advisory notice fires (SPEC-255). |
 | KIT_CTX_STRONG_PCT | env-only | `70` | [impl] | session | Percent of the context window at which the context-budget hook escalates to a directive notice (SPEC-255). |
 | KIT_CTX_WINDOW | env-only | auto (`200000`, or `1000000` for a `1m`-marked model) | [impl] | session | Context window size the context-budget hook computes percentages against (SPEC-255). |
+| KIT_UPDATE_CHECK | env-only | `1` | [impl] | update_check | `0` turns the SessionStart newer-release notice off. The module toggle `modules.update_check` does the same per project or operator. |
+| KIT_UPDATE_CHECK_URL | env-only | `https://raw.githubusercontent.com/dwarvesf/dwarves-kit/master/VERSION` | [impl] | update_check | Where `kit-update-notice.sh` fetches the latest VERSION (2s cap, at most once per 24h). A `file://` URL is the test seam. |
+| KIT_UPDATE_STATE_DIR | env-only | `$HOME/.claude/dwarves-kit/state/update-notice` | [impl] | update_check | Holds `cache.json` (`{checked_at, latest}`), the 24h throttle for the fetch. |
 | SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
 | SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
 
@@ -448,6 +452,7 @@ COMMAND invocation via `kit_config_get modules.<name>`.
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | - | modules.board | `true` | [impl] | board | Enables board's hooks + CLI. Core: on in a fresh install and a fresh adopt. |
+| - | modules.update_check | `true` | [impl] | update_check | `kit-update-notice.sh` SessionStart (startup) notice when a newer release exists; never installs. Core. `KIT_UPDATE_CHECK=0` also disables it. |
 | - | modules.session | `false` | [impl] | session | Enables session's hooks + CLI. |
 | - | modules.advisor | `false` | [impl] | advisor | Enables the advisor's hook-bearing surface. |
 | - | modules.cosmetic | `false` | [impl] | cosmetic | Statusline; orthogonal to the loop. |

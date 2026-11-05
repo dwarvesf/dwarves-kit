@@ -37,6 +37,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/kit-update-notice.sh\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PreToolUse": [

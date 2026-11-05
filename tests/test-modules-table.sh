@@ -74,7 +74,7 @@ assert_true "the folded bridge module is gone" "$(awk -F'\t' '$1 == "bridge" { f
 assert_true "session-state-save is not in the table (the hook is gone)" "$(! grep -q 'session-state-save' "$TABLE"; echo $?)"
 assert_true "board has the SessionStart entry that runs intake-sweep (backlog-stage --surface)" "$(awk -F'\t' '$1 == "board" && $3 ~ /SessionStart:backlog-stage\.sh/ { f = 1 } END { exit !f }' "$TABLE"; echo $?)"
 CORE="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_modules_core")"
-assert_true "core set is exactly board (spine is not a toggle) (got: $CORE)" "$([ "$CORE" = "board" ]; echo $?)"
+assert_true "core set is exactly board and update_check (spine is not a toggle) (got: $CORE)" "$([ "$CORE" = "board update_check" ]; echo $?)"
 KNOWN="$(bash -c "source '$KIT_DIR/lib/config/modules.sh'; kit_modules_known")"
 case " $KNOWN " in *" spine "*) SPINE_TOGGLE=1 ;; *) SPINE_TOGGLE=0 ;; esac
 assert_true "spine is not a toggleable module" "$SPINE_TOGGLE"

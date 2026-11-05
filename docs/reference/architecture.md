@@ -291,6 +291,7 @@ message it prints, its env knobs, and its module:
 | `pre-compact-backup` | convenience | none (session snapshot) |
 | `post-compact-reinject` | convenience | none (re-injects rules compaction stripped) |
 | `codebase-index` | convenience | none (background indexing) |
+| `kit-update-notice` | convenience | a stale install nobody knows is stale; prints one line at startup when a newer release exists, never installs |
 | `money-gate` | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
 | `prose-rag` | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
 | `context-budget` | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per session when the context window passes a percentage threshold (`KIT_CTX_WARN_PCT` 65, `KIT_CTX_STRONG_PCT` 70) and again after a drop back under it, never blocks |
