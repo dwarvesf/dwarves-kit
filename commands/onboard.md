@@ -238,13 +238,15 @@ Be honest about what the plugin path cannot do, in short bullets:
   `[modules]` section still records the choice for the commands that read it. Per-module hook
   selection is a bash-install feature. Say this at adopt time too: on a plugin machine, never claim
   `[modules]` turned a hook off or on.
-- **Board pane mod:** the bash installer loads the Claude Code board pane in every session by adding its
-  path to `env.CLAUDE_CODE_PLUGIN_DIRS`. On a plugin machine that also has a kit checkout, running
-  `bash install.sh` (compat mode) registers the checkout's `integrations/claude-code/board-pane` the same
-  way, so the gap is closed for anyone who runs `install.sh` from a checkout. A pure marketplace install
-  with no checkout cannot register a second plugin dir, so the pane does not load. Manual enable: add
-  `"CLAUDE_CODE_PLUGIN_DIRS": "<kit checkout>/integrations/claude-code/board-pane"` under `env` in
-  `~/.claude/settings.json`, or start with `claude --plugin-dir <that path>`.
+- **Claude Code mods (board pane, secrets-veil, memory-lens, loop-detective, context-inspector):** the bash
+  installer loads them in every session by adding their paths to `env.CLAUDE_CODE_PLUGIN_DIRS`, and skips
+  any mod whose plugin name another entry in that list already loads. On a plugin machine that also has a
+  kit checkout, running `bash install.sh` (compat mode) registers the checkout's
+  `integrations/claude-code/<name>` paths the same way, so the gap is closed for anyone who runs
+  `install.sh` from a checkout. A pure marketplace install with no checkout cannot register a second plugin
+  dir, so the mods do not load. Manual enable: add
+  `"CLAUDE_CODE_PLUGIN_DIRS": "<kit checkout>/integrations/claude-code/<name>"` (one path per mod, joined
+  with `:`) under `env` in `~/.claude/settings.json`, or start with `claude --plugin-dir <that path>`.
 - **`--force-both` escape:** `bash install.sh --force-both` wires the bash hooks even on a plugin
   machine, but that is exactly what creates the double-hooks hazard from step A -- only do it if you are
   deliberately switching paths, and remove the plugin first. Without the flag, `install.sh` refuses to
