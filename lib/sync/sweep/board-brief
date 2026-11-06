@@ -149,6 +149,23 @@ def log(msg):
 
 # --- the incident hook ---------------------------------------------------------
 
+# A Discord channel or message link is only numeric ids, never a secret, but its digits and
+# slashes form a 40+ base64-shaped run. Keep those links whole; mask every other long run.
+_DISCORD_LINK = re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/\d+/\d+(?:/\d+)?")
+
+
+def _mask_runs(text):
+    links = []
+
+    def keep(m):
+        links.append(m.group(0))
+        return f"\x00{len(links) - 1}\x00"
+
+    text = _DISCORD_LINK.sub(keep, text)
+    text = re.sub(r"\b[0-9a-fA-F]{32,}\b|\b[A-Za-z0-9+/=]{40,}\b", "[redacted]", text)
+    return re.sub(r"\x00(\d+)\x00", lambda m: links[int(m.group(1))], text)
+
+
 def _text(value, cap=200):
     """One printable line from a hook value. Secrets are masked (webhook URLs, secret
     references, long hex or base64 runs); a name like `some_rule-crit` is kept whole.
@@ -159,7 +176,7 @@ def _text(value, cap=200):
     text = re.sub(r"[`<>\[\]*]", "", text)
     text = re.sub(r"https://discord(app)?\.com/api/webhooks/\S+", "[webhook-redacted]", text)
     text = re.sub(r"op://\S+", "[ref-redacted]", text)
-    text = re.sub(r"\b[0-9a-fA-F]{32,}\b|\b[A-Za-z0-9+/=]{40,}\b", "[redacted]", text)
+    text = _mask_runs(text)
     return re.sub(r"\s+", " ", text).strip()[:cap]
 
 
@@ -254,7 +271,7 @@ def _rich(value, cap=600):
     text = "".join(c if c.isprintable() else " " for c in str(value))
     text = re.sub(r"https://discord(app)?\.com/api/webhooks/\S+", "[webhook-redacted]", text)
     text = re.sub(r"op://\S+", "[ref-redacted]", text)
-    text = re.sub(r"\b[0-9a-fA-F]{32,}\b|\b[A-Za-z0-9+/=]{40,}\b", "[redacted]", text)
+    text = _mask_runs(text)
     return re.sub(r"\s+", " ", text).strip()[:cap]
 
 
