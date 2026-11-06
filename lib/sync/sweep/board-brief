@@ -7,27 +7,38 @@ line, to the weekly Details, or is dropped. Agent faults (a sync error, an incid
 already works) are never a decision. Instant alerts stay on their own rails; the brief never
 replaces them.
 
-Message order, separated by a blank line only where a heading starts:
+Message order, a blank line between blocks (the `▌` lines read like a neko report):
 
-  Your call (N)         `### 🙋 Your call (N)`, one bullet per item, most urgent first: an operator
-                        `--line` that opens with 👉 and holds ` by <Day D Mon>` (marker dropped),
-                        nearest date first; incident rows the --incidents hook marks `needs_you`,
-                        as `<action> <id>: <label> (<facts>)` when the row carries an `action`
-                        (<= 40 chars), else `<id> <label>: <question>` with the closing question
-                        in bold, "Triage or map" before "Close"; the hook's explicit `decisions`;
-                        any other 👉 line; hub/mirror drift (`ID hub/mirror drift: ... **Ship or
-                        reopen?**`); a board past its triage threshold, as `Triage N <board> cards
-                        waiting Nd: "<title>", "<title>"` (two titles at most, 40 chars each, the
-                        `untrusted ` marker dropped), longest wait first; a linked Hermes profile
-                        whose kit skills are stale (`board hermes check`). Three lines show, the
-                        rest is one `+N more` line, so the cap drops the least urgent; the count
-                        in the head is the whole list. With none and no error, `### ✅ Nothing needs you today` stands
-                        alone.
-  Handled               ONE line, `🤖 Handled: a · b · c`, directly under the block: the operator
-                        `--line` fragments that open with 🤖 (marker dropped), `N incident(s) with
-                        chonky` for open incidents that are not decisions, then the sync and bots
-                        state: `sync and bots clean`, or `❌ sync errors N`, `⚠️ sync warnings N`,
-                        `❌ feed unreadable`, `❌ feed faults N`.
+  lede                  `▌ <Count> thing(s) wait(s) on you today: <lede1>, <lede2> and N more. The
+                        bots handled the rest.` Count words One, Two, Three, else digits. A lede
+                        phrase comes from the item (hook JSON `lede`, or the kit's own); an item
+                        without one counts but adds no phrase. With no items and no error:
+                        `▌ Nothing waits on you today. The bots handled everything.`
+  Your call             `**🙋 Your call**` (no count), then items, most urgent first. An item is
+                        `• `[tag]` [title](<url>)` and its lines, one per line, each saying what
+                        to do (bold) and what happens if ignored; an item with no title is one
+                        plain line. Sources: an operator `--line` that opens with 👉 and holds one
+                        JSON object `{tag, title, url, lines[], lede, due, wait_days}` (any other
+                        text after 👉 stays one plain line); incident rows the --incidents hook
+                        marks `needs_you` (with an `action`: tag `quiet Nd` or `firing`, the
+                        linked id and label, `fired Nx on <host>. **close the ticket.**` or
+                        `**triage it or add a rule.**`, then what happens if ignored; without an
+                        `action`: today's one line with the closing question in bold); the hook's
+                        explicit `decisions`; hub/mirror drift; a board past its triage threshold
+                        (tag `waiting Nd`, `N cards wait in <board> triage`, up to two quoted
+                        titles of 40 chars with the `untrusted ` marker dropped, `**move each card
+                        to ready, blocked or done.**`); a linked Hermes profile whose kit skills
+                        are stale. Order: items with a `due` epoch or a ` by <Day D Mon>` date
+                        first (nearest), incident rows ("Triage or map" before "Close"), hook
+                        decisions, other 👉 items by `wait_days` descending, drift, triage by
+                        longest wait, stale skills last. Three items show, the rest is one
+                        `+N more` line, so the cap drops the least urgent.
+  Handled               `▌ Handled by bots: <s1> <s2> ...`, sentences joined by a space, each given a
+                        final period when it lacks one: the operator `--line` fragments that open
+                        with 🤖 (marker dropped), `N incidents are with chonky.` for open incidents
+                        that are not decisions, then `sync and bots ran clean.` or the error form
+                        (`sync hit N error(s).`, `sync raised N warning(s).`, `the incident feed
+                        was unreadable.`, `the incident feed reported N fault(s).`).
   Details               a follow-up field, only on Mondays (Vietnam time) or under --show-boards:
                         the board lines (hub, board, fault, extra), the operator's other --line
                         lines, the hook's `details`, the bot counts (the hook's and the archived
@@ -36,7 +47,8 @@ Message order, separated by a blank line only where a heading starts:
 
 `severity` is `warn` only when Your call is not empty or an error exists (a sync error or
 warning, an unreadable feed, a hook fault); else `info`. `footer_tail` in the payload is true
-only on a Details day, for the poster to keep or drop its footer tail text.
+only on a Details day, for the poster to keep or drop its footer tail text. `date_label` and
+`next_due_label` (`Sat 7 Nov`) are the day and the next brief for the poster's title and footer.
 
 Ids are links, never plain text: a board row id is a masked link to its line in the GitHub
 copy of the board (`[ID-538](<https://github.com/OWNER/REPO/blob/BRANCH/FILE?plain=1#L183>)`,
@@ -234,6 +246,109 @@ def facts_of(question):
     return q.replace(" · ", ", ") if FACTS_RE.search(q) else ""
 
 
+def _rich(value, cap=600):
+    """One printable line from a hook value, markup kept (bold and links are the hook's own words).
+    Secrets are masked as in `_text`."""
+    if value is None:
+        return ""
+    text = "".join(c if c.isprintable() else " " for c in str(value))
+    text = re.sub(r"https://discord(app)?\.com/api/webhooks/\S+", "[webhook-redacted]", text)
+    text = re.sub(r"op://\S+", "[ref-redacted]", text)
+    text = re.sub(r"\b[0-9a-fA-F]{32,}\b|\b[A-Za-z0-9+/=]{40,}\b", "[redacted]", text)
+    return re.sub(r"\s+", " ", text).strip()[:cap]
+
+
+def make_item(text="", tag="", title="", lines=(), lede="", due=0, wait=0):
+    """One Your call item. A plain item is one line (`text`). A structured one renders as
+    `• `[tag]` <title>` followed by its lines. `title` is ready markup."""
+    flat = text or " ".join([title] + list(lines)).strip()
+    return {"text": text, "tag": tag, "title": title, "lines": list(lines), "lede": lede,
+            "due": due, "wait": wait, "flat": flat}
+
+
+def item_lines(it):
+    if not it["title"]:
+        return [f"• {it['text']}"]
+    head = f"• `[{it['tag']}]` {it['title']}" if it["tag"] else f"• {it['title']}"
+    return [head] + it["lines"]
+
+
+def hand_item(value, now):
+    """A 👉 hook line (marker already cut): a JSON object is a structured item, anything else keeps the
+    one-line rendering. Returns (item, sort key)."""
+    text = value.strip()
+    obj = None
+    if text.startswith("{"):
+        try:
+            obj = json.loads(text)
+        except ValueError:
+            obj = None
+    if isinstance(obj, dict) and _text(obj.get("title"), 200):
+        title = _text(obj.get("title"), 200)
+        url = _url(obj.get("url"))
+        lines = [ln for ln in (_rich(x, 600) for x in (obj.get("lines") if isinstance(obj.get("lines"), list) else [])[:6]) if ln]
+        due = obj.get("due") if isinstance(obj.get("due"), int) and not isinstance(obj.get("due"), bool) else 0
+        wait = obj.get("wait_days") if isinstance(obj.get("wait_days"), int) and not isinstance(obj.get("wait_days"), bool) else 0
+        it = make_item(tag=_text(obj.get("tag"), 40), title=link(title, url) if url else title, lines=lines,
+                       lede=_text(obj.get("lede"), 120), due=max(due, 0), wait=max(wait, 0))
+        return it, ((0, it["due"]) if it["due"] else (3, -it["wait"]))
+    due = deadline_of(text, now)
+    it = make_item(text=text)
+    return it, ((0, due) if due else (3, 0))
+
+
+def sentence(text):
+    text = text.strip()
+    return text if text[-1:] in (".", "!", "?") else text + "."
+
+
+COUNT_WORDS = {1: "One", 2: "Two", 3: "Three"}
+DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def day_label(stamp):
+    """`Sat 7 Nov` from a YYYY-MM-DD stamp."""
+    d = datetime.strptime(stamp, "%Y-%m-%d")
+    return f"{DOW[d.weekday()]} {d.day} {MONTHS[d.month - 1].title()}"
+
+
+def lede_of(items):
+    """The `▌` lede: how many things wait, the first two ledes, and how many more."""
+    n = len(items)
+    word = COUNT_WORDS.get(n, str(n))
+    noun = "thing waits" if n == 1 else "things wait"
+    phrases = [it["lede"] for it in items if it["lede"]][:2]
+    if not phrases:
+        return f"▌ {word} {noun} on you today. The bots handled the rest."
+    more = n - len(phrases)
+    return f"▌ {word} {noun} on you today: {', '.join(phrases)}" + (f" and {more} more" if more else "") + ". The bots handled the rest."
+
+
+INSTRUCT = {"Close": ("close the ticket.", "an alert to close"),
+            "Triage or map": ("triage it or add a rule.", "a new alert kind to triage")}
+
+
+def incident_item(o):
+    """A needs_you incident row as an item. A row with no action keeps the old one-line shape."""
+    ident = link(o["id"], o["url"]) if o["id"] else ""
+    if not o["action"]:
+        return make_item(text=f"{ident} {what_of(o)}: {bold_question(o['question'] or 'Act or close?')}".strip())
+    facts = facts_of(o["question"])
+    fired = re.search(r"fired (\d+)x", facts)
+    quiet = re.search(r"quiet (\S+)", facts)
+    host = o["host"] or (re.search(r" @ (\S+)", o["label"]) or [None, ""])[1]
+    label = re.sub(r" @ \S+", "", o["label"]).strip()
+    tag = "firing" if o["firing"] else (f"quiet {quiet.group(1)}" if quiet else "")
+    title = f"[{o['id']} {label}](<{o['url']}>)" if o["url"] else f"`{o['id']}` {label}"
+    if fired:
+        seen = f"fired {fired.group(1)}x" + (f" on {host}" if host else "") + "."
+    else:
+        seen = f"on {host}." if host else ""
+    instruction, lede = INSTRUCT.get(o["action"], (o["action"].lower() + ".", ""))
+    line = " ".join(x for x in (seen, f"**{instruction}**", "ignored, it stays open and keeps showing here.") if x)
+    return make_item(tag=tag, title=title.strip(), lines=[line], lede=lede)
+
+
 def decision_row(o):
     """A needs_you incident row as a Your call line: its action leads when it has one."""
     ident = link(o["id"], o["url"]) if o["id"] else ""
@@ -386,12 +501,17 @@ def deadline_of(text, now):
     return due.toordinal()
 
 
-def triage_action(slug, waiting, oldest_days, board):
-    """`Triage N <board> cards waiting Nd: "<title>", "<title>"`: the two oldest triage cards by
-    title, none when the reader gave no titles."""
+def triage_item(slug, waiting, oldest_days, board):
+    """The card-triage item for a board past its threshold: the two oldest triage cards by title."""
     picked = [c for c in (board or {}).get("cards", []) if c.get("triage")][:2]
-    titles = ": " + ", ".join(f'"{short_title(c["title"])}"' for c in picked) if picked else ""
-    return f"Triage {waiting} {slug} cards waiting {oldest_days}d{titles}"
+    titles = ", ".join(f'"{short_title(c["title"])}"' for c in picked)
+    many = waiting != 1
+    ask = "**move each card to ready, blocked or done.** ignored, they stay here daily." if many else \
+        "**move the card to ready, blocked or done.** ignored, it stays here daily."
+    line = (f"oldest: {titles}. " if titles and many else (f"{titles}. " if titles else "")) + ask
+    return make_item(tag=f"waiting {oldest_days}d",
+                     title=f"{waiting} cards wait in {slug} triage" if many else f"1 card waits in {slug} triage",
+                     lines=[line], lede=f"{waiting} cards to triage" if many else "1 card to triage", wait=oldest_days)
 
 
 def board_lines_of(fields, kanban, listed):
@@ -428,16 +548,16 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
 
     paths = {r["name"]: r["path"] for r in rows}
 
-    # Your call: each line carries its id as a link. Lines sort by urgency (see call_rank); the cap
-    # applies after the sort, so the overflow drops the least urgent
-    calls = []   # (sort key, text), in collection order
+    # Your call: items sort by urgency (see the keys below); the cap applies after the sort, so the
+    # overflow drops the least urgent
+    calls = []   # (sort key, item), in collection order
     hub_name = (args.hub_map.get(cluster) or [None])[0]
     reader = (args.kanban_map.get(cluster) or [None])[0]
     drift = []
     if hub_name and reader and hub_name in paths:
         drift = mirror_drift(reader, hub_name, paths[hub_name])
     for d in drift:
-        calls.append(((4, 0), f"{row_link(paths[hub_name], d['id'])} hub/mirror drift: {d['what']}. **Ship or reopen?**"))
+        calls.append(((4, 0), make_item(text=f"{row_link(paths[hub_name], d['id'])} hub/mirror drift: {d['what']}. **Ship or reopen?**")))
 
     inc, inc_err = None, None
     hook = (args.incident_map.get(cluster) or [None])[0]
@@ -449,26 +569,25 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     worked_rows = [o for o in open_rows if not o["needs_you"] and not (o["id"] and o["id"] in hook_decision_ids)]
     for o in open_rows:
         if o["needs_you"]:
-            calls.append(((1, 1 if o["action"] == "Close" else 0), decision_row(o)))
+            calls.append(((1, 1 if o["action"] == "Close" else 0), incident_item(o)))
     for d in (inc["decisions"] if inc else []):
         ident = link(d["id"], d["url"]) if d["id"] else ""
-        calls.append(((2, 0), f"{ident} {bold_question(d['question'])}".strip()))
+        calls.append(((2, 0), make_item(text=f"{ident} {bold_question(d['question'])}".strip())))
 
-    # an operator line that opens with the pointing hand is a decision, with the robot a Handled fragment;
+    # an operator line that opens with the pointing hand is an item, with the robot a Handled sentence;
     # every other operator line is a Details line
     hand_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(HAND)]
     robot_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(ROBOT)]
     for f in hand_lines:
-        text = f["value"][len(HAND):].strip()
-        due = deadline_of(text, now)
-        calls.append(((0, due), text) if due else ((3, 0), text))
-    handled_hooks = [t for t in (f["value"][len(ROBOT):].strip() for f in robot_lines) if t]
+        it, key = hand_item(f["value"][len(HAND):], now)
+        calls.append((key, it))
+    handled_hooks = [t for t in (_rich(f["value"][len(ROBOT):], 700) for f in robot_lines) if t]
 
-    # a board past its triage threshold is a card-triage action
+    # a board past its triage threshold is a card-triage item
     for f in hp["fields"]:
         t = TRIAGE_FAULT_RE.match(f["value"]) if f["name"] == "fault" else None
         if t:
-            calls.append(((5, -int(t.group(3))), triage_action(t.group(1), int(t.group(2)), int(t.group(3)), kanban.get(t.group(1)))))
+            calls.append(((5, -int(t.group(3))), triage_item(t.group(1), int(t.group(2)), int(t.group(3)), kanban.get(t.group(1)))))
 
     # a Hermes profile linked to this kit whose skills are out of date: the sweep records
     # the comparison each tick, and a brief with no record compares now
@@ -477,8 +596,9 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         links = HM.check_links()
     for lk in links:
         if lk.get("stale") and (lk.get("cluster") or args.first_cluster) == cluster:
-            calls.append(((6, 0), f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`"))
-    decisions = [text for _, text in sorted(calls, key=lambda c: c[0])]
+            calls.append(((6, 0), make_item(text=f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`")))
+    items = [it for _, it in sorted(calls, key=lambda c: c[0])]
+    decisions = [it["flat"] for it in items]
 
     only = cluster in set(args.decisions_only or [])
     feed_faults = ([f"⚠️ incident feed unreadable: {inc_err}"] if inc_err else []) + (inc["faults"] if inc else [])
@@ -497,49 +617,54 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     # Details day: Monday in Vietnam, or a preview
     weekly = bool(not only and (args.show_boards or datetime.fromtimestamp(now, VN_TZ).weekday() == 0))
 
-    # the one Handled line: hook fragments, incidents the agent works, then sync and bots state
+    # the one Handled line: hook sentences, incidents the agent works, then sync and bots state
     handled = list(handled_hooks)
     if worked_rows:
-        handled.append(f"{len(worked_rows)} incident" + ("" if len(worked_rows) == 1 else "s") + f" with {AGENT}")
+        k = len(worked_rows)
+        handled.append(f"{k} incident is with {AGENT}." if k == 1 else f"{k} incidents are with {AGENT}.")
     state = []
     if sync_errors:
-        state.append(f"❌ sync errors {sync_errors}")
+        state.append(f"sync hit {sync_errors} error" + ("" if sync_errors == 1 else "s") + ".")
     elif attention:
-        state.append(f"⚠️ sync warnings {len(attention)}")
+        state.append(f"sync raised {len(attention)} warning" + ("" if len(attention) == 1 else "s") + ".")
     if inc_err:
-        state.append("❌ feed unreadable")
+        state.append("the incident feed was unreadable.")
     elif inc and inc["faults"]:
-        state.append(f"❌ feed faults {len(inc['faults'])}")
-    handled += state or ["sync and bots clean"]
+        state.append(f"the incident feed reported {len(inc['faults'])} fault" + ("" if len(inc["faults"]) == 1 else "s") + ".")
+    handled += state or ["sync and bots ran clean."]
+    handled_line = "▌ Handled by bots: " + " ".join(sentence(x) for x in handled)
 
     # the main message: blocks of (name, heading, lines)
     def your_call(shown):
-        lines = [f"• {d}" for d in decisions[:shown]]
-        if len(decisions) > shown:
-            lines.append(f"+{len(decisions) - shown} more")
-        return ["decision", f"### 🙋 Your call ({len(decisions)})", lines]
+        lines = [ln for it in items[:shown] for ln in item_lines(it)]
+        if len(items) > shown:
+            lines.append(f"+{len(items) - shown} more")
+        return ["decision", "**🙋 Your call**", lines]
 
     main = []
-    if decisions:
+    if items:
+        if not only:
+            main.append(["lede", "", [lede_of(items)]])
         main.append(your_call(MAX_DECISIONS))
     elif not only and not errors:
-        main.append(["clear", "### ✅ Nothing needs you today", []])
+        main.append(["lede", "", ["▌ Nothing waits on you today. The bots handled everything."]])
     if not only:
-        main.append(["handled", "", ["🤖 Handled: " + " · ".join(handled)]])
+        main.append(["handled", "", [handled_line]])
 
-    # keep the main message under the poster's cap: Your call lines past the first collapse
+    # keep the main message under the poster's cap: Your call items past the first collapse
     def size(blocks):
         return sum(len(h) + 1 + sum(len(x) + 1 for x in ls) + 1 for _, h, ls in blocks)
 
-    shown = min(len(decisions), MAX_DECISIONS)
-    while decisions and size(main) > args.main_chars and shown > 1:
+    shown = min(len(items), MAX_DECISIONS)
+    at = next((i for i, b in enumerate(main) if b[0] == "decision"), None)
+    while at is not None and size(main) > args.main_chars and shown > 1:
         shown -= 1
-        main[0] = your_call(shown)
+        main[at] = your_call(shown)
 
     def render(blocks):
         out = []
         for name, head, ls in blocks:
-            if out and name != "handled":
+            if out:
                 out.append(("gap", ""))
             if head:
                 out.append((f"{name}-head", head))
@@ -568,6 +693,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         "severity": "warn" if decisions or errors else "info",
         "title": f"Daily brief · {cluster}", "date": day, "period_days": 1,
         "next_due": H.day_stamp(now + DAY), "attention": bool(decisions),
+        "date_label": day_label(day), "next_due_label": day_label(H.day_stamp(now + DAY)),
         "footer_tail": weekly,
         "fields": fields,
         "data": {"decisions": decisions, "drift": [d["id"] for d in drift], "open_incidents": len(open_rows),

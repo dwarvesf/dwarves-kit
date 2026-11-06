@@ -246,18 +246,27 @@ baseline, so it reports no archived count. Tests: `tests/test-board-health.sh`.
 
 **Daily brief.** `board brief run` is the one message an operator reads each
 day, built on the health engine above (its source flags, its `--config` file,
-its health state). It says what the reader must do. Every line of the main body
-starts with a verb and names what to act on; a line that needs no action goes
-to the Handled line, the weekly Details, or nowhere. Per cluster, in this order:
+its health state). It reads like a report: a `▌` lede, one `**🙋 Your call**`
+block of items, one `▌ Handled by bots:` sentence line. Every Your call item
+says what to do (bold) and what happens if it is ignored.
 
-| Section | Source |
+| Part | Source |
 |---|---|
-| Your call (N) | most urgent first: a 👉 `--line` with a ` by <Day D Mon>` deadline (nearest first); incident rows ("Triage or map" before "Close"); the hook's explicit `decisions`; any other 👉 line; hub rows whose state and mirror card disagree (`ID hub/mirror drift: ... Ship or reopen?`); board triage actions, longest wait first; stale kit skills last. The cap cuts after the sort. The items: incident rows the hook marks `needs_you` (`Close \`t_1\`: label (fired 3x, quiet 5d)` when the row carries an `action`, else `\`t_1\` label: question`); the hook's explicit `decisions`; an operator `--line` that opens with 👉 (marker dropped); a board past its triage threshold (`Triage 2 df-default cards waiting 15d: "Fix X", "Y"`, two titles of 40 chars at most, the `untrusted ` marker dropped); a linked Hermes profile with stale kit skills. Three lines, then `+N more`; the head counts the whole list. With none and no error, `### ✅ Nothing needs you today` stands alone. |
-| Handled | one line, `🤖 Handled: a · b · c`, directly under the block: the operator `--line` fragments that open with 🤖, `N incident(s) with chonky` for open incidents that are not decisions, then `sync and bots clean` or the error state (`❌ sync errors N`, `⚠️ sync warnings N`, `❌ feed unreadable`, `❌ feed faults N`). An agent fault is never a decision. |
-| Details | a follow-up field, `ℹ️ Details`, on Mondays in Vietnam time (or under `--show-boards`): the board lines (a board's count line and triage warning are one line, with up to three stale or triage titles), the operator's other `--line` lines, the hook's `details`, the bot counts and the archived count. Any other day it is dropped, unless an error exists: then it holds the error lines only. An unreadable hook is an error line, never an all-clear. |
+| lede | `▌ Two things wait on you today: a memo draft that parks tonight, a new alert kind to triage. The bots handled the rest.` Count words One, Two, Three, else digits; up to two item ledes, then `and N more`; an item without a lede counts but adds no phrase. No items and no error: `▌ Nothing waits on you today. The bots handled everything.` |
+| Your call | items, most urgent first: those with a `due` epoch (or a ` by <Day D Mon>` date in a plain line) nearest first; incident rows ("Triage or map" before "Close"); the hook's explicit `decisions`; other 👉 items by `wait_days`; hub/mirror drift; board triage, longest wait first; stale kit skills last. Three items show, the rest is `+N more`. |
+| Handled | `▌ Handled by bots: ...` joins the `--line` hook sentences that open with 🤖, `N incidents are with chonky.`, and `sync and bots ran clean.` or the error form. An agent fault is never a decision. |
+| Details | a follow-up field, `ℹ️ Details`, on Mondays in Vietnam time (or under `--show-boards`): the board lines, the other `--line` lines, the hook's `details`, the bot counts. Any other day it is dropped unless an error exists, then it holds the error lines only. |
+
+An item is `• `[tag]` [title](<url>)` and its lines. Item sources:
+
+- A `--line` hook line `👉 {json}` with `{"tag", "title", "url", "lines": [...], "lede", "due": epoch, "wait_days": N}`. Any other text after 👉 stays one plain line.
+- An incident row with an `action`: tag `quiet Nd` or `firing`, the linked id and label, `fired Nx on <host>. **close the ticket.**` (Close) or `**triage it or add a rule.**` (Triage or map), and what happens if ignored. Without an `action`: one line with the closing question in bold.
+- A board past its triage threshold: tag `waiting Nd`, `N cards wait in <board> triage`, up to two quoted titles of 40 chars (the `untrusted ` marker dropped), `**move each card to ready, blocked or done.**`
+- Drift and stale kit skills: one plain line, no tag.
 
 `severity` is `warn` only when Your call is not empty or an error exists. The
-payload carries `footer_tail` (true on a Details day) for the poster.
+payload carries `footer_tail` (true on a Details day) and `date_label` and
+`next_due_label` (`Sat 7 Nov`) for the poster.
 
 The incident hook prints one JSON object, every key optional, so any operator's
 incident source fits:
@@ -268,15 +277,14 @@ incident source fits:
  "faults": ["line"], "details": ["line"]}
 ```
 
-An `action` (an imperative, 40 chars at most) leads a needs-you row; its facts are
-the question's `fired Nx, quiet Nd` text without the trailing hint or question.
-
-Format: the Your call block sits under a Discord small heading (`### 🙋 Your call (2)`) and the Handled
-line follows it with no blank line. Ids are masked links with
-the preview suppressed (`[ID-538](<url>)`): a board row links to its line in the GitHub copy of the board (from the repo's
-origin remote), a hook row or decision links to the hook's `url`; an id with no URL is inline code. A question
-without an action is bold; a host after `@` is inline code. `--main-chars N` (default 1250) keeps the main message
-under the poster's cap: over it the Your call lines past the first collapse into the `+N more` line.
+An `action` (an imperative, 40 chars at most) turns a needs-you row into the item
+above; its facts are the question's `fired Nx, quiet Nd` text without the trailing
+hint or question. Ids and urls are masked links with the preview suppressed
+(`[ID-538](<url>)`): a board row links to its line in the GitHub copy of the board
+(from the repo's origin remote); an id with no URL is inline code; a host after
+`@` is inline code. `--main-chars N` (default 1250) keeps the main message under
+the poster's cap: over it the Your call items past the first collapse into the
+`+N more` line.
 
 The payload is `kind: "brief"`: the health payload shape with `date`, one
 display line per field for the main message, and `details` (a list of lines)

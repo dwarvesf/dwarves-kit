@@ -285,7 +285,7 @@ jq '.skills_digest = "0000000000000000"' "$HOME/hermes-alpha/home/profiles/chief
   && command cp "$WORK/s.json" "$HOME/hermes-alpha/home/profiles/chief/skills/.dwarves-kit-skills.json"
 brief "$DWARVES_HERMES_LINKS"
 has "a stale link is a decision line for its cluster" "$(msg_of c2)" "• kit skills on \`chief\` are stale: re-run \`board hermes link\`"
-has "under the decision head" "$(msg_of c2)" "### 🙋 Your call (1)"
+has "under the Your call header" "$(msg_of c2)" "**🙋 Your call**"
 lacks "and not in another cluster's brief" "$(msg_of c1)" "kit skills on"
 python3 - "$DWARVES_HERMES_LINKS" <<'PYEOF'
 import json, sys

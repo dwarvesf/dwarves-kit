@@ -368,7 +368,7 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     for cmd in args.line_map.get(cluster, []):
         try:
             r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=120)
-            extra = [redact(l, 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
+            extra = [redact(l, 2000 if l.lstrip().startswith(("👉", "🤖")) else 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
             if r.returncode != 0:
                 log(f"WARN line hook exited {r.returncode} for {cluster}")
         except (OSError, subprocess.TimeoutExpired):
