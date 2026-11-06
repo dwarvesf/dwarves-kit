@@ -246,31 +246,37 @@ baseline, so it reports no archived count. Tests: `tests/test-board-health.sh`.
 
 **Daily brief.** `board brief run` is the one message an operator reads each
 day, built on the health engine above (its source flags, its `--config` file,
-its health state). Per cluster, in this order, each section left out when empty:
+its health state). It says what the reader must do. Every line of the main body
+starts with a verb and names what to act on; a line that needs no action goes
+to the Handled line, the weekly Details, or nowhere. Per cluster, in this order:
 
 | Section | Source |
 |---|---|
-| needs your decision | hub rows whose state and mirror card disagree in a way the mirror cannot settle (`ID hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?`), plus incident rows the hook marks `needs_you`, plus the hook's explicit `decisions`. An operator `--line` that opens with 👉 is a decision too, every day, after the incident decisions (it does not bring the boards back). Three lines, then `+N more in details`. With none and no fault, one line says nothing needs the operator. |
-| open incidents | the `--incidents C=CMD` hook: count, three rows, the hook's fault lines. A row already shown under needs your decision is not repeated; with no row left the block is dropped. An unreadable hook is a fault line, never an all-clear. |
-| boards | the health lines (hub, board, fault, extra). A board's count line and its triage warning are one line (`⚠️ df-default: 5 open (triage 2 oldest 15d, blocked 2, ready 1) · stale: "Fix X", "Y"`), with up to three stale or triage card titles of 40 chars when the reader gives titles. Shown when a decision exists or `--boards-every-days` (default 3) has passed; otherwise they ride the details. A sync failure does not bring them back: the bots line counts it, and instant alerts stay on their own rails. |
-| sync and bots | healthy: one headingless line (`🔄 sync ✅ · 🤖 archived 5, 0 errors`). Any sync error or warning keeps two lines under `### 🔄 Sync · 🤖 Bots` (or `### 🤖 Bots` with the sync line in the details): the hook's bot counts, cards archived since the last delivered brief, sync errors. The details field is `ℹ️ Details`. |
+| Your call (N) | hub rows whose state and mirror card disagree (`ID hub/mirror drift: ... Ship or reopen?`); incident rows the hook marks `needs_you` (`Close \`t_1\`: label (fired 3x, quiet 5d)` when the row carries an `action`, else `\`t_1\` label: question`); the hook's explicit `decisions`; an operator `--line` that opens with 👉 (marker dropped); a board past its triage threshold (`Triage 2 df-default cards waiting 15d: "Fix X", "Y"`, two titles of 40 chars at most); a linked Hermes profile with stale kit skills. Three lines, then `+N more`; the head counts the whole list. With none and no error, `### ✅ Nothing needs you today` stands alone. |
+| Handled | one line, `🤖 Handled: a · b · c`, directly under the block: the operator `--line` fragments that open with 🤖, `N incident(s) with chonky` for open incidents that are not decisions, then `sync and bots clean` or the error state (`❌ sync errors N`, `⚠️ sync warnings N`, `❌ feed unreadable`, `❌ feed faults N`). An agent fault is never a decision. |
+| Details | a follow-up field, `ℹ️ Details`, on Mondays in Vietnam time (or under `--show-boards`): the board lines (a board's count line and triage warning are one line, with up to three stale or triage titles), the operator's other `--line` lines, the hook's `details`, the bot counts and the archived count. Any other day it is dropped, unless an error exists: then it holds the error lines only. An unreadable hook is an error line, never an all-clear. |
+
+`severity` is `warn` only when Your call is not empty or an error exists. The
+payload carries `footer_tail` (true on a Details day) for the poster.
 
 The incident hook prints one JSON object, every key optional, so any operator's
 incident source fits:
 
 ```
-{"open": [{"id", "label", "host", "url", "age", "firing": bool, "needs_you": bool, "question"}],
+{"open": [{"id", "label", "host", "url", "age", "firing": bool, "needs_you": bool, "question", "action"}],
  "decisions": [{"id", "url", "question"}], "bots": {"auto-resolved": 3},
  "faults": ["line"], "details": ["line"]}
 ```
 
-Format: each section sits under a Discord small heading (`### 🙋 Needs your decision (2)`, `### 🔥 Open
-incidents (5)`, `### 🗂️ Boards`, `### 🔄 Sync · 🤖 Bots`) with a blank line between sections. Ids are masked links with
+An `action` (an imperative, 40 chars at most) leads a needs-you row; its facts are
+the question's `fired Nx, quiet Nd` text without the trailing hint or question.
+
+Format: the Your call block sits under a Discord small heading (`### 🙋 Your call (2)`) and the Handled
+line follows it with no blank line. Ids are masked links with
 the preview suppressed (`[ID-538](<url>)`): a board row links to its line in the GitHub copy of the board (from the repo's
-origin remote), a hook row or decision links to the hook's `url`; an id with no URL is inline code. The question in a
-decision line and the closing sentence ending in `?` are bold; a host after `@` is inline code; the details message
-uses the same headings. `--main-chars N` (default 1250) keeps the main message under the poster's cap: over it the boards
-block moves to the details, then the incident rows past the first.
+origin remote), a hook row or decision links to the hook's `url`; an id with no URL is inline code. A question
+without an action is bold; a host after `@` is inline code. `--main-chars N` (default 1250) keeps the main message
+under the poster's cap: over it the Your call lines past the first collapse into the `+N more` line.
 
 The payload is `kind: "brief"`: the health payload shape with `date`, one
 display line per field for the main message, and `details` (a list of lines)

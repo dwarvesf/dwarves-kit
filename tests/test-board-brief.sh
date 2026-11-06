@@ -23,6 +23,13 @@
 #   AC14 boards: count line and triage warning are one line, with up to 3 card titles (40 chars)
 #   AC15 healthy sync and bots are one line; any error keeps two; Details drops the archived count
 #   AC16 a hook line that opens with the pointing hand is a decision, every day; other hook lines stay in Boards
+#   AC17 Your call: incident decision rows use their action, hook 👉 lines, board triage past its
+#        threshold; the cap counts the merged list and the overflow is a +N more line
+#   AC18 one Handled line: hook 🤖 fragments, open incidents, sync and bots state
+#   AC19 clear day: ✅ heading, the Handled line, nothing else
+#   AC20 Details: Mondays (VN) only, with the board lines, hook info lines and incident stats;
+#        other days only when an error exists
+#   AC21 severity warn only for Your call or an error; footer_tail only on Mondays
 #   AC12 formatting: small headings, a blank line between sections, ids as masked links with the
 #        preview suppressed (inline code with no URL), the question in bold, hosts in inline code,
 #        the main message kept under --main-chars
@@ -50,6 +57,8 @@ NOW=1790000000
 # (on GNU, `-r` takes a FILE, so the BSD form errors and the fallback runs)
 epoch_day() { date -r "$1" +%Y-%m-%d 2>/dev/null || date -d "@$1" +%Y-%m-%d; }
 DAY=86400
+# NOW is a Monday in Vietnam (UTC+7), so the weekly Details ride it; TUE is the day after
+TUE=$((NOW + DAY)); NEXTMON=$((NOW + 7 * DAY))
 
 commit() {
   git -C "$1" add -A >/dev/null
@@ -164,7 +173,7 @@ echo "case decisions (hub/mirror drift, one question per row):"
 fresh
 run "$NOW" --cluster alpha
 has "the shipped row with an open card is a question" "$(msg)" "[AB-4](<https://github.com/acme/crew/blob/main/_meta/BACKLOG.md?plain=1#L6>) hub/mirror drift: board says shipped, the Hermes card is still open. **Ship or reopen?**"
-has "the head counts the items" "$(msg)" "### 🙋 Needs your decision (1)"
+has "the head counts the items" "$(msg)" "### 🙋 Your call (1)"
 eq "a decision makes the payload warn" "$(jq -r '.severity' <<<"$(last)")" "warn"
 eq "and flags attention" "$(jq -r '.attention' <<<"$(last)")" "true"
 fresh
@@ -181,10 +190,11 @@ cat > "$FAKE_INC_FILE" <<'EOF'
 EOF
 run "$NOW" --cluster alpha
 eq "four decisions are counted" "$(jq -r '.data.decisions | length' <<<"$(last)")" "4"
-has "the head shows the true count" "$(msg)" "### 🙋 Needs your decision (4)"
-eq "three lines show in the message" "$(jq -r '[.fields[] | select(.name == "decision")] | length' <<<"$(last)")" "4"
-has "the rest is named, not dropped" "$(msg)" "+1 more in details"
-has "the rest is in the details" "$(det)" "\`t3\` alpha three"
+has "the head shows the true count" "$(msg)" "### 🙋 Your call (4)"
+eq "three lines and the +N more line show in the message" "$(jq -r '[.fields[] | select(.name == "decision")] | length' <<<"$(last)")" "4"
+has "the rest is named as a count, in the Your call block" "$(msg)" "+1 more"
+lacks "and is never moved to the details" "$(det)" "alpha three"
+lacks "nor does the old pointer remain" "$(msg)" "more in details"
 
 echo "case incident hook (rows, bots, faults, explicit decisions):"
 fresh
@@ -198,14 +208,15 @@ cat > "$FAKE_INC_FILE" <<'EOF'
  "details":["AI spend 24h: 1.20 USD"]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "the incident head" "$(msg)" "### 🔥 Open incidents (5)"
-has "a firing row says so" "$(msg)" "• 3h ago \`t9\` gateway-run-crit @ \`host\` · firing"
-has "three rows, then the rest named" "$(msg)" "+2 more in details"
-has "the hook's fault line shows under incidents" "$(msg)" "⚠️ auditor: violations 2"
+has "open non-decision incidents are one count in the Handled line" "$(msg)" "5 incidents with chonky"
+lacks "no Open incidents block" "$(msg)" "Open incidents"
+lacks "and no incident rows in the body" "$(msg)" "gateway-run-crit"
 has "an explicit hook decision is a decision" "$(msg)" "\`fixbox\` **Retry the failed job?**"
-has "hook details ride the details" "$(det)" "AI spend 24h: 1.20 USD"
-has "the overflow rows ride the details" "$(det)" "\`t5\`"
-has "healthy sync and bots share one line, zeros dropped" "$(msg)" "🔄 sync ✅ · 🤖 auto-resolved 3, parked 2, 0 errors"
+has "the hook's fault line is an error line in Details" "$(det)" "⚠️ auditor: violations 2"
+has "and the Handled line marks the feed" "$(msg)" "❌ feed faults 1"
+has "hook details ride the weekly Details" "$(det)" "AI spend 24h: 1.20 USD"
+has "the bot counts ride the weekly Details, zeros dropped" "$(det)" "🤖 bots: auto-resolved 3, parked 2"
+lacks "the old two-line bots heading is gone" "$(msg)" "### 🤖 Bots"
 
 echo "case hook flag (read-only under a preview or a test):"
 fresh; : > "$FAKE_INC_FLAG"
@@ -219,8 +230,8 @@ eq "--no-state sets it too" "$(< "$FAKE_INC_FLAG")" "1"
 echo "case hook text (names kept whole, secrets masked):"
 fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
-{"open":[{"id":"t1","label":"hermes_state_registry-crit @ `hermes-personal`"},
-         {"id":"t2","label":"leak 0123456789abcdef0123456789abcdef0123 op://Vault/item/field https://discord.com/api/webhooks/1/abc"}]}
+{"open":[{"id":"t1","label":"hermes_state_registry-crit @ `hermes-personal`","needs_you":true},
+         {"id":"t2","label":"leak 0123456789abcdef0123456789abcdef0123 op://Vault/item/field https://discord.com/api/webhooks/1/abc","needs_you":true}]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 has "a long rule name is not masked" "$(msg)" "hermes_state_registry-crit @ \`hermes-personal\`"
@@ -233,24 +244,29 @@ fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
 {"open":[{"id":"t_96178862","label":"hermes_state_registry-crit","host":"hermes-personal","age":"1d ago","needs_you":true,
           "url":"https://hermes.example/kanban?task=t_96178862","question":"new alert kind, triage or add a rule. Act or close?"},
-         {"id":"t_ec9c213b","label":"heartbeat-silent @ restic-backup","age":"2d ago","firing":true,"url":"https://hermes.example/kanban?task=t_ec9c213b"},
-         {"id":"t_bad","label":"x","host":"h","url":"http://plain.example/x"},
-         {"id":"t_inj","label":"y","host":"h","url":"https://ok.example/x)[evil](https://evil.example"}]}
+         {"id":"t_ec9c213b","label":"heartbeat-silent @ restic-backup","age":"2d ago","needs_you":true,"url":"https://hermes.example/kanban?task=t_ec9c213b"},
+         {"id":"t_bad","label":"x","host":"h","needs_you":true,"url":"http://plain.example/x"}]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 text="$(msg)"
-has "sections are separated by a blank line" "$text" $'(1)\n• [`AB-4`'
-has "the headings are Discord small headings" "$text" "### 🔥 Open incidents (3)"
-printf '%s' "$text" | grep -B1 '^### ' | grep -v '^###' | grep -v '^--$' | grep -qv '^$' && bad "a heading follows text with no blank line" || ok "every heading but the first follows a blank line"
+has "the head is a Discord small heading" "$text" "### 🙋 Your call (3)"
+has "a decision follows its head with no blank line" "$text" $'(3)\n• [t_96178862]'
+has "the Handled line follows the bullets directly" "$text" $'\n🤖 Handled: '
+lacks "no heading below the first" "$(printf '%s' "$text" | tail -n +2)" "### "
 has "a ticket id is a masked link with the preview suppressed" "$text" "[t_96178862](<https://hermes.example/kanban?task=t_96178862>)"
 has "the decision question is bold" "$text" "**Act or close?**"
 has "the host after @ is inline code" "$text" "hermes_state_registry-crit @ \`hermes-personal\`"
 has "a host inside a legacy label is inline code too" "$text" "heartbeat-silent @ \`restic-backup\`"
 has "an http URL is refused: the id is inline code" "$text" "\`t_bad\`"
-has "a URL carrying markup characters is refused" "$text" "\`t_inj\`"
-lacks "no forged link survives" "$text" "evil"
-lacks "no bare URL is left to unfurl" "$text" " https://"
-has "boards, then the healthy sync and bots line" "$text" "🔄 sync ✅ · 🤖 0 errors"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t_inj","label":"y","host":"h","needs_you":true,"url":"https://ok.example/x)[evil](https://evil.example"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "a URL carrying markup characters is refused" "$(msg)" "\`t_inj\`"
+lacks "no forged link survives" "$(msg)" "evil"
+lacks "no bare URL is left to unfurl" "$(msg)" " https://"
+has "the healthy sync and bots state is in the Handled line" "$(msg)" "🤖 Handled: sync and bots clean"
 git -C "$WORK/crew" remote set-url origin /srv/local/crew.git
 fresh
 run "$NOW" --cluster alpha
@@ -259,29 +275,29 @@ git -C "$WORK/crew" remote set-url origin git@github.com:acme/crew.git
 fresh
 echo '{"crew":{"pending":{"flapping_ids":["AB-1"]}}}' > "$DS"
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --show-boards
-has "an id in a flapping line links to its row" "$(msg)" "⚠️ [AB-1](<https://github.com/acme/crew/blob/main/_meta/BACKLOG.md?plain=1#L3>) flapping between the board and a spoke (crew)"
+has "an id in a flapping line links to its row" "$(det)" "⚠️ [AB-1](<https://github.com/acme/crew/blob/main/_meta/BACKLOG.md?plain=1#L3>) flapping between the board and a spoke (crew)"
 echo '{}' > "$DS"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-has "boards hidden: the healthy line stands alone, no heading" "$(msg)" "🔄 sync ✅ · 🤖 0 errors"
+FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "a clean weekday: the Handled line carries sync and bots, no heading" "$(msg)" "🤖 Handled: sync and bots clean"
 lacks "and no bots heading" "$(msg)" "### 🤖 Bots"
 lacks "and no sync heading" "$(msg)" "### 🔄 Sync"
-text="$(det)"
-has "the details use the same headings" "$text" "### 🗂️ Boards"
-[[ "$text" == "### 🗂️ Boards"* ]] && ok "and the same blank-line rhythm" || bad "details rhythm: $text"
+eq "and no Details field at all" "$(jq -r 'has("details")' <<<"$(last)")" "false"
 fresh
-FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --main-chars 120
-has "over the budget the boards block moves to the details" "$(det)" "### 🗂️ Boards"
-lacks "and leaves the main message" "$(msg)" "### 🗂️ Boards"
-eq "so the boards are not stamped as shown" "$(jq -r '.data.boards_shown' <<<"$(last)")" "false"
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+text="$(det)"
+has "the Monday details open with the Details heading" "$text" "### ℹ️ Details"
+[[ "$text" == "### ℹ️ Details"* ]] && ok "and it leads" || bad "details rhythm: $text"
+eq "one heading only" "$(printf '%s' "$text" | grep -c '^### ')" "1"
 fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
-{"open":[{"id":"a","label":"one","age":"1d"},{"id":"b","label":"two","age":"2d"},{"id":"c","label":"three","age":"3d"}]}
+{"open":[{"id":"a","label":"one","age":"1d","needs_you":true},{"id":"b","label":"two","age":"2d","needs_you":true},{"id":"c","label":"three","age":"3d","needs_you":true}]}
 EOF
-FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --main-chars 90
-has "still over: the incident rows past the first move too" "$(msg)" "+2 more in details"
-has "and ride the details under their own heading" "$(det)" "### 🔥 More incidents"
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --main-chars 100
+has "over the budget the rows past the first collapse to +N more" "$(msg)" "+2 more"
+has "the head still counts all of them" "$(msg)" "### 🙋 Your call (3)"
+lacks "and nothing moves to the details" "$(det)" "three"
 
 echo "case no duplicate rows (a decision row is not an incident row):"
 fresh
@@ -292,8 +308,8 @@ cat > "$FAKE_INC_FILE" <<'EOF'
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 has "the decision row stays a decision" "$(msg)" "\`t1\` alpha one: **Fix or close?**"
-has "the incident head counts only rows not asked about" "$(msg)" "### 🔥 Open incidents (1)"
-has "the other row is listed" "$(msg)" "• 1d ago \`t2\` alpha two"
+has "the Handled count skips rows already asked about" "$(msg)" "1 incident with chonky"
+lacks "the other row is not listed in the body" "$(msg)" "alpha two"
 eq "the decision row appears once" "$(msg | grep -c '\`t1\`')" "1"
 eq "a hook decision id appears once too" "$(msg | grep -c '\`t3\`')" "1"
 eq "the payload still counts every open row" "$(jq -r '.data.open_incidents' <<<"$(last)")" "3"
@@ -302,63 +318,78 @@ cat > "$FAKE_INC_FILE" <<'EOF'
 {"open":[{"id":"t1","label":"alpha one","needs_you":true,"question":"Fix or close?"}]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-lacks "every row a decision: no incident block" "$(msg)" "🔥"
-has "and the decision shows" "$(msg)" "### 🙋 Needs your decision (1)"
+lacks "every row a decision: no incident count" "$(msg)" "with chonky"
+has "and the decision shows" "$(msg)" "### 🙋 Your call (1)"
 fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
 {"open":[{"id":"t1","label":"alpha one","needs_you":true,"question":"Fix or close?"}],"faults":["auditor: violations 2"]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "faults keep the block, headed as the feed" "$(msg)" "### 🔥 Incident feed"
-lacks "and not as incidents" "$(msg)" "Open incidents"
+has "a feed fault is marked in the Handled line" "$(msg)" "❌ feed faults 1"
+has "and its line rides the Details" "$(det)" "⚠️ auditor: violations 2"
+lacks "there is no incident feed block" "$(msg)" "Incident feed"
 
 echo "case boards (count line and triage warning are one line, with card titles):"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "no warning: one short count line" "$(msg)" "🗂️ work: 3 open (triage 2, ready 1)"
-lacks "and no stale count at zero" "$(msg)" "0 stale"
-FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --show-boards --triage-days 2 --stale-days 2
-has "a warning folds into the status mix, titles trail" "$(msg)" '⚠️ work: 3 open (triage 2 oldest 3d, ready 1) · stale: "Fix the long running sync problem on th…"'
-lacks "and the separate waiting line is gone" "$(msg)" "waiting in triage"
-FAKE_NO_TITLES=1 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --show-boards --triage-days 2 --stale-days 2
-has "a reader with no titles: the stale count" "$(msg)" "⚠️ work: 3 open (triage 2 oldest 3d, ready 1) · 1 stale"
-FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --show-boards --triage-days 2 --stale-days 20
-has "triage cards when nothing is stale" "$(msg)" '· triage: "Fix the long running sync problem on th…", "Y"'
-eq "every title is 40 chars or fewer" "$(msg | grep -o '"[^"]*"' | jq -R 'select(length - 2 > 40)' | grep -c .)" "0"
+has "no warning: one short count line in the Monday Details" "$(det)" "🗂️ work: 3 open (triage 2, ready 1)"
+lacks "and not in the body" "$(msg)" "🗂️ work"
+lacks "and no stale count at zero" "$(det)" "0 stale"
+lacks "and no Triage action while under the threshold" "$(msg)" "Triage"
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --triage-days 2 --stale-days 2
+has "a board past its triage threshold is a Your call action, two titles" "$(msg)" 'Triage 2 work cards waiting 3d: "Fix the long running sync problem on th…", "Y"'
+has "the action sits under the Your call head" "$(msg)" "### 🙋 Your call (1)"
+eq "the triage action is a decision in the data" "$(jq -r '.data.decisions | length' <<<"$(last)")" "1"
+eq "so the card warns and flags attention" "$(jq -r '[.severity, .attention] | join(" ")' <<<"$(last)")" "warn true"
+lacks "the separate waiting line is gone" "$(msg)" "waiting in triage"
+has "the Monday Details keep the count line with the warning folded in" "$(det)" '⚠️ work: 3 open (triage 2 oldest 3d, ready 1) · stale: "Fix the long running sync problem on th…"'
+FAKE_NO_TITLES=1 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --triage-days 2 --stale-days 2
+has "a reader with no titles: the action has none" "$(msg)" "Triage 2 work cards waiting 3d"
+lacks "and no empty quotes" "$(msg)" '""'
+has "and the Details show the stale count" "$(det)" "⚠️ work: 3 open (triage 2 oldest 3d, ready 1) · 1 stale"
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --force --triage-days 2 --stale-days 20
+has "triage titles when nothing is stale" "$(msg)" 'waiting 3d: "Fix the long running sync problem on th…", "Y"'
+has "the Details list triage cards when nothing is stale" "$(det)" '· triage: "Fix the long running sync problem on th…", "Y"'
+eq "every title is 40 chars or fewer" "$( (msg; det) | grep -o '"[^"]*"' | jq -R 'select(length - 2 > 40)' | grep -c .)" "0"
 
 echo "case sync and bots (one healthy line; any error keeps two; Details):"
 fresh
 FAKE_ARCHIVED=5 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-FAKE_ARCHIVED=11 FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-eq "the healthy pair is one line" "$(msg | grep -c '🔄 sync ✅ · 🤖 archived 6, 0 errors')" "1"
-lacks "Details no longer repeats the archived count" "$(det)" "archived since the last brief"
+FAKE_ARCHIVED=11 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+eq "the healthy state is one Handled line" "$(msg | grep -c '^🤖 Handled: sync and bots clean$')" "1"
+lacks "a weekday does not repeat the archived count" "$(msg)" "archived"
+FAKE_ARCHIVED=17 FAKE_CARDS="$CLEAN" run $NEXTMON --cluster alpha
+has "the weekly Details carry the archived count" "$(det)" "🤖 bots: archived 6"
 fresh
 echo '{"details":["AI spend 24h: 1.20 USD"]}' > "$FAKE_INC_FILE"
-FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
+FAKE_CARDS="$CLEAN" run $NEXTMON --cluster alpha
 has "the details field is named Details" "$(det)" "### ℹ️ Details"
 lacks "and not More" "$(det)" "### ℹ️ More"
 eq "a clean day is severity info" "$(jq -r '.severity' <<<"$(last)")" "info"
 fresh
+echo '{"details":["AI spend 24h: 1.20 USD"]}' > "$FAKE_INC_FILE"
+FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+eq "a weekday has no Details field, hook stats included" "$(jq -r 'has("details")' <<<"$(last)")" "false"
+fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha --show-boards
-has "an error keeps the two-line heading" "$(msg)" "### 🔄 Sync · 🤖 Bots"
-has "with the sync line" "$(msg)" "❌ sync failed: crew"
-has "and the bots line" "$(msg)" "🤖 24h: sync errors 1"
-lacks "and no collapsed line" "$(msg)" "🔄 sync ✅"
+FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "a sync error is in the Handled line" "$(msg)" "🤖 Handled: ❌ sync errors 1"
+lacks "and there is no collapsed healthy line" "$(msg)" "sync and bots clean"
+lacks "and no Sync heading" "$(msg)" "### 🔄 Sync"
+has "a weekday with an error shows Details with the error line" "$(det)" "❌ sync failed: crew"
+eq "and the Details hold the error lines only" "$(det | grep -c '🗂️')" "0"
 eq "a sync error makes the card warn" "$(jq -r '.severity' <<<"$(last)")" "warn"
-FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $((NOW + 2 * DAY)) --cluster alpha
-has "hidden boards: the sync line rides the details" "$(det)" "### 🔄 Sync"
-has "and the bots keep their heading" "$(msg)" "### 🤖 Bots"
+lacks "and the clear heading is gone" "$(msg)" "Nothing needs you"
 
-echo "case hook lines (a pointing-hand line is a decision, other lines stay in Boards):"
+echo "case hook lines (👉 is Your call, 🤖 is Handled, other lines are Monday Details):"
 fresh
 FAKE_LINES="👉 desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d: keep task deadlines (followup-track) (details in Desk self-review)" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-FAKE_LINES="👉 desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d: keep task deadlines (followup-track) (details in Desk self-review)" FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-has "a day with hidden boards: the line is a decision in the main message" "$(msg)" "### 🙋 Needs your decision (1)"
-has "the line shows under the decision head" "$(msg)" "• desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d"
+FAKE_LINES="👉 desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d: keep task deadlines (followup-track) (details in Desk self-review)" FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "the line is under Your call in the main message" "$(msg)" "### 🙋 Your call (1)"
+has "the line shows under the head, without the marker" "$(msg)" "• desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d"
 lacks "the marker itself is not repeated" "$(msg)" "👉"
-lacks "and the boards stay hidden that day" "$(msg)" "🗂️ crew"
-lacks "and it is not in the boards details" "$(det)" "desks:"
+lacks "and the boards stay out of the body" "$(msg)" "🗂️ crew"
+lacks "and it is not in the details" "$(det)" "desks:"
 eq "the card warns and flags attention" "$(jq -r '[.severity, .attention] | join(" ")' <<<"$(last)")" "warn true"
 eq "the data lists it" "$(jq -r '.data.decisions | length' <<<"$(last)")" "1"
 fresh
@@ -366,14 +397,28 @@ cat > "$FAKE_INC_FILE" <<'EOF'
 {"open":[{"id":"t1","label":"alpha one","needs_you":true,"question":"Fix or close?"}]}
 EOF
 FAKE_LINES="👉 desks: 1 needs you" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "after the incident decisions, counted in the head" "$(msg)" "### 🙋 Needs your decision (2)"
+has "after the incident decisions, counted in the head" "$(msg)" "### 🙋 Your call (2)"
 eq "the incident decision comes first" "$(msg | grep -n -e 'alpha one' -e 'desks: 1' | cut -d: -f1 | tr '\n' ' ')" "2 3 "
 fresh
 FAKE_LINES="💼 desks: 42 turns on 4 of 6, all clear" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "a clear-day line stays a boards line" "$(msg)" "💼 desks: 42 turns on 4 of 6, all clear"
-has "and nothing needs you" "$(msg)" "### ✅ Nothing needs you"
-FAKE_LINES="💼 desks: 42 turns on 4 of 6, all clear" FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-has "on a hidden-boards day it rides the details" "$(det)" "💼 desks: 42 turns on 4 of 6, all clear"
+has "an info line rides the Monday Details" "$(det)" "💼 desks: 42 turns on 4 of 6, all clear"
+lacks "and not the body" "$(msg)" "💼"
+has "and nothing needs you" "$(msg)" "### ✅ Nothing needs you today"
+FAKE_LINES="💼 desks: 42 turns on 4 of 6, all clear" FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+eq "on a weekday an info line is dropped: no Details" "$(jq -r 'has("details")' <<<"$(last)")" "false"
+fresh
+FAKE_LINES=$'🤖 neko-chief tool error filed as `t_abcd`\n🤖 +2 agent faults' FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "hook 🤖 fragments join ONE Handled line, marker dropped" "$(msg)" '🤖 Handled: neko-chief tool error filed as `t_abcd` · +2 agent faults · sync and bots clean'
+eq "one Handled line" "$(msg | grep -c 'Handled')" "1"
+has "a Handled-only day is still a clear day" "$(msg)" "### ✅ Nothing needs you today"
+eq "and info severity" "$(jq -r '.severity' <<<"$(last)")" "info"
+fresh
+echo '{"open":[{"id":"a","label":"one"},{"id":"b","label":"two"}]}' > "$FAKE_INC_FILE"
+FAKE_LINES="🤖 desk fix filed" FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "Handled order: hook fragments, incidents, sync" "$(msg)" "🤖 Handled: desk fix filed · 2 incidents with chonky · sync and bots clean"
+fresh
+FAKE_LINES=$'👉 Review brainery [#457](<https://x.example/457>) by Sun 8 Nov, or it parks (4 drafts waiting)\n💼 info' FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "a 👉 draft line keeps its link" "$(msg)" "• Review brainery [#457](<https://x.example/457>) by Sun 8 Nov, or it parks (4 drafts waiting)"
 fresh
 FAKE_LINES="👉 desks: 1 needs you" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --decisions-only alpha
 eq "decisions-only posts it" "$(npost)" "1"
@@ -381,23 +426,34 @@ eq "decisions-only posts it" "$(npost)" "1"
 echo "case hook failure is a fault, never an all-clear:"
 fresh
 FAKE_INC_FAIL=1 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "an exit failure shows as a fault" "$(msg)" "⚠️ incident feed unreadable: feed exploded"
+has "an exit failure shows as a fault in the Handled line" "$(msg)" "❌ feed unreadable"
+has "with the reason in the Details, even on a weekday" "$(det)" "⚠️ incident feed unreadable: feed exploded"
 lacks "and no all-clear line" "$(msg)" "Nothing needs you"
+eq "and the card warns" "$(jq -r '.severity' <<<"$(last)")" "warn"
+fresh
+FAKE_INC_FAIL=1 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+has "a weekday keeps the error line in Details" "$(det)" "⚠️ incident feed unreadable: feed exploded"
 fresh
 echo 'not json' > "$FAKE_INC_FILE"
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "malformed output is a fault" "$(msg)" "⚠️ incident feed unreadable: hook printed no JSON"
+has "malformed output is a fault" "$(det)" "⚠️ incident feed unreadable: hook printed no JSON"
 echo '[1,2]' > "$FAKE_INC_FILE"
 fresh; echo '[1,2]' > "$FAKE_INC_FILE"
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "a non-object is a fault" "$(msg)" "hook JSON is not an object"
+has "a non-object is a fault" "$(det)" "hook JSON is not an object"
 
 echo "case all clear and --decisions-only:"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "no decision: one all-clear line" "$(msg)" "### ✅ Nothing needs you"
+has "no decision: one all-clear line" "$(msg)" "### ✅ Nothing needs you today"
 lacks "and no decision head" "$(msg)" "🙋"
 eq "severity info" "$(jq -r '.severity' <<<"$(last)")" "info"
+FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+eq "a clear weekday is two lines: the all-clear and the Handled line" "$(jq -r '[.fields[].value] | length' <<<"$(last)")" "2"
+eq "the first is the all-clear" "$(jq -r '.fields[0].value' <<<"$(last)")" "### ✅ Nothing needs you today"
+eq "the second is Handled" "$(jq -r '.fields[1].value' <<<"$(last)")" "🤖 Handled: sync and bots clean"
+eq "no Details on a clear weekday" "$(jq -r 'has("details")' <<<"$(last)")" "false"
+eq "info severity, no attention" "$(jq -r '[.severity, .attention] | join(" ")' <<<"$(last)")" "info false"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --decisions-only alpha
 eq "decisions-only posts nothing when clean" "$(npost)" "0"
@@ -407,38 +463,84 @@ run "$NOW" --cluster alpha --decisions-only alpha
 eq "decisions-only posts when a decision exists" "$(npost)" "1"
 eq "and the message is the decision lines alone" "$(jq -r '[.fields[].name] | unique | join(",")' <<<"$(last)")" "decision,decision-head"
 
-echo "case boards section (slow clock, reason, details):"
+echo "case weekly Details (Mondays in Vietnam; a decision or --show-boards does not change the day):"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "first run shows the hub line" "$(msg)" "🗂️ crew: 3 active, 1 parked · Hermes mirror 4 open = hub ✅"
-eq "boards_last stamped" "$(jq -r '.brief.boards_last.alpha' "$HS")" "$NOW"
-FAKE_CARDS="$CLEAN" run $((NOW + 1 * DAY)) --cluster alpha
-lacks "the next day hides the boards lines" "$(msg)" "🗂️ crew"
-has "they ride the details" "$(det)" "🗂️ crew: 3 active, 1 parked"
-eq "boards_last did not move" "$(jq -r '.brief.boards_last.alpha' "$HS")" "$NOW"
+has "Monday: the hub line is in the Details" "$(det)" "🗂️ crew: 3 active, 1 parked · Hermes mirror 4 open = hub ✅"
+lacks "and not in the body" "$(msg)" "🗂️ crew"
+eq "the footer tail applies on Monday" "$(jq -r '.footer_tail' <<<"$(last)")" "true"
+eq "boards_shown follows the weekly Details" "$(jq -r '.data.boards_shown' <<<"$(last)")" "true"
+FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+eq "Tuesday: no Details field" "$(jq -r 'has("details")' <<<"$(last)")" "false"
+eq "and no footer tail" "$(jq -r '.footer_tail' <<<"$(last)")" "false"
+eq "boards_shown is false" "$(jq -r '.data.boards_shown' <<<"$(last)")" "false"
 FAKE_CARDS="$CLEAN" run $((NOW + 3 * DAY)) --cluster alpha
-has "three days on, they show again" "$(msg)" "🗂️ crew"
-FAKE_CARDS="$CLEAN" run $((NOW + 4 * DAY)) --cluster alpha
-lacks "and hide again" "$(msg)" "🗂️ crew"
+eq "Thursday: none either, the old three-day clock is gone" "$(jq -r 'has("details")' <<<"$(last)")" "false"
 run $((NOW + 5 * DAY)) --cluster alpha
-has "a decision item brings them back" "$(msg)" "🗂️ crew"
-FAKE_CARDS="$CLEAN" run $((NOW + 6 * DAY)) --cluster alpha --show-boards
-has "--show-boards forces them" "$(msg)" "🗂️ crew"
+eq "a decision day that is not Monday has no Details" "$(jq -r 'has("details")' <<<"$(last)")" "false"
+FAKE_CARDS="$CLEAN" run $NEXTMON --cluster alpha
+has "next Monday the Details are back" "$(det)" "🗂️ crew: 3 active, 1 parked"
+FAKE_CARDS="$CLEAN" run $((NEXTMON + DAY)) --cluster alpha --show-boards
+has "--show-boards forces the weekly Details (a preview)" "$(det)" "🗂️ crew"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-lacks "a sync fault does not bring the boards back" "$(msg)" "❌ sync failed: crew"
-has "the bots line counts it" "$(msg)" "sync errors 1"
-has "and the details name it" "$(det)" "❌ sync failed: crew"
+FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
+lacks "a sync fault does not bring the boards back" "$(det)" "🗂️ crew"
+has "the Handled line counts it" "$(msg)" "❌ sync errors 1"
+has "and the Details name it" "$(det)" "❌ sync failed: crew"
 
-echo "case bots line (archived since the last brief, sync errors):"
+echo "case bots (archived since the last brief, sync errors):"
 fresh
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
-has "baseline: the healthy line, no archived count" "$(msg)" "🔄 sync ✅ · 🤖 0 errors"
-FAKE_ARCHIVED=17 FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
-has "archived since the last brief" "$(msg)" "🔄 sync ✅ · 🤖 archived 12, 0 errors"
-FAKE_SYNC_RC=1 FAKE_ARCHIVED=17 FAKE_CARDS="$CLEAN" run $((NOW + 2 * DAY)) --cluster alpha
+has "baseline: the healthy Handled line" "$(msg)" "🤖 Handled: sync and bots clean"
+FAKE_ARCHIVED=17 FAKE_CARDS="$CLEAN" run $NEXTMON --cluster alpha
+has "archived since the last brief rides the weekly Details" "$(det)" "🤖 bots: archived 12"
+lacks "and not the body" "$(msg)" "archived"
+FAKE_SYNC_RC=1 FAKE_ARCHIVED=17 FAKE_CARDS="$CLEAN" run $((NEXTMON + DAY)) --cluster alpha
 has "a failed leg counts" "$(msg)" "sync errors 1"
+
+echo "case Your call (action rows, the merged list, the cap):"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t1","label":"hb-silent @ box","host":"","needs_you":true,"action":"Close","url":"https://hermes.example/t1","question":"fired 3x · quiet 5d, close?"},
+         {"id":"t2","label":"alpha two","needs_you":true,"action":"Triage or map","question":"fired 3x, quiet 5h · new alert kind: map it or close"},
+         {"id":"t3","label":"alpha three","needs_you":true,"action":"Triage or map","question":"fired 9x, quiet 2d"},
+         {"id":"t4","label":"alpha four","needs_you":true,"question":"fired 1x, quiet 1d · hint. Act or close?"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "a row with an action reads: action, id link, label, facts" "$(msg)" "• Close [t1](<https://hermes.example/t1>): hb-silent @ \`box\` (fired 3x, quiet 5d)"
+has "form a (quiet 3d or more): the close question is cut, the dot becomes a comma" "$(msg)" "(fired 3x, quiet 5d)"
+has "form b (recent): a trailing hint is cut from the facts" "$(msg)" "• Triage or map \`t2\`: alpha two (fired 3x, quiet 5h)"
+has "facts that carry no hint stay whole" "$(msg)" "• Triage or map \`t3\`: alpha three (fired 9x, quiet 2d)"
+lacks "an action row has no bold question" "$(msg)" "**"
+has "the head counts the fourth row" "$(msg)" "### 🙋 Your call (4)"
+has "the cap shows +N more" "$(msg)" "+1 more"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t4","label":"alpha four","needs_you":true,"question":"new alert kind. Act or close?"},
+         {"id":"t5","label":"alpha five","needs_you":true,"action":"Close","question":"new alert kind, triage or add a rule. Act or close?"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "no action: today's rendering with the bold question" "$(msg)" "\`t4\` alpha four: new alert kind. **Act or close?**"
+eq "form c (no ticket body): action, id, label, no facts" "$(msg | grep -F 'alpha five')" "• Close \`t5\`: alpha five"
+lacks "and no empty parentheses" "$(msg)" "()"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t6","label":"alpha six","needs_you":true,"action":"Close this one with a very long action text past the cap","question":"fired 1x, quiet 4d"}]}
+EOF
+FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "an action is cut to 40 chars" "$(msg)" "• Close this one with a very long action t \`t6\`"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t1","label":"alpha one","needs_you":true,"action":"Close","question":"fired 3x, quiet 5d"}],
+ "decisions":[{"id":"fixbox","question":"Retry the failed job?"}]}
+EOF
+FAKE_LINES="👉 Review brainery [#9](<https://x.example/9>) by Sun 8 Nov, or it parks (2 drafts waiting)" FAKE_CARDS="$CLEAN" run $TUE --cluster alpha --force --triage-days 2 --stale-days 2
+eq "incident, hook decision, 👉 line and triage action are one merged list of 4" "$(jq -r '.data.decisions | length' <<<"$(last)")" "4"
+has "counted in one head" "$(msg)" "### 🙋 Your call (4)"
+has "the cap holds at three lines plus +N more" "$(msg)" "+1 more"
+lacks "the +N more line is not a Details block" "$(det)" "Triage"
+eq "the order is incident, hook decision, 👉, triage" "$(msg | grep -n -e 'Close' -e 'fixbox' -e 'Review brainery' | cut -d: -f1 | tr '\n' ' ')" "2 3 4 "
 
 echo "case cadence:"
 fresh
@@ -487,7 +589,7 @@ eq "the key is stable within a day" "$k1" "$k2"
 FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha; k3="$(jq -r .key <<<"$(last)")"
 [ "$k1" != "$k3" ]; eq "and changes the next day" "$?" "0"
 fresh
-FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --show-boards
+FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
 eq "details are absent when there are none" "$(jq -r 'has("details")' <<<"$(last)")" "false"
 
 echo "case --config:"

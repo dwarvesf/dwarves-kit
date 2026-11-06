@@ -1,38 +1,40 @@
 #!/usr/bin/env python3
 """board brief: ONE message per cluster per day, built on `board health`.
 
-The brief tells the operator what needs a decision, then what is broken, then
-(on a slower clock) how the boards look, then one line of what the bots did.
-Everything else goes to a details message that follows. Instant alerts stay on
-their own rails; the brief never replaces them.
+The brief says what the reader must DO. Every line of the main body starts with a verb and
+names what to act on. A line that needs no action from the reader goes to the one Handled
+line, to the weekly Details, or is dropped. Agent faults (a sync error, an incident the agent
+already works) are never a decision. Instant alerts stay on their own rails; the brief never
+replaces them.
 
-Message order, each section omitted when empty, each under a Discord small heading
-(`### ...`) and separated from the next by a blank line:
+Message order, separated by a blank line only where a heading starts:
 
-  Needs your decision   one bullet per item, the closing question in bold: hub rows whose
-                        state differs from their Hermes mirror card in a way the mirror
-                        cannot settle (`ID hub/mirror drift: ... **Ship or reopen?**`), and
-                        incident rows the --incidents hook marks `needs_you`, and a linked
-                        Hermes profile whose kit skills are stale (`kit skills on <label>
-                        are stale: re-run board hermes link`, from `board hermes check`).
-                        Three at most, then `+N more in details`. With none and no fault,
-                        the heading `Nothing needs you` stands alone.
-                        An operator `--line` that opens with 👉 is one of these too, after the
-                        incident decisions, every day; it does not bring the boards back.
-  Open incidents        from the --incidents hook (see below): the count, up to three rows,
-                        the hook's own fault lines. A row already shown under Needs your
-                        decision is not repeated here; with no row left the block is dropped.
-  Boards                the `board health` lines (hub, board, fault, extra). A board's count line
-                        and its triage warning are ONE line, with up to three stale or triage
-                        card titles (40 chars each) when the reader gives titles. Shown only when
-                        a decision item exists or --boards-every-days (default 3) has passed
-                        since they last posted; otherwise they ride the details message.
-  Sync / Bots           healthy: ONE headingless line (`🔄 sync ✅ · 🤖 archived 5, 0 errors`).
-                        Any sync error or warning keeps two lines under one heading: the sync
-                        lines (with the boards), then the count line: the hook's bot counts,
-                        cards archived since the last delivered brief, and sync errors. Sync
-                        failures do not bring the boards back: the bots line counts them, and
-                        instant alerts stay on their own rails.
+  Your call (N)         `### 🙋 Your call (N)`, one bullet per item, in this order: hub/mirror
+                        drift (`ID hub/mirror drift: ... **Ship or reopen?**`); incident rows the
+                        --incidents hook marks `needs_you`, as `<action> <id>: <label> (<facts>)`
+                        when the row carries an `action` (<= 40 chars), else `<id> <label>:
+                        <question>` with the closing question in bold; the hook's explicit
+                        `decisions`; an operator `--line` that opens with 👉 (marker dropped); a
+                        board past its triage threshold, as `Triage N <board> cards waiting Nd:
+                        "<title>", "<title>"` (two titles at most, 40 chars each); a linked Hermes
+                        profile whose kit skills are stale (`board hermes check`). Three lines
+                        show, the rest is one `+N more` line; the count in the head is the whole
+                        list. With none and no error, `### ✅ Nothing needs you today` stands
+                        alone.
+  Handled               ONE line, `🤖 Handled: a · b · c`, directly under the block: the operator
+                        `--line` fragments that open with 🤖 (marker dropped), `N incident(s) with
+                        chonky` for open incidents that are not decisions, then the sync and bots
+                        state: `sync and bots clean`, or `❌ sync errors N`, `⚠️ sync warnings N`,
+                        `❌ feed unreadable`, `❌ feed faults N`.
+  Details               a follow-up field, only on Mondays (Vietnam time) or under --show-boards:
+                        the board lines (hub, board, fault, extra), the operator's other --line
+                        lines, the hook's `details`, the bot counts (the hook's and the archived
+                        count), then any error lines. On any other day it is dropped unless an
+                        error exists, and then it holds the error lines only.
+
+`severity` is `warn` only when Your call is not empty or an error exists (a sync error or
+warning, an unreadable feed, a hook fault); else `info`. `footer_tail` in the payload is true
+only on a Details day, for the poster to keep or drop its footer tail text.
 
 Ids are links, never plain text: a board row id is a masked link to its line in the GitHub
 copy of the board (`[ID-538](<https://github.com/OWNER/REPO/blob/BRANCH/FILE?plain=1#L183>)`,
@@ -44,11 +46,15 @@ A host after `@` is inline code. A hook URL must be https and free of markup cha
 Incident hook (--incidents C=CMD): CMD prints one JSON object on stdout, so any
 operator's incident source fits. Every key is optional:
 
-  {"open":    [{"id","label","host","url","age","firing":bool,"needs_you":bool,"question"}],
+  {"open":    [{"id","label","host","url","age","firing":bool,"needs_you":bool,"question","action"}],
    "decisions": [{"id","url","question"}],  explicit decision lines
-   "bots":    {"auto-resolved": 3},      counts of what bots did, shown as given
-   "faults":  ["line", ...],             fault lines for the incidents section
-   "details": ["line", ...]}             extra lines for the details message
+   "bots":    {"auto-resolved": 3},      counts of what bots did, shown in the weekly Details
+   "faults":  ["line", ...],             fault lines: an error, shown in Details
+   "details": ["line", ...]}             extra lines for the weekly Details
+
+`action` is an imperative of 40 chars or fewer ("Close", "Triage or map"). With it a needs_you
+row reads `• <action> <id>: <label> (<facts>)`, the facts being the question's `fired Nx, quiet Nd`
+text without its trailing hint or question; without it the row reads as `<id> <label>: <question>`.
 
 A hook that fails, or prints something that is not that object, becomes a fault
 line: the brief never claims "all clear" over an unreadable feed. Under --dry-run
@@ -57,9 +63,10 @@ must write nothing (no alert, no heartbeat).
 
 The payload (one JSON line per cluster, stdout under --dry-run), handed to
 --poster on stdin; exit 0 means the main message was delivered:
-  {kind: "brief", cluster, rail, key, severity: info|warn (warn: a decision, a firing
-   incident, a sync error or an unreadable feed; the poster maps it to the card mark), title, date,
+  {kind: "brief", cluster, rail, key, severity: info|warn (warn: Your call is not empty or an
+   error exists; the poster maps it to the card mark), title, date,
    period_days: 1, next_due, attention: bool (a decision item exists),
+   footer_tail: bool (a Details day: keep the rail's footer tail text),
    fields: [{name, value}]  the main message, one line per field
    details: [line, ...]     the follow-up message, absent when empty
    carried_error?, data: {...}}
@@ -76,11 +83,11 @@ Flags (the source flags are `board health run`'s: --registry --cluster-map
                         message is the decision lines alone
   --every-days N        cadence (default 1); a failed post is not stamped, so it
                         stays due and rides `carried_error`
-  --boards-every-days N how often the boards section shows without a reason (default 3)
-  --show-boards         always show the boards section (a preview)
+  --boards-every-days N accepted and ignored (the boards ride the Monday Details now)
+  --show-boards         treat the day as a Details day (a preview)
   --main-chars N        budget for the main message (default 1250, under the poster's 1380
-                        cap with its footer): over it, the boards block moves to the details,
-                        then the incident rows past the first
+                        cap with its footer): over it, the Your call lines past the first
+                        collapse into the `+N more` line
   --poster CMD          delivers one payload on stdin
   --cluster C           only this cluster
   --force               ignore the cadence
@@ -101,6 +108,7 @@ import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -115,8 +123,10 @@ DAY = H.DAY
 ORIGIN_ID_RE = re.compile(r"^origin:\s*([^\s:]+):(\S+)", re.M)
 TERMINAL_ROW = ("shipped", "dropped", "done", "closed")
 MAX_DECISIONS = 3
-MAX_INCIDENTS = 3
 HAND = "👉"
+ROBOT = "🤖"
+AGENT = "chonky"
+VN_TZ = timezone(timedelta(hours=7))
 
 
 def log(msg):
@@ -190,7 +200,8 @@ def read_incidents(cmd, read_only=False):
             rows.append({"id": _text(o.get("id"), 40), "label": _text(o.get("label"), 120),
                          "host": _text(o.get("host"), 60), "url": _url(o.get("url")),
                          "age": _text(o.get("age"), 20), "firing": bool(o.get("firing")),
-                         "needs_you": bool(o.get("needs_you")), "question": _text(o.get("question"), 160)})
+                         "needs_you": bool(o.get("needs_you")), "question": _text(o.get("question"), 160),
+                         "action": _text(o.get("action"), 40)})
     decisions = [{"id": _text(d.get("id"), 40), "url": _url(d.get("url")), "question": _text(d.get("question"), 200)}
                  for d in raw.get("decisions") or [] if isinstance(d, dict) and d.get("question")]
     bots = {str(k)[:40]: v for k, v in (raw.get("bots") or {}).items()
@@ -206,10 +217,29 @@ def what_of(o):
     return label + (f" @ `{o['host']}`" if o["host"] else "")
 
 
-def incident_line(o):
+FACTS_RE = re.compile(r"\b(fired|quiet)\b")
+QUESTION_TAIL_RE = re.compile(r"\s*[,.;:]?\s*[^,.;:?]*\?$")
+
+
+def facts_of(question):
+    """The row's question minus a trailing question or hint: `fired 3x · quiet 5d, close?` becomes
+    `fired 3x, quiet 5d`; `fired 2x, quiet 1d · some hint` becomes `fired 2x, quiet 1d`. A text with
+    no fired or quiet count (`<hint>. Act or close?`) carries no facts."""
+    q = QUESTION_TAIL_RE.sub("", question.strip()).strip()
+    parts = q.split(" · ")
+    if len(parts) > 1 and not FACTS_RE.match(parts[-1]):
+        q = " · ".join(parts[:-1])
+    return q.replace(" · ", ", ") if FACTS_RE.search(q) else ""
+
+
+def decision_row(o):
+    """A needs_you incident row as a Your call line: its action leads when it has one."""
     ident = link(o["id"], o["url"]) if o["id"] else ""
-    parts = [p for p in (o["age"], ident, what_of(o)) if p]
-    return " ".join(parts) + (" · firing" if o["firing"] else "")
+    if o["action"]:
+        facts = facts_of(o["question"])
+        lead = f"{o['action']} {ident}".strip() + ":"
+        return f"{lead} {what_of(o)}" + (f" ({facts})" if facts else "")
+    return f"{ident} {what_of(o)}: {bold_question(o['question'] or 'Act or close?')}".strip()
 
 
 # --- ids as links ------------------------------------------------------------------------
@@ -329,6 +359,14 @@ def merged_board_line(slug, b, warn):
     return text
 
 
+def triage_action(slug, waiting, oldest_days, board):
+    """`Triage N <board> cards waiting Nd: "<title>", "<title>"`: the two oldest triage cards by
+    title, none when the reader gave no titles."""
+    picked = [c for c in (board or {}).get("cards", []) if c.get("triage")][:2]
+    titles = ": " + ", ".join(f'"{short_title(c["title"])}"' for c in picked) if picked else ""
+    return f"Triage {waiting} {slug} cards waiting {oldest_days}d{titles}"
+
+
 def board_lines_of(fields, kanban, listed):
     """The boards block lines from the health fields (hub, board, fault, extra, in order). A listed
     board's count line absorbs its triage warning; a warning for a board with no count line stays
@@ -363,7 +401,8 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
 
     paths = {r["name"]: r["path"] for r in rows}
 
-    # decisions: each line carries its id as a link and its question in bold
+    # Your call: each line carries its id as a link; order is drift, incident rows, hook decisions,
+    # the operator's 👉 lines, board triage, stale kit skills
     decisions = []
     hub_name = (args.hub_map.get(cluster) or [None])[0]
     reader = (args.kanban_map.get(cluster) or [None])[0]
@@ -379,20 +418,28 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         inc, inc_err = read_incidents(hook, args.dry_run or args.no_state)
     open_rows = inc["open"] if inc else []
     hook_decision_ids = {d["id"] for d in (inc["decisions"] if inc else []) if d["id"]}
-    # a row already asked about under Needs your decision is not listed again as an incident
-    shown_rows = [o for o in open_rows if not o["needs_you"] and not (o["id"] and o["id"] in hook_decision_ids)]
+    # a row already asked about under Your call is not counted again as an incident the agent works
+    worked_rows = [o for o in open_rows if not o["needs_you"] and not (o["id"] and o["id"] in hook_decision_ids)]
     for o in open_rows:
         if o["needs_you"]:
-            ident = link(o["id"], o["url"]) if o["id"] else ""
-            decisions.append(f"{ident} {what_of(o)}: {bold_question(o['question'] or 'Act or close?')}".strip())
+            decisions.append(decision_row(o))
     for d in (inc["decisions"] if inc else []):
         ident = link(d["id"], d["url"]) if d["id"] else ""
         decisions.append(f"{ident} {bold_question(d['question'])}".strip())
 
-    # an operator line that opens with the pointing hand is a decision every day, whatever the boards clock says
+    # an operator line that opens with the pointing hand is a decision, with the robot a Handled fragment;
+    # every other operator line is a Details line
     hand_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(HAND)]
+    robot_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(ROBOT)]
     for f in hand_lines:
         decisions.append(f["value"][len(HAND):].strip())
+    handled_hooks = [t for t in (f["value"][len(ROBOT):].strip() for f in robot_lines) if t]
+
+    # a board past its triage threshold is a card-triage action
+    for f in hp["fields"]:
+        t = TRIAGE_FAULT_RE.match(f["value"]) if f["name"] == "fault" else None
+        if t:
+            decisions.append(triage_action(t.group(1), int(t.group(2)), int(t.group(3)), kanban.get(t.group(1))))
 
     # a Hermes profile linked to this kit whose skills are out of date: the sweep records
     # the comparison each tick, and a brief with no record compares now
@@ -406,103 +453,95 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     only = cluster in set(args.decisions_only or [])
     feed_faults = ([f"⚠️ incident feed unreadable: {inc_err}"] if inc_err else []) + (inc["faults"] if inc else [])
 
-    # health lines, grouped: boards, then sync; an id in a flapping line becomes a link
+    # an id in a flapping line becomes a link
     def linkify(line):
         m = re.match(r"^(⚠️ )([A-Z]+-[0-9]+)( flapping between the board and a spoke \()([^)]+)(\))$", line)
         if m and m.group(4) in paths:
             return m.group(1) + row_link(paths[m.group(4)], m.group(2)) + m.group(3) + m.group(4) + m.group(5)
         return line
 
-    boards_lines = board_lines_of([f for f in hp["fields"] if f not in hand_lines], kanban, set(args.board_map.get(cluster, [])))
-    sync_lines = [linkify(f["value"]) for f in hp["fields"] if f["name"] in ("sync", "attention")]
-    bot_items = [f"{k} {v}" for k, v in (inc["bots"].items() if inc else []) if v]
-    if archived_total:
-        bot_items.append(f"archived {archived_total}")
-    bots = bot_items + [f"sync errors {sync_errors}"]
-    sync_healthy = bool(sync_lines) and not any(f["name"] == "attention" for f in hp["fields"]) \
-        and not any("❌" in ln for ln in sync_lines)
+    attention = [linkify(f["value"]) for f in hp["fields"] if f["name"] == "attention"]
+    error_lines = [ln if ln.startswith(("⚠️", "⛔", "❌")) else f"⚠️ {ln}" for ln in attention + feed_faults]
+    errors = bool(error_lines)
 
-    boards_last = bstate.get("boards_last", {}).get(cluster)
-    slow_clock = boards_last is None or now - boards_last >= args.boards_every_days * DAY - 1800
-    show_boards = bool(not only and (args.show_boards or len(decisions) > len(hand_lines) or slow_clock))
+    # Details day: Monday in Vietnam, or a preview
+    weekly = bool(not only and (args.show_boards or datetime.fromtimestamp(now, VN_TZ).weekday() == 0))
 
-    # blocks of the main message in priority order; a block is (name, heading, lines)
+    # the one Handled line: hook fragments, incidents the agent works, then sync and bots state
+    handled = list(handled_hooks)
+    if worked_rows:
+        handled.append(f"{len(worked_rows)} incident" + ("" if len(worked_rows) == 1 else "s") + f" with {AGENT}")
+    state = []
+    if sync_errors:
+        state.append(f"❌ sync errors {sync_errors}")
+    elif attention:
+        state.append(f"⚠️ sync warnings {len(attention)}")
+    if inc_err:
+        state.append("❌ feed unreadable")
+    elif inc and inc["faults"]:
+        state.append(f"❌ feed faults {len(inc['faults'])}")
+    handled += state or ["sync and bots clean"]
+
+    # the main message: blocks of (name, heading, lines)
+    def your_call(shown):
+        lines = [f"• {d}" for d in decisions[:shown]]
+        if len(decisions) > shown:
+            lines.append(f"+{len(decisions) - shown} more")
+        return ["decision", f"### 🙋 Your call ({len(decisions)})", lines]
+
     main = []
-    more = []   # blocks that ride the details message
     if decisions:
-        main.append(["decision", f"### 🙋 Needs your decision ({len(decisions)})", [f"• {d}" for d in decisions[:MAX_DECISIONS]]])
-        if len(decisions) > MAX_DECISIONS:
-            main[-1][2].append(f"+{len(decisions) - MAX_DECISIONS} more in details")
-            more.append(["decision", "### 🙋 More decisions", [f"• {d}" for d in decisions[MAX_DECISIONS:]]])
-    elif not only and not feed_faults:
-        main.append(["clear", "### ✅ Nothing needs you", []])
+        main.append(your_call(MAX_DECISIONS))
+    elif not only and not errors:
+        main.append(["clear", "### ✅ Nothing needs you today", []])
     if not only:
-        inc_lines = [f"• {incident_line(o)}" for o in shown_rows[:MAX_INCIDENTS]]
-        if len(shown_rows) > MAX_INCIDENTS:
-            inc_lines.append(f"+{len(shown_rows) - MAX_INCIDENTS} more in details")
-            more.append(["incident", "### 🔥 More incidents", [f"• {incident_line(o)}" for o in shown_rows[MAX_INCIDENTS:]]])
-        inc_lines += [ln if ln.startswith(("⚠️", "⛔", "❌")) else f"⚠️ {ln}" for ln in feed_faults]
-        if shown_rows:
-            main.append(["incident", f"### 🔥 Open incidents ({len(shown_rows)})", inc_lines])
-        elif inc_lines:
-            main.append(["incident", "### 🔥 Incident feed", inc_lines])
-        if boards_lines:
-            (main if show_boards else more).append(["board", "### 🗂️ Boards", boards_lines])
-        bots_line = "🤖 24h: " + " · ".join(bots)
-        if sync_healthy:
-            main.append(["bots", "", ["🔄 sync ✅ · 🤖 " + ", ".join(bot_items + [f"{sync_errors} errors"])]])
-        elif show_boards and sync_lines:
-            main.append(["bots", "### 🔄 Sync · 🤖 Bots", sync_lines + [bots_line]])
-        else:
-            if sync_lines:
-                more.append(["sync", "### 🔄 Sync", sync_lines])
-            main.append(["bots", "### 🤖 Bots", [bots_line]])
-        extra = inc["details"] if inc else []
-        if extra:
-            more.append(["more", "### ℹ️ Details", extra])
+        main.append(["handled", "", ["🤖 Handled: " + " · ".join(handled)]])
 
-    # keep the main message under the poster's cap: the boards block goes to the details first, then
-    # the incident rows past the first
+    # keep the main message under the poster's cap: Your call lines past the first collapse
     def size(blocks):
         return sum(len(h) + 1 + sum(len(x) + 1 for x in ls) + 1 for _, h, ls in blocks)
 
-    if size(main) > args.main_chars:
-        board_blk = next((b for b in main if b[0] == "board"), None)
-        if board_blk:
-            main.remove(board_blk)
-            more.append(board_blk)
-            show_boards = False
-    if size(main) > args.main_chars:
-        inc_blk = next((b for b in main if b[0] == "incident" and len(b[2]) > 2), None)
-        if inc_blk:
-            kept, rest = inc_blk[2][:1], [x for x in inc_blk[2][1:] if x.startswith("• ")]
-            if rest:
-                inc_blk[2] = kept + [f"+{len(rest)} more in details"]
-                more.append(["incident", "### 🔥 More incidents", rest])
+    shown = min(len(decisions), MAX_DECISIONS)
+    while decisions and size(main) > args.main_chars and shown > 1:
+        shown -= 1
+        main[0] = your_call(shown)
 
     def render(blocks):
         out = []
         for name, head, ls in blocks:
-            if out:
+            if out and name != "handled":
                 out.append(("gap", ""))
             if head:
                 out.append((f"{name}-head", head))
             out += [(name, x) for x in ls]
         return out
 
+    # Details: the weekly view, or the error lines alone
+    detail_lines = list(error_lines)
+    if weekly:
+        fields_for_boards = [f for f in hp["fields"] if f not in hand_lines and f not in robot_lines]
+        detail_lines += board_lines_of(fields_for_boards, kanban, set(args.board_map.get(cluster, [])))
+        bot_items = [f"{k} {v}" for k, v in (inc["bots"].items() if inc else []) if v]
+        if archived_total:
+            bot_items.append(f"archived {archived_total}")
+        if bot_items:
+            detail_lines.append("🤖 bots: " + ", ".join(bot_items))
+        detail_lines += inc["details"] if inc else []
+    details = ["### ℹ️ Details"] + detail_lines if detail_lines and not only else []
+
     fields = [{"name": n, "value": v} for n, v in render(main)]
-    details = [v for _, v in render(more)]
 
     day = H.day_stamp(now)
     key = hashlib.sha256(f"brief|{cluster}|{day}".encode()).hexdigest()[:32]
     payload = {
         "kind": "brief", "cluster": cluster, "rail": rail, "key": key,
-        "severity": "warn" if decisions or sync_errors or feed_faults or any(o["firing"] for o in shown_rows) else "info",
+        "severity": "warn" if decisions or errors else "info",
         "title": f"Daily brief · {cluster}", "date": day, "period_days": 1,
         "next_due": H.day_stamp(now + DAY), "attention": bool(decisions),
+        "footer_tail": weekly,
         "fields": fields,
         "data": {"decisions": decisions, "drift": [d["id"] for d in drift], "open_incidents": len(open_rows),
-                 "boards_shown": show_boards, "archived": archived_total, "sync_errors": sync_errors,
+                 "boards_shown": weekly, "archived": archived_total, "sync_errors": sync_errors,
                  "bots": inc["bots"] if inc else {}},
     }
     if details:
@@ -511,7 +550,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     if carried:
         payload["carried_error"] = carried
         payload["fields"].append({"name": "retry", "value": "↻ retry: carried forward after a failed post"})
-    return payload, kanban, show_boards
+    return payload, kanban, weekly
 
 
 # --- run -----------------------------------------------------------------------------
