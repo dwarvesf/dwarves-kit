@@ -35,7 +35,7 @@ The kit owns the logic. This skill only says which command answers which questio
 
 1. Run the command from the table. The operator's flags come from the kit config file (`$DWARVES_BOARD_CONFIG`, else `~/.config/dwarves-kit/board.json`), so no flags beyond the ones shown are needed.
 2. Each output line is one JSON payload per cluster. The lines you read are in `.fields[].value`; `brief` payloads also carry `.details`.
-3. A board over its threshold is a field that reads `<board>: N waiting in triage, oldest Nd`, and a line `+N more boards over threshold` when there are more than three. Count those. No such field means no board is over threshold.
+3. A board over its threshold is a field that reads `<board>: N waiting in triage, oldest Nd` in a `board health` payload. In a `board brief` payload the warning is folded into the board line (`⚠️ <board>: N open (triage M oldest Nd, ...)`). A line `+N more boards over threshold` when there are more than three. Count those. No such field means no board is over threshold.
 4. A `needs your decision` block lists questions for the operator. Repeat them as asked. Never answer one yourself.
 5. Say what you ran in one short line, then the answer.
 
