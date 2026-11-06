@@ -250,10 +250,10 @@ its health state). Per cluster, in this order, each section left out when empty:
 
 | Section | Source |
 |---|---|
-| needs your decision | hub rows whose state and mirror card disagree in a way the mirror cannot settle (`ID hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?`), plus incident rows the hook marks `needs_you`, plus the hook's explicit `decisions`. Three lines, then `+N more in details`. With none and no fault, one line says nothing needs the operator. |
-| open incidents | the `--incidents C=CMD` hook: count, three rows, the hook's fault lines. An unreadable hook is a fault line, never an all-clear. |
-| boards | the health lines (hub, board, fault, sync, extra, attention). Shown when a decision exists or `--boards-every-days` (default 3) has passed; otherwise they ride the details. A sync failure does not bring them back: the bots line counts it, and instant alerts stay on their own rails. |
-| bots | one line: the hook's bot counts, cards archived since the last delivered brief, sync errors |
+| needs your decision | hub rows whose state and mirror card disagree in a way the mirror cannot settle (`ID hub/mirror drift: board says shipped, the Hermes card is still open. Ship or reopen?`), plus incident rows the hook marks `needs_you`, plus the hook's explicit `decisions`. An operator `--line` that opens with 👉 is a decision too, every day, after the incident decisions (it does not bring the boards back). Three lines, then `+N more in details`. With none and no fault, one line says nothing needs the operator. |
+| open incidents | the `--incidents C=CMD` hook: count, three rows, the hook's fault lines. A row already shown under needs your decision is not repeated; with no row left the block is dropped. An unreadable hook is a fault line, never an all-clear. |
+| boards | the health lines (hub, board, fault, extra). A board's count line and its triage warning are one line (`⚠️ df-default: 5 open (triage 2 oldest 15d, blocked 2, ready 1) · stale: "Fix X", "Y"`), with up to three stale or triage card titles of 40 chars when the reader gives titles. Shown when a decision exists or `--boards-every-days` (default 3) has passed; otherwise they ride the details. A sync failure does not bring them back: the bots line counts it, and instant alerts stay on their own rails. |
+| sync and bots | healthy: one headingless line (`🔄 sync ✅ · 🤖 archived 5, 0 errors`). Any sync error or warning keeps two lines under `### 🔄 Sync · 🤖 Bots` (or `### 🤖 Bots` with the sync line in the details): the hook's bot counts, cards archived since the last delivered brief, sync errors. The details field is `ℹ️ Details`. |
 
 The incident hook prints one JSON object, every key optional, so any operator's
 incident source fits:

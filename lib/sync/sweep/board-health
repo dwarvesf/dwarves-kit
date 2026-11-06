@@ -305,8 +305,8 @@ ORIGIN_RE = re.compile(r"^origin:\s*([^\s:]+):", re.M)
 
 
 def kanban_stats(cmd, stale_days, now, last_run=None, detail=()):
-    """Per board: open, stale, triage, status mix, mirror cards per origin repo, and
-    tickets created since `last_run`. Cards are listed only for boards with open
+    """Per board: open, stale, triage, status mix, mirror cards per origin repo, the
+    three oldest stale or triage cards (title, age), and tickets created since `last_run`. Cards are listed only for boards with open
     cards, or named in `detail`."""
     boards = {}
     for b in kanban_json(cmd, ["boards", "list", "--json"]):
@@ -315,7 +315,7 @@ def kanban_stats(cmd, stale_days, now, last_run=None, detail=()):
         counts = b.get("counts") or {}
         open_n = sum(n for st, n in counts.items() if st not in ("done", "archived"))
         info = {"open": open_n, "stale": 0, "oldest_days": 0, "triage": 0, "triage_oldest_days": 0,
-                "by_status": {}, "origins": {}, "new_since": 0,
+                "by_status": {}, "origins": {}, "new_since": 0, "cards": [],
                 "done": counts.get("done", 0), "archived_total": counts.get("archived", 0)}
         if open_n or b["slug"] in detail:
             for c in kanban_json(cmd, ["--board", b["slug"], "list", "--json"]):
@@ -328,14 +328,18 @@ def kanban_stats(cmd, stale_days, now, last_run=None, detail=()):
                 age = max(0, int((now - last) // DAY))
                 info["oldest_days"] = max(info["oldest_days"], age)
                 info["by_status"][st] = info["by_status"].get(st, 0) + 1
-                if now - last > stale_days * DAY:
+                is_stale = now - last > stale_days * DAY
+                if is_stale:
                     info["stale"] += 1
+                if (is_stale or st == "triage") and c.get("title"):
+                    info["cards"].append({"title": str(c["title"]), "age": age, "stale": is_stale, "triage": st == "triage"})
                 if st == "triage":
                     info["triage"] += 1
                     info["triage_oldest_days"] = max(info["triage_oldest_days"], age)
                 m = ORIGIN_RE.search(c.get("body") or "")
                 if m:
                     info["origins"][m.group(1)] = info["origins"].get(m.group(1), 0) + 1
+        info["cards"] = sorted(info["cards"], key=lambda x: -x["age"])[:3]
         boards[b["slug"]] = info
     return boards
 
