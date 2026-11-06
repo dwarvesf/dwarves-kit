@@ -22,6 +22,7 @@
 #   AC13 no duplicate rows: a decision row is not an incident row; an emptied block is dropped
 #   AC14 boards: count line and triage warning are one line, with up to 3 card titles (40 chars)
 #   AC15 healthy sync and bots are one line; any error keeps two; Details drops the archived count
+#   AC16 a hook line that opens with the pointing hand is a decision, every day; other hook lines stay in Boards
 #   AC12 formatting: small headings, a blank line between sections, ids as masked links with the
 #        preview suppressed (inline code with no URL), the question in bold, hosts in inline code,
 #        the main message kept under --main-chars
@@ -116,6 +117,14 @@ cat "$FAKE_INC_FILE"
 EOF
 chmod +x "$WORK/incidents"
 
+# operator line hook stub: prints $FAKE_LINES, one line per row
+cat > "$WORK/linehook" <<'EOF'
+#!/usr/bin/env bash
+[ -n "${FAKE_LINES:-}" ] && printf '%s\n' "$FAKE_LINES"
+exit 0
+EOF
+chmod +x "$WORK/linehook"
+
 cat > "$WORK/poster" <<'EOF'
 #!/usr/bin/env bash
 cat >> "$FAKE_POSTED"; echo >> "$FAKE_POSTED"
@@ -144,7 +153,7 @@ run() {  # run <now> [extra args]: the sweep ticks first, as it does every hour
   fi
   python3 "$BRIEF" run --registry "$WORK/boards.txt" --cluster-map "$MAP" --state-file "$DS" \
     --health-state-file "$HS" --poster "$WORK/poster" --kanban "alpha=$WORK/kanban" --hub alpha=crew \
-    --board alpha=work --incidents "alpha=$WORK/incidents" --now "$now" "$@" 2>"$WORK/run.err"
+    --board alpha=work --incidents "alpha=$WORK/incidents" --line "alpha=$WORK/linehook" --now "$now" "$@" 2>"$WORK/run.err"
 }
 last() { tail -n 1 "$FAKE_POSTED"; }
 npost() { grep -c . "$FAKE_POSTED"; }
@@ -340,6 +349,34 @@ eq "a sync error makes the card warn" "$(jq -r '.severity' <<<"$(last)")" "warn"
 FAKE_SYNC_RC=1 FAKE_CARDS="$CLEAN" run $((NOW + 2 * DAY)) --cluster alpha
 has "hidden boards: the sync line rides the details" "$(det)" "### 🔄 Sync"
 has "and the bots keep their heading" "$(msg)" "### 🤖 Bots"
+
+echo "case hook lines (a pointing-hand line is a decision, other lines stay in Boards):"
+fresh
+FAKE_LINES="👉 desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d: keep task deadlines (followup-track) (details in Desk self-review)" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+FAKE_LINES="👉 desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d: keep task deadlines (followup-track) (details in Desk self-review)" FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
+has "a day with hidden boards: the line is a decision in the main message" "$(msg)" "### 🙋 Needs your decision (1)"
+has "the line shows under the decision head" "$(msg)" "• desks: 42 turns on 4 of 6 · 2 need you: R-14 open 2d"
+lacks "the marker itself is not repeated" "$(msg)" "👉"
+lacks "and the boards stay hidden that day" "$(msg)" "🗂️ crew"
+lacks "and it is not in the boards details" "$(det)" "desks:"
+eq "the card warns and flags attention" "$(jq -r '[.severity, .attention] | join(" ")' <<<"$(last)")" "warn true"
+eq "the data lists it" "$(jq -r '.data.decisions | length' <<<"$(last)")" "1"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t1","label":"alpha one","needs_you":true,"question":"Fix or close?"}]}
+EOF
+FAKE_LINES="👉 desks: 1 needs you" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "after the incident decisions, counted in the head" "$(msg)" "### 🙋 Needs your decision (2)"
+eq "the incident decision comes first" "$(msg | grep -n -e 'alpha one' -e 'desks: 1' | cut -d: -f1 | tr '\n' ' ')" "2 3 "
+fresh
+FAKE_LINES="💼 desks: 42 turns on 4 of 6, all clear" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "a clear-day line stays a boards line" "$(msg)" "💼 desks: 42 turns on 4 of 6, all clear"
+has "and nothing needs you" "$(msg)" "### ✅ Nothing needs you"
+FAKE_LINES="💼 desks: 42 turns on 4 of 6, all clear" FAKE_CARDS="$CLEAN" run $((NOW + DAY)) --cluster alpha
+has "on a hidden-boards day it rides the details" "$(det)" "💼 desks: 42 turns on 4 of 6, all clear"
+fresh
+FAKE_LINES="👉 desks: 1 needs you" FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha --decisions-only alpha
+eq "decisions-only posts it" "$(npost)" "1"
 
 echo "case hook failure is a fault, never an all-clear:"
 fresh

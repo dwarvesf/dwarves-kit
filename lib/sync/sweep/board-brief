@@ -17,6 +17,8 @@ Message order, each section omitted when empty, each under a Discord small headi
                         are stale: re-run board hermes link`, from `board hermes check`).
                         Three at most, then `+N more in details`. With none and no fault,
                         the heading `Nothing needs you` stands alone.
+                        An operator `--line` that opens with 👉 is one of these too, after the
+                        incident decisions, every day; it does not bring the boards back.
   Open incidents        from the --incidents hook (see below): the count, up to three rows,
                         the hook's own fault lines. A row already shown under Needs your
                         decision is not repeated here; with no row left the block is dropped.
@@ -114,6 +116,7 @@ ORIGIN_ID_RE = re.compile(r"^origin:\s*([^\s:]+):(\S+)", re.M)
 TERMINAL_ROW = ("shipped", "dropped", "done", "closed")
 MAX_DECISIONS = 3
 MAX_INCIDENTS = 3
+HAND = "👉"
 
 
 def log(msg):
@@ -386,6 +389,11 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         ident = link(d["id"], d["url"]) if d["id"] else ""
         decisions.append(f"{ident} {bold_question(d['question'])}".strip())
 
+    # an operator line that opens with the pointing hand is a decision every day, whatever the boards clock says
+    hand_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(HAND)]
+    for f in hand_lines:
+        decisions.append(f["value"][len(HAND):].strip())
+
     # a Hermes profile linked to this kit whose skills are out of date: the sweep records
     # the comparison each tick, and a brief with no record compares now
     links = health.get("hermes_links")
@@ -405,7 +413,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
             return m.group(1) + row_link(paths[m.group(4)], m.group(2)) + m.group(3) + m.group(4) + m.group(5)
         return line
 
-    boards_lines = board_lines_of(hp["fields"], kanban, set(args.board_map.get(cluster, [])))
+    boards_lines = board_lines_of([f for f in hp["fields"] if f not in hand_lines], kanban, set(args.board_map.get(cluster, [])))
     sync_lines = [linkify(f["value"]) for f in hp["fields"] if f["name"] in ("sync", "attention")]
     bot_items = [f"{k} {v}" for k, v in (inc["bots"].items() if inc else []) if v]
     if archived_total:
@@ -416,7 +424,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
 
     boards_last = bstate.get("boards_last", {}).get(cluster)
     slow_clock = boards_last is None or now - boards_last >= args.boards_every_days * DAY - 1800
-    show_boards = bool(not only and (args.show_boards or decisions or slow_clock))
+    show_boards = bool(not only and (args.show_boards or len(decisions) > len(hand_lines) or slow_clock))
 
     # blocks of the main message in priority order; a block is (name, heading, lines)
     main = []
