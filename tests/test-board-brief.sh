@@ -242,6 +242,10 @@ has "a long rule name is not masked" "$(msg)" "hermes_state_registry-crit @ \`he
 has "hex runs are masked" "$(msg)" "leak [redacted]"
 has "secret references are masked" "$(msg)" "[ref-redacted]"
 has "webhook URLs are masked" "$(msg)" "[webhook-redacted]"
+fresh
+FAKE_LINES="🤖 closed 1 website chat ([memo.d.foundation, 15 days](<https://discord.com/channels/462663954813157376/1562522344654901299>)) token QWxhZGRpbjpvcGVuIHNlc2FtZQQWxhZGRpbjpvcGVuIHNlc2FtZQ." FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
+has "a Discord channel link in a hook line is kept whole" "$(msg)" "(<https://discord.com/channels/462663954813157376/1562522344654901299>)"
+has "a base64 run beside it is still masked" "$(msg)" "token [redacted]"
 
 echo "case formatting (headings, blank lines, links, bold question, code hosts):"
 fresh
