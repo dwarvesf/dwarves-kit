@@ -306,7 +306,7 @@ ORIGIN_RE = re.compile(r"^origin:\s*([^\s:]+):", re.M)
 
 def kanban_stats(cmd, stale_days, now, last_run=None, detail=()):
     """Per board: open, stale, triage, status mix, mirror cards per origin repo, the
-    three oldest stale or triage cards (title, age), and tickets created since `last_run`. Cards are listed only for boards with open
+    oldest stale and oldest triage cards, three of each (title, age), and tickets created since `last_run`. Cards are listed only for boards with open
     cards, or named in `detail`."""
     boards = {}
     for b in kanban_json(cmd, ["boards", "list", "--json"]):
@@ -339,7 +339,16 @@ def kanban_stats(cmd, stale_days, now, last_run=None, detail=()):
                 m = ORIGIN_RE.search(c.get("body") or "")
                 if m:
                     info["origins"][m.group(1)] = info["origins"].get(m.group(1), 0) + 1
-        info["cards"] = sorted(info["cards"], key=lambda x: -x["age"])[:3]
+        # the three oldest stale cards and the three oldest triage cards, oldest first, so a triage
+        # action can name its cards when older stale ones would fill the list
+        ranked, kept, taken = sorted(info["cards"], key=lambda x: -x["age"]), [], {"stale": 0, "triage": 0}
+        for c in ranked:
+            kinds = [k for k in ("stale", "triage") if c[k] and taken[k] < 3]
+            if kinds:
+                kept.append(c)
+                for k in kinds:
+                    taken[k] += 1
+        info["cards"] = kept
         boards[b["slug"]] = info
     return boards
 
@@ -359,7 +368,7 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     for cmd in args.line_map.get(cluster, []):
         try:
             r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=120)
-            extra = [redact(l, 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
+            extra = [redact(l, 2000 if l.lstrip().startswith(("👉", "🤖")) else 400) for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
             if r.returncode != 0:
                 log(f"WARN line hook exited {r.returncode} for {cluster}")
         except (OSError, subprocess.TimeoutExpired):
