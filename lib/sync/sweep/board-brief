@@ -9,17 +9,19 @@ replaces them.
 
 Message order, separated by a blank line only where a heading starts:
 
-  Your call (N)         `### 🙋 Your call (N)`, one bullet per item, in this order: hub/mirror
-                        drift (`ID hub/mirror drift: ... **Ship or reopen?**`); incident rows the
-                        --incidents hook marks `needs_you`, as `<action> <id>: <label> (<facts>)`
-                        when the row carries an `action` (<= 40 chars), else `<id> <label>:
-                        <question>` with the closing question in bold; the hook's explicit
-                        `decisions`; an operator `--line` that opens with 👉 (marker dropped); a
-                        board past its triage threshold, as `Triage N <board> cards waiting Nd:
-                        "<title>", "<title>"` (two titles at most, 40 chars each); a linked Hermes
-                        profile whose kit skills are stale (`board hermes check`). Three lines
-                        show, the rest is one `+N more` line; the count in the head is the whole
-                        list. With none and no error, `### ✅ Nothing needs you today` stands
+  Your call (N)         `### 🙋 Your call (N)`, one bullet per item, most urgent first: an operator
+                        `--line` that opens with 👉 and holds ` by <Day D Mon>` (marker dropped),
+                        nearest date first; incident rows the --incidents hook marks `needs_you`,
+                        as `<action> <id>: <label> (<facts>)` when the row carries an `action`
+                        (<= 40 chars), else `<id> <label>: <question>` with the closing question
+                        in bold, "Triage or map" before "Close"; the hook's explicit `decisions`;
+                        any other 👉 line; hub/mirror drift (`ID hub/mirror drift: ... **Ship or
+                        reopen?**`); a board past its triage threshold, as `Triage N <board> cards
+                        waiting Nd: "<title>", "<title>"` (two titles at most, 40 chars each, the
+                        `untrusted ` marker dropped), longest wait first; a linked Hermes profile
+                        whose kit skills are stale (`board hermes check`). Three lines show, the
+                        rest is one `+N more` line, so the cap drops the least urgent; the count
+                        in the head is the whole list. With none and no error, `### ✅ Nothing needs you today` stands
                         alone.
   Handled               ONE line, `🤖 Handled: a · b · c`, directly under the block: the operator
                         `--line` fragments that open with 🤖 (marker dropped), `N incident(s) with
@@ -322,8 +324,13 @@ BOARD_LINE_RE = re.compile(r"^🗂️ (\S+): ")
 TITLE_CHARS = 40
 
 
+UNTRUSTED_RE = re.compile(r"^untrusted\s+", re.I)
+
+
 def short_title(title):
-    t = _text(title, 200).replace('"', "'")
+    """A card title for display: the reader's untrusted-content marker is dropped (the raw title
+    stays in the health data, where a model may read it)."""
+    t = UNTRUSTED_RE.sub("", _text(title, 200)).replace('"', "'")
     return t if len(t) <= TITLE_CHARS else t[:TITLE_CHARS - 1].rstrip() + "…"
 
 
@@ -357,6 +364,26 @@ def merged_board_line(slug, b, warn):
     if b["new_since"]:
         text += f" · {b['new_since']} new ticket" + ("" if b["new_since"] == 1 else "s") + " this period"
     return text
+
+
+MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+DEADLINE_RE = re.compile(r" by (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2}) (" + "|".join(m.title() for m in MONTHS) + r")\b")
+
+
+def deadline_of(text, now):
+    """The date ordinal of a ` by <Day D Mon>` deadline in a line, else 0. The year is the current
+    Vietnam year, or the next when that date is more than two months past."""
+    m = DEADLINE_RE.search(text)
+    if not m:
+        return 0
+    today = datetime.fromtimestamp(now, VN_TZ).date()
+    try:
+        due = today.replace(month=MONTHS.index(m.group(2).lower()) + 1, day=int(m.group(1)))
+        if (today - due).days > 60:
+            due = due.replace(year=today.year + 1)
+    except ValueError:
+        return 0
+    return due.toordinal()
 
 
 def triage_action(slug, waiting, oldest_days, board):
@@ -401,16 +428,16 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
 
     paths = {r["name"]: r["path"] for r in rows}
 
-    # Your call: each line carries its id as a link; order is drift, incident rows, hook decisions,
-    # the operator's 👉 lines, board triage, stale kit skills
-    decisions = []
+    # Your call: each line carries its id as a link. Lines sort by urgency (see call_rank); the cap
+    # applies after the sort, so the overflow drops the least urgent
+    calls = []   # (sort key, text), in collection order
     hub_name = (args.hub_map.get(cluster) or [None])[0]
     reader = (args.kanban_map.get(cluster) or [None])[0]
     drift = []
     if hub_name and reader and hub_name in paths:
         drift = mirror_drift(reader, hub_name, paths[hub_name])
     for d in drift:
-        decisions.append(f"{row_link(paths[hub_name], d['id'])} hub/mirror drift: {d['what']}. **Ship or reopen?**")
+        calls.append(((4, 0), f"{row_link(paths[hub_name], d['id'])} hub/mirror drift: {d['what']}. **Ship or reopen?**"))
 
     inc, inc_err = None, None
     hook = (args.incident_map.get(cluster) or [None])[0]
@@ -422,24 +449,26 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
     worked_rows = [o for o in open_rows if not o["needs_you"] and not (o["id"] and o["id"] in hook_decision_ids)]
     for o in open_rows:
         if o["needs_you"]:
-            decisions.append(decision_row(o))
+            calls.append(((1, 1 if o["action"] == "Close" else 0), decision_row(o)))
     for d in (inc["decisions"] if inc else []):
         ident = link(d["id"], d["url"]) if d["id"] else ""
-        decisions.append(f"{ident} {bold_question(d['question'])}".strip())
+        calls.append(((2, 0), f"{ident} {bold_question(d['question'])}".strip()))
 
     # an operator line that opens with the pointing hand is a decision, with the robot a Handled fragment;
     # every other operator line is a Details line
     hand_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(HAND)]
     robot_lines = [f for f in hp["fields"] if f["name"] == "extra" and f["value"].startswith(ROBOT)]
     for f in hand_lines:
-        decisions.append(f["value"][len(HAND):].strip())
+        text = f["value"][len(HAND):].strip()
+        due = deadline_of(text, now)
+        calls.append(((0, due), text) if due else ((3, 0), text))
     handled_hooks = [t for t in (f["value"][len(ROBOT):].strip() for f in robot_lines) if t]
 
     # a board past its triage threshold is a card-triage action
     for f in hp["fields"]:
         t = TRIAGE_FAULT_RE.match(f["value"]) if f["name"] == "fault" else None
         if t:
-            decisions.append(triage_action(t.group(1), int(t.group(2)), int(t.group(3)), kanban.get(t.group(1))))
+            calls.append(((5, -int(t.group(3))), triage_action(t.group(1), int(t.group(2)), int(t.group(3)), kanban.get(t.group(1)))))
 
     # a Hermes profile linked to this kit whose skills are out of date: the sweep records
     # the comparison each tick, and a brief with no record compares now
@@ -448,7 +477,8 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         links = HM.check_links()
     for lk in links:
         if lk.get("stale") and (lk.get("cluster") or args.first_cluster) == cluster:
-            decisions.append(f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`")
+            calls.append(((6, 0), f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`"))
+    decisions = [text for _, text in sorted(calls, key=lambda c: c[0])]
 
     only = cluster in set(args.decisions_only or [])
     feed_faults = ([f"⚠️ incident feed unreadable: {inc_err}"] if inc_err else []) + (inc["faults"] if inc else [])

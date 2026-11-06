@@ -92,10 +92,14 @@ cat > "$WORK/kanban" <<'EOF'
 #!/usr/bin/env bash
 [ -n "${FAKE_KANBAN_FAIL:-}" ] && { echo "reader exploded" >&2; exit 3; }
 if [ "$1 $2" = "boards list" ]; then
+  SIDE=''
+  [ -n "${FAKE_SIDE:-}" ] && SIDE=',{"slug":"side","archived":false,"counts":{"triage":1}}'
   cat <<JSON
 [{"slug":"work","archived":false,"counts":{"triage":2,"ready":1,"done":4,"archived":${FAKE_ARCHIVED:-5}}},
- {"slug":"crew","archived":false,"counts":{"ready":4}}]
+ {"slug":"crew","archived":false,"counts":{"ready":4}}${SIDE}]
 JSON
+elif [ "$2" = "side" ]; then
+  printf '[{"id":"s","title":"untrusted Side board card","status":"triage","created_at":%s}]' "$((FAKE_NOW - 6 * 86400))"
 elif [ "$2" = "crew" ]; then
   printf '['; first=1
   IFS=',' read -ra cards <<< "${FAKE_CARDS:-AB-1:ready,AB-2:ready,AB-3:ready,AB-4:ready}"
@@ -504,8 +508,7 @@ fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
 {"open":[{"id":"t1","label":"hb-silent @ box","host":"","needs_you":true,"action":"Close","url":"https://hermes.example/t1","question":"fired 3x · quiet 5d, close?"},
          {"id":"t2","label":"alpha two","needs_you":true,"action":"Triage or map","question":"fired 3x, quiet 5h · new alert kind: map it or close"},
-         {"id":"t3","label":"alpha three","needs_you":true,"action":"Triage or map","question":"fired 9x, quiet 2d"},
-         {"id":"t4","label":"alpha four","needs_you":true,"question":"fired 1x, quiet 1d · hint. Act or close?"}]}
+         {"id":"t3","label":"alpha three","needs_you":true,"action":"Triage or map","question":"fired 9x, quiet 2d"}]}
 EOF
 FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 has "a row with an action reads: action, id link, label, facts" "$(msg)" "• Close [t1](<https://hermes.example/t1>): hb-silent @ \`box\` (fired 3x, quiet 5d)"
@@ -513,8 +516,7 @@ has "form a (quiet 3d or more): the close question is cut, the dot becomes a com
 has "form b (recent): a trailing hint is cut from the facts" "$(msg)" "• Triage or map \`t2\`: alpha two (fired 3x, quiet 5h)"
 has "facts that carry no hint stay whole" "$(msg)" "• Triage or map \`t3\`: alpha three (fired 9x, quiet 2d)"
 lacks "an action row has no bold question" "$(msg)" "**"
-has "the head counts the fourth row" "$(msg)" "### 🙋 Your call (4)"
-has "the cap shows +N more" "$(msg)" "+1 more"
+has "the head counts the rows" "$(msg)" "### 🙋 Your call (3)"
 fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
 {"open":[{"id":"t4","label":"alpha four","needs_you":true,"question":"new alert kind. Act or close?"},
@@ -540,7 +542,38 @@ eq "incident, hook decision, 👉 line and triage action are one merged list of 
 has "counted in one head" "$(msg)" "### 🙋 Your call (4)"
 has "the cap holds at three lines plus +N more" "$(msg)" "+1 more"
 lacks "the +N more line is not a Details block" "$(det)" "Triage"
-eq "the order is incident, hook decision, 👉, triage" "$(msg | grep -n -e 'Close' -e 'fixbox' -e 'Review brainery' | cut -d: -f1 | tr '\n' ' ')" "2 3 4 "
+order=""; for pat in 'Review brainery' 'Close' 'fixbox'; do order="$order$(msg | grep -n -F -- "$pat" | head -n 1 | cut -d: -f1) "; done
+eq "the order is the dated 👉, incident, hook decision; the triage action is cut" "$order" "2 3 4 "
+lacks "the cap dropped the triage action" "$(msg)" "Triage 2"
+
+echo "case Your call order (urgency first; the cap cuts the least urgent):"
+fresh
+cat > "$FAKE_INC_FILE" <<'EOF'
+{"open":[{"id":"t1","label":"alpha one","needs_you":true,"action":"Close","question":"fired 3x, quiet 5d"},
+         {"id":"t2","label":"alpha two","needs_you":true,"action":"Triage or map","question":"fired 1x, quiet 1d"}],
+ "decisions":[{"id":"fixbox","question":"Retry the failed job?"}]}
+EOF
+cat > "$WORK/links.json" <<EOF
+{"links":[{"label":"chief","home":"$WORK/nohome","profile":"p","cluster":"alpha","skills_dir":"$WORK/noskills"}]}
+EOF
+LINES_IN=$'👉 Review brainery [#9](<https://x.example/9>) by Sun 8 Nov, or it parks (2 drafts waiting)\n👉 desks: 1 needs you\n👉 Review brainery [#7](<https://x.example/7>) by Fri 6 Nov, or it parks (1 drafts waiting)'
+FAKE_SIDE=1 DWARVES_HERMES_LINKS="$WORK/links.json" FAKE_LINES="$LINES_IN" run $TUE --cluster alpha --triage-days 1 --stale-days 20
+decs="$(jq -r '.data.decisions[]' <<<"$(last)")"
+order=""
+for pat in '#7' '#9' 'Triage or map' 'Close' 'fixbox' 'desks: 1' 'hub/mirror drift' 'Triage 1 side' 'Triage 2 work' 'kit skills on'; do
+  order="$order$(printf '%s\n' "$decs" | grep -n -F -- "$pat" | head -n 1 | cut -d: -f1) "
+done
+eq "dated 👉 (nearest first), Triage or map, Close, hook decision, other 👉, drift, triage by wait, stale skills" "$order" "1 2 3 4 5 6 7 8 9 10 "
+has "the head counts all ten" "$(msg)" "### 🙋 Your call (10)"
+has "the cap shows the most urgent three" "$(msg)" "• Review brainery [#7]"
+has "and names the rest as a count" "$(msg)" "+7 more"
+lacks "the cap dropped the least urgent from the body" "$(msg)" "kit skills on"
+lacks "and Close is below the cap" "$(msg)" "Close"
+has "triage titles drop the untrusted marker" "$decs" 'Triage 1 side cards waiting 7d: "Side board card"'
+lacks "no untrusted marker in any Your call line" "$decs" "untrusted"
+FAKE_SIDE=1 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha --force --triage-days 1 --stale-days 1
+lacks "nor in the Details board lines" "$(det)" "untrusted"
+eq "the health payload still carries the raw title" "$(FAKE_SIDE=1 python3 "$HEALTH" run --registry "$WORK/boards.txt" --cluster-map "$MAP" --state-file "$DS" --health-state-file "$HS" --kanban "alpha=$WORK/kanban" --hub alpha=crew --board alpha=side --now "$TUE" --force --dry-run 2>/dev/null | jq -r 'select(.cluster == "alpha") | .data.kanban.side.cards[0].title')" "untrusted Side board card"
 
 echo "case cadence:"
 fresh
