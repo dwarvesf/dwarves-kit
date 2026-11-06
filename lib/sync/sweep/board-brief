@@ -321,7 +321,8 @@ def lede_of(items):
     if not phrases:
         return f"▌ {word} {noun} on you today. The bots handled the rest."
     more = n - len(phrases)
-    return f"▌ {word} {noun} on you today: {', '.join(phrases)}" + (f" and {more} more" if more else "") + ". The bots handled the rest."
+    joined = ", ".join(phrases) + f" and {more} more" if more else " and ".join(phrases)
+    return f"▌ {word} {noun} on you today: {joined}. The bots handled the rest."
 
 
 INSTRUCT = {"Close": ("close the ticket.", "an alert to close"),

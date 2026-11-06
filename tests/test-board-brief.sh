@@ -653,7 +653,7 @@ cat > "$FAKE_INC_FILE" <<'EOF'
 EOF
 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha
 has "a firing row is tagged firing" "$(msg)" '• `[firing]` `t3` alpha three'
-has "the lede names a new alert kind and an alert to close" "$(msg)" "▌ Two things wait on you today: a new alert kind to triage, an alert to close. The bots handled the rest."
+has "the lede names a new alert kind and an alert to close" "$(msg)" "▌ Two things wait on you today: a new alert kind to triage and an alert to close. The bots handled the rest."
 fresh
 FAKE_CARDS="$CLEAN" run $TUE --cluster alpha --force --triage-days 2 --stale-days 20
 has "board triage: tag, count title" "$(msg)" $'• `[waiting 4d]` 2 cards wait in work triage'
