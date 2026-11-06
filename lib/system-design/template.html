@@ -120,14 +120,21 @@ td{padding:10px 12px 10px 0;border-bottom:1px solid var(--rule);vertical-align:t
 [class*="tone-"] .t-lane{fill:var(--ti)}
 .boundary{fill:var(--sheet);fill-opacity:.55;stroke:var(--ink-2);stroke-width:1.3}
 .band{stroke:var(--rule);stroke-dasharray:3 5}
+.c4-frame{fill:none;stroke:var(--ink-2);stroke-width:1.3;stroke-dasharray:7 5}
+.c4-frame[class*="tone-"]{fill:var(--tf);fill-opacity:.25;stroke:var(--ts);stroke-width:1.5}
+a.zoom{cursor:pointer} a.zoom:hover .box{stroke-width:2.2}
+.zi{fill:none;stroke:var(--ink-2);stroke-width:1.5;stroke-linecap:round}
+[class*="tone-"] .zi{stroke:var(--ti)}
 .t-lane{font:500 calc(10px * var(--fz)) var(--mono);letter-spacing:.08em;fill:var(--ink-2);text-transform:uppercase}
 .t-sys{font:700 calc(15px * var(--fz)) var(--display);fill:var(--ink)}
 .t-name{font:600 calc(13px * var(--fz)) var(--body);fill:var(--ink)}
 .t-case{font:500 calc(12.5px * var(--fz)) var(--body);fill:var(--ink)}
 .t-note{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2)}
+.t-desc{font:400 calc(11px * var(--fz)) var(--body);fill:var(--ink-2)}
+.t-bnd{font:600 calc(11.5px * var(--fz)) var(--body);fill:var(--ink)}
 .t-stereo{font:italic 400 calc(10.5px * var(--fz)) var(--body);fill:var(--ink-2)}
 .t-edge{font:400 calc(10.5px * var(--fz)) var(--mono);fill:var(--ink-2);paint-order:stroke;stroke:var(--sheet);stroke-width:4px;stroke-linejoin:round}
-:where([class*="tone-"]) :is(.t-name,.t-note,.t-case,.t-stereo){fill:var(--ti)}
+:where([class*="tone-"]) :is(.t-name,.t-note,.t-case,.t-stereo,.t-desc,.t-bnd){fill:var(--ti)}
 .t-rm{fill:var(--rm);text-decoration:line-through}
 .t-new{fill:var(--new)} .t-chg{fill:var(--chg)}
 .edge{fill:none;stroke:var(--ink-2);stroke-width:1.3}
@@ -195,7 +202,8 @@ function fonts(){
   const cs = getComputedStyle(document.documentElement), v = k => cs.getPropertyValue(k).trim();
   const z = parseFloat(v('--fz')) || 1, px = n => (n * z).toFixed(2) + 'px';
   FONT = { name:`600 ${px(13)} ${v('--body')}`, case:`500 ${px(12.5)} ${v('--body')}`, stereo:`italic 400 ${px(10.5)} ${v('--body')}`,
-    note:`400 ${px(10.5)} ${v('--mono')}`, edge:`400 ${px(10.5)} ${v('--mono')}`, col:`400 ${px(11.5)} ${v('--mono')}`, th:`600 ${px(12.5)} ${v('--mono')}`, sys:`700 ${px(15)} ${v('--display')}` };
+    note:`400 ${px(10.5)} ${v('--mono')}`, edge:`400 ${px(10.5)} ${v('--mono')}`, col:`400 ${px(11.5)} ${v('--mono')}`, th:`600 ${px(12.5)} ${v('--mono')}`, sys:`700 ${px(15)} ${v('--display')}`,
+    desc:`400 ${px(11)} ${v('--body')}`, bnd:`600 ${px(11.5)} ${v('--body')}` };
 }
 const meas = (s,k) => { ctx.font = FONT[k]; return ctx.measureText(String(s)).width; };
 // Balanced wrap: one line when it fits in max, else the two-line split with the shortest longer line.
@@ -303,6 +311,111 @@ function rComp(d,M,warn){
     s+=`<g${n.tone?` class="tone-${n.tone}"`:''}><title>${esc(nm(e))}</title>${x}</g>`;
   });
   return svg(L.W,L.H,'Component diagram: '+d.title,s);
+}
+
+/* ---------- c4 ---------- */
+// Sheets by id, set by main() before any figure is drawn, so a zoom link can name its target.
+let SHEETS = {};
+const C4_KIND = { person:'Person', system:'Software System', container:'Container', component:'Component', db:'Container', queue:'Container', node:'Deployment Node' };
+const C4_ORDER = ['person','system','container','component','db','queue','node'];
+const C4_LEGEND = { person:'Person', system:'Software system', container:'Container', component:'Component', db:'Database', queue:'Queue', node:'Deployment node' };
+const C4_BOUND = { system:'System', container:'Container', account:'Account', region:'Region' };
+// One element's outline: a person is a head over shoulders, a db a cylinder, a queue a pipe, a node a box with a back face.
+function c4Shape(kind,b,cls){
+  const x=b.x, y=b.y, w=b.w, h=b.h, cx=x+w/2;
+  if(kind==='person'){
+    const m=h<30, hy=m?4:16, hr=m?3.2:8, by=m?15:38, bw=m?7:15, bh=m?6:12;
+    return R(x,y,w,h,cls,m?3:12)+`<circle cx="${f1(cx)}" cy="${f1(y+hy)}" r="${hr}" class="${cls}"/>`+
+      `<path d="M${f1(cx-bw)},${f1(y+by)} a${bw},${bh} 0 0 1 ${2*bw},0 z" class="${cls}"/>`;
+  }
+  if(kind==='db'){
+    const ry=Math.min(8,h/4);
+    return `<path d="M${f1(x)},${f1(y+ry)} a${f1(w/2)},${f1(ry)} 0 0 1 ${f1(w)},0 v${f1(h-2*ry)} a${f1(w/2)},${f1(ry)} 0 0 1 ${f1(-w)},0 z M${f1(x)},${f1(y+ry)} a${f1(w/2)},${f1(ry)} 0 0 0 ${f1(w)},0" class="${cls}"/>`;
+  }
+  if(kind==='queue'){
+    const rx=Math.min(10,w/4), ry=h/2;
+    return `<path d="M${f1(x+rx)},${f1(y)} H${f1(x+w-rx)} a${f1(rx)},${f1(ry)} 0 0 1 0,${f1(h)} H${f1(x+rx)} a${f1(rx)},${f1(ry)} 0 0 1 0,${f1(-h)} z M${f1(x+rx)},${f1(y)} a${f1(rx)},${f1(ry)} 0 0 1 0,${f1(h)}" class="${cls}"/>`;
+  }
+  if(kind==='node'){ const k=Math.min(6,h/3); return R(x+k,y,w-k,h-k,cls,3)+R(x,y+k,w-k,h-k,cls,3); }
+  return R(x,y,w,h,cls,kind==='component'?3:5);
+}
+function rC4(d,M,warn){
+  const sp=d.spec, its=M.elements;
+  const anyZoom=its.some(it=>it.el.zoom!=null&&it.el.zoom!=='');
+  const kindOf=it=>{ const k=it.el.c4==null?'container':String(it.el.c4);
+    if(C4_KIND[k]) return k;
+    const m='element '+nm(it.el)+': unknown c4 kind "'+k+'", drawn as container (use '+C4_ORDER.join(', ')+')';
+    if(warn.indexOf(m)<0) warn.push(m);
+    return 'container'; };
+  const typeLine=(e,k)=>'['+(e.ext?(k==='system'?'External System':'External '+C4_KIND[k]):C4_KIND[k])+(e.tech?': '+e.tech:'')+']';
+  const kinds=its.map(kindOf);
+  const BW=Math.ceil(Math.min(240,Math.max(184,...its.map(it=>meas(label(it.el),'name')+(anyZoom?44:28)))));
+  const TW=BW-(anyZoom?44:28);
+  const SPACE={person:[46,0],db:[18,10],node:[6,0]};
+  const info=its.map((it,i)=>{
+    const e=it.el, k=kinds[i], pp=SPACE[k]||[0,0];
+    const nl=wrapN(label(e),'name',TW,2), tl=wrapN(typeLine(e,k),'note',BW-20,2), dl=e.desc?wrapN(e.desc,'desc',BW-28,3):[];
+    const ch=nl.length*16+2+tl.length*13+(dl.length?4+dl.length*13:0);
+    return {k,pre:pp[0],post:pp[1],nl,tl,dl,ch,h:Math.max(72,pp[0]+ch+pp[1]+22)};
+  });
+  const edges=M.relations.map(it=>{ const r=it.el, t=[r.label,r.tech?'['+r.tech+']':''].filter(Boolean).join(' ');
+    return Object.assign({v:r.from,w:r.to,via:r.via,route:r.route,it,tone:toneOf(r,warn,'relation '+it.key)},t?edgeLabel(t):{lines:[],lw:0}); });
+  const bounds=list(sp.boundaries).map(b=>typeof b==='string'?{id:b,name:b}:b);
+  const plan=planBoundaries(bounds,its.map(it=>({id:nm(it.el),boundary:it.el.boundary})),edges.map(e=>({v:e.v,w:e.w})),warn);
+  Object.keys(plan.info).forEach(id=>{ const b=plan.info[id];
+    b.tone=toneOf(b,warn,'boundary '+id);
+    if(b.kind!=null&&!C4_BOUND[b.kind]){ const m='boundary '+id+': unknown kind "'+b.kind+'" (use '+Object.keys(C4_BOUND).join(', ')+')'; if(warn.indexOf(m)<0) warn.push(m); } });
+  const nodes=its.map((it,i)=>({id:nm(it.el),w:BW,h:info[i].h,at:it.el.at,lane:plan.laneOf[nm(it.el)],it,i,
+    tone:toneOf(it.el,warn,'element '+nm(it.el))||(plan.laneOf[nm(it.el)]&&plan.info[plan.laneOf[nm(it.el)]]?plan.info[plan.laneOf[nm(it.el)]].tone:'')}));
+  const btext=f=>{ const b=plan.info[f.id]; return {name:b.name||f.id,kind:b.kind?'['+(C4_BOUND[b.kind]||b.kind)+']':''}; };
+  const frames=G=>boundaryFrames(plan,G.box);
+  const L=layoutGraph(nodes,edges,{dir:'LR',lanes:plan.order.length?plan.order:null,warn,gutterW:70,gutterH:60,margin:48,
+    obstacles:G=>frames(G).reduce((acc,f)=>{ const t=btext(f);
+      // The label strip and the four frame borders: an edge label never sits on a dashed line.
+      return acc.concat([{x:f.x+6,y:f.y+f.h-24,w:meas(t.name,'bnd')+(t.kind?6+meas(t.kind,'note'):0)+16,h:20},
+        {x:f.x-3,y:f.y-3,w:f.w+6,h:6},{x:f.x-3,y:f.y+f.h-3,w:f.w+6,h:6},{x:f.x-3,y:f.y-3,w:6,h:f.h+6},{x:f.x+f.w-3,y:f.y-3,w:6,h:f.h+6}]); },[])});
+  const fr=frames(L.G);
+  frameClashes(fr,L.box).forEach(c=>{ const m='boundary '+c[0]+' covers element '+c[1]+'; move it with at: or boundary:'; if(warn.indexOf(m)<0) warn.push(m); });
+  let s=fr.map(f=>{ const b=plan.info[f.id], t=btext(f);
+    return TG(b.tone,R(f.x,f.y,f.w,f.h,'c4-frame'+TC(b.tone),8)+
+      `<text x="${f1(f.x+12)}" y="${f1(f.y+f.h-10)}" class="t-bnd">${esc(t.name)}${t.kind?`<tspan class="t-note" dx="6">${esc(t.kind)}</tspan>`:''}</text>`); }).join('');
+  s+=routeEdges(L,r=>E(st(r.e.it),arrow(r.pts,{dash:!!r.e.it.el.dashed,end:'fill'})+labelSvg(r),r.e.tone));
+  nodes.forEach(n=>{
+    const b=L.box[n.id], e=n.it.el, k=st(n.it), I=info[n.i], cx=b.x+b.w/2+(I.k==='node'?-3:0);
+    const cls='box'+(e.ext?' ext':'')+TC(n.tone)+(k?' '+k:'');
+    let x=`<title>${esc(nm(e))}</title>`+c4Shape(I.k,b,cls);
+    let y=b.y+I.pre+(b.h-I.pre-I.post-I.ch)/2+(I.k==='node'?3:0);
+    I.nl.forEach((l,j)=>{ x+=T(cx,y+12+j*16,l,'t-name'+(k==='rm'?' t-rm':''),'middle'); }); y+=I.nl.length*16+2;
+    I.tl.forEach((l,j)=>{ x+=T(cx,y+10+j*13,l,'t-note','middle'); }); y+=I.tl.length*13+4;
+    I.dl.forEach((l,j)=>{ x+=T(cx,y+10+j*13,l,'t-desc','middle'); });
+    let g=`<g${n.tone?` class="tone-${n.tone}"`:''}>${x}`;
+    const z=e.zoom==null||e.zoom===''?'':String(e.zoom);
+    if(z&&SHEETS[z]!=null){
+      const zx=b.x+b.w-(I.k==='queue'?24:14), zy=b.y+(I.k==='db'?22:12);
+      g+=`<circle cx="${f1(zx)}" cy="${f1(zy)}" r="3.6" class="zi"/><line x1="${f1(zx+2.6)}" y1="${f1(zy+2.6)}" x2="${f1(zx+6)}" y2="${f1(zy+6)}" class="zi"/>`;
+      g=`<a class="zoom" href="#${sid(z)}" aria-label="Zoom in: ${esc(SHEETS[z])}"><title>Zoom in: ${esc(SHEETS[z])}</title>`+g+'</g></a>';
+    } else {
+      if(z){ const m='element '+nm(e)+': zoom '+z+' is not a sheet in this model, no link drawn'; if(warn.indexOf(m)<0) warn.push(m); }
+      g+='</g>';
+    }
+    s+=g;
+  });
+  // Legend: only the kinds this sheet uses.
+  const used=C4_ORDER.filter(k=>info.some(I=>I.k===k));
+  const items=used.map(k=>({t:C4_LEGEND[k],draw:(x,y)=>c4Shape(k,{x,y,w:26,h:16},'box')}));
+  if(its.some(it=>it.el.ext)) items.push({t:'External',draw:(x,y)=>R(x,y,26,16,'box ext',3)});
+  const bks=[...new Set(fr.map(f=>plan.info[f.id].kind||''))];
+  bks.forEach(k=>items.push({t:(k&&C4_BOUND[k]?C4_BOUND[k]+' boundary':'Boundary'),draw:(x,y)=>R(x,y,26,16,'c4-frame',3)}));
+  if(edges.length) items.push({t:'Relation: label [technology]',draw:(x,y)=>arrow([[x,y+8],[x+26,y+8]],{end:'fill'})});
+  if(edges.some(e=>e.it.el.dashed)) items.push({t:'Asynchronous or indirect',draw:(x,y)=>arrow([[x,y+8],[x+26,y+8]],{dash:true,end:'fill'})});
+  const wid=items.map(it=>32+Math.ceil(meas(it.t,'note'))+22), maxW=Math.max(L.W-48,560);
+  let lx=24, ly=L.H+6, rows=1, legW=0, lg='';
+  items.forEach((it,i)=>{
+    if(lx>24&&lx+wid[i]-22>maxW+24){ lx=24; ly+=24; rows++; }
+    lg+=it.draw(lx,ly)+T(lx+32,ly+12,it.t,'t-note'); lx+=wid[i]; legW=Math.max(legW,lx-22);
+  });
+  const H=L.H+6+rows*24+10;
+  return svg(Math.max(L.W,legW+24),H,'C4 '+sp.view+' diagram: '+d.title,s+(items.length?`<g aria-label="Legend">${lg}</g>`:''));
 }
 
 /* ---------- erd ---------- */
@@ -512,17 +625,18 @@ function rSeq(d,M,warn){
   return svg(W,H,'Sequence diagram: '+d.title,head+body);
 }
 
-const RENDER={class:rClass,erd:rErd,state:rState,component:rComp,usecase:rUse,sequence:rSeq};
-const TYPE={class:'Class',erd:'Entity relationship',state:'State machine',component:'Component',usecase:'Use case',sequence:'Sequence'};
+const RENDER={class:rClass,erd:rErd,state:rState,component:rComp,usecase:rUse,sequence:rSeq,c4:rC4};
+const TYPE={class:'Class',erd:'Entity relationship',state:'State machine',component:'Component',usecase:'Use case',sequence:'Sequence',c4:'C4'};
 const CAPTION={
   component:'Boxes are deployable parts; frames are lanes. Solid arrows are calls or data flow; dashed arrows are indirect links. Shaded boxes are «external».',
   erd:'Crow’s feet mark the many side, a circle marks zero or optional, double bars mark exactly one. Rows marked + are new, ~ changed, - removed.',
   sequence:'Time runs down. Filled arrowheads are calls, dashed arrows are replies, open arrowheads are asynchronous notices.',
   state:'The filled dot is the start; the ringed dot is the end. Brackets hold a guard condition.',
   usecase:'Ellipses are use cases inside the system boundary; actors sit outside it. Dashed arrows are «include» and «extend».',
+  c4:'Each box shows its name, its [type: technology] and a short description. Persons have a head, cylinders are databases, pipes are queues, gray boxes are external, dashed frames are boundaries. A magnifier marks an element you can zoom into.',
   class:'Diamonds mark composition, hollow triangles realization, dashed open arrows dependency. Numbers at the ends are multiplicities.'
 };
-const COUNT={component:['Nodes','nodes'],erd:['Tables','tables'],sequence:['Steps','messages'],state:['States','states'],usecase:['Cases','cases'],class:['Classes','classes']};
+const COUNT={c4:['Elements','elements'],component:['Nodes','nodes'],erd:['Tables','tables'],sequence:['Steps','messages'],state:['States','states'],usecase:['Cases','cases'],class:['Classes','classes']};
 
 /* ---------- page ---------- */
 function inline(s){ return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>'); }
@@ -549,6 +663,7 @@ function main(){
   const cur=parseModel(curEl.textContent,jsyaml.load);
   const base=ref?parseModel(baseEl.textContent,jsyaml.load):null;
   const delta=diffModels(base,cur);
+  SHEETS={}; delta.sheets.forEach(sh=>{ SHEETS[sh.d.id]=sh.d.title; });
   const title=cur.title||'System design', rev=cur.rev;
   const cnt={new:0,changed:0,removed:0}; delta.list.forEach(x=>cnt[x.st]++);
   const sheets=[];
@@ -562,7 +677,7 @@ function main(){
     const review=d.review.length?`<div><h3>Check here</h3><ul>${d.review.map(r=>`<li>${inline(r)}</li>`).join('')}</ul></div>`:'';
     const changes=mine.length?`<div><h3>Changes</h3><ul class="delta">${mine.map(x=>`<li>${tag(ST[x.st])}<span><code>${esc(x.kind+' '+x.key)}</code>${x.name&&x.name!==x.key?' '+esc(x.name):''}${x.detail.length?' <code>'+esc(x.detail.join(', '))+'</code>':''}</span></li>`).join('')}</ul></div>`:'';
     const c=COUNT[d.type], n=(sh.merged[c[1]]||[]).filter(it=>it.st!=='removed').length;
-    sheets.push({id:sid(d.id),nav:d.title,lvl:(d.level?d.level+' · ':'')+TYPE[d.type],title:d.title,st:s,
+    sheets.push({id:sid(d.id),nav:d.title,lvl:(d.level?d.level+' · ':'')+(d.type==='c4'?'C4 '+d.spec.view:TYPE[d.type]),title:d.title,st:s,
       facts:[[c[0],String(n)]],
       body:(d.note.trim()?`<div class="note">${prose(d.note)}</div>`:'')+
         (warn.length?`<p class="err">${esc(warn.join('\n'))}</p>`:'')+
