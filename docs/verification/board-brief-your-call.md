@@ -8,7 +8,7 @@
 Command: bash tests/test-board-brief.sh && bash tests/test-board-hermes.sh && bash tests/test-board-health.sh && bash tests/test-board-sweep.sh && bash tests/test-board-digest.sh
 Exit: 0
 Output:
-  board-brief: 202 passed, 0 failed
+  board-brief: 212 passed, 0 failed
   board-hermes: 79 passed, 0 failed
   board-health: 97 passed, 0 failed
   PASS=55 FAIL=0
@@ -43,6 +43,26 @@ Verdict: PASS
 ```
 
 A third mutation (the `action` branch of the decision row disabled) went RED with `194 passed, 8 failed` and restored green; its ledger block read FAIL only because this file was created while it ran, so it is not claimed as a control.
+
+```
+Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-board-brief.sh" "<urgency sort key made constant in lib/sync/sweep/board-brief>"
+Exit: 0
+Output:
+  board-brief: 208 passed, 4 failed   (under mutation, RED)
+  Restore: git checkout HEAD -- lib/sync/sweep/board-brief
+  Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+```
+Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-board-brief.sh" "<untrusted-marker strip removed from short_title in lib/sync/sweep/board-brief>"
+Exit: 0
+Output:
+  board-brief: 210 passed, 2 failed   (under mutation, RED)
+  Restore: git checkout HEAD -- lib/sync/sweep/board-brief
+  Exit: 0 (green after restore)
+Verdict: PASS
+```
 
 ## Rollback
 
