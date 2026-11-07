@@ -1030,6 +1030,79 @@ class TestRecall(unittest.TestCase):
         self.assertEqual(self._artifacts("--file", os.path.join(ROOT, "no-such.jsonl")).returncode, 1)
         self.assertEqual(self._written("/s/x", "--file", SEED, "--artifacts").returncode, 2)
 
+    # --- --subagents: list one session's subagent transcripts -------------------------
+
+    def _subagent_tree(self):
+        import shutil
+        base = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base)
+        proj = os.path.join(base, "-Users-me-workspace-x")
+        sub = os.path.join(proj, "abc12345-0000", "subagents")
+        os.makedirs(sub)
+        shutil.copy(SEED, os.path.join(proj, "abc12345-0000.jsonl"))
+        shutil.copy(SEED, os.path.join(proj, "def67890-0000.jsonl"))  # no subagents dir
+        for i, (aid, desc, mtime) in enumerate([("a2", "Reviewer 3", 1_700_000_200), ("a1", "Builder one", 1_700_000_100)]):
+            jsonl = os.path.join(sub, f"agent-{aid}.jsonl")
+            shutil.copy(SEED, jsonl)
+            os.utime(jsonl, (mtime, mtime))
+            with open(os.path.join(sub, f"agent-{aid}.meta.json"), "w", encoding="utf-8") as fh:
+                json.dump({"description": desc}, fh)
+        return base, sub
+
+    def test_subagents_lists_oldest_first_with_description_and_abs_path(self):
+        base, sub = self._subagent_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            code, out, _ = self._run_main(["--subagents", "abc1"])
+            self.assertEqual(code, 0)
+            rows = [x for x in out.splitlines() if not x.startswith("#") and x != r.DATA_MARKER]
+            self.assertEqual(len(rows), 2)
+            self.assertIn("Builder one", rows[0])  # a1 is older than a2
+            self.assertTrue(rows[1].endswith("Reviewer 3  " + os.path.join(sub, "agent-a2.jsonl")), rows[1])
+            self.assertRegex(rows[0], r"^2023-11-1[45]  ")  # old mtime: date, not HH:MM
+            _, out, _ = self._run_main(["--subagents", "abc1", "reviewer"])  # filter, case-insensitive
+            self.assertEqual(sum("agent-a" in x for x in out.splitlines()), 1)
+            self.assertIn("Reviewer 3", out)
+            _, out, _ = self._run_main(["--subagents", "abc1", "nomatchzzz"])
+            self.assertNotIn("agent-a", out)
+            code, out, _ = self._run_main(["--subagents", "abc1", "--json"])
+            payload = json.loads(out)
+            self.assertEqual([x["description"] for x in payload["subagents"]], ["Builder one", "Reviewer 3"])
+            self.assertEqual(payload["subagents"][1]["file"], os.path.join(sub, "agent-a2.jsonl"))
+        finally:
+            r.PROJECTS = orig
+
+    def test_subagents_today_shows_hhmm_and_no_dir_prints_one_line(self):
+        base, sub = self._subagent_tree()
+        os.utime(os.path.join(sub, "agent-a2.jsonl"), None)  # now
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            _, out, _ = self._run_main(["--subagents", "abc1", "Reviewer"])
+            self.assertRegex(out, r"(?m)^\d\d:\d\d  Reviewer 3  ")
+            code, out, err = self._run_main(["--subagents", "def6"])
+            self.assertEqual((code, len(out.splitlines())), (0, 1))
+            self.assertIn("no subagents dir", out)
+        finally:
+            r.PROJECTS = orig
+
+    def test_subagents_unknown_prefix_and_conflicts(self):
+        base, _ = self._subagent_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            code, _, err = self._run_main(["--subagents", "zzz"])
+            self.assertEqual(code, 1)
+            self.assertIn("no transcript matching 'zzz*.jsonl'", err)
+            for argv in (["--subagents"], ["--subagents", "--json"], ["--subagents", "abc1", "--sessions"],
+                         ["--subagents", "abc1", "--tail", "abc1"], ["--subagents", "abc1", "--final", SEED],
+                         ["--subagents", "abc1", "--artifacts"], ["--subagents", "abc1", "--limit", "3"],
+                         ["--subagents", "abc1", "--session", "abc1"], ["--subagents", "abc1", "--out", "x"]):
+                self.assertEqual(self._run_main(argv)[0], 2, argv)
+        finally:
+            r.PROJECTS = orig
+
     # --- --replies: the final assistant text of every human turn ---------------------
 
     def _replies(self, *extra):

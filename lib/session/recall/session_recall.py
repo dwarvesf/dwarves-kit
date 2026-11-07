@@ -528,6 +528,51 @@ def render_tail(sid: str, kept, last_write_mtime: float) -> str:
     return "\n".join(lines)
 
 
+# --- --subagents: the subagent transcripts of one session ----------------------
+
+def list_subagents(path: str, query: str = ""):
+    """[(mtime, description, abs jsonl path)] oldest first for `<sid>/subagents/agent-*.jsonl`
+    beside the session transcript `path`, or None when the dir is absent. The description
+    comes from the sibling `.meta.json`; a missing or unreadable one reads as empty.
+    `query` filters the description, case-insensitive substring."""
+    sid = os.path.basename(path)[:-len(".jsonl")] if path.endswith(".jsonl") else os.path.basename(path)
+    sub_dir = os.path.join(os.path.dirname(os.path.abspath(path)), sid, "subagents")
+    if not os.path.isdir(sub_dir):
+        return None
+    rows = []
+    for name in os.listdir(sub_dir):
+        if not (name.startswith("agent-") and name.endswith(".jsonl")):
+            continue
+        jsonl = os.path.join(sub_dir, name)
+        try:
+            mtime = os.path.getmtime(jsonl)
+        except OSError:
+            continue
+        try:
+            with open(jsonl[:-len(".jsonl")] + ".meta.json", encoding="utf-8") as fh:
+                desc = json.load(fh).get("description")
+        except (OSError, ValueError, AttributeError):
+            desc = None
+        desc = desc if isinstance(desc, str) else ""
+        if query.lower() in desc.lower():
+            rows.append((mtime, desc, jsonl))
+    return sorted(rows)
+
+
+def render_subagents(rows) -> str:
+    """One line per subagent under the DATA marker (a description is model-written text):
+    `HH:MM` (the date when not today), description, absolute jsonl path."""
+    import time
+    today = time.strftime("%Y-%m-%d")
+    lines = ["# subagents, oldest first", DATA_MARKER]
+    for mtime, desc, jsonl in rows:
+        day = time.strftime("%Y-%m-%d", time.localtime(mtime))
+        when = time.strftime("%H:%M" if day == today else "%Y-%m-%d", time.localtime(mtime))
+        lines.append(f"{when}  {_clean_tail_text(desc) or '(no description)'}  {jsonl}")
+    lines.append("# end of subagent data")
+    return "\n".join(lines)
+
+
 # --- --final: a subagent's last reply, optionally one fenced block of it ------
 
 _FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*(.*)$")
@@ -849,13 +894,14 @@ def collect_artifacts(query, file=None, session=None, project=None, search_all=F
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = tail = final = replies = fence_tag = out_path = written = session = None
+    file = project = tail = final = replies = fence_tag = out_path = written = session = subagents = None
     search_all = as_json = sessions = artifacts = False
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     max_bytes = FINAL_MAX_BYTES
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
              "[--sessions] [--limit N] [--json] [--tail PREFIX] "
+             "[--subagents PREFIX [<filter>] [--project SLUG | --file F] [--json]] "
              "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]] "
              "[--replies FILE] "
              "[--written PATH (--file F | --session PREFIX) [--out FILE]] "
@@ -874,6 +920,8 @@ def main(argv=None) -> int:
             as_json = True
         elif a == "--tail":
             tail = next(it, None)
+        elif a == "--subagents":
+            subagents = next(it, None)
         elif a == "--final":
             final = next(it, None)
         elif a == "--replies":
@@ -932,6 +980,32 @@ def main(argv=None) -> int:
     if "--out" in argv and not out_path:
         sys.stderr.write(usage)
         return 2
+    if subagents is not None:
+        # --subagents takes a prefix, an optional description filter, --project or --file, --json
+        if (not subagents or subagents.startswith("-") or sessions or artifacts or tail is not None
+                or final is not None or replies is not None or written is not None or session is not None
+                or fence_tag is not None or out_path is not None or max_bytes != FINAL_MAX_BYTES
+                or search_all or limit is not None):
+            sys.stderr.write(usage)
+            return 2
+        try:
+            path, sid = resolve_tail_target(subagents, project=project, file=file)
+        except TailResolutionError as e:
+            sys.stderr.write(e.message)
+            return e.code
+        rows = list_subagents(path, query)
+        if as_json:
+            payload = {"data_marker": DATA_MARKER, "session": sid, "subagents": [
+                {"mtime": int(m), "description": d, "file": f} for m, d, f in rows or []]}
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        elif rows is None:
+            sys.stdout.write(f"session-recall: session {sid} has no subagents dir\n")
+        elif rows:
+            sys.stdout.write(render_subagents(rows) + "\n")
+        else:
+            sys.stdout.write(f"session-recall: no subagent of {sid} matches {query!r}\n")
+        return 0
+
     if session is not None and written is None and not artifacts:
         sys.stderr.write(usage)
         return 2
