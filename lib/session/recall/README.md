@@ -172,6 +172,16 @@ through the transcript (never loaded whole).
   `--written` cannot combine with a query, `--sessions`, `--tail`, `--final`, `--json`,
   `--fence`, or `--max-bytes` (exit 2).
 
+## --subagents: the subagent transcripts of one session
+
+```
+session-recall --subagents <id-prefix>                  # sweeps every ~/.claude/projects dir by file name
+session-recall --subagents <id-prefix> reviewer         # filter: case-insensitive substring of the description
+session-recall --subagents <id-prefix> --project <slug> --json   # objects: mtime, description, file
+```
+
+Lists `<session-id>/subagents/agent-*.jsonl`, oldest first: last-modified time (`HH:MM`, the date when not today), the description from the sibling `agent-*.meta.json`, and the absolute jsonl path, ready for `--final FILE`. The session resolves like `--tail` (`--file` bypasses matching; an unknown prefix exits 1, an ambiguous one exits 2). A session with no subagents dir prints one line saying so, exit 0. Output carries the DATA marker. It cannot combine with `--sessions`, `--tail`, `--final`, `--artifacts`, `--session`, `--limit`, `--out`, `--fence`, or `--max-bytes` (exit 2).
+
 ## --artifacts: the Artifacts a session published
 
 ```
