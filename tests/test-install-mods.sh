@@ -20,7 +20,7 @@ dirs_of() {
   jq -r '.env.CLAUDE_CODE_PLUGIN_DIRS // "<unset>"' "$1/.claude/settings.json"
 }
 append_dir() { # append_dir <home> <dir>: add an entry to the fixture list the way a user would
-  local f="$1/.claude/settings.json" tmp; tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
+  local f="$1/.claude/settings.json" tmp; tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 1
   jq --arg p "$2" '.env.CLAUDE_CODE_PLUGIN_DIRS += ":" + $p' "$f" > "$tmp" && cp "$tmp" "$f"
 }
 env_key() { jq -r --arg k "$2" '.env[$k] // "<unset>"' "$1/.claude/settings.json"; }

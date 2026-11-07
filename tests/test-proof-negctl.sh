@@ -675,13 +675,18 @@ else no "rc=$RC tree=$(git -C "$SREPO" status --porcelain) out=$OUT"; fi
 
 echo "[56] every test run gets default INT/TERM: restore() ignores them, the post-restore run must not inherit that"
 GREPO="$TMP/sigrepo"; mkrepo "$GREPO"
+# The check is relative to what this process tree already ignores: a launcher that backgrounds the
+# run (the nightly's `&`) hands down an ignored SIGINT that no non-interactive shell can undo. Only a
+# disposition negctl ADDS on top of that baseline is a failure.
 SIGLOG="$TMP/sig.log"; : > "$SIGLOG"
+SIGBASE="$TMP/sig.base"; bash -c 'trap -p INT TERM' > "$SIGBASE" 2>/dev/null
 OUT="$(SIGLOG="$SIGLOG" bash "$NC" "$GREPO" 'echo run >> "$SIGLOG"; trap -p INT TERM >> "$SIGLOG"; bash test.sh' \
   "sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak" 2>&1)"; RC=$?
+SIGEXTRA="$(grep -v '^run$' "$SIGLOG" | grep -vxF -f "$SIGBASE")"
 if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && [ "$(grep -c '^run$' "$SIGLOG")" -ge 3 ] \
-   && ! grep -q "''" "$SIGLOG" && clean "$GREPO"; then
-  ok "no test run saw INT/TERM ignored"
-else no "rc=$RC siglog=$(cat "$SIGLOG") out=$OUT"; fi
+   && [ -z "$SIGEXTRA" ] && clean "$GREPO"; then
+  ok "no test run saw INT/TERM ignored beyond the inherited baseline"
+else no "rc=$RC base=$(cat "$SIGBASE") extra=$SIGEXTRA siglog=$(cat "$SIGLOG") out=$OUT"; fi
 
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
