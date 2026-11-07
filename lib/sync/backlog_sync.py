@@ -48,11 +48,20 @@ LEGACY_REMINDERS_STATE = (Path.home() / ".cache" / "backlog-reminders-sync"
                           / "state.json")
 
 
-def atomic_write(path: Path, text: str) -> None:
+def atomic_write(path: Path, text: str, new_mode: int = 0o644) -> None:
+    """Replace `path` atomically, keeping its mode. mkstemp opens 0600, and a
+    bare os.replace would hand that to the board, locking out every other
+    account that reads it (a cron running as another user). A new file gets
+    `new_mode`; the state files pass 0600."""
+    try:
+        mode = os.stat(path).st_mode & 0o7777
+    except FileNotFoundError:
+        mode = new_mode
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
+        os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         os.unlink(tmp)
@@ -116,7 +125,7 @@ def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
         new_state = {"map": new_map}
         if getattr(src, "binding", None):
             new_state["binding"] = src.binding
-        atomic_write(state_path, json.dumps(new_state, indent=1))
+        atomic_write(state_path, json.dumps(new_state, indent=1), new_mode=0o600)
 
     def checkpoint(bid: str, rid: str) -> None:
         new_map[bid] = {"rid": rid}
@@ -295,7 +304,7 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
     if getattr(src, "binding", None):
         new_state["binding"] = src.binding
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(state_path, json.dumps(new_state, indent=1))
+    atomic_write(state_path, json.dumps(new_state, indent=1), new_mode=0o600)
     print(f"synced {header}")
     print(describe(plan, assigned))
     return not plan.flips_refused
