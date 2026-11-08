@@ -183,7 +183,14 @@ CMD_GH=$(printf '%s' "$CMD_CODE" | _blank_inert_quotes)
 SHELL_HD=0
 if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(printf '%s\n' "$CMD") \
    && grep -qE "$ENGAGE_RE" < <(printf '%s' "$CMD"); then SHELL_HD=1; fi
-[ "$SHELL_HD" = 1 ] || grep -qE "$GIT_RE" < <(echo "$CMD_CODE") || grep -qE "$GH_RE" < <(echo "$CMD_GH") || exit 0
+# `git [globals] stash push` saves a stash and pushes nothing, but GIT_RE reads "stash" as an option and
+# push-refs.sh (rightly) names no ref, which the gate would block as "no answer". Blank that subcommand
+# for the engage check only. The globals are git's own exact list, so `git -C stash push` (a push run in
+# ./stash) is not blanked; a quote or backslash in the span leaves it whole, so it engages.
+_GV='[^[:space:];&|"'"'"'\\]'
+STASH_PUSH_RE='(^|[^[:alnum:]_-])git([[:space:]]+(-[Cc][[:space:]]+'"$_GV"'+|--(git-dir|work-tree|namespace|exec-path)='"$_GV"'*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs))*[[:space:]]+stash[[:space:]]+push([[:space:]]|$)'
+CMD_GIT=$(printf '%s\n' "$CMD_CODE" | LC_ALL=C sed -E "s/$STASH_PUSH_RE/\\1git-stash-push /g") || CMD_GIT="$CMD_CODE"
+[ "$SHELL_HD" = 1 ] || grep -qE "$GIT_RE" < <(echo "$CMD_GIT") || grep -qE "$GH_RE" < <(echo "$CMD_GH") || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
