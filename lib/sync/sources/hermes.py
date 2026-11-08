@@ -23,7 +23,7 @@ import subprocess
 from cockpit import (mark_untrusted_body, mark_untrusted_title, redact_secrets,
                      unmark_untrusted_body, unmark_untrusted_title)
 
-ACTIVE = {"queued", "claimed", "speccing", "validated", "executing"}
+from sync_core import ACTIVE_STATUSES as ACTIVE  # noqa: E402  the declared board machine
 COMPLETE_KWS = {"shipped", "done", "resolved"}
 STATUS_FROM_HERMES = {"done": "shipped", "archived": "dropped"}
 

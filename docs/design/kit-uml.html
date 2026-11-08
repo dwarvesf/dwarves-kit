@@ -1236,16 +1236,13 @@ messages:
 
 ## Board row lifecycle
 
-The Status column's leading keyword is the state; the rest of the cell is prose. `backlog.sh set` accepts any legal state from any state, so the arrows below are the paths callers actually take, not guards. `/kit:spec` sets `validated` when an APPROVED validate round closes on a spec with a `Board:` header; nothing sets the move out of it (rose).
+The Status column's leading keyword is the state; the rest of the cell is prose. The states, their class (active, hold, terminal) and the forward path are declared once in `lib/board/states.tsv`; `backlog.sh machine` prints them. `set` accepts any declared state from any state and prints a notice on a move out of a terminal state, so the arrows below are the paths callers actually take, not guards. `/kit:spec` sets `validated` when an APPROVED validate round closes on a spec with a `Board:` header; `/kit:execute` sets `executing` when the build starts.
 
 ```uml
 id: sm-board-row
 type: state
 title: Board row status
 level: L4
-review:
-  - "`/kit:spec` sets `validated`, but nothing sets the move from `validated` to `executing`. Should `/kit:execute` or assign set it?"
-  - "`set` has no transition guard. Add one (for example, refuse shipped to claimed), or keep it permissive for hand repairs?"
 states:
   - {name: queued, initial: true, at: [0, 1]}
   - {name: claimed, at: [1, 1]}
@@ -1260,7 +1257,7 @@ transitions:
   - {from: claimed, to: speccing, event: assign (lane has spec)}
   - {from: claimed, to: executing, event: "assign (tiny), wayfind"}
   - {from: speccing, to: validated, event: "/kit:spec, round approved"}
-  - {from: validated, to: executing, event: no setter, tone: rose}
+  - {from: validated, to: executing, event: /kit:execute}
   - {from: executing, to: shipped, event: "wrap, sync close, reconcile"}
   - {from: executing, to: parked, event: "wrap, reconcile"}
   - {from: queued, to: dropped, event: "wrap, reconcile, sync archive"}
