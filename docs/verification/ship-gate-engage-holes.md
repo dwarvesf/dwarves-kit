@@ -52,7 +52,7 @@ Command: `for t in tests/test-ship-gate-*.sh; do bash "$t"; done`
 Exit: 0
 Output:
 ```
-tests/test-ship-gate-command-words.sh rc=0 :: PASS=130 FAIL=0
+tests/test-ship-gate-command-words.sh rc=0 :: PASS=133 FAIL=0
 tests/test-ship-gate-coverage-map.sh rc=0 :: PASS=10 FAIL=0
 tests/test-ship-gate-default-push.sh rc=0 :: PASS=37 FAIL=0
 tests/test-ship-gate-fail-closed.sh rc=0 :: PASS=12 FAIL=0
@@ -82,16 +82,16 @@ Mutation: git show origin/master:hooks/ship-gate.sh >| hooks/ship-gate.sh
 Changed: hooks/ship-gate.sh
 Exit: 1 (under mutation, RED expected)
 Output:
-  NOT ok - $IFS separator -> should engage (exit 2)
-  ok - prose about pushing -> not engaged
-  ok - git status -> not engaged
   ok - stash push, quoted ; in the message -> not engaged
   ok - stash push inside backticks -> not engaged
   ok - stash push ends a substitution -> not engaged
   ok - stash push with ${IFS} -> not engaged
+  ok - -C value is a stash push subst -> engaged
+  ok - -C value is a stash push backtick -> engaged
+  ok - --git-dir= value is a stash subst -> engaged
   ok - quoted ; then push in a commit msg -> not engaged
   ---
-  PASS=115 FAIL=15
+  PASS=118 FAIL=15
 
 Restore: git checkout HEAD -- hooks/ship-gate.sh
 Exit: 0 (green after restore)
@@ -100,6 +100,31 @@ Verdict: PASS
 Verdict: PASS (RED on the master hook, green after restore)
 
 The 15 red cases are the new engage cases: the quoted `;`, `&`, `|` and escaped `;` in the `-C` dir, a quoted `;` inside a substitution and inside backticks, push inside backticks, push ending a substitution, push followed by `;`, `&&` and `|`, and the four `IFS` forms. `x=$(git push origin HEAD)` already engaged on master, so it stays green there.
+
+## Security-lens regression and its control
+
+The first cut widened the stash push ending to `)` and a backtick, and a git global's value could hold `$(git` or a backtick. So `git -C $(git stash push) push origin HEAD` was blanked whole as a stash push and lost its outer push (exit 2 on master, exit 0 on the branch). Global option values now exclude backticks, `$` and parens. Three engage cases cover it. Control against the first-cut hook:
+
+Command: `bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-command-words.sh" "git show 1e6ee561:hooks/ship-gate.sh >| hooks/ship-gate.sh"`
+Exit: 0
+Output:
+```
+  NOT ok - -C value is a stash push subst -> should engage (exit 2)
+  NOT ok - -C value is a stash push backtick -> should engage (exit 2)
+  NOT ok - --git-dir= value is a stash subst -> should engage (exit 2)
+  ok - quoted ; then push in a commit msg -> not engaged
+  ---
+  PASS=130 FAIL=3
+
+Restore: git checkout HEAD -- hooks/ship-gate.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+Verdict: PASS (the three regressions go RED on the first cut, green after restore)
+
+## Known false positives
+
+A git command whose text has `push` followed by `;`, `)`, `|` or `&` now engages, for example a commit message `git commit -m "fix push;"` or `git log --grep 'push|pull'`. In an adopted repo push-refs.sh then names no ref and the gate blocks it. Master already had the same class for `push` followed by a space (`git commit -m "docs: push the fix"` engages there).
 
 ## Bypasses still open
 
