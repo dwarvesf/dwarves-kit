@@ -257,6 +257,34 @@ git -C "$R" branch stash
 printf '# Spec: x\nStatus: DRAFT\n' > "$R/docs/specs/SPEC-002-stash.md"
 engages "push a branch named stash"         'git push origin stash'
 
+# A quoted or escaped separator does not end the git command; push may end a substitution or a command.
+engages "quoted ; in the -C dir"            'git -C "a;b" push -u origin HEAD'
+engages "quoted & in the -C dir"            'git -C "a&b" push -u origin HEAD'
+engages "single-quoted | in the -C dir"     "git -C 'a|b' push -u origin HEAD"
+engages "escaped ; in the -C dir"           'git -C a\;b push -u origin HEAD'
+engages "quoted ; inside a substitution"    'x="$(git -C "a;b" push origin HEAD)"'
+engages "quoted ; inside backticks"         'echo `git -C "a;b" push`'
+engages "push inside backticks"             'echo `git push`'
+engages "push ends a substitution"          'x=$(git push)'
+engages "push args inside a substitution"   'x=$(git push origin HEAD)'
+engages "push then ;"                       'git push;echo hi'
+engages "push then &&"                      'git push&&echo hi'
+engages "push then |"                       'git push|cat'
+engages "\${IFS} as the separator"          'x=$(git${IFS}push${IFS}origin${IFS}HEAD)'
+engages "bare \${IFS} separator"            'git${IFS}push${IFS}origin${IFS}HEAD'
+engages "\${IFS:0:1} separator"             'git${IFS:0:1}push origin HEAD'
+engages "\$IFS separator"                   'git$IFS push origin HEAD'
+inert "prose about pushing"                 'echo "remember to push"'
+inert "git status"                          'git status'
+inert "stash push, quoted ; in the message" 'git stash push -m "a;b"'
+inert "stash push inside backticks"         'echo `git stash push`'
+inert "stash push ends a substitution"      'x=$(git stash push)'
+inert "stash push with \${IFS}"             'git${IFS}stash${IFS}push'
+engages "-C value is a stash push subst"     'git -C $(git stash push) push origin HEAD'
+engages "-C value is a stash push backtick"  'git -C `git stash push` push origin HEAD'
+engages "--git-dir= value is a stash subst"  'git --git-dir=$(git stash push) push origin HEAD'
+inert "quoted ; then push in a commit msg"  'git commit -qm "a; then push it"'
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
