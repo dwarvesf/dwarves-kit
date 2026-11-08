@@ -280,6 +280,9 @@ inert "stash push, quoted ; in the message" 'git stash push -m "a;b"'
 inert "stash push inside backticks"         'echo `git stash push`'
 inert "stash push ends a substitution"      'x=$(git stash push)'
 inert "stash push with \${IFS}"             'git${IFS}stash${IFS}push'
+engages "-C value is a stash push subst"     'git -C $(git stash push) push origin HEAD'
+engages "-C value is a stash push backtick"  'git -C `git stash push` push origin HEAD'
+engages "--git-dir= value is a stash subst"  'git --git-dir=$(git stash push) push origin HEAD'
 inert "quoted ; then push in a commit msg"  'git commit -qm "a; then push it"'
 
 echo "---"

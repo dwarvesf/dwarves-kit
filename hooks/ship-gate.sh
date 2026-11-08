@@ -226,8 +226,9 @@ if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(print
 # `git [globals] stash push` saves a stash and pushes nothing, but GIT_RE reads "stash" as an option and
 # push-refs.sh (rightly) names no ref, which the gate would block as "no answer". Blank that subcommand
 # for the engage check only. The globals are git's own exact list, so `git -C stash push` (a push run in
-# ./stash) is not blanked; a quote or backslash in the span leaves it whole, so it engages.
-_GV='[^[:space:];&|"'"'"'\\]'
+# ./stash) is not blanked; a quote, backslash, backtick, `$` or paren in the span leaves it whole, so it
+# engages: `git -C $(git stash push) push` must not lose its outer push.
+_GV='[^`$()[:space:];&|"'"'"'\\]'
 STASH_PUSH_RE='(^|[^[:alnum:]_-])git([[:space:]]+(-[Cc][[:space:]]+'"$_GV"'+|--(git-dir|work-tree|namespace|exec-path)='"$_GV"'*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs))*[[:space:]]+stash[[:space:]]+push([[:space:]]|$|[`);&|])'
 _blank_stash() { LC_ALL=C sed -E "s/$STASH_PUSH_RE/\\1git-stash-push \\5/g"; }
 CMD_GIT=$(printf '%s\n' "$CMD_IFS" | _blank_stash) || CMD_GIT="$CMD_IFS"
