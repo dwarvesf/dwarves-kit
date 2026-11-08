@@ -22,7 +22,7 @@ Capability envelope (GitHub has open/closed and nothing finer):
 import json
 import subprocess
 
-ACTIVE = {"queued", "claimed", "speccing", "validated", "executing"}
+from sync_core import ACTIVE_STATUSES as ACTIVE  # noqa: E402  the declared board machine
 COMPLETE_KWS = {"shipped", "done", "resolved"}
 MARKER = "bls: "
 

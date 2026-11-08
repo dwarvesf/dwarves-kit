@@ -82,7 +82,11 @@ import sys
 import time
 from pathlib import Path
 
-ACTIVE = ("queued", "claimed", "speccing", "validated", "executing")
+# The active set comes from the declared board machine (lib/board/states.tsv) through
+# sync_core, in declared order, never a hand copy.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from sync_core import ACTIVE_STATUSES, BOARD_STATES  # noqa: E402
+ACTIVE = tuple(s for s in BOARD_STATES if s in ACTIVE_STATUSES)
 ID_RE = re.compile(r"^\|\s*([A-Z]+-[0-9]+)\s*\|")
 SPOKE_RE = re.compile(r"^\s*(?:synced|dry-run)\s+([A-Za-z0-9_-]+):")
 ROW_ID_RE = re.compile(r"^[A-Z]+-[0-9]+$")

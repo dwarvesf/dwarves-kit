@@ -19,9 +19,27 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-ACTIVE_STATUSES = {"queued", "claimed", "speccing", "validated", "executing"}
+# The board row machine is declared once, in lib/board/states.tsv (state, class, next);
+# backlog.sh reads the same file. Every set below derives from it, so a new state is a
+# one-line edit there, never a hunt across copies.
+BOARD_MACHINE_FILE = Path(__file__).resolve().parent.parent / "board" / "states.tsv"
+
+
+def load_board_machine(path=BOARD_MACHINE_FILE):
+    """The declared rows as (state, class) pairs, in file order."""
+    rows = []
+    for line in Path(path).read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        state, cls = line.split("\t")[:2]
+        rows.append((state, cls))
+    return rows
+
+
+_BOARD_MACHINE = load_board_machine()
+ACTIVE_STATUSES = {s for s, c in _BOARD_MACHINE if c == "active"}
 # A closed row is a human decision. A spoke may carry it, never reopen it.
-TERMINAL_STATUSES = {"shipped", "dropped"}
+TERMINAL_STATUSES = {s for s, c in _BOARD_MACHINE if c == "terminal"}
 # Status keywords an archive row may carry for its spoke card to be closed,
 # and the extraction that reads one. Both match the archive tooling
 # (`_meta/scripts/board-archive`), which moves a row on the LEADING ALPHA RUN of its
@@ -40,8 +58,7 @@ MAX_ARCHIVED_CLOSES = 20
 # rows on a spoke in one tick is refused; re-run with --allow-flips N once a
 # human has confirmed the bulk change is real.
 MAX_BOARD_STATUS_FLIPS = 10
-BOARD_STATES = ["queued", "claimed", "speccing", "validated", "executing",
-                "shipped", "parked", "dropped"]
+BOARD_STATES = [s for s, _ in _BOARD_MACHINE]
 INBOX_HEADING = "### Reminders inbox"
 CLOSED_HEADING = "## Recently closed"
 TABLE_HEADER = "| ID | Item | Notes & source | Status |"

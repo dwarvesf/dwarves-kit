@@ -32,7 +32,8 @@ via `install.sh --with <modules>`, recording the enabled set in the consumer's
 
 `_meta/BACKLOG.md` is the kanban board: one row per work item, the Status column is
 the state machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, plus
-`parked` / `dropped`). Render it with `bash lib/board/backlog.sh board`; flip states mechanically with
+`parked` / `dropped`), declared once in `lib/board/states.tsv` (state, class, forward path) and printed by
+`backlog.sh machine`. Render it with `bash lib/board/backlog.sh board`; flip states mechanically with
 `backlog.sh set <ID> <state>` (the leading keyword changes, the row's annotation prose
 survives). Work arrives two ways, and they coexist: an operator names an item
 (`/kit:assign ID-NNN`), or a session pulls the top queued item (`/kit:assign --next` =

@@ -4,7 +4,7 @@
 # The BACKLOG stays a markdown file (one source of truth; no parallel database). This
 # helper makes its Status column MECHANICAL: render the board, pick the next queued
 # item, flip a row's state, so a pull (`/kit:assign --next`) is scriptable and testable
-# instead of a hand-edit. Status vocabulary is the, plus `claimed` (a pulled
+# instead of a hand-edit. Status vocabulary is declared in states.tsv, including `claimed` (a pulled
 # item between `queued` and `speccing`; the cross-session claim itself lives in
 # lib/goal/goal-registry.sh, this only records the board state).
 #
@@ -72,7 +72,15 @@ BACKLOG_FILE="${BACKLOG_FILE:-$BACKLOG_DIR/../../_meta/BACKLOG.md}"  # _meta/ is
 source "$BACKLOG_DIR/../gate/default-branch-warn.sh" \
   || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 
-STATES="queued claimed speccing validated executing shipped parked dropped"
+# The machine is declared once, in states.tsv (state, class, next); this file and every other
+# reader derive from it, so adding a state is a one-line edit there. A missing table is fatal:
+# a board with no vocabulary would accept or reject every write by accident.
+STATES_FILE="$BACKLOG_DIR/states.tsv"
+[ -r "$STATES_FILE" ] || { echo "FATAL: $STATES_FILE missing or unreadable" >&2; exit 1; }
+_machine() { awk -F'\t' '!/^#/ && NF >= 2' "$STATES_FILE"; }
+_states_of_class() { _machine | awk -F'\t' -v c="$1" '$2 == c { print $1 }'; }
+STATES="$(_machine | cut -f1 | paste -sd ' ' -)"
+_TERMINAL_STATES="$(_states_of_class terminal | paste -sd ' ' -)"
 BACKLOG_ID_RE="${BACKLOG_ID_RE:-[A-Z]+-[0-9]+}"
 
 _rows() {  # emit: ID<TAB>title<TAB>leading-status
@@ -107,6 +115,24 @@ next() {
   id="$(_rows | awk -F'\t' '$3 == "queued" { print $1; exit }')"
   [ -n "$id" ] || { echo "(no queued items)" >&2; return 1; }
   echo "$id"
+}
+
+_is_terminal() { case " $_TERMINAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# states [--class active|hold|terminal]: the vocabulary, one per line, in declared order.
+states() {
+  if [ "${1:-}" != "--class" ]; then echo "$STATES" | tr ' ' '\n'; return 0; fi
+  case "${2:-}" in
+    active|hold|terminal) _states_of_class "$2" ;;
+    *) echo "usage: backlog.sh states [--class active|hold|terminal]" >&2; return 64 ;;
+  esac
+}
+
+# machine: the whole declared table, so an agent reads states, classes and the forward path in
+# one call instead of hunting the docs.
+machine() {
+  printf 'state\tclass\tnext\n'
+  _machine
 }
 
 get() {
@@ -203,7 +229,16 @@ set_state() {
     return 1
   fi
   # Replace only the LEADING keyword of the last cell; keep the row's annotation prose.
-  awk -F'|' -v OFS='|' -v id="$id" -v st="$state" -v note="$note" '
+  # A move out of a terminal state is a reopen. It stays legal (a wrong `shipped` needs a hand
+  # repair), but it is a human decision, so the writer is told instead of left to guess.
+  local from
+  # No early `exit` in the reader: on a large board the writer would take SIGPIPE, and
+  # pipefail would kill `set` before it writes (duplicates are already refused above).
+  from="$(_rows | awk -F'\t' -v id="$id" '$1 == id { v = $3 } END { print v }')"
+  if [ -n "$from" ] && [ "$from" != "$state" ] && _is_terminal "$from"; then
+    echo "board set: $id reopens from terminal '$from' to '$state'" >&2
+  fi
+  awk -F'|' -v OFS='|' -v id="$id" -v st="$state" -v note="$note" -v terminal=" $_TERMINAL_STATES " '
     $0 ~ "^\\| *" id " *\\|" {
       cell=$(NF-1); sub(/^[ \t]+/, "", cell)
       rest=cell; sub(/^[A-Za-z-]+/, "", rest)
@@ -213,7 +248,7 @@ set_state() {
       # Only when a note is given: flipping to terminal with no note would otherwise erase
       # the only record the row has and leave nothing in its place.
       if (note != "") {
-        if (st == "shipped" || st == "dropped") rest = " [" note "]"
+        if (index(terminal, " " st " ")) rest = " [" note "]"
         else rest = " [" note "]" rest
       }
       $(NF-1) = " " st rest " "
@@ -376,7 +411,7 @@ main() {
   # kit install with no default board (a fresh public clone has no _meta/) still runs them.
   local need_default=1
   case "$sub" in dedupe-all|lint) [ -n "${1:-}" ] && need_default=0 ;; esac
-  if [ "$sub" != "states" ] && [ "$need_default" -eq 1 ] && [ ! -r "$BACKLOG_FILE" ]; then
+  if [ "$sub" != "states" ] && [ "$sub" != "machine" ] && [ "$need_default" -eq 1 ] && [ ! -r "$BACKLOG_FILE" ]; then
     echo "backlog.sh: no board at $BACKLOG_FILE (the kit's own board is not in the public tree; set BACKLOG_FILE or pass a file)" >&2
     return 1
   fi
@@ -401,8 +436,9 @@ main() {
     dedupe-all) dedupe_all "$@" ;;
     lint)       lint "$@" ;;
     add)        add_row "$@" ;;
-    states)     echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states}" >&2; return 64 ;;
+    states)     states "$@" ;;
+    machine)    machine ;;
+    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}" >&2; return 64 ;;
   esac
 }
 

@@ -124,10 +124,10 @@ source "$BOARD_MIRROR_SH"
 
 GH_BIN="${GH_BIN:-gh}"
 
-# Legal backlog.sh states, duplicated as a literal list (not shelled out to `backlog.sh states`
-# per validation call -- this runs per-row in a diff loop, and the vocabulary is static/small; see
-# lib/board/backlog.sh's own `STATES` for the source of truth this must be kept in sync with).
-LEGAL_STATES="queued claimed speccing validated executing shipped parked dropped"
+# Legal backlog.sh states, read ONCE here from the declared machine (lib/board/states.tsv, the
+# file backlog.sh reads) rather than per row in the diff loop below.
+LEGAL_STATES="$(awk -F'\t' '!/^#/ && NF >= 2 { print $1 }' "$BW_DIR/states.tsv" | paste -sd ' ' -)"
+[ -n "$LEGAL_STATES" ] || { echo "FATAL: $BW_DIR/states.tsv missing or empty" >&2; exit 1; }
 _is_legal_state() {
   case " $LEGAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
