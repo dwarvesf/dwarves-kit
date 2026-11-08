@@ -243,6 +243,20 @@ engages "ship step on the opener line"      "git commit -F - <<EOF && gh pr crea
 body
 EOF"
 
+# `git stash push` saves a stash; it pushes nothing, so it does not engage. A real push beside it does.
+inert "git stash push"                      'git stash push -u -m "msg" -- a b'
+inert "git -C dir stash push"               "git -C $R stash push -m x"
+inert "global options before stash push"    "git -C $R -c core.quotepath=false --no-pager stash push -- a"
+inert "cd, stash push, then status"         "cd $R && git stash push -u -m \"msg\" -- p1 p2 && git status --short planning/"
+engages "stash push, then a real push"      'git stash push && git push origin HEAD:main'
+engages "push after a plain git stash"      'git stash && git push -u origin HEAD'
+engages "git -C stash push (dir 'stash')"   'git -C stash push -u origin HEAD'
+engages "--git-dir space form, then push"   'git --git-dir stash push -u origin HEAD'
+engages "stash push words inside a quote"   'git -C "a stash push " push -u origin HEAD'
+git -C "$R" branch stash
+printf '# Spec: x\nStatus: DRAFT\n' > "$R/docs/specs/SPEC-002-stash.md"
+engages "push a branch named stash"         'git push origin stash'
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
