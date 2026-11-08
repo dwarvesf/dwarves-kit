@@ -80,7 +80,7 @@ STATES_FILE="$BACKLOG_DIR/states.tsv"
 _machine() { awk -F'\t' '!/^#/ && NF >= 2' "$STATES_FILE"; }
 _states_of_class() { _machine | awk -F'\t' -v c="$1" '$2 == c { print $1 }'; }
 STATES="$(_machine | cut -f1 | paste -sd ' ' -)"
-TERMINAL_STATES="$(_states_of_class terminal | paste -sd ' ' -)"
+_TERMINAL_STATES="$(_states_of_class terminal | paste -sd ' ' -)"
 BACKLOG_ID_RE="${BACKLOG_ID_RE:-[A-Z]+-[0-9]+}"
 
 _rows() {  # emit: ID<TAB>title<TAB>leading-status
@@ -117,17 +117,13 @@ next() {
   echo "$id"
 }
 
-_is_terminal() { case " $TERMINAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+_is_terminal() { case " $_TERMINAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 # states [--class active|hold|terminal]: the vocabulary, one per line, in declared order.
 states() {
-  case "${1:-}" in
-    "") echo "$STATES" | tr ' ' '\n' ;;
-    --class)
-      case "${2:-}" in
-        active|hold|terminal) _states_of_class "$2" ;;
-        *) echo "usage: backlog.sh states [--class active|hold|terminal]" >&2; return 64 ;;
-      esac ;;
+  if [ "${1:-}" != "--class" ]; then echo "$STATES" | tr ' ' '\n'; return 0; fi
+  case "${2:-}" in
+    active|hold|terminal) _states_of_class "$2" ;;
     *) echo "usage: backlog.sh states [--class active|hold|terminal]" >&2; return 64 ;;
   esac
 }
@@ -236,11 +232,13 @@ set_state() {
   # A move out of a terminal state is a reopen. It stays legal (a wrong `shipped` needs a hand
   # repair), but it is a human decision, so the writer is told instead of left to guess.
   local from
-  from="$(_rows | awk -F'\t' -v id="$id" '$1 == id { print $3; exit }')"
+  # No early `exit` in the reader: on a large board the writer would take SIGPIPE, and
+  # pipefail would kill `set` before it writes (duplicates are already refused above).
+  from="$(_rows | awk -F'\t' -v id="$id" '$1 == id { v = $3 } END { print v }')"
   if [ -n "$from" ] && [ "$from" != "$state" ] && _is_terminal "$from"; then
     echo "board set: $id reopens from terminal '$from' to '$state'" >&2
   fi
-  awk -F'|' -v OFS='|' -v id="$id" -v st="$state" -v note="$note" -v terminal=" $TERMINAL_STATES " '
+  awk -F'|' -v OFS='|' -v id="$id" -v st="$state" -v note="$note" -v terminal=" $_TERMINAL_STATES " '
     $0 ~ "^\\| *" id " *\\|" {
       cell=$(NF-1); sub(/^[ \t]+/, "", cell)
       rest=cell; sub(/^[A-Za-z-]+/, "", rest)

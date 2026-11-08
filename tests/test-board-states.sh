@@ -103,10 +103,20 @@ err="$(BACKLOG_FILE="$B" bash "$BL" set ID-002 dropped "still no" 2>&1 >/dev/nul
 c="$(awk -F'|' '/^\| *ID-002 *\|/ { c=$(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", c); print c }' "$B")"
 [ "$c" = "dropped [still no]" ] && pass "terminal note still supersedes (class-derived)" || fail "terminal note rule: $c"
 
+# ---- 6b. a large board: setting its FIRST row must not die on SIGPIPE (review finding) ----
+L="$TMP/large.md"
+{ printf '| ID | T | Status |\n|---|---|---|\n'
+  i=1; while [ "$i" -le 1500 ]; do printf '| ID-%04d | a row title long enough to fill the pipe buffer quickly %d | queued [note %d] |\n' "$i" "$i" "$i"; i=$((i + 1)); done
+} > "$L"
+out="$(BACKLOG_FILE="$L" bash "$BL" set ID-0001 claimed 2>&1)"; rc=$?
+if [ "$rc" = 0 ] && grep -q '^| ID-0001 .*| claimed' "$L"; then pass "set on the first row of a 1500-row board writes (rc 0)"; else fail "large-board set rc=$rc: $out"; fi
+
 # ---- 7. machine and states verbs: shape and refusals ----
 out="$(bash "$BL" machine)"
 [ "$(printf '%s\n' "$out" | head -1)" = "$(printf 'state\tclass\tnext')" ] && [ "$(printf '%s\n' "$out" | tail -n +2)" = "$(rows)" ] \
   && pass "machine prints the header and the table" || fail "machine output: $out"
+got="$(bash "$BL" states extra-arg | paste -sd ' ' -)"; rc=$?
+[ "$rc" = 0 ] && [ "$got" = "$want_all" ] && pass "states with a stray argument keeps the old output and exit 0" || fail "states extra-arg rc=$rc: $got"
 bash "$BL" states --class bogus >/dev/null 2>&1; rc=$?
 [ "$rc" = 64 ] && pass "states --class bogus exits 64" || fail "states --class bogus rc=$rc"
 
