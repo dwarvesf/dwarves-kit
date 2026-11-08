@@ -130,8 +130,9 @@ CMD_CODE=$(printf '%s\n' "$CMD_RAW" | _strip_heredocs | _join_continuations)
 
 # Engage on anything that looks like a ship action: `git ... push` (with any options between) or
 # `gh pr create` / its alias `gh pr new`, in CODE not prose. What the command actually pushes is decided by
-# lib/gate/push-refs.sh below, which fails closed on anything it cannot account for.
-GIT_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$)'
+# lib/gate/push-refs.sh below, which fails closed on anything it cannot account for. `push` may end
+# a substitution or a command, so a backtick, `)`, `;`, `&` or `|` after it still counts.
+GIT_RE='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?push([[:space:]]|$|[`);&|])'
 GH_RE='gh["'"'"']?([[:space:]]+[^;&|]*)?[[:space:]]+["'"'"']?pr["'"'"']?[[:space:]]+["'"'"']?(create|new)'
 ENGAGE_RE="$GIT_RE|$GH_RE"
 # The gh words are also read with the quoted text of an inert command blanked out, so `printf '...gh pr
@@ -177,7 +178,46 @@ _blank_inert_quotes() {
       printf "%s", (risky ? s : out)
     }'
 }
-CMD_GH=$(printf '%s' "$CMD_CODE" | _blank_inert_quotes)
+# The engage checks read `$IFS` / `${IFS..}` as the space it splits into: `git${IFS}push` is a push.
+CMD_IFS=$(printf '%s\n' "$CMD_CODE" | LC_ALL=C sed -E 's/\$\{IFS[^}]*\}/ /g; s/\$IFS([^[:alnum:]_]|$)/ \1/g') || CMD_IFS="$CMD_CODE"
+CMD_GH=$(printf '%s' "$CMD_IFS" | _blank_inert_quotes)
+# A quoted or escaped `;`, `&` or `|` does not end a command, but GIT_RE stops at it: `git -C "a;b" push`.
+# A second engage copy blanks quoted text and escaped characters to `_`, tracking `$(..)` and backticks
+# inside double quotes as code. It is an extra match beside the plain one, so it can only add engagement.
+_blank_quoted() {
+  awk '
+    function push(kind) { sp++; stk[sp] = kind; dep[sp] = 0 }
+    { s = (NR == 1 ? $0 : s "\n" $0) }
+    END {
+      n = length(s); sp = 1; stk[1] = "C"; dep[1] = 0; out = ""; i = 1
+      while (i <= n) {
+        c = substr(s, i, 1); k = stk[sp]; nx = substr(s, i + 1, 1)
+        if (k == "S") { if (c == "\047") { sp--; out = out c } else out = out "_"; i++; continue }
+        if (k == "A" && c == "\\") { out = out "__"; i += 2; continue }
+        if (k == "A") { if (c == "\047") { sp--; out = out c } else out = out "_"; i++; continue }
+        if (c == "\\") { out = out "__"; i += 2; continue }
+        if (c == "$" && nx == "(") { push("C"); out = out "$("; i += 2; continue }
+        if (k == "D") {
+          if (c == "\"") sp--
+          else if (c == "`") push("B")
+          else c = "_"
+          out = out c; i++; continue
+        }
+        if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|()]/)) {
+          e = index(substr(s, i), "\n"); if (e == 0) e = n - i + 2
+          out = out substr(s, i, e - 1); i += e - 1; continue
+        }
+        if (c == "$" && nx == "\047") { push("A"); out = out "$\047"; i += 2; continue }
+        if (c == "\047") push("S")
+        else if (c == "\"") push("D")
+        else if (c == "`") { if (k == "B") sp--; else push("B") }
+        else if (k == "C" && sp > 1 && c == "(") dep[sp]++
+        else if (k == "C" && sp > 1 && c == ")") { if (dep[sp] > 0) dep[sp]--; else sp-- }
+        out = out c; i++
+      }
+      printf "%s", out
+    }'
+}
 # A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
 # gate cannot see what is pushed: it is refused below (once the repo is known).
 SHELL_HD=0
@@ -188,9 +228,12 @@ if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(print
 # for the engage check only. The globals are git's own exact list, so `git -C stash push` (a push run in
 # ./stash) is not blanked; a quote or backslash in the span leaves it whole, so it engages.
 _GV='[^[:space:];&|"'"'"'\\]'
-STASH_PUSH_RE='(^|[^[:alnum:]_-])git([[:space:]]+(-[Cc][[:space:]]+'"$_GV"'+|--(git-dir|work-tree|namespace|exec-path)='"$_GV"'*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs))*[[:space:]]+stash[[:space:]]+push([[:space:]]|$)'
-CMD_GIT=$(printf '%s\n' "$CMD_CODE" | LC_ALL=C sed -E "s/$STASH_PUSH_RE/\\1git-stash-push /g") || CMD_GIT="$CMD_CODE"
-[ "$SHELL_HD" = 1 ] || grep -qE "$GIT_RE" < <(echo "$CMD_GIT") || grep -qE "$GH_RE" < <(echo "$CMD_GH") || exit 0
+STASH_PUSH_RE='(^|[^[:alnum:]_-])git([[:space:]]+(-[Cc][[:space:]]+'"$_GV"'+|--(git-dir|work-tree|namespace|exec-path)='"$_GV"'*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs))*[[:space:]]+stash[[:space:]]+push([[:space:]]|$|[`);&|])'
+_blank_stash() { LC_ALL=C sed -E "s/$STASH_PUSH_RE/\\1git-stash-push \\5/g"; }
+CMD_GIT=$(printf '%s\n' "$CMD_IFS" | _blank_stash) || CMD_GIT="$CMD_IFS"
+CMD_ENG=$(printf '%s\n' "$CMD_IFS" | _blank_quoted | _blank_stash) || CMD_ENG="$CMD_IFS"
+[ "$SHELL_HD" = 1 ] || grep -qE "$GIT_RE" < <(echo "$CMD_GIT") || grep -qE "$GIT_RE" < <(echo "$CMD_ENG") \
+  || grep -qE "$GH_RE" < <(echo "$CMD_GH") || exit 0
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
