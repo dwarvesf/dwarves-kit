@@ -19,3 +19,9 @@ Spec: `docs/specs/SPEC-417-declared-board-states.md`. Brief: `docs/briefs/DECISI
 ## Open questions for the operator
 
 - Should the copy detector also cover `commands/` and `skills/` prose? Today it scans `lib/`, `hooks/`, `bin/` code only, because prose legitimately lists states.
+
+## Build delta after review
+
+- The reopen lookup reads every row (`END { print v }`) instead of stopping at the first match. An early `exit` let the row reader take SIGPIPE on a board over about 20KB, and pipefail killed `set` before it wrote. Test case 6b pins it with a 1500-row board.
+- `states <stray arg>` prints the list and exits 0, as before. Only `--class` changes the verb.
+- The terminal set is `_TERMINAL_STATES`: the config drift lint treats any `$TERMINAL*` name as a kit env var.
