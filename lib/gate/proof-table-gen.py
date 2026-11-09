@@ -89,6 +89,8 @@ def parse_ledger(ledger_path):
             phase = parts[2]
             state = parts[3]
             reason = " | ".join(parts[4:]) if len(parts) > 4 else ""
+            # An override row ends in a ` | via=<source>` writer tag; it is not part of the reason.
+            reason = re.sub(r" \| via=[a-z-]+$", "", reason)
             gate_rows.append({"ts": ts, "phase": phase, "state": state, "reason": reason})
 
         elif marker == "OUTCOME" and len(parts) >= 4:

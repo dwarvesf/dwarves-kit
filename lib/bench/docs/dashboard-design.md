@@ -35,12 +35,15 @@ appear in output).
 ## Alert rule schema (plain files, template-based)
 
 ```json
-{"id": "override-rate", "metric": "override_rate", "op": ">", "threshold": 0.15,
+{"id": "override-rate", "metric": "hand_override_rate", "op": ">", "threshold": 0.15,
  "severity": "warn", "note": "..."}
 ```
 
 Metrics available: runs, repos, gate_records, ran, skipped, overridden,
-override_rate, skip_rate, misfires, misfire_rate, full_conformance, conf_known.
+override_rate, hand_overridden, hand_override_rate, skip_rate, misfires, misfire_rate, full_conformance, conf_known.
+`hand_override_rate` counts overrides tagged `via=hand` (or untagged, an old row) on phases the
+run's lane requires, over all gate records; plan, batch, inherit and lane-lower overrides are not
+a person waiving a required gate. `override_rate` still counts every override.
 Default rules ship in code (`DEFAULT_ALERTS`) and as `examples/alerts.json`;
 `--alerts FILE` overrides. Evaluation is at build time by design (N6
 propose-never-dispose; a live alerting daemon is a separately-argued step).

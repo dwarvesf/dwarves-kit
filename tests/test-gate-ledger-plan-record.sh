@@ -269,8 +269,8 @@ OUT="$(gl record-batch b5 full think=ran:"again" 2>&1)"
 # RB6: override items land as override lines through override(), with the distinct-reason guard.
 new_log
 gl record-batch b6 full think=override:"approved in design PR" design=override:"approved in design review" >/dev/null 2>&1
-ledger_of b6 | grep -q '| GATE | think | override | approved in design PR$' \
-  && ledger_of b6 | grep -q '| GATE | design | override | approved in design review$' \
+ledger_of b6 | grep -q '| GATE | think | override | approved in design PR | via=batch$' \
+  && ledger_of b6 | grep -q '| GATE | design | override | approved in design review | via=batch$' \
   && assert "RB6 override items land as override lines" 0 || assert "RB6 override items land as override lines (got: $(ledger_of b6))" 1
 new_log
 OUT="$(gl record-batch b6 full --evidence-default "same words" think=override design=override 2>&1)"; RC=$?

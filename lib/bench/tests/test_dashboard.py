@@ -70,8 +70,72 @@ def test_rejected_gate_state_is_counted_and_shown():
         assert "step rej" in page and "✗ REJECTED" in page
 
 
+def _hand_rate_fixture(d):
+    """normal lane. Required: think spec validate design-record build review docs ship (grill and
+    test-plan are light). Hand overrides count only on a required phase; a plan, batch,
+    inherit or lane-lower row, a light phase, and a tag-less old row (reads as hand) differ."""
+    runs_dir = Path(d, "runs")
+    runs_dir.mkdir()
+    t = (NOW - dtm.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def ledger(name, rows, lane="normal"):
+        body = [f"{t} | START | lane={lane} classified={lane} type=spec-feature repo=demo"]
+        body += [f"{t} | GATE | {p} | {s} | {r}" for p, s, r in rows]
+        (runs_dir / f"{name}.log").write_text("\n".join(body) + "\n")
+
+    ledger("bulk", [("think", "override", "r1 | via=plan"), ("spec", "override", "r2 | via=batch"),
+                    ("validate", "override", "r3 | via=inherit"), ("build", "ran", "ok")])
+    ledger("lone", [("spec", "override", "small spec | via=hand"), ("build", "ran", "ok")])
+    ledger("old", [("spec", "override", "written before the tag existed"), ("build", "ran", "ok")])
+    ledger("light", [("grill", "override", "light phase | via=hand"), ("build", "ran", "ok")])
+    ledger("lowered", [("lane-lower", "override", "full -> tiny: x | via=lane-lower"), ("build", "ran", "ok")])
+
+
+def test_override_via_splits_off_the_reason():
+    with tempfile.TemporaryDirectory() as d:
+        _hand_rate_fixture(d)
+        evs = {(e["rid"], e["phase"]): e for e in dashboard.collect_events(d)}
+        assert evs[("bulk", "think")]["reason"] == "r1" and evs[("bulk", "think")]["via"] == "plan"
+        assert evs[("old", "spec")]["via"] == "hand" and evs[("old", "spec")]["reason"].startswith("written")
+        assert evs[("bulk", "build")]["via"] == ""
+        runs = {r["rid"]: r for r in dashboard.collect_runs(d)}
+        assert runs["bulk"]["gates"]["think"] == ("override", "r1")
+        assert runs["bulk"]["via"] == {"think": "plan", "spec": "batch", "validate": "inherit"}
+
+
+def test_hand_override_rate_counts_only_hand_on_required_phases():
+    """The alert reads hand overrides on required phases; the all-source override_rate is kept."""
+    with tempfile.TemporaryDirectory() as d:
+        _hand_rate_fixture(d)
+        runs = dashboard.collect_runs(d)
+        m = dashboard.fleet_metrics(runs, dashboard.collect_events(d), 30)
+        assert m["overridden"] == 7 and m["gate_records"] == 12
+        assert m["hand_overridden"] == 2          # lone spec + old tag-less spec; grill is light
+        assert m["hand_override_rate"] == round(2 / 12, 3)
+        assert m["override_rate"] == round(7 / 12, 3)
+        alert = {a["id"]: a for a in dashboard.eval_alerts(m, dashboard.DEFAULT_ALERTS)}["override-rate"]
+        assert alert["metric"] == "hand_override_rate" and alert["threshold"] == 0.15
+        assert alert["firing"] is True and alert["value"] == m["hand_override_rate"]
+
+
+def test_bulk_overrides_alone_do_not_fire_the_alert():
+    with tempfile.TemporaryDirectory() as d:
+        runs_dir = Path(d, "runs")
+        runs_dir.mkdir()
+        t = (NOW - dtm.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        (runs_dir / "bulk.log").write_text("\n".join([
+            f"{t} | START | lane=normal classified=normal type=spec-feature repo=demo",
+            f"{t} | GATE | think | override | a | via=plan",
+            f"{t} | GATE | spec | override | b | via=plan",
+            f"{t} | GATE | build | ran | ok"]) + "\n")
+        m = dashboard.fleet_metrics(dashboard.collect_runs(d), dashboard.collect_events(d), 30)
+        assert m["override_rate"] > 0.15 and m["hand_override_rate"] == 0
+        fired = {a["id"]: a["firing"] for a in dashboard.eval_alerts(m, dashboard.DEFAULT_ALERTS)}
+        assert fired["override-rate"] is False
+
+
 def test_alert_rules_fire():
-    m = {"override_rate": 0.5, "misfire_rate": 0.0, "skip_rate": 0.1, "runs": 3}
+    m = {"hand_override_rate": 0.5, "misfire_rate": 0.0, "skip_rate": 0.1, "runs": 3}
     fired = {a["id"]: a["firing"] for a in dashboard.eval_alerts(m, dashboard.DEFAULT_ALERTS)}
     assert fired["override-rate"] is True
     assert fired["misfire-rate"] is False

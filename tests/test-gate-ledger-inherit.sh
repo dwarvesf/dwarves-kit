@@ -51,8 +51,8 @@ run inherit c full --from p
 ok "AC-1 exits 0" '[ "$RC" -eq 0 ]'
 ok "AC-1 writes exactly seven GATE lines" '[ "$(n_gate c)" -eq 7 ]'
 ok "AC-1 every line is an override" '[ "$(ledger_of c | grep -c "| GATE | [a-z-]* | override | ")" -eq 7 ]'
-ok "AC-1 reason is exact for think" 'ledger_of c | grep -qxE "[0-9T:Z-]+ \| GATE \| think \| override \| inherited from p: think ran there at 2026-10-01T00:00:01Z"'
-ok "AC-1 reason is exact for test-plan" 'ledger_of c | grep -qxE "[0-9T:Z-]+ \| GATE \| test-plan \| override \| inherited from p: test-plan ran there at 2026-10-01T00:00:07Z"'
+ok "AC-1 reason is exact for think" 'ledger_of c | grep -qxE "[0-9T:Z-]+ \| GATE \| think \| override \| inherited from p: think ran there at 2026-10-01T00:00:01Z \| via=inherit"'
+ok "AC-1 reason is exact for test-plan" 'ledger_of c | grep -qxE "[0-9T:Z-]+ \| GATE \| test-plan \| override \| inherited from p: test-plan ran there at 2026-10-01T00:00:07Z \| via=inherit"'
 ok "AC-1 one stdout line per phase" '[ "$(printf "%s\n" "$OUT" | grep -c " inherited from p$")" -eq 7 ]'
 
 # Ledger root: the verb's write and `show` read one file under DWARVES_KIT_LOG_DIR.

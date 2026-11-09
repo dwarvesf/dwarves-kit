@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from events import GATE_STATE, resolve_run  # noqa: E402
+from events import GATE_STATE, resolve_run, split_via  # noqa: E402
 
 PHASE_ORDER = ["grill", "think", "design", "design-critique", "ui-design", "spec",
                "validate", "design-record", "test-plan", "build", "review", "docs",
@@ -35,11 +35,12 @@ CELL = {"pass": "●", "skip": "○", "fail": "✗", "override": "⚑", "unknown
 
 
 def run_summary(path, rid=None):
-    """Facts for one rid straight from its ledger: span + last-status per gate."""
+    """Facts for one rid straight from its ledger: span + last-status per gate, and for a
+    gate whose last status is override, the writer that tagged it (`via`)."""
     import datetime as dtm
     rid = rid or Path(path).stem
     gates, first_ts, last_ts = {}, None, None
-    meta = {}
+    meta, via = {}, {}
     for line in Path(path).read_text().splitlines():
         parts = [p.strip() for p in line.split(" | ", 3)]
         if len(parts) < 3:
@@ -56,8 +57,13 @@ def run_summary(path, rid=None):
         elif parts[1] == "GATE" and len(parts) == 4:
             status, _, reason = parts[3].partition(" | ")
             status = GATE_STATE.get(status.strip(), "unknown")
-            gates[parts[2]] = (status, reason.strip())
-    return {"rid": rid, "t0": first_ts, "t1": last_ts, "gates": gates, "meta": meta}
+            reason, tag = split_via(reason.strip())
+            gates[parts[2]] = (status, reason)
+            if status == "override":   # a row with no tag predates the field and reads as hand
+                via[parts[2]] = tag or "hand"
+            else:
+                via.pop(parts[2], None)
+    return {"rid": rid, "t0": first_ts, "t1": last_ts, "gates": gates, "meta": meta, "via": via}
 
 
 STYLE = """<style>

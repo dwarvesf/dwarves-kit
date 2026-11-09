@@ -164,6 +164,23 @@ BODY8="$(cat "$OUT8" 2>/dev/null)"
 expect "T8: empty-ledger table is still well-formed (no-crash marker row)" "(none -- empty ledger)" "$BODY8"
 expect "T8: empty-ledger still names the (n/a) acceptance criterion" "## 1. Acceptance criteria" "$BODY8"
 
+# ============================================================
+echo ""
+echo "=== T9: an override row's writer tag stays out of the reason cell ==="
+# ============================================================
+RID9="fixture-via"
+cat > "$DWARVES_KIT_LOG_DIR/runs/$RID9.log" <<'EOF'
+2026-07-04T09:00:00Z | START | lane=normal classified=normal type=spec-feature repo=dwarves-kit
+2026-07-04T09:00:01Z | GATE | spec | override | wrote it in the PR | via=plan
+2026-07-04T09:00:02Z | GATE | build | override | a note | via=hand
+EOF
+OUT9="$RUNS/out9.md"
+bash "$GEN" "$RID9" "$OUT9" >/dev/null 2>&1
+BODY9="$(cat "$OUT9" 2>/dev/null)"
+expect "T9: spec row carries the reason only" "| 1 | spec | 2026-07-04T09:00:01Z | override | wrote it in the PR |" "$BODY9"
+refute "T9: no via tag in the table" "via=" "$BODY9"
+expect "T9: covered still counts the override" "Covered: build, spec" "$BODY9"
+
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"
