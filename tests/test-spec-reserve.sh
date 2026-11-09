@@ -14,6 +14,11 @@ set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SN="$KIT_DIR/lib/spec/spec-next.sh"
+# Hermetic host state: the operator config and the XDG dirs point at a scratch dir, so a runner's real
+# ~/.config and ~/.local/state (written by suites running beside this one) never reach the run.
+PIN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-pin.XXXXXX")" || exit 1
+export KIT_CONFIG_OPERATOR="$PIN_DIR/operator" XDG_CONFIG_HOME="$PIN_DIR/config" XDG_STATE_HOME="$PIN_DIR/state" XDG_CACHE_HOME="$PIN_DIR/cache"
+trap 'rm -rf "$PIN_DIR"' EXIT
 # Hermetic by default: no test here needs the real open-PR gh scan, and leaving it on made
 # T21/T22 reach real `gh` (slow, and a false pass/fail on a machine without `gh` auth).
 export SPEC_NEXT_NO_PR_SCAN=1
@@ -297,10 +302,17 @@ echo "=== T20: two WORKTREES of one repo reserve concurrently -> distinct number
 # The observed bug: worktrees at <repo>/.claude/worktrees/<slug> keyed their claims by slug,
 # so each saw zero live reservations and all claimed the same number.
 R="$(mk_repo)"; RES="$R/res.log"; ACC="$R/acc20"; : > "$ACC"
-git -C "$R" worktree add -q "$R/.claude/worktrees/wa" -b wa >/dev/null 2>&1
-git -C "$R" worktree add -q "$R/.claude/worktrees/wb" -b wb >/dev/null 2>&1
-for W in wa wb; do ( cd "$R/.claude/worktrees/$W" && SPEC_RESERVE_FILE="$RES" SPEC_NEXT_NO_PR_SCAN=1 bash "$SN" reserve >> "$ACC" 2>/dev/null ) & done
+WTLOG="$R/wt.log"
+git -C "$R" worktree add -q "$R/.claude/worktrees/wa" -b wa >"$WTLOG" 2>&1
+git -C "$R" worktree add -q "$R/.claude/worktrees/wb" -b wb >>"$WTLOG" 2>&1
+for W in wa wb; do ( cd "$R/.claude/worktrees/$W" && SPEC_RESERVE_FILE="$RES" SPEC_NEXT_NO_PR_SCAN=1 bash "$SN" reserve >> "$ACC" 2>"$R/err.$W" ) & done
 wait
+# When a claim goes missing, show why on lines run-all surfaces (it keeps only the FAIL lines and a tail).
+if [ "$(grep -c . "$ACC" | tr -d ' ')" != 2 ]; then
+  { echo "git log: $(git -C "$R" log --oneline 2>&1 | head -2 | tr '\n' ' ')"; echo "worktrees: $(git -C "$R" worktree list 2>&1 | tr '\n' ' ')"
+    echo "wt.log: $(tr '\n' ' ' < "$WTLOG")"; for W in wa wb; do echo "reserve $W stderr: $(tr '\n' ' ' < "$R/err.$W" 2>&1)"; done
+    echo "ledger: $(ls -la "$RES" 2>&1 | tr '\n' ' ')"; } | cut -c1-300 | while IFS= read -r l; do echo -e "  ${RED}FAIL${NC} T20 diag: $l"; done
+fi
 eq "T20 both worktrees got a number" "$(grep -c . "$ACC" | tr -d ' ')" "2"
 eq "T20 the two numbers differ" "$(sort -u "$ACC" | grep -c . | tr -d ' ')" "2"
 eq "T20 both claims carry the one repo key" "$(grep -c "repo=$(key "$R")\$" "$RES" | tr -d ' ')" "2"

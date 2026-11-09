@@ -9,6 +9,11 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DF="$KIT_DIR/lib/system-design/doc-figures"
+# Hermetic host state: the operator config and the XDG dirs point at a scratch dir, so a runner's real
+# ~/.config and ~/.local/state (written by suites running beside this one) never reach the run.
+PIN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit-doc-figures-pin.XXXXXX")" || exit 1
+export KIT_CONFIG_OPERATOR="$PIN_DIR/operator" XDG_CONFIG_HOME="$PIN_DIR/config" XDG_STATE_HOME="$PIN_DIR/state" XDG_CACHE_HOME="$PIN_DIR/cache"
+trap 'rm -rf "$PIN_DIR"' EXIT
 FIG="$KIT_DIR/docs/figures"
 
 PASS=0; FAIL=0; TOTAL=0
@@ -20,7 +25,7 @@ chk() {
 }
 
 TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-docfig-test.XXXXXX")" || exit 1
-trap 'rm -rf "$TMPD"' EXIT
+trap 'rm -rf "$TMPD" "$PIN_DIR"' EXIT
 
 # fresh <name>: a temp root holding a copy of the committed figures and a README that cites one.
 fresh() {
@@ -184,11 +189,29 @@ transitions:
 ```
 EOF
   CHROME="$chrome" DOC_FIGURES_ROOT="$RM" bash "$DF" render >"$TMPD/render.log" 2>&1
-  chk "render exits 0 on a one-sheet model" "$?"
+  rrc=$?
+  chk "render exits 0 on a one-sheet model" "$rrc"
+  # run-all surfaces only the FAIL lines and a tail, so the log rides on FAIL-prefixed lines.
+  [ "$rrc" -eq 0 ] || { echo "  FAIL render diag: browser $chrome, node $(node --version), ${SECONDS}s into the suite"
+    tail -12 "$TMPD/render.log" | cut -c1-240 | while IFS= read -r l; do echo "  FAIL render diag> $l"; done; }
   chk "render writes <id>.png, not d-<id>.png" "$([ -s "$RM/docs/figures/tiny-flow.png" ] && [ ! -e "$RM/docs/figures/d-tiny-flow.png" ]; echo $?)"
   chk "render writes MANIFEST.tsv with the id and a 16-hex digest" "$(grep -qE '^tiny-flow	[0-9a-f]{16}$' "$RM/docs/figures/MANIFEST.tsv"; echo $?)"
   run "$RM"
   chk "check passes straight after render" "$RC"
+
+  # Browser helper processes can outlive the main one and keep writing into its profile, which made the
+  # profile cleanup fail with ENOTEMPTY and the render exit 1 after the shots were already taken. The wrapper
+  # stands in for such a helper: it keeps creating dirs in the profile for a few seconds after launch.
+  LATE="$TMPD/late-browser"
+  cat > "$LATE" <<'LATEEOF'
+#!/bin/bash
+for a in "$@"; do case "$a" in --user-data-dir=*) d="${a#--user-data-dir=}" ;; esac; done
+( for i in $(seq 1 120); do mkdir -p "$d/late$i/sub" 2>/dev/null; echo x > "$d/late$i/sub/f" 2>/dev/null; sleep 0.01; done ) >/dev/null 2>&1 &
+exec "$LATE_REAL" "$@"
+LATEEOF
+  chmod +x "$LATE"
+  LATE_REAL="$chrome" CHROME="$LATE" DOC_FIGURES_ROOT="$RM" bash "$DF" render >"$TMPD/late.log" 2>&1
+  chk "render survives a browser helper writing into the profile on exit" "$?"
 
   # SVG mode: the same sheet as a standalone, theme-aware SVG with its fonts embedded.
   mv "$RM/docs/figures/tiny-flow.png" "$TMPD/tiny-flow.png.gone"

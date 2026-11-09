@@ -321,8 +321,8 @@ FAKE_CARDS="$CLEAN" run "$NOW" --cluster alpha
 has "the decision row stays a decision" "$(msg)" "\`t1\` alpha one: **Fix or close?**"
 has "the Handled count skips rows already asked about" "$(msg)" "1 incident is with chonky."
 lacks "the other row is not listed in the body" "$(msg)" "alpha two"
-eq "the decision row appears once" "$(msg | grep -c '\`t1\`')" "1"
-eq "a hook decision id appears once too" "$(msg | grep -c '\`t3\`')" "1"
+eq "the decision row appears once" "$(msg | grep -cF '`t1`')" "1"
+eq "a hook decision id appears once too" "$(msg | grep -cF '`t3`')" "1"
 eq "the payload still counts every open row" "$(jq -r '.data.open_incidents' <<<"$(last)")" "3"
 fresh
 cat > "$FAKE_INC_FILE" <<'EOF'
