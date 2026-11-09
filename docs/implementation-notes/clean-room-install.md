@@ -19,7 +19,7 @@ One test that proves a stranger can install the kit and use it with none of the 
 - PATH is the symlink dir plus the system dirs. `op` and `direnv` must not resolve; `gh`, which Ubuntu runners ship in `/usr/bin`, may exist but must not be authenticated.
 - Sequence: install, detect, adopt (check, dry-run, real, idempotent re-run), commit and push the adoption to the toy default branch (the ship-gate reads `[gate]` at the merge base), a normal-lane run (start, check red, record gates, check green), ship-gate through its hook entry with a push payload (blocked, then allowed), `config seams` and `--check`.
 - One named function, `assert_writes_land_only_in`, holds the "writes land only in allowed dirs" rule. Today it checks (1) the sandbox root holds nothing but the allowed entries and (2) no file under the real HOME's kit dirs carries the run's unique token. The data-root work tightens it by changing the allowed list in one place.
-- `assert_no_host_leak` scans captured output and the generated config files for `tieubao`, `han-ws`, `ops-toolkit`, `op://` and the real user's home. The kit checkout path is stripped first: it is the kit's own location, not host config.
+- `assert_no_host_leak` scans captured output and the generated config files for the maintainer's handle and domain, the maintainer's tooling repo name, real `op://` refs and the real user's home (the list is `host_leak_hits` in the test). The kit checkout path is stripped first: it is the kit's own location, not host config.
 - Both assertion functions are exercised against planted failures inside the test (a stray entry, a tokened file in a fake canary dir, a leak string), so a broken guard shows up as a red case.
 
 ## Delta
