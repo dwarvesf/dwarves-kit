@@ -139,6 +139,12 @@ def collect_events(log_dir):
     return evs
 
 
+# Ledger rows stored before the rename carry `wave` for both the verdict (now `log`) and the
+# response (now `accept`). Readers fold the old word into the new one; stored rows stay as written.
+_DEBT_VERDICT_WORDS = {"wave": "log"}
+_DEBT_RESPONSE_WORDS = {"wave": "accept"}
+
+
 def collect_debt(log_dir):
     """Every | DEBT | line across every rid (understanding-gate markers)."""
     out = []
@@ -153,7 +159,8 @@ def collect_debt(log_dir):
                 kv = dict(t.partition("=")[::2] for t in parts[2].split() if "=" in t)
                 reason = parts[2].partition("reason=")[2].replace("-", " ").strip()
                 out.append({"ts": ts, "rid": f.stem, "significance": kv.get("significance", "?"),
-                            "verdict": kv.get("verdict", "?"), "response": kv.get("response", ""),
+                            "verdict": _DEBT_VERDICT_WORDS.get(kv.get("verdict", "?"), kv.get("verdict", "?")),
+                            "response": _DEBT_RESPONSE_WORDS.get(kv.get("response", ""), kv.get("response", "")),
                             "reason": reason[:400]})
     return sorted(out, key=lambda d: d["ts"])
 

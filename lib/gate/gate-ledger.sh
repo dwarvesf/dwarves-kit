@@ -19,10 +19,10 @@
 #                                       reason MUST start with reason=<home-turf|density-low|
 #                                       operator-wave>; every other phase/state is free text)
 #   action   <rid> <text>              append an action-log line
-#   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
+#   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [reason=...]
 #                                       append an understanding-debt verdict;
 #                                       additive marker, ignored by check()/override()/descent()
-#   debt-response <rid> <engage|defer|wave> [reason]  append the HUMAN's ★-tap choice;
+#   debt-response <rid> <engage|defer|accept> [reason]  append the HUMAN's ★-tap choice;
 #                                       additive `| DEBT |` marker, same ignore rules as debt
 #   outcome  <rid> <phase> <start|end> [caught=<true|false>] [policy=<close|escalate|continue>]
 #                                       record a gate's OUTCOME as an ADDITIVE marker:
@@ -349,18 +349,21 @@ tokens() {
 # override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a debt
 # line can never fake a gate or be mistaken for one. Written by `lib/classify/significance-classify.sh
 # record` (the worker side: "the worker session writes the significance/
-# worthiness marker"); the human-facing ★-tap nudge (engage/defer/wave) is a LATER, SEPARATE
+# worthiness marker"); the human-facing ★-tap nudge (engage/defer/accept) is a LATER, SEPARATE
 # `| DEBT |` line appended by the conductor-side nudge -- this command only ever
 # writes the classifier's verdict, never a human response.
 #
-# response=<engage|defer|wave> (understanding-gate): an OPTIONAL additive key,
+# response=<engage|defer|accept> (understanding-gate): an OPTIONAL additive key,
 # the three-way human disposition the Refinement point 3 names. First written by
 # `lib/reflect/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
 # re-collected); the future ★-tap nudge is a second, later caller of the SAME field --
 # there is exactly one place a human response is recorded, never two.
-# Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
+# Legacy words: verdict `wave` is the old name of `log`, response `wave` the old name of `accept`.
+# Both are still ACCEPTED here and written as the new word; rows already stored are never rewritten
+# (readers accept both words).
+# Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [response=<engage|defer|accept>] [reason=...]
 debt() {
-  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]" >&2; return 64; }
+  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [response=<engage|defer|accept>] [reason=...]" >&2; return 64; }
   [ -n "$rid" ] || { echo "debt requires a rid" >&2; return 64; }
   local sig="" wor="" verdict="" response="" reason="" kv k v
   for kv in "$@"; do
@@ -381,9 +384,11 @@ debt() {
   done
   case "$sig" in low|high) ;; *) echo "debt: significance must be low|high (got '$sig')" >&2; return 64;; esac
   case "$wor" in low|high) ;; *) echo "debt: worthiness must be low|high (got '$wor')" >&2; return 64;; esac
-  case "$verdict" in tap|wave|not-significant) ;; *) echo "debt: verdict must be tap|wave|not-significant (got '$verdict')" >&2; return 64;; esac
+  if [ "$verdict" = wave ]; then verdict=log; fi
+  case "$verdict" in tap|log|not-significant) ;; *) echo "debt: verdict must be tap|log|not-significant (got '$verdict')" >&2; return 64;; esac
   if [ -n "$response" ]; then
-    case "$response" in engage|defer|wave) ;; *) echo "debt: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
+    if [ "$response" = wave ]; then response=accept; fi
+    case "$response" in engage|defer|accept) ;; *) echo "debt: response must be engage|defer|accept (got '$response')" >&2; return 64;; esac
   fi
   mkdir -p "$RUNS_DIR"
   local line; line="$(printf 'significance=%s worthiness=%s verdict=%s' "$sig" "$wor" "$verdict")"
@@ -395,8 +400,8 @@ debt() {
 # debt-response: record the HUMAN's ★-tap choice as the SEPARATE `| DEBT |` line the debt() header
 # anticipates. Where debt() writes the CLASSIFIER's verdict (worker side), this
 # writes the conductor-side human response to a `tap`: engage (pull the quiz) / defer (weekend batch)
-# / wave (accept the debt knowingly). All three are logged , the only real failure is UNTRACKED
-# debt, so waving is a first-class RECORDED choice, never a hard block. Same additive shape: check()/
+# / accept (take the debt knowingly). All three are logged , the only real failure is UNTRACKED
+# debt, so accepting is a first-class RECORDED choice, never a hard block. Same additive shape: check()/
 # override()/descent()/_rows() ignore `| DEBT |`, so a response line can never fake or mask a gate.
 #
 # FORWARD-CARRY (TIER-4 close finding): the classifier (`debt()`) writes a FAT line
@@ -412,11 +417,13 @@ debt() {
 # verdict=) and, if found, re-emit its sig/wor/verdict alongside response= -- making the response
 # line self-describing without inventing data. If no fat line exists (a non-gate ship, or a rid
 # from before that wiring), write the thin line as before; blank stays blank.
-# Usage: debt-response <rid> <engage|defer|wave> [reason]
+# `wave` is the legacy name of `accept`: still accepted, written as `accept`.
+# Usage: debt-response <rid> <engage|defer|accept> [reason]
 debt_response() {
-  local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: debt-response <rid> <engage|defer|wave> [reason]" >&2; return 64; }
+  local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: debt-response <rid> <engage|defer|accept> [reason]" >&2; return 64; }
   [ -n "$rid" ] || { echo "debt-response requires a rid" >&2; return 64; }
-  case "$response" in engage|defer|wave) ;; *) echo "debt-response: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
+  if [ "$response" = wave ]; then response=accept; fi
+  case "$response" in engage|defer|accept) ;; *) echo "debt-response: response must be engage|defer|accept (got '$response')" >&2; return 64;; esac
   # Security LOW (TIER-4 close), same guard as debt(): neuter a "=" in reason so it can never
   # smuggle a control token past a naive downstream KV-parse.
   local reason; reason="$(oneline "$@" | tr '=' ':')"
@@ -429,6 +436,7 @@ debt_response() {
       sig="$(printf '%s' "$last_fat" | grep -oE 'significance=[^ ]+' | head -n1 | cut -d= -f2-)" || true
       wor="$(printf '%s' "$last_fat" | grep -oE 'worthiness=[^ ]+' | head -n1 | cut -d= -f2-)" || true
       verdict="$(printf '%s' "$last_fat" | grep -oE 'verdict=[^ ]+' | head -n1 | cut -d= -f2-)" || true
+      if [ "$verdict" = wave ]; then verdict=log; fi
     fi
   fi
   local line
@@ -1808,7 +1816,7 @@ usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|ou
   record <rid> <phase> <ran|skipped> [reason]
   override <rid> <phase> <reason>
   record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
-  debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
+  debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [response=<engage|defer|accept>] [reason=...]
   check <lane> <rid> [--kit-lanes]
   plan <lane>
   progress <rid> <lane>

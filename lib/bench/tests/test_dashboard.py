@@ -170,6 +170,28 @@ def test_debt_score_formula():
         assert dm["score"] == max(0, 100 - 10 - 4 - stale)
 
 
+def test_debt_legacy_wave_words_read_as_log_and_accept():
+    """Rows stored before the rename (verdict=wave, response=wave) read as log / accept, so the
+    verdict mix and the score match the same ledger written with the new words."""
+    import tempfile
+    old = """\
+2026-07-20T00:00:00Z | DEBT | significance=high worthiness=low verdict=wave reason=silent
+2026-07-21T00:00:00Z | DEBT | significance=high worthiness=high verdict=tap response=wave reason=ok
+2026-07-22T00:00:00Z | DEBT | significance=high worthiness=high verdict=tap response=defer reason=open
+"""
+    new = old.replace("verdict=wave", "verdict=log").replace("response=wave", "response=accept")
+    out = {}
+    for name, text in (("old", old), ("new", new)):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "runs").mkdir()
+            Path(d, "runs", "x.log").write_text(text)
+            debt = dashboard.collect_debt(d)
+            out[name] = (dashboard.debt_metrics(debt), [(x["verdict"], x["response"]) for x in debt])
+    assert out["old"][1] == out["new"][1] == [("log", ""), ("tap", "accept"), ("tap", "defer")]
+    assert out["old"][0]["verdicts"] == out["new"][0]["verdicts"] == {"log": 1, "tap": 2}
+    assert out["old"][0]["score"] == out["new"][0]["score"]
+
+
 def test_debt_never_paid():
     dm = dashboard.debt_metrics([])
     assert dm["score"] == 80 and dm["last_paydown"] is None  # 100 - 20 staleness cap

@@ -43,9 +43,9 @@ echo ""
 echo "=== significance-classify: anti-fatigue NEGATIVE CONTROL (AC2) ==="
 # Significant (full lane, touches lib/) but describes a purely mechanical, reversible,
 # test-covered change -- no worthiness trigger should fire. Anti-fatigue guard: this must
-# WAVE, not tap, even though it is significant.
+# LOG, not tap, even though it is significant.
 verdict_is --files "lib/queue/orchestrate.sh lib/foo.sh" "add a mechanical, reversible, fully test-covered guard clause" -- \
-  "wave" "AC2 [NC] significant-but-low-worthiness is WAVED, not tapped"
+  "log" "AC2 [NC] significant-but-low-worthiness is LOGGED, not tapped"
 
 echo ""
 echo "=== significance-classify: obvious change (AC3) ==="
@@ -59,9 +59,9 @@ NONEMPTY_NOTE="$TMPDIR_T/nonempty.md"
 printf '## 2026-07-03 12:00 a decision\n- Decision: chose X over Y, spec did not pin this down\n' > "$NONEMPTY_NOTE"
 
 # Same mechanical description as AC2 (no worthiness trigger in the text itself): without an
-# impl-note it waves; with a non-empty impl-note the feed signal flips it to a tap.
+# impl-note it logs; with a non-empty impl-note the feed signal flips it to a tap.
 verdict_is --files "lib/queue/orchestrate.sh" --impl-notes "$EMPTY_NOTE" "add a mechanical, reversible, fully test-covered guard clause" -- \
-  "wave" "AC4a no impl-note entries -> still waved"
+  "log" "AC4a no impl-note entries -> still logged"
 verdict_is --files "lib/queue/orchestrate.sh" --impl-notes "$NONEMPTY_NOTE" "add a mechanical, reversible, fully test-covered guard clause" -- \
   "tap" "AC4b non-empty impl-note flips worthiness low->high -> tap"
 
@@ -106,7 +106,7 @@ explain_fires --files "lib/queue/orchestrate.sh" "the human will have to explain
 echo ""
 echo "=== significance-classify: tunable knob SIGNIFICANCE_WORTHINESS_MIN (review MEDIUM fix) ==="
 # A description carrying exactly ONE worthiness trigger: default (min=1) -> high/tap;
-# raising the knob to 2 -> low/wave, proving the knob actually gates the count, not a no-op.
+# raising the knob to 2 -> low/log, proving the knob actually gates the count, not a no-op.
 ONE_TRIGGER_DESC="this has a first-of-kind novel pattern"
 TOTAL=$((TOTAL+1))
 got_default="$(bash "$SC" classify --files "lib/queue/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
@@ -120,11 +120,11 @@ fi
 
 TOTAL=$((TOTAL+1))
 got_raised="$(SIGNIFICANCE_WORTHINESS_MIN=2 bash "$SC" classify --files "lib/queue/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
-if [ "$got_raised" = "wave" ]; then
-  echo -e "  ${GREEN}PASS${NC} SIGNIFICANCE_WORTHINESS_MIN=2: one trigger no longer enough -> wave"
+if [ "$got_raised" = "log" ]; then
+  echo -e "  ${GREEN}PASS${NC} SIGNIFICANCE_WORTHINESS_MIN=2: one trigger no longer enough -> log"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC} raised knob -- got '$got_raised', expected 'wave'"
+  echo -e "  ${RED}FAIL${NC} raised knob -- got '$got_raised', expected 'log'"
   FAIL=$((FAIL+1))
 fi
 
@@ -142,11 +142,11 @@ fi
 
 TOTAL=$((TOTAL+1))
 nonexistent_note_verdict="$(bash "$SC" classify --files "lib/queue/orchestrate.sh" --impl-notes "$TMPDIR_T/does-not-exist.md" "mechanical reversible test-covered guard" 2>/dev/null)"
-if [ "$nonexistent_note_verdict" = "wave" ]; then
-  echo -e "  ${GREEN}PASS${NC} --impl-notes pointing at a nonexistent file degrades to no-signal (wave, not a crash)"
+if [ "$nonexistent_note_verdict" = "log" ]; then
+  echo -e "  ${GREEN}PASS${NC} --impl-notes pointing at a nonexistent file degrades to no-signal (log, not a crash)"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC} nonexistent impl-notes path -- got '$nonexistent_note_verdict', expected 'wave'"
+  echo -e "  ${RED}FAIL${NC} nonexistent impl-notes path -- got '$nonexistent_note_verdict', expected 'log'"
   FAIL=$((FAIL+1))
 fi
 
@@ -195,11 +195,11 @@ else
 fi
 
 TOTAL=$((TOTAL+1))
-if grep -qE '\| DEBT \| significance=high worthiness=low verdict=wave' "$LEDGER_FILE" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} AC5c the wave verdict's marker carries significance=high worthiness=low verdict=wave"
+if grep -qE '\| DEBT \| significance=high worthiness=low verdict=log' "$LEDGER_FILE" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} AC5c the log verdict's marker carries significance=high worthiness=low verdict=log"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC} AC5c wave marker fields missing/malformed"
+  echo -e "  ${RED}FAIL${NC} AC5c log marker fields missing/malformed"
   FAIL=$((FAIL+1))
 fi
 

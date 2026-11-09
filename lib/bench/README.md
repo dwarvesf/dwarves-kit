@@ -86,7 +86,7 @@ for humans. Nothing here needs a server.
 | Verb | What it produces | Primary caller |
 |---|---|---|
 | `stats` | fleet + money + debt + alerts as one JSON blob | agent |
-| `debt` | cognitive-debt score, open defers, last paydown | agent |
+| `debt` | cognitive-debt score, open defers, last paydown (legacy `wave` rows read as `log` / `accept`) | agent |
 | `allocation` | pool → member → feature, period comparison, proposed allowances | lead / agent |
 | `export` | the fleet data payload (`sections.json`) the forge dashboard SPA loads; `--push` PUTs it to the gateway; `--repos a,b` = TEAM scope (allowlist filtered before any metric; default is personal scope, the whole host) | machine (the SPA / CI) |
 | `session <rid>` | ONE standalone session-log page (gate timeline, conformance, outcomes) | human, shareable |

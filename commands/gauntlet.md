@@ -123,7 +123,7 @@ free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
   the economics telemetry.
 - On RECONSIDER, write one debt row so the weekend paydown surfaces it:
   `bash lib/gate/gate-ledger.sh debt <rid> significance=high worthiness=high
-  verdict=wave reason="gauntlet: artifact not converging | gaps: <list> | next: <one line>"`.
+  verdict=log reason="gauntlet: artifact not converging | gaps: <list> | next: <one line>"`.
   When a finding graduates into Tier 1 (rule 10), append one ROUNDS.md line
   naming the finding and its new deterministic check.
 - Corpus-level projection: `bash lib/gauntlet/stats.sh` prints one convergence

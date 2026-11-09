@@ -20,7 +20,7 @@
 #
 #            worthiness LOW              worthiness HIGH
 #   sig LOW  not-significant             not-significant
-#   sig HIGH wave (silent log)           tap  (the only ★)
+#   sig HIGH log (silent, recorded)      tap  (the only ★)
 #
 # `record` writes the verdict as an ADDITIVE marker via `gate-ledger.sh debt` (the worker-side
 # half of the debt-ledger split; the human-facing ★-tap nudge is a SEPARATE,
@@ -34,7 +34,7 @@
 #
 # Usage:
 #   significance-classify.sh classify [--files "<paths>"] [--impl-notes "<path>"] "<desc>"
-#     -> prints the verdict (tap|wave|not-significant), exit 0
+#     -> prints the verdict (tap|log|not-significant), exit 0
 #   significance-classify.sh explain  [--files ...] [--impl-notes ...] "<desc>"
 #     -> verdict + both signals + fired triggers, exit 0
 #   significance-classify.sh record <rid> [--files ...] [--impl-notes ...] "<desc>"
@@ -162,7 +162,7 @@ classify_core() {
   elif [ "$WORTHINESS" = high ]; then
     VERDICT=tap
   else
-    VERDICT=wave
+    VERDICT=log
   fi
 }
 
