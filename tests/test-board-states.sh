@@ -47,9 +47,12 @@ got="$(bash -c 'source "$1" >/dev/null 2>&1; printf %s "$LEGAL_STATES"' _ "$KIT_
 [ "$got" = "$want_all" ] && pass "board-writeback LEGAL_STATES = table" || fail "board-writeback LEGAL_STATES: $got"
 
 py="$(cd "$KIT_DIR/lib/sync" && python3 -c '
+import importlib.util
 from importlib.machinery import SourceFileLoader
 import sync_core as s, sources.github as g, sources.hermes as h
-bh = SourceFileLoader("bh", "sweep/board-health").load_module()
+# board-health has no .py suffix, so the loader is named by hand; load_module() is gone in Python 3.15.
+_spec = importlib.util.spec_from_loader("bh", SourceFileLoader("bh", "sweep/board-health"))
+bh = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(bh)
 order = [x for x in s.BOARD_STATES if x in s.ACTIVE_STATUSES]
 print(" ".join(s.BOARD_STATES))
 print(" ".join(order))

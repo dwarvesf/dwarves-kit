@@ -132,7 +132,7 @@ fi
 # --- operator config seam: no built-in URL, host id, or vault reference -------------------
 # Every case pins the operator and kit-root config layers to temp dirs, so a real operator
 # kit.toml on the machine running the suite can never leak in.
-T="$(mktemp -d "${TMPDIR:-/tmp}/vps-report.XXXXXX")"; trap 'rm -rf "$T"' EXIT
+T="$(mktemp -d "${TMPDIR:-/tmp}/vps-report.XXXXXX")" || exit 1; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/none" "$T/op"
 sr() { # sr <env assignments as one string> -- run session-report with a pinned, empty config
   env -u SESSION_REPORT_URL -u SESSION_REPORT_HB_TOKEN -u SESSION_REPORT_HMAC_KEY \

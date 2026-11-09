@@ -198,7 +198,9 @@ eq "op is not on the clean PATH" "$(cr sh -c 'command -v op' 2>/dev/null)" ""
 eq "direnv is not on the clean PATH" "$(cr sh -c 'command -v direnv' 2>/dev/null)" ""
 if cr sh -c 'command -v gh' >/dev/null 2>&1; then
   # Ubuntu runners ship gh in /usr/bin. It must hold no login: no token env, no ~/.config/gh.
-  chk "gh, if present, is not logged in" "$(cr gh auth status >/dev/null 2>&1; [ $? -ne 0 ] && echo 0 || echo 1)"
+  # gh writes its own device-id under XDG state on every run, so that dir is pinned into the allowed TMP_DIR:
+  # the write-fence below is for the kit, not for a probe of someone else's CLI.
+  chk "gh, if present, is not logged in" "$(cr env XDG_STATE_HOME="$TMP_DIR/gh-state" gh auth status >/dev/null 2>&1; [ $? -ne 0 ] && echo 0 || echo 1)"
 else
   ok "gh is not on the clean PATH"
 fi

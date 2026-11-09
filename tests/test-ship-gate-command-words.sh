@@ -288,7 +288,7 @@ inert "quoted ; then push in a commit msg"  'git commit -qm "a; then push it"'
 # Homebrew bash 5 on macOS 27 segfaults in a forked child at random, which flips the engage verdict
 # (a dead sed fails a capture and the gate falls back to the unblanked command). The hook silences
 # os_log for its process tree. A shim sed on PATH records the environment its child sees.
-SPY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+SPY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 REAL_SED="$(command -v sed)"
 printf '#!/bin/bash\necho "${OS_ACTIVITY_MODE:-unset}" >> "%s/seen"\nexec "%s" "$@"\n' "$SPY" "$REAL_SED" > "$SPY/sed"
 chmod +x "$SPY/sed"
@@ -301,7 +301,7 @@ else no "hook children should see OS_ACTIVITY_MODE=disable (saw: $(sort -u "$SPY
 # A forked child that dies must not let a push through. Shims on PATH stand in for the crash: each
 # exits 139 with no output when it is the tool that builds one view of the command, and runs the real
 # tool otherwise. The hook has to engage anyway: a dead view can only add engagement.
-DEAD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+DEAD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 for tool in sed awk grep; do
   real="$(command -v $tool)"
   case "$tool" in
@@ -326,7 +326,7 @@ dead_engages "\${IFS[0]} push (ifs view, index form)" 'git${IFS[0]}push${IFS[0]}
 dead_engages "heredoc to bash holding a push (shell check)" "$(printf "bash <<'EOF'\ngit push origin HEAD\nEOF")"
 # A single-branch push names its branch through an @@REF line. With that scan dead the gate must still
 # judge the PUSHED branch (spec 'lane', no Lane header), not the checked-out one (chore/idle).
-L="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/l"
+L="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/l" || exit 1
 git init -q -b master "$L"; git -C "$L" config user.email t@t.example; git -C "$L" config user.name t
 mkdir -p "$L/docs/specs" "$L/docs/verification"; echo marker > "$L/docs/verification/README.md"
 git -C "$L" add -A; git -C "$L" commit -qm init
@@ -337,7 +337,7 @@ git -C "$L" switch -qc chore/idle
 [ "$(gate_dead "$L" 'git push origin feat/lane')" = 2 ] && ok "dead capture: single-branch push (@@REF scan) -> engaged" || no "dead capture: single-branch push (@@REF scan) -> should engage (exit 2)"
 dead_engages "gh pr create (gh view)"           'gh pr create --fill'
 dead_engages "gh pr new after cd (gh view)"     "cd $R && gh pr new --fill"
-M="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/m"
+M="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/m" || exit 1
 git init -q -b main "$M"; git -C "$M" config user.email t@t.example; git -C "$M" config user.name t
 echo base > "$M/f"; git -C "$M" add -A; git -C "$M" commit -qm init
 [ "$(gate_dead "$M" 'git push origin main')" = 2 ] && ok "dead capture: push to main still refused" || no "dead capture: push to main should still be refused (exit 2)"

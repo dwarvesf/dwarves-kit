@@ -73,8 +73,12 @@ echo "$out" | grep -qF "$T/nope/boards.txt" && ok "R4 names the env registry pat
 echo "=== R5: board-mirror-cleanup.py --registry default ==="
 out="$(cd "$T/home-repo" && KIT_BOARDS_REGISTRY="$T/nope/boards.txt" HERMES_HOME="$T/hermes" python3 "$CLEANUP" 2>&1)"
 echo "$out" | grep -qF "$T/nope/boards.txt" && ok "R5 reads the env registry" || bad "R5 reads the env registry: $out"
-out="$(cd "$T/home-repo" && env -u KIT_BOARDS_REGISTRY HERMES_HOME="$T/hermes" python3 "$CLEANUP" 2>&1)"
-echo "$out" | grep -qF "home-repo/_meta/boards.txt" && ok "R5 falls back to the repo default" || bad "R5 falls back to the repo default"
+# With a readable registry the script goes on to call `hermes kanban`. A runner has no hermes, so a stub
+# that lists no boards stands in; the run then reaches the header line that names the registry.
+mkdir -p "$T/stub-bin"
+printf '#!/bin/sh\necho "[]"\n' > "$T/stub-bin/hermes"; chmod +x "$T/stub-bin/hermes"
+out="$(cd "$T/home-repo" && env -u KIT_BOARDS_REGISTRY HERMES_HOME="$T/hermes" PATH="$T/stub-bin:$PATH" python3 "$CLEANUP" 2>&1)"
+echo "$out" | grep -qF "registry=$T/home-repo/_meta/boards.txt" && ok "R5 falls back to the repo default" || bad "R5 falls back to the repo default: $out"
 
 echo "=== R6: reflect/propose.py cockpit source ==="
 cockpit() {

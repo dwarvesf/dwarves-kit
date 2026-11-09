@@ -184,7 +184,9 @@ transitions:
 ```
 EOF
   CHROME="$chrome" DOC_FIGURES_ROOT="$RM" bash "$DF" render >"$TMPD/render.log" 2>&1
-  chk "render exits 0 on a one-sheet model" "$?"
+  rrc=$?
+  chk "render exits 0 on a one-sheet model" "$rrc"
+  [ "$rrc" -eq 0 ] || { echo "  --- render log ($chrome) ---"; tail -20 "$TMPD/render.log"; }
   chk "render writes <id>.png, not d-<id>.png" "$([ -s "$RM/docs/figures/tiny-flow.png" ] && [ ! -e "$RM/docs/figures/d-tiny-flow.png" ]; echo $?)"
   chk "render writes MANIFEST.tsv with the id and a 16-hex digest" "$(grep -qE '^tiny-flow	[0-9a-f]{16}$' "$RM/docs/figures/MANIFEST.tsv"; echo $?)"
   run "$RM"
