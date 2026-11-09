@@ -199,6 +199,22 @@ EOF
   run "$RM"
   chk "check passes straight after render" "$RC"
 
+  # Browser helper processes can outlive the main one and keep writing into its profile, which made the
+  # profile cleanup fail with ENOTEMPTY and the render exit 1 after the shots were already taken. The wrapper
+  # stands in for such a helper: it keeps creating dirs in the profile for a few seconds after launch.
+  LATE="$TMPD/late-browser"
+  cat > "$LATE" <<'LATEEOF'
+#!/bin/bash
+for a in "$@"; do case "$a" in --user-data-dir=*) d="${a#--user-data-dir=}" ;; esac; done
+( for i in $(seq 1 100); do mkdir -p "$d/late$i/sub" 2>/dev/null; echo x > "$d/late$i/sub/f" 2>/dev/null; sleep 0.05; done ) >/dev/null 2>&1 &
+exec "$LATE_REAL" "$@"
+LATEEOF
+  chmod +x "$LATE"
+  for n in 1 2 3; do
+    LATE_REAL="$chrome" CHROME="$LATE" DOC_FIGURES_ROOT="$RM" bash "$DF" render >"$TMPD/late$n.log" 2>&1
+    chk "render survives a browser helper writing into the profile on exit (run $n)" "$?"
+  done
+
   # SVG mode: the same sheet as a standalone, theme-aware SVG with its fonts embedded.
   mv "$RM/docs/figures/tiny-flow.png" "$TMPD/tiny-flow.png.gone"
   CHROME="$chrome" DOC_FIGURES_ROOT="$RM" bash "$DF" render --format svg >"$TMPD/svg.log" 2>&1

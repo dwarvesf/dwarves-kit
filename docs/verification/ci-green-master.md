@@ -10,7 +10,7 @@ Six suites went red on the 2026-11-09 dispatch of `test.yml`. Five are test-host
 | test-board-states | `SourceFileLoader.load_module()` is gone in Python 3.15 | #1101 | yes, Python 3.15 |
 | test-board-registry-env | R5 needs a `hermes` binary on PATH; a runner has none | #1111 | yes, PATH without hermes |
 | test-clean-room | `gh` in `/usr/bin` writes `device-id` under XDG state in the sandbox HOME | #1115 | yes, gh linked into the sandbox PATH |
-| test-doc-figures | a cold browser start gets 15 s, and the timer outlives a good start | #1088 moved Chrome first on the runner | partly: a 20 s slow-start wrapper fails the same way; the runner log is not available |
+| test-doc-figures | the render succeeded, then `stopBrowser` removed the browser profile while Chrome helper processes still wrote into it: `rmSync` threw ENOTEMPTY and the render exited 1 (read off the runner log from the diagnostics commit). The 15 s start timer that was never cleared is a separate stall, also fixed | #1088 | yes: a wrapper that keeps writing into the profile fails 3 of 3 before the fix |
 | test-board-brief | `grep -c '\`t1\`'` is a start-of-buffer anchor in GNU grep | #1092 | no: no GNU grep or Docker egress on this host |
 
 ## Green run
@@ -47,8 +47,12 @@ Output:
   board-states on Python 3.15:     FAIL python readers disagree: Traceback (most recent call last):
   registry-env, PATH sans hermes:  FAIL R5 falls back to the repo default
   clean-room, gh on sandbox PATH:  FAIL after the full run: nothing written under the sandbox outside the allowed dirs
-  doc-figures, 20 s browser start: FAIL render exits 0 on a one-sheet model; doc-figures: build or shots failed
+  doc-figures, profile writer:     FAIL render survives a browser helper writing into the profile on exit (3 of 3)
 Verdict: PASS (every reverted fix fails; the fixed tree passes)
 ```
 
 Not controlled: board-brief fails only under GNU grep, which this host lacks.
+
+## Not a cause found
+
+test-spec-reserve T20 failed once on Ubuntu (both worktree reserves printed nothing and wrote no ledger) and passed on every other run, the master run and two later dispatches included. It could not be reproduced in 350 local iterations, under CPU load too. The test now prints git, worktree and reserve stderr on lines run-all surfaces if it fails again, and pins the operator config and XDG dirs.
