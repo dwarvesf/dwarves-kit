@@ -3,6 +3,8 @@
 # correct selection replays with 0 MISS, a selection that drops a suite that runs the changed
 # file reports MISS and exits 1, and the touched rule counts a run/source and not a bare mention.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0; FAIL=0
 ok()  { echo "  ok: $1"; PASS=$((PASS+1)); }

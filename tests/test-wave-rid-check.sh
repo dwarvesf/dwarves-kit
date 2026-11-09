@@ -8,6 +8,8 @@
 # All via the CLAUDE_CMD mock seam (no live LLM), a real throwaway `git init` repo (so _wave_run
 # stands up REAL worktrees), and a real gate-ledger ledger dir via DWARVES_KIT_LOG_DIR.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORCH="$KIT/lib/queue/orchestrate.sh"
 GLEDGER="$KIT/lib/gate/gate-ledger.sh"

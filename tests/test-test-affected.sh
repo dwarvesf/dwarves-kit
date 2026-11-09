@@ -4,6 +4,8 @@
 # the test-meta input rule, UNCOVERED, the pass cache (hit, miss after a source edit, FAIL never
 # cached, --no-cache, unusable cache fails closed).
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TA="$KIT_DIR/bin/test-affected"
 # bin/test-affected appends to the per-host timing history and may warn on load: keep both off the real host.

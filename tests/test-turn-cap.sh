@@ -14,6 +14,8 @@
 #   * segment exhaustion emits a `blocked` event and halts the sub-goal.
 #   * TURN_CAP=0 restores the pre-ceiling dispatch (no --max-turns, no capture).
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Pin the kit-root config layer to this checkout (same convention as test-orchestrate.sh)
 # so `[mega].turn_cap` resolution reads THIS kit.toml, not a dev machine's installed copy.

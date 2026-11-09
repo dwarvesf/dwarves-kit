@@ -10,6 +10,8 @@
 # Unit pins prove each part in isolation; THIS catches cross-lib wiring drift (a column
 # shift, a renamed phase, a format change one consumer missed).
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 # -e intentionally omitted: assertions use ok()/bad() wrappers; a bare command that must
 # not fail gets an explicit || guard (a swallowed failure would mint false PASSes).
 

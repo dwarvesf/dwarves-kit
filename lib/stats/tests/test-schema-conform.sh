@@ -5,6 +5,8 @@
 # adapter contract. No engine, no DuckDB -- grep/parse + one real gate-ledger.sh
 # invocation into a disposable scratch log dir (never the live one).
 set -euo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFORM="$HERE/lib/conform.sh"

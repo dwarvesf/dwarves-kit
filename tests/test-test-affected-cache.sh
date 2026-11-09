@@ -9,6 +9,8 @@
 #      and each area runs under its own timeout.
 #   3. A run appends one row per suite that ran (none for a CACHED one) and one run row.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TA="$KIT_DIR/bin/test-affected"
 PASS=0; FAIL=0

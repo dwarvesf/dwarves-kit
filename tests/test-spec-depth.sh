@@ -4,6 +4,8 @@
 # Sections: level check inverse missing-line wants size spec-md-wiring validate-wiring review-routing docs
 # No section runs all. Exit 0 = every assert green.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 H="$KIT_DIR/lib/spec/spec-depth.sh"
 FX="$KIT_DIR/tests/fixtures/spec-depth"

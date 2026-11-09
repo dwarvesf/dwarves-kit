@@ -15,6 +15,8 @@
 # Run: bash tests/test-security-hardening.sh
 # Exit 0 = all pass. Exit 1 = failures.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GEN="$KIT_DIR/lib/gate/proof-table-gen.sh"

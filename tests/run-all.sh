@@ -113,6 +113,9 @@ if [ "${1:-}" = "--run-one" ]; then
   _t0="$(date +%s)"
   _limit="$(suite_timeout "$name")"
   echo "$_limit" >"$outdir/$name.limit"
+  # The host operator kit.toml never reaches a suite (tests/test-operator-pin.sh). A suite that needs
+  # its own operator file sets the variable itself.
+  export KIT_CONFIG_OPERATOR="$outdir/no-operator-config"
   if _timeout "$_limit" bash "$suite" >"$outdir/$name.log" 2>&1; then
     echo "ok" >"$outdir/$name.status"
     mark="."

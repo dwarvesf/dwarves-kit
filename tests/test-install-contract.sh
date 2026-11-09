@@ -3,6 +3,8 @@
 # WORKFLOW.md (+ docs/WORKFLOW.md bulk, SPEC-185) + kit.toml (the lane data, SPEC-368) deployed
 # (SPEC-049). Simulates install.sh's out-of-place symlink layout.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }

@@ -5,6 +5,8 @@
 # changes run-all's exit code. The history file is pointed at a temp dir through env, so
 # nothing here touches the operator's real log.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }

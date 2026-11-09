@@ -5,6 +5,8 @@
 # $KIT/bin/<name>, never a deep lib path, so an internal lib reorg cannot break it.
 # Everything runs against a COPY of the kit under a temp dir; the real lib/ is untouched.
 set -euo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 fail=0
 chk() { if [ "$2" -eq 0 ]; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }

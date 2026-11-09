@@ -19,6 +19,8 @@
 # in an empty temp repo. `stats` needs uv (the module's own dependency) -- SKIPs cleanly
 # where uv is absent, same precedent as tests/test-stats-no-persist.sh.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 PASS=0; FAIL=0; SKIP=0
