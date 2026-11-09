@@ -306,13 +306,23 @@ _status_num() {  # slug key
 # `done` row is skipped on re-run (idempotent nights).
 _journal_init() { mkdir -p "$(dirname "$QUEUE_JOURNAL")" 2>/dev/null || true; }
 
-# 0 iff <slug> already has a `done` row, or a `gated` row whose reason is `no-delta` (a completion
-# claim a human has yet to look at: relaunching it every night would only repeat the claim).
-# Field-exact (col2=slug, col3=verdict, col4=reason), so a slug that merely APPEARS in another
-# row's reason text never false-matches.
-_journal_has_done() {  # slug
-  [ -f "$QUEUE_JOURNAL" ] || return 1
-  awk -F'\t' -v s="$1" '$2==s && ($3=="done" || ($3=="gated" && $4=="no-delta")){f=1} END{exit !f}' "$QUEUE_JOURNAL"
+# The terminal verdict set, defined ONCE for every journal reader (`queue run` and watch-board.sh).
+# `done` shipped; `gated` is a stop a human is meant to look at, whatever its reason. Everything
+# else (`error`, `stalled`, `skipped`) stays retryable.
+_verdict_is_terminal() {  # verdict
+  case "$1" in done|gated) return 0 ;; *) return 1 ;; esac
+}
+
+# The slug's most recent verdict, or "" if it has never run. Field-exact (col2=slug, col3=verdict),
+# so a slug that merely APPEARS in another row's reason text never false-matches.
+_journal_last_verdict() {  # journal slug
+  [ -f "$1" ] || return 0
+  awk -F'\t' -v s="$2" '$2==s {v=$3} END{if(v!="") print v}' "$1"
+}
+
+# 0 iff <slug>'s last journal verdict is terminal.
+_journal_is_terminal() {  # slug
+  _verdict_is_terminal "$(_journal_last_verdict "$QUEUE_JOURNAL" "$1")"
 }
 
 _journal_append() {  # slug verdict reason
@@ -961,9 +971,9 @@ cmd_run() {
   while IFS=$'\t' read -r slug repo pointer _rest; do
     [ -n "$slug" ] || continue
 
-    # idempotent nights: a slug already `done` is skipped (no window)
-    if _journal_has_done "$slug"; then
-      _say "[queue] $slug: already done or gated no-delta (journal); skipping."
+    # idempotent nights: a slug already `done` or `gated` is skipped (no window)
+    if _journal_is_terminal "$slug"; then
+      _say "[queue] $slug: already done or gated (journal); skipping."
       continue
     fi
 
