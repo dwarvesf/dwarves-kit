@@ -46,9 +46,14 @@ $(git diff --stat 2>/dev/null || echo "none")
 
 ### Active spec
 $(SPEC=""
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
-  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC="$F"; break; }
-done
+SPEC_STATUS_SH="$(dirname "${BASH_SOURCE[0]}")/../lib/spec/spec-status.sh"
+SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true)
+if [ -n "$SPEC_LIST" ]; then
+  # Highest-numbered open spec; a spec with no Status header counts as open. Without lib/ the highest spec.
+  # shellcheck disable=SC2086 # spec paths never contain spaces
+  if [ -f "$SPEC_STATUS_SH" ]; then SPEC=$(bash "$SPEC_STATUS_SH" live --none live $SPEC_LIST 2>/dev/null | sed -n 1p || true)
+  else SPEC=$(printf '%s\n' "$SPEC_LIST" | sed -n 1p); fi
+fi
 if [ -n "$SPEC" ]; then
   echo "Spec: $SPEC"
   # Extract just the task breakdown section

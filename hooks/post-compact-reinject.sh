@@ -22,11 +22,16 @@ fi
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 ESSENTIALS+="BRANCH: ${BRANCH}"$'\n'
 
-# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED).
+# Active spec: docs/specs/SPEC-NNN (highest open spec by lib/spec/states.tsv; a spec with no Status
+# header counts as open; without lib/ the highest spec).
 SPEC=""
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
-  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC="$F"; break; }
-done
+SPEC_STATUS_SH="$(dirname "${BASH_SOURCE[0]}")/../lib/spec/spec-status.sh"
+SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true)
+if [ -n "$SPEC_LIST" ]; then
+  # shellcheck disable=SC2086 # spec paths never contain spaces
+  if [ -f "$SPEC_STATUS_SH" ]; then SPEC=$(bash "$SPEC_STATUS_SH" live --none live $SPEC_LIST 2>/dev/null | sed -n 1p || true)
+  else SPEC=$(printf '%s\n' "$SPEC_LIST" | sed -n 1p); fi
+fi
 if [ -n "$SPEC" ]; then
   ESSENTIALS+="SPEC: ${SPEC} (read before implementing)"$'\n'
   # Refocus: first paragraph under ## Problem (else ## Intent, ## Goal), one line, 400 chars.

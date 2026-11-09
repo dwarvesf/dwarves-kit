@@ -18,7 +18,8 @@
 # namespace = "central docs/specs" for the central tree, else the co-located prefix
 #             (e.g. "tools/bar" for tools/bar/docs/specs/)
 # title     = the first `# ` heading (leading "# " / "Spec: " stripped), else the filename
-# Status    = the first `Status:` header value if present, else "(none)"
+# Status    = the canonical state of the `Status:` header (lib/spec/spec-status.sh get): DRAFT, APPROVED,
+#             VALIDATED, SHIPPED or PARKED, UNKNOWN for an undeclared word, "(none)" with no header
 #
 # Stdlib/bash only -- no deps, no index, no daemon. Re-run to regenerate.
 #
@@ -28,6 +29,7 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+SPEC_DIR_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Pull the title cheaply from a spec file (first `# ` heading wins).
 _title() {
@@ -43,12 +45,9 @@ _title() {
 }
 
 _status() {
-  local f="$1" s
-  s="$(grep -m1 -iE '^Status:[[:space:]]*' "$f" 2>/dev/null || true)"
-  s="${s#*[Ss]tatus:}"
-  # trim surrounding whitespace
-  s="$(printf '%s' "$s" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-  printf '%s\n' "${s:-(none)}"
+  local st; st="$(bash "$SPEC_DIR_HERE/spec-status.sh" get "$1")"
+  [ "$st" = NONE ] && st="(none)"
+  printf '%s\n' "$st"
 }
 
 # Namespace label for a spec dir (e.g. "$ROOT/tools/bar/docs/specs").

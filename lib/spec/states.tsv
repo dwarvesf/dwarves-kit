@@ -1,0 +1,21 @@
+# Spec `Status:` header: the one declaration of the machine (docs/briefs/DECISION-BRIEF-declared-state-machines.md).
+# Every reader goes through lib/spec/spec-status.sh: hooks/context-readiness.sh, hooks/spec-drift-guard.sh,
+# hooks/pre-compact-backup.sh, hooks/post-compact-reinject.sh, lib/spec/spec-index.sh, lib/goal/goal-drafts.sh.
+# tests/test-spec-states.sh fails when a script hardcodes the vocabulary again.
+#
+# Columns are TAB-separated: state, class, next, aliases.
+#   class    active    the spec is open work
+#            terminal  the spec is closed; readers skip it
+#   next     the forward path a spec normally takes from this state, space-separated, `-` for none.
+#            Advisory, like lib/board/states.tsv: it answers "where do I go next", never "what is allowed".
+#   aliases  legacy words that mean this state, space-separated, `-` for none. Stored specs keep them;
+#            readers accept them. Never add a new alias to a spec header: write the state.
+# A header reads as its first word, any case, after `Status:` or `**Status:**`; anything after the
+# first word is decoration (`VALIDATED (round 4 ...)`, `Draft · 2026-07-31 · Owner: Han`).
+# APPROVED is the operator's OK without adversarial validation; /kit:dispatch requires VALIDATED, so it stays apart.
+# Order matters: it is the order of `spec-status.sh states`.
+DRAFT	active	APPROVED VALIDATED PARKED	-
+APPROVED	active	VALIDATED SHIPPED PARKED	-
+VALIDATED	active	SHIPPED PARKED	BUILT IMPLEMENTED REVIEWED READY
+SHIPPED	terminal	-	SHIPPED-PENDING
+PARKED	terminal	-	SUPERSEDED

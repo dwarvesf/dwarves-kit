@@ -86,14 +86,14 @@ draft_get() {
 }
 
 # Is SPEC <id> SHIPPED? Resolves docs/specs/<id>-*.md and reads its
-# Status: header the same way the hooks do (prefix-match, case-insensitive).
+# Status: header through lib/spec/spec-status.sh, the one reader the hooks share.
 # exit 0 = SHIPPED; exit 1 = not shipped / unresolvable / no spec.
 spec_is_shipped() {
   local id="$1" sdir; sdir="$(specs_dir)" || return 1
   local matches=("$sdir/$id-"*.md)
   [ "${#matches[@]}" -ge 1 ] || return 1
   local f="${matches[0]}"
-  grep -qiE '^Status:[[:space:]]*SHIPPED' "$f"
+  [ "$(bash "$(dirname "${BASH_SOURCE[0]}")/../spec/spec-status.sh" get "$f")" = SHIPPED ]
 }
 
 # --- subcommands ------------------------------------------------------------
