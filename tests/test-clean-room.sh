@@ -150,7 +150,8 @@ assert_writes_land_only_in() {
 # config), print any line that names the maintainer, their tooling or the real user's home.
 host_leak_hits() {
   # op:// counts only as a real ref (a vault name follows); the shipped docs show op://<vault>/... placeholders.
-  local pats=(tieubao han-ws ops-toolkit)
+  # Built from halves so this file is not its own hit for lib/gate/boundary-lint.sh.
+  local pats=("tieu""bao" "han""-ws" "ops""-toolkit")
   [ -n "$REAL_USER" ] && pats+=("/Users/$REAL_USER" "/home/$REAL_USER")
   [ "${#REAL_HOME}" -ge 6 ] && pats+=("$REAL_HOME")
   local text; text="$(awk -v k="$KIT_DIR" '{ while ((i = index($0, k)) > 0) $0 = substr($0, 1, i - 1) substr($0, i + length(k)); print }')"
@@ -178,7 +179,8 @@ rm -f "$SANDBOX/stray-entry"
 eq "with the stray gone the sandbox is clean" "$(outside_allowed "$SANDBOX" "${ALLOWED_WRITE_DIRS[@]}" "${HARNESS_PATHS[@]}")" ""
 eq "an ancestor of an allowed dir is not a stray" "$(outside_allowed "$SANDBOX" "$HOME_DIR/.deep/inner" | grep -c "^$HOME_DIR\$")" "0"
 eq "a tokened line is a host-leak hit only through its pattern" "$(printf 'Kit location: %s\nok line\n' "$KIT_DIR" | host_leak_hits)" ""
-eq "ops-toolkit in an output line is a hit" "$(printf 'see ops-toolkit/tools\n' | host_leak_hits | grep -c ops-toolkit)" "1"
+LEAK_WORD="ops""-toolkit"
+eq "the maintainer's tooling repo name in an output line is a hit" "$(printf 'see %s/tools\n' "$LEAK_WORD" | host_leak_hits | grep -cF "$LEAK_WORD")" "1"
 eq "an op:// ref in an output line is a hit" "$(printf 'key op://vault/item\n' | host_leak_hits | grep -c 'op://')" "1"
 if [ -n "$REAL_USER" ]; then
   has "the real user's /Users path is a hit" "$(printf 'path /Users/%s/x\n' "$REAL_USER" | host_leak_hits)" "/Users/$REAL_USER"

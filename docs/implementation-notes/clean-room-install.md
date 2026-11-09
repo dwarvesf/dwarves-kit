@@ -24,4 +24,22 @@ One test that proves a stranger can install the kit and use it with none of the 
 
 ## Delta
 
-(filled as the work lands)
+### Findings the first clean-room run surfaced
+- The shipped `kit.toml` comments named `ops-toolkit` twice (the `learning_ledger` and `memory_tidy` rows). Every install copies that file into a stranger's `~/.claude/dwarves-kit/`. Both comments now say "the operator's own repo" and "your own tooling repo". Other `ops-toolkit` mentions remain in code comments and docs (`install.sh`, `lib/config/module-registry.md`, `lib/mega/mega.sh`, `lib/goal/megagoals.sh`, `docs/verification/README.md`). They are not config a stranger reads as settings, so the test scans only generated config and command output. Cleaning the rest is a docs pass, left alone here.
+- The ship-gate reads `[gate]` from the merge base with the remote default branch. Adopting a repo and not landing the adoption on the default branch leaves every gate off (`OFF-BY-CONFIG` in the hook log). The test commits the adoption and sets `refs/remotes/origin/trunk` to match, which is what a merged adoption PR does. A stranger who adopts and then pushes a feature branch with the adoption still on it gets no gate. That is existing behavior, not changed here.
+- The ship-gate refuses fixture author identities (`.test`, `example.com`, `t@t.dev`). The toy repo uses a `users.noreply.github.com` address.
+- `op://` appears in shipped docs as `op://<vault>/...` placeholders. The leak scan counts `op://` only when a vault name follows.
+- The test runs `git` without pushing: a local remote-tracking ref stands in for `origin/trunk`. The operator's branch guard and the live ship-gate hook both refuse a literal `git push` to a default branch even inside a throwaway sandbox, so the test avoids one.
+
+### Hook for the data-root work
+`ALLOWED_WRITE_DIRS` (one line) and `assert_writes_land_only_in` in `tests/test-clean-room.sh`. Today the allowed list is the whole sandbox HOME. The data-root branch narrows that entry to the kit data root plus the install-owned dirs. The function walks every path under the sandbox, so a state file landing outside the narrowed list fails by name. `real_home_canaries` lists the real-HOME dirs it watches; the data-root branch adds its new root there.
+
+### Operator layer
+- 49 suites reached the resolver by name (kit-config, `bin/config`, adopt, wrap, gate-ledger, lane data, hook-module) with no pin of their own. `tests/test-wrap.sh` was not one of them: it pins through `tests/lib/wrap-stub.sh`, and the guard follows a sourced `tests/lib` helper.
+- Sensitivity scan: each of those suites ran twice on the maintainer's host, once with the real operator file and once pinned. No suite changed its result because of the operator file today (one wrap suite timed out under load in the real-operator run and passed pinned; load, not the file). So today the pin is prevention, not a repair. The next knob someone sets in their operator file would have broken them, as `adopt.single_source` broke test-adopt.
+- Fix, three layers: (1) each of the 49 suites exports `KIT_CONFIG_OPERATOR` to a path that does not exist, right after its `set -` line; (2) `tests/run-all.sh` and `bin/test-affected` export it for every suite they start, which fences an indirect reach a name match cannot see; (3) `tests/test-operator-pin.sh` fails a suite that reaches the resolver with no pin, and fails a runner that stops pinning.
+- Guard false-alarm surface: the reach test is a name match, so a suite that only mentions `adopt.sh` in a string is flagged until it pins (one line). Exemption is `# operator-layer: unpinned-ok <reason>` in the suite. A comment mentioning the variable does not count as a pin.
+- Not covered: a suite that reaches the resolver only through a binary the pattern does not name. Layer 2 covers it when run by a runner; a bare `bash tests/test-x.sh` of such a suite stays unpinned.
+
+### CI
+`.github/workflows/test.yml` is untouched. It runs `bash tests/run-all.sh --all`, which collects `tests/test-*.sh` by glob, so both new suites run on the existing `ubuntu-latest` and `macos-latest` matrix. The repo is public (checked with `gh repo view`), so those runners cost nothing and the private-repo runner rule does not apply. No new runner type.
