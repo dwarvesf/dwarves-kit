@@ -109,7 +109,7 @@ fix = sys.argv[1]
 staging = f"{fix}/backlog-staging.md"
 backlog = f"{fix}/BACKLOG.md"
 a = Anomaly(key="wiring-check", title="Wiring-check fixture anomaly", intent="i",
-            approach="a", tags="#t", home="ops-toolkit", metric="m=1")
+            approach="a", tags="#t", home="acme-app", metric="m=1")
 staged, skipped = stage_proposals([a], staging, backlog, date="2026-07-04")
 print("staged" if staged and not skipped else "not-staged")
 with open(staging) as fh:

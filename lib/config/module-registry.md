@@ -91,6 +91,7 @@ real reader consumes it today (all rows below are, except where noted).
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| - | stats.home_repo | `""` | [impl] | stats | The repo `stats anomalies` homes a proposed backlog row to. Empty: the staged block has no `Home:` line and the operator picks the board on promote. Read through `kit_config_get_root` by `config.home_repo()` (a project `.kit.toml` never sets it). |
 | STATS_TIDE_DB | env-only | **no-default-consumer** | [impl] | stats | ops-toolkit-specific: path to tide's sqlite state db. Unset -> `config.tide_db_path()` returns `None` -> that source's table renders empty, skip-safe (no hardcoded fallback path). |
 | STATS_TGCLEANUP_DIR | env-only | **no-default-consumer** | [impl] | stats | ops-toolkit-specific: root of the tg-cleanup tool's data. Unset -> `None` -> that source is skipped. |
 | STATS_LEARNED_MD | env-only | **no-default-consumer** | [impl] | stats | ops-toolkit-specific: path to the learned-ledger markdown file. Unset -> `None` -> that source is skipped. |
@@ -212,6 +213,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
 | - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |
+| - | sync.notion_title | `""` | [impl] | sync | Title of the Notion board `board sync` creates at bootstrap. Empty means `Backlog`. Binding an existing board by `notion_db` never reads it. |
 | - | sync.notion_parent | `""` | [impl] | sync | Notion page id to create the board under (bootstrap). |
 | - | sync.hermes_target | `""` | [impl] | sync | Where the hermes instance lives: an ssh host, `local`, or `sudo:<user>` for an instance owned by another uid on this host. No default: unset aborts the sync. |
 | - | sync.hermes_home | `""` | [impl] | sync | HERMES_HOME of the kanban store to sync against. |
@@ -250,6 +252,10 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
+| SESSION_REPORT_URL | session_report.url | `""` | [impl] | session | vps-mon base URL `session-report` posts to. `--url` beats the env, the env beats the key. Empty everywhere: exit 2 with a one-line message, nothing sent. Read through `kit_config_get_root` (a project `.kit.toml` never sets it). |
+| - | session_report.host_id | `""` | [impl] | session | The host id `session-report` signs and sends. Empty means the local short hostname. Read through `kit_config_get_root`. |
+| SESSION_REPORT_HMAC_KEY | session_report.hmac_key_cmd | `""` | [impl] | session | The env var holds the snapshot HMAC key. When it is unset, the key is the stdout of the command in `hmac_key_cmd` (argv split like shlex, never a shell). Neither set: `--snapshot` exits 2. The kit holds no vault reference. Read through `kit_config_get_root`. |
+| SESSION_REPORT_HB_TOKEN | session_report.hb_token_cmd | `""` | [impl] | session | The env var holds the heartbeat token. When it is unset, the token is the stdout of the command in `hb_token_cmd`. Neither set: exit 2 with a one-line message. Read through `kit_config_get_root`. |
 | HARVEST_STATE_DIR | env-only | `$HOME/.claude/dwarves-kit/state/harvest` | [impl] | session | Harvest state dir: the `--stop-trigger` counter and lock, the detached-child payload handoff, and the sweep's cursor, ledgers and patterns. `--dry-run` points it at a throwaway overlay. |
 | HARVEST_LEDGER | env-only | `<repo root>/_meta/learned-ledger.md` | [impl] | session | The ledger `hooks/harvest.sh` appends queued learnings to. Env-only because hooks never read `kit.toml`. |
 | HARVEST_GLOSSARIES | env-only | `<repo root>/learning/*/GLOSSARY.md` | [impl] | session | Colon-separated glossary files the harvest dedups against. Empty falls back to the default. |

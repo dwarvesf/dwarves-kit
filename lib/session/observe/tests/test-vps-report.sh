@@ -129,6 +129,40 @@ else
   no "dry-run output bad: $got"
 fi
 
+# --- operator config seam: no built-in URL, host id, or vault reference -------------------
+# Every case pins the operator and kit-root config layers to temp dirs, so a real operator
+# kit.toml on the machine running the suite can never leak in.
+T="$(mktemp -d "${TMPDIR:-/tmp}/vps-report.XXXXXX")"; trap 'rm -rf "$T"' EXIT
+mkdir -p "$T/none" "$T/op"
+sr() { # sr <env assignments as one string> -- run session-report with a pinned, empty config
+  env -u SESSION_REPORT_URL -u SESSION_REPORT_HB_TOKEN -u SESSION_REPORT_HMAC_KEY \
+    KIT_CONFIG_ROOT="$T/none" KIT_CONFIG_OPERATOR="${OPDIR:-$T/none}" "$@"
+}
+
+echo "[7] no URL anywhere: one-line message, exit 2, no crash"
+out="$(OPDIR="$T/none" sr "$BIN" 2>&1 </dev/null)" && rc=0 || rc=$?
+[[ $rc -eq 2 ]] && ok "exit 2 without a URL" || no "rc=$rc out=$out"
+grep -q 'no vps-mon URL' <<<"$out" && ok "message names the key" || no "message: $out"
+[[ "$(wc -l <<<"$out" | tr -d ' ')" == "1" ]] && ok "message is one line" || no "multi-line: $out"
+
+echo "[8] URL from the operator config passes the gate; missing token degrades to a message"
+printf '[session_report]\nurl = "http://127.0.0.1:1"\n' > "$T/op/kit.toml"
+out="$(OPDIR="$T/op" sr "$BIN" 2>&1 </dev/null)" && rc=0 || rc=$?
+[[ $rc -eq 2 ]] && grep -q 'no heartbeat token' <<<"$out" && ok "URL accepted, token message" || no "rc=$rc out=$out"
+
+echo "[9] hb_token_cmd supplies the token; the unreachable URL fails soft"
+printf '#!/bin/sh\necho fake-token\n' > "$T/tok"; chmod +x "$T/tok"
+printf '[session_report]\nurl = "http://127.0.0.1:1"\nhb_token_cmd = "%s"\n' "$T/tok" > "$T/op/kit.toml"
+out="$(OPDIR="$T/op" sr "$BIN" 2>&1 </dev/null)" && rc=0 || rc=$?
+[[ $rc -eq 1 ]] && grep -q 'heartbeat: None' <<<"$out" && ok "token from command, soft failure" || no "rc=$rc out=$out"
+
+echo "[10] host id: config key wins, else the local hostname"
+printf '[session_report]\nhost_id = "acme-host"\n' > "$T/op/kit.toml"
+got="$(printf '%s' '{"files":1}' | OPDIR="$T/op" sr "$BIN" --dry-run 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['X-Host-Id'])")"
+[[ "$got" == "acme-host" ]] && ok "host_id from config" || no "host_id: $got"
+got="$(printf '%s' '{"files":1}' | OPDIR="$T/none" sr "$BIN" --dry-run 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['X-Host-Id'])")"
+[[ "$got" == "$(hostname -s)" ]] && ok "host_id defaults to the short hostname" || no "default host_id: $got"
+
 echo
 if [[ $fail -gt 0 ]]; then echo "vps-report: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "vps-report: all $pass passed"

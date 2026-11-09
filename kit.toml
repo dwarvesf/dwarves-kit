@@ -250,6 +250,7 @@ interval_secs  = 3600           # [impl] cron LaunchAgent StartInterval seconds;
 reminders_list = "Backlog"      # [impl] Reminders list name
 notion_db      = ""             # [impl] bind an existing Notion database id
 notion_parent  = ""             # [impl] Notion page id to create the board under (bootstrap)
+notion_title   = ""             # [impl] title of the Notion board created at bootstrap; empty = "Backlog"
 hermes_target  = ""             # [impl] where the hermes instance lives: ssh host, or "local", or "sudo:<user>" for another uid on this host. No default (it names one machine); unset aborts the sync
 scope_exit_cap = 20             # [impl] max rows one run may close on an app when a filter changes; --allow-scope-exit overrides
 # Per-app audience filters (SPEC-002 P1). only_tags: row must carry one;
@@ -282,6 +283,15 @@ notion_taskboard_pull_done_option = ""  # [impl] Status option never pulled; def
 # metric, so a shared payload cannot leak other projects' numbers.
 repos = ""                      # [impl] comma list, e.g. "dwarves-kit,webapp"; CLI --repos overrides
 push_url = ""                   # [impl] gateway base for `export --push` (FORGE_ADMIN_TOKEN in env)
+
+[session_report]                # `session-report` (lib/session/observe/bin/session-report); operator-only, root-only reads
+url          = ""               # [impl] vps-mon base URL; empty = session-report exits 2 with a one-line message. --url and $SESSION_REPORT_URL beat it
+host_id      = ""               # [impl] the id the worker registers for this host; empty = the local short hostname
+hmac_key_cmd = ""               # [impl] command whose stdout is the snapshot HMAC key, used when $SESSION_REPORT_HMAC_KEY is unset
+hb_token_cmd = ""               # [impl] command whose stdout is the heartbeat token, used when $SESSION_REPORT_HB_TOKEN is unset
+
+[stats]                         # `stats` (lib/stats); operator-only, root-only read
+home_repo = ""                  # [impl] repo a proposed backlog row is homed to; empty = the staged block carries no Home line
 
 [gauntlet]                      # side-flow 11 (commands/gauntlet.md); read by tests/gauntlet/cleanroom/run-remote.sh
 runner_host = "local"           # "local" runs rounds on this machine; an ssh host alias (e.g. "build-box") ships committed state there, runs the round, pulls the record back. The host resolves the probe key from ITS OWN secret store; the key never travels over ssh.

@@ -1012,6 +1012,7 @@ cmd_sync() {
   v="$(kit_config_get sync.reminders_list "")";  [ -n "$v" ] && args+=(--list "$v")
   v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
   v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
+  v="$(kit_config_get sync.notion_title "")";    [ -n "$v" ] && args+=(--notion-title "$v")
   # notion-taskboard: one-way, insert-only push to a foreign team board
   #. Down-filter only (a write-only sink has no intake path); the
   # keys are TOML-friendly underscores but the engine's --filter app token

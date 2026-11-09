@@ -16,7 +16,8 @@ consumers   = []
 
 systems     = ["claude-code", "vps-mon"]
 
-# session-report reads these at runtime (op:// refs); HMAC_KEY_CC_AIR lives on the worker.
-secrets     = ["op://Toolkit/session-report/credential", "op://Toolkit/session-report/hb_token"]
+# session-report reads these env vars at runtime, else the commands in the operator's kit.toml
+# [session_report] hmac_key_cmd / hb_token_cmd. The kit holds no vault reference.
+secrets     = ["SESSION_REPORT_HMAC_KEY", "SESSION_REPORT_HB_TOKEN"]
 
 depends_on  = []

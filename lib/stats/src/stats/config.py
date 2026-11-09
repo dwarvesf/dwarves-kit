@@ -121,6 +121,24 @@ def kit_log_dir() -> Path:
     return _env_path("DWARVES_KIT_LOG_DIR", f"{xdg}/dwarves-kit/logs")
 
 
+def home_repo() -> str:
+    """The repo a proposed backlog row is homed to: `[stats] home_repo` in the operator
+    kit.toml, read through kit_config_get_root (a project .kit.toml is never read). Empty
+    when unset: the staged block then carries no `Home:` line and the operator picks the
+    board on promote. Read per call, so a test can pin KIT_CONFIG_OPERATOR."""
+    reader = _kit_repo_root() / "lib" / "config" / "kit-config.sh"
+    if not reader.is_file():
+        return ""
+    try:
+        r = subprocess.run(
+            ["bash", "-c", 'source "$1" && kit_config_get_root "$2" ""', "_",
+             str(reader), "stats.home_repo"],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
 def tide_db_path() -> Path | None:
     """ops-toolkit-specific (05K): tide is an ops-toolkit tool. No default post-move;
     an unset env var means "not configured" (skip-safe, same as a path that does not

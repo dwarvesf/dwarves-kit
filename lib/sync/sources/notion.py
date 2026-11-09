@@ -65,7 +65,7 @@ class NotionSource:
     sync_fields = True
 
     def __init__(self, binding: dict | None = None, db: str | None = None,
-                 parent: str | None = None, title: str = "ops-toolkit Backlog",
+                 parent: str | None = None, title: str = "Backlog",
                  runner=_run_ntn):
         self.runner = runner
         self.db = db

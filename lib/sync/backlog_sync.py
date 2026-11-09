@@ -326,7 +326,8 @@ def build_source(name: str, args):
     if name == "reminders":
         return RemindersSource(args.list_name or "Backlog")
     if name == "notion":
-        return NotionSource(db=args.notion_db, parent=args.notion_parent)
+        return NotionSource(db=args.notion_db, parent=args.notion_parent,
+                            title=args.notion_title or "Backlog")
     if name == "notion-taskboard":
         if not args.notion_taskboard_db:
             sys.exit("notion-taskboard: set notion_taskboard_db in [sync] "
@@ -408,6 +409,8 @@ def main(argv=None):
     ap.add_argument("--notion-db", help="bind an existing Notion database id")
     ap.add_argument("--notion-parent",
                     help="Notion page id to create the board under (bootstrap)")
+    ap.add_argument("--notion-title",
+                    help="title of the Notion board created at bootstrap (default Backlog)")
     ap.add_argument("--github-repo",
                     help="owner/repo for the github app (default: the cwd's "
                          "origin remote, as gh resolves it)")

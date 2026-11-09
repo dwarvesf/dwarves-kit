@@ -31,6 +31,7 @@ import sys
 from dataclasses import dataclass
 
 from . import ceremony
+from . import config
 from . import materialize
 
 # --- thresholds (open-fork 3: defensible scaffolds, tune via --threshold) ----------------
@@ -132,7 +133,7 @@ def _detect_cost_spike(th: dict) -> Anomaly | None:
         approach=("Check tide_tier_b_calls for the expensive call's backend/model; confirm it is "
                   "intended, not a runaway. Detected via `ledger anomalies`."),
         tags="#u-hi #f-mid",
-        home="ops-toolkit",
+        home=config.home_repo(),
         metric=f"latest={latest:.4f} median={med:.4f} mult={latest / med:.2f}",
     )
 
@@ -185,7 +186,7 @@ def _detect_unknown_density(th: dict) -> Anomaly | None:
     med = statistics.median(series)
     if med <= th["deviation_median_max"]:
         return None
-    home = recent[-1][0] if recent else "ops-toolkit"
+    home = recent[-1][0] if recent else config.home_repo()
     return Anomaly(
         key="unknown_density",
         title="Feedback: implementation-notes deviation density over threshold",
@@ -366,7 +367,7 @@ def _detect_token_runaway(th: dict) -> Anomaly | None:
                   "consider splitting the work across sessions or /clear-ing more often. "
                   "Detected via `ledger anomalies`/`ledger digest`."),
         tags="#u-mid #f-mid",
-        home="ops-toolkit",
+        home=config.home_repo(),
         metric=f"session_id={session_id} project_slug={project_slug} total_tokens={total}",
     )
 
@@ -501,7 +502,7 @@ def _detect_memory_hygiene(th: dict) -> Anomaly | None:
                   "delete a memory -- propose only, a human confirms or dismisses each row. "
                   "Detected via `ledger anomalies`."),
         tags="#u-mid #f-lo",
-        home="ops-toolkit",
+        home=config.home_repo(),
         metric=f"with_dead={with_dead} total={total} rate={rate:.2f}",
     )
 
