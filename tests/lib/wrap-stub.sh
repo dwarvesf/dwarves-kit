@@ -311,6 +311,26 @@ reword_wrap() {
   WRAP_REWORDED="$dir/bin/wrap"
 }
 
+# reword_ladder -- sets $WRAP_LADDER_REWORDED to the bin/wrap of a kit copy whose merge-proof
+# phrases (the ladder and its squash rung alone, never a caller) are reworded. A caller that
+# still tells the proofs apart by their words stops matching in the copy, so a case run through
+# it proves the callers branch on the code.
+reword_ladder() {
+  [ -n "${WRAP_LADDER_REWORDED:-}" ] && return 0
+  local dir="$TMPD/reworded-ladder-kit"
+  mkdir -p "$dir/bin"; cp -R "$KIT_DIR/lib" "$dir/lib"; cp "$KIT_DIR/bin/wrap" "$dir/bin/wrap"
+  sed -i.bak -e '/^_merge_ladder()/,/^}/{s/ancestor of origin/reachable from origin/g;s/content already on origin/same bytes already on origin/g;}' \
+    -e '/^_squash_verdict()/,/^}/{s/squash-merged per gh/merged via gh/g;s/no merged PR found for this head/no gh record/g;}' \
+    "$dir/lib/wrap/wrap-common.sh"
+  rm -f "$dir/lib/wrap/wrap-common.sh.bak"
+  grep -q 'reachable from origin' "$dir/lib/wrap/wrap-common.sh" \
+    && grep -q 'same bytes already on origin' "$dir/lib/wrap/wrap-common.sh" \
+    && grep -q 'merged via gh' "$dir/lib/wrap/wrap-common.sh" \
+    && grep -q 'no gh record' "$dir/lib/wrap/wrap-common.sh" \
+    || { echo "reword_ladder: phrase not found" >&2; return 1; }
+  WRAP_LADDER_REWORDED="$dir/bin/wrap"
+}
+
 build_remote() { # build_remote <name> <default branch>
   local name="$1" def="$2" work="$TMPD/work-$1" b
   mkdir -p "$work"

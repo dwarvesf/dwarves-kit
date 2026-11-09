@@ -491,10 +491,10 @@ _land_run() {
   local ghs; ghs="$(_gh_state)"
   [ "$ghs" = "ok" ] || { echo "wrap.sh land: gh is ${ghs}" >&2; return 1; }
 
-  # Full refs, as _merge_proof reads them: a tag or local branch named like origin/<def> or
+  # Full refs, as _merge_ladder reads them: a tag or local branch named like origin/<def> or
   # the branch resolves first as a short name, so the count and the proof could disagree.
-  local fetch_ok=0
-  git -C "$wt" fetch -q origin "$def" 2>/dev/null || fetch_ok=1
+  local fetch_failed=0
+  git -C "$wt" fetch -q origin "$def" 2>/dev/null || fetch_failed=1
   local ahead; ahead="$(git -C "$wt" rev-list --count "refs/remotes/origin/${def}..refs/heads/${branch}" 2>/dev/null)"
   case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
   [ "$ahead" -gt 0 ] || {
@@ -562,12 +562,14 @@ _land_run() {
 
   # The branch's content may already be on the default branch by another route: a squash
   # merge writes a new commit, so `ahead` stays above zero and the branch looks unlanded. The
-  # ancestor route cannot fire here (ahead > 0 above), so an ancestor-shaped proof is dropped
-  # rather than acted on. A failed fetch proves nothing either way, so it skips the check.
-  local proof=""
-  if [ "$fetch_ok" -eq 0 ]; then
-    proof="$(_merge_proof "$repo" "$def" "$ghs" "$branch")" || proof=""
-    case "$proof" in ancestor*) proof="" ;; esac
+  # ancestor route cannot fire here (ahead > 0 above), so an ancestor proof is dropped rather
+  # than acted on. A failed fetch proves nothing either way, so it skips the check.
+  local proof="" lcode lreason lphrase
+  if [ "$fetch_failed" -eq 0 ]; then
+    read -r lcode lreason lphrase <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$branch")"
+    case "${lcode} ${lreason}" in
+      "SAFE absorbed"|"SAFE squash") proof="$lphrase" ;;
+    esac
   fi
   if [ -n "$proof" ]; then
     if [ "$draft" -eq 1 ]; then

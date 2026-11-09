@@ -35,29 +35,17 @@ _scan_repo() {
   git -C "$repo" worktree list 2>/dev/null | sed 's/^/     /'
 
   echo "-- local branches (an ancestor of origin/${def} is SAFE-d; a squash merge needs the gh proof):"
-  local b tip json verdict
-  # Every proof below names full refs: a bare name resolves a same-named tag first, and a tag
-  # or local branch called origin/<def> beats the remote-tracking ref.
+  local b lcode lreason
+  # The proofs name full refs (see _merge_ladder). A squash merge needs the gh proof; any LEAVE
+  # reads the same here, apply is where tip, base and none part ways.
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
-    if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "refs/remotes/origin/${def}" 2>/dev/null; then
-      echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
-      continue
-    fi
-    if _absorbed "$repo" "$def" "refs/heads/${b}"; then
-      echo "     ${b}  [ABSORBED: content already on origin/${def}, safe to -D]"
-      continue
-    fi
-    if [ "$ghs" != "ok" ]; then
-      echo "     ${b}  [NOT merged / unknown: LEAVE]"
-      continue
-    fi
-    tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
-    json="$(_squash_json "$(_origin_url "$repo")" "$b")"
-    verdict="$(_squash_verdict "$json" "$tip" "$def")"
-    case "$verdict" in
-      OK) echo "     ${b}  [SQUASH-MERGED per gh: safe to -D]" ;;
-      *)  echo "     ${b}  [NOT merged / unknown: LEAVE]" ;;
+    read -r lcode lreason _ <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$b")"
+    case "${lcode} ${lreason}" in
+      "SAFE ancestor") echo "     ${b}  [SAFE-d: ancestor of origin/${def}]" ;;
+      "SAFE absorbed") echo "     ${b}  [ABSORBED: content already on origin/${def}, safe to -D]" ;;
+      "SAFE squash")   echo "     ${b}  [SQUASH-MERGED per gh: safe to -D]" ;;
+      *)               echo "     ${b}  [NOT merged / unknown: LEAVE]" ;;
     esac
   done
 
