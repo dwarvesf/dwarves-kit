@@ -84,6 +84,33 @@ fi
 
 rm -rf "$FIX.wet"
 
+# --dry-run never touches uncommitted edits in the release surfaces: it
+# refuses the dirty tree and leaves the edit in place.
+cp -R "$FIX" "$FIX.dirty"
+printf '\n- uncommitted note\n' >> "$FIX.dirty/CHANGELOG.md"
+DIRTY_BEFORE="$(cat "$FIX.dirty/CHANGELOG.md")"
+"$FIX.dirty/bin/release" 1.1.0 --dry-run >/dev/null 2>&1; drc=$?
+if [ "$drc" -ne 0 ] && [ "$(cat "$FIX.dirty/CHANGELOG.md")" = "$DIRTY_BEFORE" ]; then
+  ok "--dry-run on a dirty release surface refuses and keeps the edit"
+else
+  no "--dry-run discarded or ignored a dirty release surface (rc=$drc)"
+fi
+rm -rf "$FIX.dirty"
+
+# An existing tag aborts the release BEFORE the commit and before any file moves.
+cp -R "$FIX" "$FIX.tagged"
+git -C "$FIX.tagged" tag v1.1.0
+HEAD_BEFORE="$(git -C "$FIX.tagged" rev-parse HEAD)"
+"$FIX.tagged/bin/release" 1.1.0 >/dev/null 2>&1; trc=$?
+if [ "$trc" -ne 0 ] \
+  && [ "$(git -C "$FIX.tagged" rev-parse HEAD)" = "$HEAD_BEFORE" ] \
+  && [ -z "$(git -C "$FIX.tagged" status --porcelain)" ]; then
+  ok "existing tag aborts before commit, tree and HEAD untouched"
+else
+  no "existing tag left a release commit or dirty tree (rc=$trc)"
+fi
+rm -rf "$FIX.tagged"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

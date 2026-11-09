@@ -101,6 +101,20 @@ main() {
     _ledger false "$slug" "$cost" "$itok" "$otok" "dropped-secret"; return 0
   fi
 
+  # Do not re-stage what the human already decided: a rejected draft (plain or timestamped
+  # _rejected/<slug>-YYYYMMDD-HHMMSS) or a slug that is already a live skill.
+  local rej
+  for rej in "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/$slug" "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/$slug"-[0-9]*-[0-9]*; do
+    if [ -e "$rej" ]; then
+      si_log "reviewer: draft '$slug' skipped , already rejected ($rej)"
+      _ledger false "$slug" "$cost" "$itok" "$otok" "skip-rejected"; return 0
+    fi
+  done
+  if [ -e "$SKILL_CURATOR_SKILLS_DIR/$slug" ]; then
+    si_log "reviewer: draft '$slug' skipped , a live skill with that slug exists"
+    _ledger false "$slug" "$cost" "$itok" "$otok" "skip-live"; return 0
+  fi
+
   # The only place the wrapper ever writes a draft: skill-proposals/<slug>/SKILL.md (NOT skills/).
   local dir="$SKILL_CURATOR_PROPOSALS_DIR/$slug"
   if ! mkdir -p "$dir" 2>/dev/null; then

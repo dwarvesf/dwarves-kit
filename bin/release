@@ -31,7 +31,18 @@ esac; done
 CUR="$(cat VERSION)"
 [ "$(printf '%s\n%s\n' "$CUR" "$VER" | sort -V | tail -1)" = "$VER" ] && [ "$CUR" != "$VER" ] \
   || { echo "version must move forward: current $CUR, asked $VER" >&2; exit 1; }
-[ "$DRY" = 1 ] || [ -z "$(git status --porcelain)" ] || { echo "tree not clean" >&2; exit 1; }
+# A real cut needs a clean tree. A dry run only restores the four release
+# surfaces, so it refuses when any of them carries uncommitted edits.
+SURFACES=(VERSION .claude-plugin/plugin.json tool.toml CHANGELOG.md)
+if [ "$DRY" = 1 ]; then
+  [ -z "$(git status --porcelain -- "${SURFACES[@]}")" ] \
+    || { echo "dry run refused: uncommitted edits in ${SURFACES[*]}" >&2; exit 1; }
+else
+  [ -z "$(git status --porcelain)" ] || { echo "tree not clean" >&2; exit 1; }
+fi
+# Fail before any file moves: a taken tag would otherwise leave an untagged release commit.
+! git rev-parse -q --verify "refs/tags/v$VER" >/dev/null \
+  || { echo "tag v$VER already exists" >&2; exit 1; }
 
 # Paid sources NEVER live in this repo (it is public; the private
 # dwarves-kit-stream repo is created when the first paid module ships).
@@ -60,7 +71,7 @@ t = re.sub(r'(?m)^version\s*=\s*"[^"]*"', f'version     = "{v}"', t, count=1)
 open("tool.toml", "w").write(t)
 print(f"  plugin.json + VERSION + tool.toml -> {v}")
 PY
-# roll [Unreleased] into the new section; skeleton from git log if it was empty.
+# roll [Unreleased] into the new section; the git-log skeleton is built only when the file has no [Unreleased] heading.
 # Targets the root CHANGELOG.md, the full-history file.
 python3 - "$VER" <<'PY'
 import re, subprocess, sys, datetime
@@ -99,12 +110,12 @@ SIZE="$(wc -c < "$TAR" | tr -d ' ')"
 echo "  bundle: $SIZE bytes, sha256 $SHA"
 
 if [ "$DRY" = 1 ]; then
-  git checkout -q -- VERSION .claude-plugin/plugin.json tool.toml CHANGELOG.md
+  git checkout -q -- "${SURFACES[@]}"
   echo "== dry run: files restored, nothing committed; bundle left at $TAR =="
   exit 0
 fi
 
-git add VERSION .claude-plugin/plugin.json tool.toml CHANGELOG.md
+git add "${SURFACES[@]}"
 git commit -q -m "release: v$VER"
 git tag "v$VER"
 echo "  committed + tagged v$VER (locally)"
