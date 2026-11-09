@@ -145,6 +145,8 @@ def cell(rows, names):
             return "●"
         if v in ("skipped", "override"):
             return "○"
+        if v == "rejected":
+            return "✗"
     return "-"
 
 
@@ -199,7 +201,7 @@ def main():
     out.extend(tok_lines if tok_lines else ["ledgered tokens: , (no TOKENS rows in any matched rid)"])
     out.append("```")
     out.append("")
-    out.append("### Gate coverage (● recorded-ran · ○ skipped/override-with-reason · - n/a), from each rid's gate-ledger rows")
+    out.append("### Gate coverage (● recorded-ran · ○ skipped/override-with-reason · ✗ rejected · - n/a), from each rid's gate-ledger rows")
     out.append("")
     out.append("```")
     header = " " * 20 + " ".join(ab for ab, _ in GATES) + "   tag   SPEC"

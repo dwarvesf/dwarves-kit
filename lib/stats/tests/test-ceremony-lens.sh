@@ -185,6 +185,25 @@ eq "C-unknown catches null" "$(jq '.catches.value' <<<"$J")" null
 TXT="$(R ceremony)"
 has "C-unknown text row shows ? cells" "| c1 | 3 | 5 | 1 | 2 | 0.60 | ? | ? | ? | ? | ? | ? | ? | ? |" "$TXT"
 
+echo "== C-rejected: a rejected gate is a fail-type record, counted apart, active, and a catch =="
+reset
+gl rj1 2026-09-20T10:00:00Z grill ran -
+gl rj1 2026-09-20T10:01:00Z validate rejected -
+gl rj1 2026-09-20T10:02:00Z validate ran -
+gl rj1 2026-09-20T10:03:00Z build ran -
+J="$(RJ)"
+eq "C-rejected rejected column" "$(jq '.records.rejected' <<<"$J")" 1
+eq "C-rejected ran stays apart" "$(jq '.records.ran' <<<"$J")" 3
+eq "C-rejected active (ran+override+rejected)" "$(jq '.records.active' <<<"$J")" 4
+eq "C-rejected ceremony records (build is progress)" "$(jq '.records.ceremony' <<<"$J")" 3
+eq "C-rejected counts as a known catch" "$(jq '[.catches.caught, .catches.known] | join("/")' -r <<<"$J")" "1/1"
+has "C-rejected text line names rejected" "rejected=1" "$(R ceremony)"
+
+echo "== A-rejected (negative control): the fire fixture plus one rejected gate -> does NOT fire =="
+reset; fire_fixture 0 1
+gl fire-1 2026-09-15T13:00:00Z grill rejected -
+nofire "A-rejected no ceremony_share (a rejection is a catch)" "$(RA anomalies --json)"
+
 echo "== C-progress: only PR-squash commits inside the window count; an older one does not =="
 reset
 gl p1 2026-09-20T10:00:00Z grill ran -

@@ -26,6 +26,8 @@ DEFAULT_WINDOW_DAYS = 14
 _UTC = _dt.timezone.utc
 _TASKS_RE = re.compile(r"\btasks=(\d+)")
 _SQUASH_RE = re.compile(r"\(#\d+\)\s*$")
+# A `rejected` row is a gate that ran and failed: active like ran/override, and a catch by definition.
+_ACTIVE = ("ran", "override", "rejected")
 
 _GATES_SQL = ("SELECT rid, gate, outcome, caught, reason, start_ts, end_ts, ts FROM kit_gates")
 _GIT_SQL = "SELECT sha, ts, subject, added, deleted, binary_files FROM git_lines"
@@ -33,6 +35,10 @@ _DISPATCH_SQL = ("SELECT rid, session, agent_id, agent_type, model, first_ts, la
                  "output_tokens, cache_read_tokens, cache_creation_tokens, rid_source FROM subagent_runs")
 _SCAN_SQL = "SELECT files_seen, files_read, skipped_files, earliest FROM subagent_scan"
 _LEDGER_SQL = "SELECT rid, starts, tokens, gates FROM ledger_lines"
+
+
+def _caught(r):
+    return True if r["outcome"] == "rejected" else r["caught"]
 
 
 def parse_ts(s) -> _dt.datetime | None:
@@ -134,10 +140,10 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
         if _in_window(t, start, end):
             rows.append({**r, "gate": (r["gate"] or "").strip().lower(),
                          "outcome": (r["outcome"] or "").strip().lower(), "t": t})
-    active = [r for r in rows if r["outcome"] in ("ran", "override")]
+    active = [r for r in rows if r["outcome"] in _ACTIVE]
     ceremony = [r for r in active if r["gate"] not in progress_phases]
-    caught_true = sum(1 for r in active if r["caught"] is True)
-    known = sum(1 for r in active if r["caught"] is not None)
+    caught_true = sum(1 for r in active if _caught(r) is True)
+    known = sum(1 for r in active if _caught(r) is not None)
 
     weeks = defaultdict(lambda: [0, 0])
     for r in active:
@@ -179,9 +185,9 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
     runs = []
     for rid in sorted(set(by_rid_rows) | set(by_rid_disp)):
         rr = by_rid_rows.get(rid, [])
-        act = [r for r in rr if r["outcome"] in ("ran", "override")]
+        act = [r for r in rr if r["outcome"] in _ACTIVE]
         cer = [r for r in act if r["gate"] not in progress_phases]
-        k = sum(1 for r in act if r["caught"] is not None)
+        k = sum(1 for r in act if _caught(r) is not None)
         builds = sorted((r for r in rr if r["gate"] == "build" and r["outcome"] == "ran"),
                         key=lambda r: r["t"])
         m = _TASKS_RE.search(builds[-1]["reason"] or "") if builds else None
@@ -194,7 +200,7 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
             "override": sum(1 for r in act if r["outcome"] == "override"),
             "skipped": sum(1 for r in rr if r["outcome"] == "skipped"),
             "share": _share(len(cer), len(act)),
-            "catches": sum(1 for r in act if r["caught"] is True) if k else None, "known": k,
+            "catches": sum(1 for r in act if _caught(r) is True) if k else None, "known": k,
             "lines": sum((c["added"] or 0) + (c["deleted"] or 0) for c in mine) if mine else None,
             "prs": len(mine) if mine else None,
             "dispatches": len(ds) if ds else None,
@@ -216,6 +222,7 @@ def summarize(gates, git, dispatches, scan, ledger, start, end, *,
             "ran": sum(1 for r in rows if r["outcome"] == "ran"),
             "override": sum(1 for r in rows if r["outcome"] == "override"),
             "skipped": sum(1 for r in rows if r["outcome"] == "skipped"),
+            "rejected": sum(1 for r in rows if r["outcome"] == "rejected"),
             "active": len(active), "ceremony": len(ceremony),
             "ceremony_ran": sum(1 for r in ceremony if r["outcome"] == "ran"),
             "ceremony_override": sum(1 for r in ceremony if r["outcome"] == "override"),
@@ -284,11 +291,12 @@ def render_text(s) -> str:
     prog, dsp, tr = s["progress"], s["dispatch"], s["transcripts"]
     out = [f"ceremony lens: window {_q(w['start'])} .. {_q(w['end'])}", ""]
     out.append(f"records: ran={rec['ran']} override={rec['override']} skipped={rec['skipped']} "
-               "(skipped never enters the share)")
-    out.append(f"ceremony records (ran+override): {rec['ceremony']} of {rec['active']} gate records, "
+               f"rejected={rec['rejected']} (skipped never enters the share; "
+               "rejected is a gate that ran and caught, so it is active and a catch)")
+    out.append(f"ceremony records (ran+override+rejected): {rec['ceremony']} of {rec['active']} gate records, "
                f"ran={rec['ceremony_ran']} override={rec['ceremony_override']}; "
                f"share={_q(rec['share'], '{:.2f}')} (a share of gate records, never of tokens or time)")
-    out.append("gates (ran+override): " + (", ".join(f"{k}={v}" for k, v in rec["by_gate"].items()) or "none"))
+    out.append("gates (ran+override+rejected): " + (", ".join(f"{k}={v}" for k, v in rec["by_gate"].items()) or "none"))
     out.append("catches: " + (f"{cat['caught']} ({cat['known']} known)" if cat["known"]
                               else "? (0 known)"))
     out.append(f"no-ts: {rec['no_ts']} gate rows without a parseable timestamp")
