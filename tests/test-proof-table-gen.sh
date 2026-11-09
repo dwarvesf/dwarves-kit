@@ -181,6 +181,28 @@ expect "T9: spec row carries the reason only" "| 1 | spec | 2026-07-04T09:00:01Z
 refute "T9: no via tag in the table" "via=" "$BODY9"
 expect "T9: covered still counts the override" "Covered: build, spec" "$BODY9"
 
+# ============================================================
+echo ""
+echo "=== T10: coverage follows each phase's LATEST row, as check() does ==="
+# ============================================================
+RID10="fixture-latest"
+cat > "$DWARVES_KIT_LOG_DIR/runs/$RID10.log" <<'EOF'
+2026-07-04T09:00:00Z | START | lane=normal classified=normal type=spec-feature repo=dwarves-kit
+2026-07-04T09:00:01Z | GATE | validate | ran | first pass
+2026-07-04T09:00:02Z | GATE | validate | rejected | NEEDS-REVISION: 1 critical
+2026-07-04T09:00:03Z | GATE | spec | skipped | not needed
+2026-07-04T09:00:04Z | GATE | spec | ran | wrote it after all
+2026-07-04T09:00:05Z | GATE | build | override | waived
+2026-07-04T09:00:06Z | GATE | build | skipped | changed my mind
+EOF
+OUT10="$RUNS/out10.md"
+bash "$GEN" "$RID10" "$OUT10" >/dev/null 2>&1
+BODY10="$(cat "$OUT10" 2>/dev/null)"
+expect "T10: only the phase whose latest row is ran is covered" "Covered: spec" "$BODY10"
+expect "T10: a later rejected or skipped row uncovers the phase" "Uncovered:" "$BODY10"
+refute "T10: validate is not covered after a rejected row" "Covered: spec, validate" "$BODY10"
+refute "T10: build is not covered after a skipped row" "Covered: build" "$BODY10"
+
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"
