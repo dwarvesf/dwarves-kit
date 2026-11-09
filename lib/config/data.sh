@@ -95,8 +95,10 @@ cmd_move() {
   # elsewhere, find an empty dir, and reset its cursor. Pin the root first.
   _kit_data_root_override
   if [ -z "$_KD_ROOT" ]; then
-    [ -z "${XDG_STATE_HOME:-}" ] || xdg="XDG_STATE_HOME"
-    [ -z "${XDG_CACHE_HOME:-}" ] || xdg="${xdg:+$xdg and }XDG_CACHE_HOME"
+    # Only a value that differs from the home default matters: the same value resolves the same way.
+    _kit_data_sethome
+    [ -z "${XDG_STATE_HOME:-}" ] || [ "${XDG_STATE_HOME%/}" = "$_KD_HOME/.local/state" ] || xdg="XDG_STATE_HOME"
+    [ -z "${XDG_CACHE_HOME:-}" ] || [ "${XDG_CACHE_HOME%/}" = "$_KD_HOME/.cache" ] || xdg="${xdg:+$xdg and }XDG_CACHE_HOME"
   fi
   if [ -n "$xdg" ]; then
     echo "$([ "$apply" = 1 ] && echo stop || echo warning): $xdg is set in this shell, so the target is not the one a hook or a launchd job would find." >&2

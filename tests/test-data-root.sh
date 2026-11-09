@@ -192,6 +192,10 @@ OUT="$(d XDG_STATE_HOME="$T/xs7" -- move --apply 2>&1)"; RC=$?
 eq "apply stops when XDG_STATE_HOME is set and no root is pinned" "$RC" 1
 echo "$OUT" | grep -F 'stop: XDG_STATE_HOME is set' >/dev/null && ok "...and says why" || bad "xdg stop output: $OUT"
 eq "...and moved nothing" "$([ -e "$H/.claude/skill-curator/ledger" ] && [ ! -e "$T/xs7" ] && echo kept)" kept
+OUT="$(d XDG_STATE_HOME="$H/.local/state" XDG_CACHE_HOME="$H/.cache/" -- move --apply 2>&1)"; RC=$?
+eq "XDG dirs equal to the home defaults do not stop a move" "$RC" 0
+echo "$OUT" | grep -F 'XDG_' >/dev/null && bad "equal XDG dirs warned: $OUT" || ok "...and do not warn"
+mkdir -p "$H/.claude/skill-curator"; echo c > "$H/.claude/skill-curator/ledger"
 OUT="$(d XDG_STATE_HOME="$T/xs7" -- move 2>&1)"; RC=$?
 eq "a dry run warns and still exits 0" "$RC" 0
 echo "$OUT" | grep -F 'warning: XDG_STATE_HOME is set' >/dev/null && ok "...with the warning" || bad "xdg warn output: $OUT"
