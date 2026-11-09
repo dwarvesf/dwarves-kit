@@ -36,7 +36,7 @@
 #   --cluster-map M         `cluster=rail,cluster=rail` for the digest (see board-digest.sh)
 #   --crit-prefix P         adopted rows titled P... make a digest `crit`
 #   --field-cap N           digest field cap
-#   --state-file F          digest state (default ~/.cache/backlog-sync/digest-state.json)
+#   --state-file F          digest state (default: digest-state.json in `config data path state backlog-sync`)
 #   --mirror-hermes-home D  turn the mirror leg on, against the kanban store at D
 #   --mirror-snapshot F     mirror snapshot (default <repo-root>/_meta/.board-mirror-snapshot.jsonl)
 #   --expire-kinds-file F   turn the expiry leg on (needs --mirror-hermes-home): `board
@@ -54,7 +54,7 @@
 #   --health-quiet C        post nothing for cluster C while it is clean (repeatable)
 #   --health-hub C=NAME | --health-board C=SLUG | --health-faults-only C
 #   --health-triage-open N | --health-triage-days N     which lines a cluster shows (see board-health)
-#   --health-state-file F   health state (default ~/.cache/backlog-sync/health-state.json)
+#   --health-state-file F   health state (default: health-state.json in `config data path state backlog-sync`)
 #   --dry-run               plan only: `board sync --dry-run`, no publish, `board mirror
 #                           --dry-run`, digests printed instead of posted, the real digest
 #                           state untouched (health state too), no on-clean hook
@@ -85,7 +85,8 @@ SYNC_TOKEN_REPOS=()
 PREFLIGHT=""
 POSTER=""
 ON_CLEAN=""
-STATE_FILE="${HOME}/.cache/backlog-sync/digest-state.json"
+SYNC_STATE_DIR="$(bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../config/data-path.sh" path state backlog-sync)"
+STATE_FILE="$SYNC_STATE_DIR/digest-state.json"
 MIRROR_HERMES_HOME=""
 MIRROR_SNAPSHOT=""
 EXPIRE_KINDS=""
@@ -93,7 +94,7 @@ REPO_ROOT=""
 DRY_RUN=0
 digest_flags=()
 HEALTH=0
-HEALTH_STATE="${HOME}/.cache/backlog-sync/health-state.json"
+HEALTH_STATE="$SYNC_STATE_DIR/health-state.json"
 health_flags=()
 HEALTH_MAP=""
 

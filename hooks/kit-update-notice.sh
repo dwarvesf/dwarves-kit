@@ -9,7 +9,7 @@
 #   KIT_UPDATE_CHECK=0           disable the check
 #   KIT_UPDATE_CHECK_URL=URL     where the latest VERSION is fetched (default: raw.githubusercontent.com master);
 #                                a file:// URL works, which is how the tests run
-#   KIT_UPDATE_STATE_DIR=DIR     cache of {checked_at, latest} (default ~/.claude/dwarves-kit/state/update-notice)
+#   KIT_UPDATE_STATE_DIR=DIR     cache of {checked_at, latest} (default: config data path cache update-notice)
 # The network is touched at most once per 24h; between fetches the cached latest is compared.
 # The module toggle `update_check` is enforced by hooks/anchor-root.sh, like every non-spine hook.
 
@@ -47,7 +47,9 @@ main() {
   is_semver "$installed" || return 0
 
   local state_dir cache now checked_at latest
-  state_dir="${KIT_UPDATE_STATE_DIR:-$HOME/.claude/dwarves-kit/state/update-notice}"
+  # shellcheck source=../lib/config/data-path.sh
+  . "${BASH_SOURCE[0]%/*}/../lib/config/data-path.sh" 2>/dev/null || return 0
+  state_dir="${KIT_UPDATE_STATE_DIR:-$(kit_data_path cache update-notice)}"
   cache="$state_dir/cache.json"
   now="$(date +%s)"
 

@@ -32,7 +32,7 @@ Full path contract: `docs/feedback-loop.md`.
 ## Use
 
 ```bash
-session audit run                          # 7-day window, sonnet, ~/.claude/intel/audit-YYYY-MM-DD.md
+session audit run                          # 7-day window, sonnet, <intel dir>/audit-YYYY-MM-DD.md (config data path state intel)
 session audit run --days 3 --model opus    # heavier judgment pass
 session audit triage                       # stage the newest report's recommendations as proposals
 session audit triage --dry-run             # print the blocks, write nothing

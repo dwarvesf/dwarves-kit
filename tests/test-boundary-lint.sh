@@ -107,5 +107,39 @@ assert "no python3 on PATH says the check could not run" "$(printf '%s' "$OUT" |
 rm -rf "$FX"
 
 echo ""
+echo "=== AC7: a hardcoded runtime data path outside the resolver is caught (SPEC-418) ==="
+# Fresh fixture per case so each exit code proves its own check.
+for lit in '.claude/dwarves-kit/state/x' '.claude/intel' '.claude/skill-proposals' '.claude/skill-curator' '.cache/backlog-sync'; do
+  FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  mkdir -p "$FX/hooks"
+  printf 'DIR="$HOME/%s"\n' "$lit" > "$FX/hooks/new-hook.sh"
+  OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+  assert "planted $lit in a hook exits non-zero" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)" "$OUT"
+  assert "planted $lit names the file and the resolver" "$(printf '%s' "$OUT" | grep -q 'data path hardcoded.*hooks/new-hook.sh:1' && echo 0 || echo 1)" "$OUT"
+  rm -rf "$FX"
+done
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/lib/x" "$FX/skills/y" "$FX/lib/config" "$FX/lib/x/tests" "$FX/docs"
+printf 'p = "~/.claude/intel"\n' > "$FX/lib/x/tool.py"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "planted path in a Python file is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'lib/x/tool.py:1' && echo 0 || echo 1)" "$OUT"
+rm -f "$FX/lib/x/tool.py"
+printf 'Read ~/.claude/skill-proposals/<slug>/SKILL.md first.\n' > "$FX/skills/y/SKILL.md"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "planted path in a skill's prose is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'skills/y/SKILL.md:1' && echo 0 || echo 1)" "$OUT"
+rm -f "$FX/skills/y/SKILL.md"
+# Allowed: the resolver, comments, docstrings, tests, docs, other markdown, the marker.
+printf 'L="$HOME/.claude/intel"\n' > "$FX/lib/config/data-path.sh"
+printf '# default was ~/.claude/intel\nX=1\n' > "$FX/lib/x/a.sh"
+printf '"""Writes ~/.claude/intel."""\n\n\ndef f():\n    return 1\n' > "$FX/lib/x/b.py"
+printf 'L="$HOME/.claude/intel"\n' > "$FX/lib/x/tests/t.sh"
+printf 'Old home: ~/.claude/intel\n' > "$FX/docs/n.txt"
+printf 'Old home: ~/.claude/intel\n' > "$FX/lib/x/README.md"
+printf 'L="$HOME/.claude/intel"  # data-path-ok: migration reads the old home\n' > "$FX/lib/x/c.sh"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "resolver, comments, docstrings, tests, docs, other markdown and the marker pass (rc=$RC)" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
+
+echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]

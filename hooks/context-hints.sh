@@ -17,7 +17,7 @@
 #
 # Env (the last three mainly make tests deterministic):
 #   CONTEXT_HINTS_SKILLMAP=FILE  keyword -> skill JSON (default: context-hints-skills-map.json beside this hook)
-#   CONTEXT_HINTS_STATE=DIR      per-session timing state (default ~/.claude/dwarves-kit/state/context-hints)
+#   CONTEXT_HINTS_STATE=DIR      per-session timing state (default: config data path cache context-hints)
 #   CONTEXT_HINTS_NOW=EPOCH      override "now"
 #   CONTEXT_HINTS_TEMPORAL=0     turn the temporal line off
 # Exit 0 always: a context hint never blocks a prompt. Any malformed input, state, or map
@@ -63,8 +63,9 @@ sid=$(printf '%s' "$INPUT" | jq -rnj "$FUNCS"'
     | (if ($s | test("^[A-Za-z0-9_-]{1,64}$")) then $s else "default" end), "x" end' 2>/dev/null) || exit 0
 sid=${sid%x}
 
-default_state=~/.claude/dwarves-kit/state/context-hints
-state_dir="${CONTEXT_HINTS_STATE-$default_state}"
+# shellcheck source=../lib/config/data-path.sh
+. "$HERE/../lib/config/data-path.sh" 2>/dev/null || exit 0
+state_dir="${CONTEXT_HINTS_STATE-$(kit_data_path cache context-hints)}"
 state_path="${state_dir:+$state_dir/}$sid.json"
 map_path="${CONTEXT_HINTS_SKILLMAP-$HERE/context-hints-skills-map.json}"
 # A file that is missing, unreadable, or starts with a BOM (a parse error to Python) reads as

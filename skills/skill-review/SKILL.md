@@ -1,12 +1,12 @@
 ---
 name: skill-review
-description: Review and promote skill drafts that skill-curator staged from past sessions. Use when the user runs /skill-review, says "review my skill drafts", "promote a staged skill", or asks what skills the self-improvement loop proposed. Lists drafts under ~/.claude/skill-proposals/, runs the inline skill quality bar on each, then promotes the approved ones into ~/.claude/skills/ or rejects them.
+description: Review and promote skill drafts that skill-curator staged from past sessions. Use when the user runs /skill-review, says "review my skill drafts", "promote a staged skill", or asks what skills the self-improvement loop proposed. Lists the staged drafts (the dir `config data path state skill-proposals` prints), runs the inline skill quality bar on each, then promotes the approved ones into ~/.claude/skills/ or rejects them.
 disable-model-invocation: false
 ---
 
 # skill-review (the promote gate)
 
-skill-curator's background reviewer stages skill drafts under `~/.claude/skill-proposals/`. It
+skill-curator's background reviewer stages skill drafts in the proposals dir (print it with `bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/bin/config" data path state skill-proposals`). It
 NEVER writes `~/.claude/skills/`. This skill is the human gate that promotes a vetted draft into the
 live library. `bin/skill-review` (from `lib/skill-curator/`, put it on PATH or invoke by its full
 path) is the only writer of `~/.claude/skills/`.
@@ -19,7 +19,7 @@ path) is the only writer of `~/.claude/skills/`.
    ```
    If "(no staged drafts)", stop and say so.
 
-2. **For each draft**, read `~/.claude/skill-proposals/<slug>/SKILL.md` and vet it against the
+2. **For each draft**, read `<proposals dir>/<slug>/SKILL.md` and vet it against the
    quality bar below (self-contained; no external plugin needed):
    - Is the name class-level (not a PR number, error string, codename, or today-only artifact)?
    - Is the `description` a real trigger (what class of task + when), so a future agent matches it?

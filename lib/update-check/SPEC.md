@@ -16,7 +16,7 @@ A kit install goes stale without any sign. Nothing tells the user a newer releas
 | Installed version | `${CLAUDE_PLUGIN_ROOT}/VERSION`, else `${DWARVES_KIT:-~/.claude/dwarves-kit}/VERSION` |
 | Latest version | `curl -fsS --max-time 2 $KIT_UPDATE_CHECK_URL` (default: raw.githubusercontent.com, `dwarvesf/dwarves-kit`, `master`, `VERSION`) |
 | Version shape | strict `major.minor.patch`, digits only; anything else is "unknown" |
-| Throttle | at most one fetch per 24h; `{checked_at, latest}` cached in `${KIT_UPDATE_STATE_DIR:-~/.claude/dwarves-kit/state/update-notice}/cache.json`; between fetches the cached latest is compared |
+| Throttle | at most one fetch per 24h; `{checked_at, latest}` cached in `${KIT_UPDATE_STATE_DIR:-<config data path cache update-notice>}/cache.json`; between fetches the cached latest is compared |
 | A failed fetch | recorded as an attempt (keeps the old cached latest), so an offline machine retries tomorrow, not every start |
 | Output | `{"systemMessage": "..."}` on stdout, only when latest > installed (semver compare); otherwise nothing |
 | Failure | offline, no curl or jq, bad VERSION, any error: exit 0, no output. Never blocks past the 2s curl cap; hooks.json timeout is 5 |

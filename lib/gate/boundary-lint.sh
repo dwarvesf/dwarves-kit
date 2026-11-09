@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # boundary-lint.sh -- the engine never names a consumer, by path or by
-# skill (learning-boundary), and its code never carries the operator's identity. Three checks,
-# all read-only.
+# skill (learning-boundary), its code never carries the operator's identity, and its runtime
+# data paths live in one resolver. Four checks, all read-only.
 #
 # PATH: all of lib/ and hooks/ (minus four modules named below), commands/, tests/, kit.toml
 # for a hardcoded dotfiles or ops-toolkit path -- the shape behind the PR #554 regression (a
@@ -29,6 +29,15 @@
 # docstring (found with ast). Anything else that must keep a token (a check that greps for the
 # token itself, an optional local-only test) carries the marker `boundary-ok: <reason>` on its
 # line. No module is exempt: the four PATH-check exclusions above do not apply here.
+#
+# DATA: a runtime data path (a legacy default under ~/.claude, ~/.cache or ~/.config, listed in
+# data_re) is spelled in ONE file, lib/config/data-path.sh. Anywhere else in executable code it
+# is a hardcoded default that bypasses the resolver (SPEC-418), so a user cannot answer "where is
+# my data" and `config data move` cannot carry it. Scope: lib/, hooks/, bin/, deploy/, install.sh,
+# plus the agent-facing prose in commands/ and skills/ (a path printed there gets copied into a
+# command). Skipped: the resolver itself, tests/, docs/, fixtures/ and examples/ dirs, other
+# markdown, comment lines, Python docstrings. A line that must keep one carries `data-path-ok:
+# <reason>`.
 #
 # name_files/name_re are a hand-maintained list, not derived from lib/config/module-
 # registry.md's "## Seams" table: that table's Filled-by column is free-text prose ("the
@@ -141,6 +150,87 @@ if deny_out="$(deny_scan)"; then
   done <<< "$deny_out"
 else
   flag "deny check could not run: $deny_out"
+fi
+
+# DATA check. Same shape as the deny scan: captured, so a crashed scan fails the lint.
+data_re='\.claude/(dwarves-kit/state|dwarves-kit/tool-policy|intel|skill-proposals|skill-curator|logs/money-gate)|\.cache/(backlog-sync|claude-context-budget)|\.config/harvest-sweep'  # data-path-ok: the lint's own pattern
+data_scan() {
+  command -v python3 >/dev/null 2>&1 || { echo "needs python3 on PATH"; return 1; }
+  python3 - "$ROOT" "$data_re" <<'PY'
+import ast, os, re, sys
+
+root, pattern = sys.argv[1], sys.argv[2]
+pat = re.compile(pattern)
+skip_dirs = {".git", ".claude", "node_modules", ".venv", "__pycache__", "docs", "tests", "fixtures", "examples"}
+skip_ext = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg", ".pdf",
+            ".woff", ".woff2", ".gz", ".zip", ".tar", ".tgz"}
+resolver = os.path.join(root, "lib", "config", "data-path.sh")
+scan_dirs = [os.path.join(root, d) for d in ("lib", "hooks", "bin", "deploy", "commands", "skills")]
+scan_files = [os.path.join(root, "install.sh")]
+
+
+def docstring_lines(text):
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return set()
+    lines = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        body = node.body
+        if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], "value", None), ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            lines.update(range(body[0].lineno, body[0].end_lineno + 1))
+    return lines
+
+
+def candidates():
+    for top in scan_dirs:
+        for dirpath, dirs, files in os.walk(top):
+            dirs[:] = sorted(d for d in dirs if d not in skip_dirs)
+            for name in sorted(files):
+                yield os.path.join(dirpath, name)
+    for f in scan_files:
+        if os.path.isfile(f):
+            yield f
+
+
+for path in candidates():
+    name = os.path.basename(path)
+    ext = os.path.splitext(name)[1].lower()
+    rel = os.path.relpath(path, root)
+    prose = ext == ".md"
+    if path == resolver or os.path.islink(path) or ext in skip_ext:
+        continue
+    if prose and not rel.startswith(("commands" + os.sep, "skills" + os.sep)):
+        continue
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError:
+        continue
+    if b"\0" in raw:
+        continue
+    text = raw.decode("utf-8", "replace")
+    first = text.split("\n", 1)[0]
+    is_py = name.endswith(".py") or (first.startswith("#!") and "python" in first)
+    skip = docstring_lines(text) if is_py else set()
+    for n, line in enumerate(text.split("\n"), 1):
+        stripped = line.lstrip()
+        if not prose and (n in skip or stripped.startswith("#") or stripped.startswith("//")):
+            continue
+        if pat.search(line) and "data-path-ok:" not in line:
+            print(f"{rel}:{n}: {line.strip()[:160]}")
+PY
+}
+if data_out="$(data_scan)"; then
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    flag "data path hardcoded outside lib/config/data-path.sh (use: config data path <kind> <name>): $hit"
+  done <<< "$data_out"
+else
+  flag "data check could not run: $data_out"
 fi
 
 [ "$fail" = 0 ] && echo "boundary-lint: PASS"

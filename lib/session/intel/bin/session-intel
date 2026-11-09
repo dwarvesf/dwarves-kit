@@ -11,7 +11,7 @@ Assembles ONE dated digest from five sources:
 Propose-don't-dispose: writes ONE digest file and never edits the ledger, GLOSSARYs, til, or boards.
 No mini.ollama, no LLM: synthesis + repeat are deterministic heuristics (a human reviews the proposals).
 
-  session-intel run [--out DIR]                         write the full digest (default ~/.claude/intel)
+  session-intel run [--out DIR]                         write the full digest (default: config data path state intel)
   session-intel synthesis [--ledger F --glossaries D]   just the merge proposals (stdout)
   session-intel repeat [--transcripts D --min N]        just the repeat proposals (stdout)
 
@@ -47,6 +47,8 @@ def _repo_root():
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
 from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "config"))
+import kit_data  # noqa: E402
 
 HOME = os.path.expanduser("~")
 # OPS_TOOLKIT is a TENANT-specific corpus root (someone's learned-ledger + GLOSSARY
@@ -55,7 +57,7 @@ HOME = os.path.expanduser("~")
 # which `synthesis()` already treats as "source unavailable" (honest-zero: the
 # digest's merge-proposals section reads "_none_", never a crash or a wrong guess).
 OT = os.environ.get("OPS_TOOLKIT")
-DEFAULT_OUT = os.path.join(HOME, ".claude/intel")
+DEFAULT_OUT = kit_data.path("state", "intel")
 DEFAULT_LEDGER = os.path.join(OT, "_meta/learned-ledger.md") if OT else None
 DEFAULT_GLOSSARIES = os.path.join(OT, "learning") if OT else None
 DEFAULT_TRANSCRIPTS = os.path.join(HOME, ".claude/projects")

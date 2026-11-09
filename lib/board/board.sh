@@ -223,7 +223,7 @@
 #                                                               message. Forwards to lib/sync/sweep/board-brief.
 #                                                               `health run` and `brief run` read their flags
 #                                                               from --config FILE, $DWARVES_BOARD_CONFIG, or
-#                                                               ~/.config/dwarves-kit/board.json.
+#                                                               the board.json that `config data path config board.json` prints.
 #   board.sh hermes link [--home <dir>] [--profile <name>] [--cluster <c>] [--dry-run] [--yes] [--no-verify]
 #   board.sh hermes check [--record]                            link a Hermes agent profile to the kit: install
 #                                                               integrations/hermes/skills into the profile with a
@@ -934,11 +934,11 @@ cmd_capture() {
   # sync in a subshell: cmd_sync ends in exec and must not replace this shell.
   ( cmd_sync --backlog-file "$backlog" ) || true
   local rid=""
-  rid="$(python3 - "$backlog" "$bid" <<'PY'
+  rid="$(python3 - "$backlog" "$bid" "$(bash "$BOARD_DIR/../config/data-path.sh" path state backlog-sync)" <<'PY'
 import json, re, sys
 from pathlib import Path
 slug = re.sub(r"[^a-zA-Z0-9]+", "-", str(Path(sys.argv[1]).resolve())).strip("-")
-p = Path.home() / ".cache" / "backlog-sync" / slug / "github.state.json"
+p = Path(sys.argv[3]) / slug / "github.state.json"
 try:
     print(json.loads(p.read_text())["map"][sys.argv[2]]["rid"])
 except Exception:

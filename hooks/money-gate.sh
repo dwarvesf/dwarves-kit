@@ -15,7 +15,7 @@
 #   MONEY_GATE_STRICT       ask-to-confirm instead of log-only. Any truthy spelling
 #                           arms it (1/true/yes/on, trimmed, case-insensitive);
 #                           0/false/no/off/empty stay log-only.
-#   MONEY_GATE_LOG=FILE     log destination (default ~/.claude/logs/money-gate.log)
+#   MONEY_GATE_LOG=FILE     log destination (default: config data path state money-gate.log)
 # Exit 0 always (the decision travels in the JSON, never the exit code).
 
 set -euo pipefail
@@ -142,7 +142,12 @@ hits_csv=$(printf '%s\n' "$hits" | paste -sd, -)
 # directory never blocks the edit, so both cases write nothing anywhere.
 # ~ falls back to the password database when HOME is unset (launchd, env -i), as
 # Python's expanduser does; $HOME would trip set -u and lose the ask.
-if [ "${MONEY_GATE_LOG+x}" = "x" ]; then logp=$MONEY_GATE_LOG; else logp=~/.claude/logs/money-gate.log; fi
+if [ "${MONEY_GATE_LOG+x}" = "x" ]; then
+  logp=$MONEY_GATE_LOG
+else
+  # shellcheck source=../lib/config/data-path.sh
+  logp=; . "${BASH_SOURCE[0]%/*}/../lib/config/data-path.sh" 2>/dev/null && logp=$(kit_data_path state money-gate.log) || logp=
+fi
 dir=
 case "$logp" in */*) dir=${logp%/*} ;; esac
 if [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null; then

@@ -35,7 +35,7 @@
 #   BACKLOG_STAGE_EXTRACTOR=CMD   override the LLM call
 #   BACKLOG_STAGE_MAXCHARS=N      transcript characters sent to the model (default 12000)
 #   BACKLOG_STAGE_MIN_INTERVAL=S  at most one harvest per S seconds (default 3600); 0 turns it off
-#   BACKLOG_STAGE_STATE_DIR=DIR   throttle stamp and the detached child's payload (default ~/.claude/dwarves-kit/state/backlog-stage)
+#   BACKLOG_STAGE_STATE_DIR=DIR   throttle stamp and the detached child's payload (default: config data path cache backlog-stage)
 #   BACKLOG_STAGE_PREFILTER=0     skip the forward-intent pre-filter (default on)
 #   BACKLOG_STAGE_SYNC=1          run the extractor and the append inline, not detached
 # Modes: no flag harvests the session; `--surface` (SessionStart) runs the intake sweep, then
@@ -232,8 +232,9 @@ tp=${fields%%$'\001'*}; today=${fields#*$'\001'}
 # a truthy transcript_path that is not a string passes the throttle and then crashes the Python
 badpath=0; [ "$tp" = $'\002' ] && badpath=1
 
-default_state=~/.claude/dwarves-kit/state/backlog-stage
-state_dir="${BACKLOG_STAGE_STATE_DIR-$default_state}"
+# shellcheck source=../lib/config/data-path.sh
+. "$HERE/../lib/config/data-path.sh" 2>/dev/null || exit 0
+state_dir="${BACKLOG_STAGE_STATE_DIR-$(kit_data_path cache backlog-stage)}"
 
 hu_throttled "$state_dir" last-run "$(hu_int "${BACKLOG_STAGE_MIN_INTERVAL-3600}" 3600)" && exit 0
 

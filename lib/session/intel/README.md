@@ -18,7 +18,7 @@ session-observe / repo-sweep are shelled out and degrade to `_unavailable_` if m
 ## Use
 
 ```bash
-session-intel run                 # write ~/.claude/intel/intel-YYYY-MM-DD.md
+session-intel run                 # write <intel dir>/intel-YYYY-MM-DD.md (config data path state intel)
 session-intel synthesis           # just the merge proposals (stdout)
 session-intel repeat --min 3      # just the repeated-sequence proposals
 session-intel propose             # the SAME two proposal classes, staged for the Learn gate

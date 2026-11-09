@@ -8,7 +8,7 @@ the jobs list. Adding a weekly job = one `jobs.txt` line, never a new daemon.
 ```
 bash deploy/macos/install                          # render plist + bootstrap (idempotent; retires session-intel-weekly)
 launchctl kickstart -k gui/$(id -u)/kit-weekly     # run now
-tail -f ~/.claude/intel/kit-weekly.log             # watch a run
+tail -f "$(bin/config data path state intel)/kit-weekly.log"             # watch a run
 ```
 
 Service graph: `kit-weekly.plist` -> `kit-weekly` dispatcher (exports a
@@ -17,7 +17,7 @@ three weeks once) -> each `jobs.txt` line in order:
 
 | Job | Command | What it writes |
 |---|---|---|
-| `session-intel` | `bin/session intel run` | `~/.claude/intel/intel-YYYY-MM-DD.md`, the weekly digest: harness scorecard (`stats digest`), usage, repo health, merge + extract-workflow proposals |
+| `session-intel` | `bin/session intel run` | `intel-YYYY-MM-DD.md` in the intel dir (`config data path state intel`), the weekly digest: harness scorecard (`stats digest`), usage, repo health, merge + extract-workflow proposals |
 | `kit-retro` | `bin/reflect propose` | cited, deduped, adversarially-checked proposals into the staging file (review with `reflect drain`, promote with `board promote`) |
 | `prose-rag-index` | `bin/prose-rag index` | incremental recall-index refresh (`~/.claude/prose-rag/index.bin`). Opt-in by config: with no `PROSE_RAG_CORPUS` (and no built engine) it skips clean, exit 0, db untouched |
 

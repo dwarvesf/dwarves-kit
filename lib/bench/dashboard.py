@@ -37,6 +37,8 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "config"))
+import kit_data  # noqa: E402
 from report import run_summary  # noqa: E402
 from events import expected_plan  # noqa: E402
 
@@ -1529,6 +1531,11 @@ so the open list below is the audit surface; the number is the glance.</p>
 </section>"""
 
 
+def _tool_policy_path():
+    """Where the tool-policy guard reads its file: the kit's data-path resolver."""
+    return kit_data.path("config", "tool-policy.json")
+
+
 def config_section(cfg, policy, runtimes=None):
     if cfg:
         mods = "".join(
@@ -1619,7 +1626,7 @@ are one adapter away (codex first: its rollout files are already JSONL on disk).
 rung, set allow / ask / deny per provider, add custom matches. The
 <span class=mono>tool-policy-guard</span> PreToolUse hook enforces it: <b>ask</b> warns
 with the preferred rung, <b>deny</b> blocks. Export and save where the hook reads it
-(<span class=mono>~/.claude/dwarves-kit/tool-policy.json</span>).</p>
+(<span class=mono>{H.escape(_tool_policy_path())}</span>).</p>
 {cap_html}
 <div class="seg-bar">
 <button id="policy-export">Export policy JSON</button>
@@ -2756,7 +2763,7 @@ def main():
     b.add_argument("--monthly-budget", type=float, default=None,
                    help="USD budget for the pool-headroom gauge (operator input)")
     b.add_argument("--tool-policy", default=None,
-                   help="tool-policy JSON to render (default: ~/.claude/dwarves-kit/tool-policy.json)")
+                   help="tool-policy JSON to render (default: config data path config tool-policy.json)")
     b.add_argument("--out", default="sections.json")
     b.add_argument("--push", nargs="?", const="", default=None, metavar="API_URL",
                    help="also PUT the payload to <API_URL>/admin/observe "
@@ -2945,8 +2952,7 @@ def main():
                          default=str, indent=1))
         return
 
-    policy_path = Path(getattr(a, "tool_policy", "") or
-                       Path.home() / ".claude/dwarves-kit/tool-policy.json")
+    policy_path = Path(getattr(a, "tool_policy", "") or _tool_policy_path())
     policy = (json.loads(policy_path.read_text()) if policy_path.exists()
               else DEFAULT_TOOL_POLICY)
     payload = render_sections(runs, events, sessions, bench_rows, metrics, alerts, money,

@@ -29,7 +29,7 @@
 #   REPO_ROOT                                       repo root (else git's top level, else the cwd)
 #   INTAKE_SWEEP_CONFIG=FILE                        config path override
 #   INTAKE_SWEEP_MIN_INTERVAL=S                     throttle, default 86400 (daily); 0 turns it off
-#   INTAKE_SWEEP_STATE_DIR=DIR                      throttle stamp + swept-keys file (default ~/.claude/dwarves-kit/state/intake-sweep)
+#   INTAKE_SWEEP_STATE_DIR=DIR                      throttle stamp + swept-keys file (default: config data path state intake-sweep)
 #   INTAKE_SWEEP_CMD_TIMEOUT=S                      per-command timeout, default 15
 # Flags: --force skips the throttle; --check reports what each source yields raw, before dedup
 # (run it after editing the config: a typo'd field map shows up as 0 items, not silence).
@@ -177,8 +177,9 @@ fi
 
 [ "$count" -gt 0 ] || exit 0
 
-default_state=~/.claude/dwarves-kit/state/intake-sweep
-state_dir="${INTAKE_SWEEP_STATE_DIR-$default_state}"
+# shellcheck source=../lib/config/data-path.sh
+. "$HERE/../lib/config/data-path.sh" 2>/dev/null || exit 0
+state_dir="${INTAKE_SWEEP_STATE_DIR-$(kit_data_path state intake-sweep)}"
 state_path() { printf '%s' "${state_dir:+$state_dir/}$1"; }
 
 # Throttle: a sweep ran within INTAKE_SWEEP_MIN_INTERVAL seconds. Bookkeeping errors never block.

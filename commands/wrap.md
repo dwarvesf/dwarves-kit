@@ -40,7 +40,7 @@ The distill half runs when that value is `true`, or when the invocation carries 
 A third value, `harvest`, hands the distill half to the transcript harvest sweep, per host. The knob may sync across machines through the operator `kit.toml`, so it resolves against the host's own sweep marker -- the sweep is active only where `<state>/sweep/installed` exists AND `harvest.enable` is true (both read root-only, never from a project `.kit.toml`):
 
 ```bash
-_sweep_state="${HARVEST_STATE_DIR:-$HOME/.claude/dwarves-kit/state/harvest}"
+_sweep_state="${HARVEST_STATE_DIR:-$(bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/config/data-path.sh" path state harvest)}"
 _sweep_active=0
 if [ -f "$_sweep_state/sweep/installed" ]; then
   case "$(kit_config_get_root harvest.enable false | tr 'A-Z' 'a-z')" in
