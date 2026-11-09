@@ -2246,6 +2246,43 @@ chk "PG4c: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "PG4c: says still pending" "$out" "checks still pending"
 chk_no "PG4c: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 
+# pg_secs <name> <project checks_secs line or ""> [VAR=val ...] -- a still-pending land with the
+# env bound unset (pg_land pins it to 0), the operator layer pinned empty, and a committed
+# project .kit.toml carrying the given [wrap] line.
+PG_PEND='{"number":42,"statusCheckRollup":[{"name":"PR evidence","status":"IN_PROGRESS","conclusion":""}]}'
+pg_secs() {
+  local name="$1" line="$2"; shift 2
+  pg_build "$name" "" "$PG_WF"
+  [ -z "$line" ] || { printf '[wrap]\n%s\n' "$line" > "$PG_WT/.kit.toml"
+    git -C "$PG_WT" add -A; git -C "$PG_WT" commit -qm "chore: project config" >/dev/null 2>&1; }
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env -u KIT_WRAP_CARRY_CHECKS_SECS GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$PG_WT" \
+    GH_STUB_LAND_REMOTE="$TMPD/ld-bare-$name" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+    KIT_WRAP_LAND_GRACE_SECS=30 KIT_CONFIG_OPERATOR="$TMPD/pg-no-operator" PATH="$TMPD/nosleep:$PATH" \
+    GH_STUB_PR_42="$PG_PEND" "$@" "$WRAP" land "$PG_WT" 2>&1
+}
+
+echo "--- PS1: no env and no project value waits the default 300s"
+out="$(pg_secs ps1 "")"; rc=$?
+chk_has "PS1: pending refusal names 300s" "$out" "checks still pending after 300s"
+
+echo "--- PS2: the target repo's [wrap] checks_secs lengthens the wait"
+out="$(pg_secs ps2 'checks_secs = 900')"; rc=$?
+chk_has "PS2: pending refusal names 900s" "$out" "checks still pending after 900s"
+chk_no "PS2: no bad-value notice" "$out" "checks_secs"
+
+echo "--- PS3: the env var beats the project value"
+out="$(pg_secs ps3 'checks_secs = 900' KIT_WRAP_CARRY_CHECKS_SECS=20)"; rc=$?
+chk_has "PS3: pending refusal names the env bound" "$out" "checks still pending after 20s"
+
+echo "--- PS4: a bad project value falls back to 300 with one stderr line"
+for bad in abc 0 99999 -5; do
+  out="$(pg_secs "ps4$bad" "checks_secs = $bad")"; rc=$?
+  chk_has "PS4 [$bad]: falls back to 300s" "$out" "checks still pending after 300s"
+  chk "PS4 [$bad]: exactly one notice line" "$([ "$(printf '%s\n' "$out" | grep -c 'wrap.checks_secs')" -eq 1 ]; echo $?)"
+done
+chk_has "PS4: the notice names the bad value" "$out" "wrap.checks_secs"
+
 echo "--- PG5: no pull_request workflow pays nothing: no rollup read before the merge"
 pg_build pg5 "" $'on:\n  push:\n    branches: [main]\njobs:\n  x:\n    runs-on: [self-hosted]'
 out="$(pg_land pg5 GH_STUB_PR_42="$PG_RED")"; rc=$?
@@ -2647,6 +2684,39 @@ ln -s "$IG_WT/base.txt" "$IG_WT/tools/x/out"
 ig_land ig4e
 chk "4e: an in-tree symlink exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "4e: an in-tree symlink names the path" "$out" "tools/x/out"
+
+echo "--- 4f: an EMPTY ignored directory passes (a clean checkout misses nothing)"
+_ig_build ig4f 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data"
+chk_has "4f: fixture check: git lists the empty ignored dir" \
+  "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! tools/x/data/"
+ig_land ig4f
+chk "4f: exits 0" "$rc"
+chk_no "4f: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 4g: nested empty directories pass"
+_ig_build ig4g 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data/a/b" "$IG_WT/tools/x/data/c"
+ig_land ig4g
+chk "4g: exits 0" "$rc"
+chk_no "4g: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 4h: an ignored dir holding a file still refuses, at any depth"
+_ig_build ig4h 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data"; echo x > "$IG_WT/tools/x/data/a.json"
+ig_land ig4h
+chk "4h: a file in the dir exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4h: names the dir" "$out" "tools/x/data"
+ig_nopush "4h" ig4h
+_ig_build ig4i 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data/a/b"; echo x > "$IG_WT/tools/x/data/a/b/deep.json"
+ig_land ig4i
+chk "4i: a file in a nested subdir exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4i: names the dir" "$out" "tools/x/data"
+_ig_build ig4j 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data/a"; ln -s "$IG_WT/base.txt" "$IG_WT/tools/x/data/a/link"
+ig_land ig4j
+chk "4j: a symlink in a nested subdir counts as content and exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 
 echo "--- 5: a nested .gitignore match refuses with its full path"
 _ig_build ig5 "" 'mkdir -p tools/x && echo t > tools/x/test_x.sh && echo notes.txt > tools/x/.gitignore'

@@ -448,6 +448,14 @@ archive_worktree_min_age_hours = 72  # [impl] step 5, only with `wrap apply --ar
                                  #        locked mtimes, and every uncommitted path's mtime. A
                                  #        whole number >= 1; anything else skips the sweep with
                                  #        exit 2. Root-only: it widens a remote write.
+checks_secs = 300               # [impl] `wrap land`: seconds to wait for a PR's pending checks
+                                 #        before refusing the merge. A project `.kit.toml` may set
+                                 #        it for a repo with a slow CI: it only lengthens or
+                                 #        shortens a wait and authorizes no write, so it is read
+                                 #        with `kit_config_get`, not the root-only accessor. The
+                                 #        env var KIT_WRAP_CARRY_CHECKS_SECS wins when set. A whole
+                                 #        number from 1 to 3600; anything else prints one stderr
+                                 #        line and waits 300.
 drain_staged = false            # [impl] step 7b tail. The ONE knob here whose default does NOT
                                  #        act, deliberately. Step 7b stages nothing, so a wrap owns
                                  #        no staged rows; true drains only rows the operator staged

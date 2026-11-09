@@ -246,6 +246,16 @@ _land_symlink_outside() {
   return 0
 }
 
+# _land_empty_dir <wt> <path> -- 0 when <wt>/<path> is a real directory holding no file at any
+# depth (empty, or only empty subdirectories): a clean checkout misses nothing. A symlink, a
+# file of any kind, or a tree find cannot fully read returns 1 (fail closed).
+_land_empty_dir() {
+  local d="$1/$2" found
+  [ -d "$d" ] && [ ! -L "$d" ] || return 1
+  found="$(find "$d" ! -type d -print -quit 2>/dev/null)" || return 1
+  [ -z "$found" ]
+}
+
 # _land_ignored_guard <wt> <base> <branch> -- refuse (return 1, print the paths) when the
 # worktree holds a gitignored file under a directory the branch touches: tests that read it
 # pass here and fail on a clean checkout, and git does not count an ignored file as dirty.
@@ -321,6 +331,7 @@ _land_ignored_guard() {
     [ "$found" -eq 1 ] || continue
     ! _land_ignored_allowed "$p" || continue
     ! _land_symlink_outside "$wt" "$p" || continue
+    ! _land_empty_dir "$wt" "$p" || continue
     safe="$(printf '%s' "$e" | tr '[:cntrl:]' '?')"
     base_name="$(printf '%s' "${p##*/}" | tr 'A-Z' 'a-z')"
     case "$base_name" in
@@ -423,6 +434,8 @@ _land_run() {
   if [ "$repo" = "$wt" ]; then
     echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
   fi
+
+  _checks_secs_for "$wt"
 
   # The visual-proof flush (opt-in via proof.visual): the branch's proof-asset manifests can
   # hold entries an offline `put` left pending, so they flush here, inside the worktree
