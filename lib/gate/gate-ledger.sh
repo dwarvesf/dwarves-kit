@@ -56,6 +56,10 @@
 #   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate's latest row is ran|override; else 1
 #                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
+#   lane     <rid> [--spec <path>] [--default]
+#                                       the run's effective lane: last START-AMEND, else first START, else the
+#                                       spec Lane: header, else (--default) the classifier default;
+#                                       prints "<ledger lane>\t<source>\t<spec header or ->\t<check lane>", exit 1 when none answers
 #   plan     <lane>                    the lane's ordered phase checklist
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
 #   rid                                the canonical run id for the cwd: branch slug
@@ -183,15 +187,27 @@ required() {
   return 0
 }
 
-# The lane a run currently owes: the LAST START-AMEND, else the FIRST plain START (the same rule every
-# reader applies). Prints nothing when the ledger has no START line.
+# The lane a run currently owes, from the ledger alone: lane_effective (lane-data.sh) with no spec, so the
+# last START-AMEND, else the first START. Prints nothing when the ledger holds no usable START line.
 _effective_lane() {
   local f; f="$(ledger_file "$1")" || return 0
-  [ -f "$f" ] || return 0
-  awk -F' [|] ' '
-    $2=="START-AMEND" { a=$3 }
-    $2=="START" && first=="" { first=$3 }
-    END { l = (a != "") ? a : first; if (match(l, /lane=[^ ]+/)) print substr(l, RSTART+5, RLENGTH-5) }' "$f"
+  { lane_effective "$f" 2>/dev/null || true; } | cut -f1
+}
+
+# lane <rid> [--spec <path>] [--default]: print "<ledger lane>\t<source>\t<spec header or ->\t<check lane>" for the run (see
+# lane_effective); exit 1 with no output when no source answers. ship-gate reads the lane through this verb.
+lane_of_run() {
+  local rid="${1:-}" spec="" opt=""
+  [ -n "$rid" ] || { echo "usage: lane <rid> [--spec <path>] [--default]" >&2; return 64; }
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --spec)    [ $# -ge 2 ] || { echo "lane: --spec needs a path" >&2; return 64; }; spec="$2"; shift 2 ;;
+      --default) opt="--default"; shift ;;
+      *) echo "usage: lane <rid> [--spec <path>] [--default]" >&2; return 64 ;;
+    esac
+  done
+  lane_effective ${opt:+"$opt"} "$(ledger_file "$rid")" "$spec"
 }
 
 # Strictness rank of a lane, for the amend guard (the table is lane_rank_of in lane-data.sh): tiny 1, normal 2,
@@ -237,6 +253,17 @@ start() {
   ctype="$(printf '%s' "$ctype" | tr ' ' '-')"
   lane="$(printf '%s' "$lane" | tr ' ' '-')"
   classified="$(printf '%s' "$classified" | tr ' ' '-')"
+  # An unknown lane is refused on a plain START too: readers resolve the lane against the declared lanes
+  # (lane_effective), so a stray name (fix, light, standard) would only read as absent. A lanes.d overlay lane
+  # (a vertical kit's `study`) is declared, so a plain START may use it. The amend arm takes the five kit lanes
+  # only: ship-gate reads the lane back with [a-z-]+, so a look-alike name (tiny2, tiny_x) would read as
+  # tiny and dodge the lowering guard below. Old ledgers stay readable, none is rewritten.
+  if [ "$marker" = START-AMEND ]; then
+    lane_known "$lane" || { echo "$uprefix: '$lane' is not a lane (known: $LANE_NAMES)." >&2; return 64; }
+  elif ! lane_declared "$lane"; then
+    echo "$uprefix: '$lane' is not a lane (known: $(lane_declared_names))." >&2
+    return 64
+  fi
   mkdir -p "$RUNS_DIR"
   # Lowering guard: ship-gate reads the LAST START-AMEND, so an unguarded amend could re-lane a run
   # to a lighter lane and shed its gates. The refusal writes nothing; an accepted lowering leaves an
@@ -245,13 +272,6 @@ start() {
     local prev prank nrank
     prev="$(_effective_lane "$rid")"
     prank="$(_lane_rank "$prev")"; nrank="$(_lane_rank "$lane")"
-    # An unknown target lane is refused: ship-gate reads the lane back with [a-z-]+, so a look-alike
-    # name (tiny2, tiny_x) would read as tiny and dodge the guard below. The lane data holds exactly
-    # these five lanes (lane-data.sh LANE_NAMES), so every valid target has a rank.
-    if [ -z "$nrank" ]; then
-      echo "start --amend: '$lane' is not a lane (known: tiny normal full bug backfill)." >&2
-      return 64
-    fi
     if [ -n "$prank" ] && [ -n "$nrank" ] && [ "$nrank" -lt "$prank" ]; then
       if [ "$lower" != 1 ]; then
         echo "start --amend: refused. '$rid' is lane $prev; $lane is lighter (order: tiny < normal = bug = backfill < full)." >&2
@@ -1829,7 +1849,7 @@ _vr_dispatch() {
 # sessions reach for most. The other verbs print their own `usage:` line when called bare.
 usage() {
   cat <<'EOF'
-usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round} ...
+usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round|lane} ...
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
   start --amend --lower --reason "<text>" <rid> <lighter-lane> ...   lowering needs both flags
@@ -1865,6 +1885,7 @@ case "$cmd" in
   inherit)  inherit "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
+  lane)     lane_of_run "$@" ;;
   review-verdict) review_verdict "$@" ;;
   plan)     plan "$@" ;;
   progress) progress "$@" ;;

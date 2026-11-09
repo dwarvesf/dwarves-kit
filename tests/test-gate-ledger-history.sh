@@ -24,7 +24,9 @@ cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/d
 trap cleanup EXIT
 
 LOGD=""
-gl() { env DWARVES_KIT_LOG_DIR="$LOGD" bash "$GL" "$@"; }
+# `study` is a vertical kit's overlay lane: a plain START may use it once its plan sits in lanes.d.
+LANES_D="$(_mk)"; printf ' 1. study  required\n' > "$LANES_D/study.plan"
+gl() { env DWARVES_KIT_LOG_DIR="$LOGD" DWARVES_KIT_LANES_D="$LANES_D" bash "$GL" "$@"; }
 new_log() { LOGD="$(_mk)/logs"; mkdir -p "$LOGD/runs"; }
 
 echo "=== gate-ledger history (ID-444) ==="
