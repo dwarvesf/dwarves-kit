@@ -9,6 +9,11 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DF="$KIT_DIR/lib/system-design/doc-figures"
+# Hermetic host state: the operator config and the XDG dirs point at a scratch dir, so a runner's real
+# ~/.config and ~/.local/state (written by suites running beside this one) never reach the run.
+PIN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit-doc-figures-pin.XXXXXX")" || exit 1
+export KIT_CONFIG_OPERATOR="$PIN_DIR/operator" XDG_CONFIG_HOME="$PIN_DIR/config" XDG_STATE_HOME="$PIN_DIR/state" XDG_CACHE_HOME="$PIN_DIR/cache"
+trap 'rm -rf "$PIN_DIR"' EXIT
 FIG="$KIT_DIR/docs/figures"
 
 PASS=0; FAIL=0; TOTAL=0
@@ -20,7 +25,7 @@ chk() {
 }
 
 TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-docfig-test.XXXXXX")" || exit 1
-trap 'rm -rf "$TMPD"' EXIT
+trap 'rm -rf "$TMPD" "$PIN_DIR"' EXIT
 
 # fresh <name>: a temp root holding a copy of the committed figures and a README that cites one.
 fresh() {

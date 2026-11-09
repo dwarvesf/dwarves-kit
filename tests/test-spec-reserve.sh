@@ -14,6 +14,11 @@ set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SN="$KIT_DIR/lib/spec/spec-next.sh"
+# Hermetic host state: the operator config and the XDG dirs point at a scratch dir, so a runner's real
+# ~/.config and ~/.local/state (written by suites running beside this one) never reach the run.
+PIN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve-pin.XXXXXX")" || exit 1
+export KIT_CONFIG_OPERATOR="$PIN_DIR/operator" XDG_CONFIG_HOME="$PIN_DIR/config" XDG_STATE_HOME="$PIN_DIR/state" XDG_CACHE_HOME="$PIN_DIR/cache"
+trap 'rm -rf "$PIN_DIR"' EXIT
 # Hermetic by default: no test here needs the real open-PR gh scan, and leaving it on made
 # T21/T22 reach real `gh` (slow, and a false pass/fail on a machine without `gh` auth).
 export SPEC_NEXT_NO_PR_SCAN=1
