@@ -6,7 +6,7 @@
   one place to see what runs and when. Replaces the retired per-job
   session-intel-weekly plist.
 
-  TEMPLATE: __HOME__ and __KIT__ are rendered by deploy/macos/install (launchd
+  TEMPLATE: __HOME__, __KIT__ and __INTEL__ are rendered by deploy/macos/install (launchd
   does not expand env vars in ProgramArguments). BTM rule: ProgramArguments[0]
   is the bare-name dispatcher itself (no .sh, no /bin/bash wrapper).
 
@@ -34,8 +34,8 @@
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>__HOME__/.claude/intel/kit-weekly.log</string>
+  <string>__INTEL__/kit-weekly.log</string>
   <key>StandardErrorPath</key>
-  <string>__HOME__/.claude/intel/kit-weekly.log</string>
+  <string>__INTEL__/kit-weekly.log</string>
 </dict>
 </plist>

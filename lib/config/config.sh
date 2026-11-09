@@ -17,6 +17,7 @@
 #                               provenance, owning module
 #   config get <key>        -- the resolved effective value only (for scripting)
 #   config explain <key>    -- the full 4-level provenance chain + which level won
+#   config data [...]       -- where the runtime data lives and the opt-in move (lib/config/data.sh)
 # <key> is either the env var name (WAVE_CAP) or the dotted kit.toml key (mega.wave_cap).
 set -euo pipefail
 CONFIG_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -498,13 +499,14 @@ cmd_seams() {
 
 usage() {
   cat <<'EOF'
-usage: config {list|get|explain|seams} [args...]
+usage: config {list|get|explain|seams|data} [args...]
 
   config list             every declared knob: key, status, effective value, provenance, module
   config get <key>        the resolved effective value only (env var name or dotted kit.toml key)
   config explain <key>    the full 4-level provenance chain (env > project > kit-root > default)
   config seams [--check]  cross-kit seam report: KEY KIND VALUE STATUS FILLED-BY;
                           --check exits 1 if any row is unresolved
+  config data [where|path|move]  where the runtime data lives, and the opt-in move (config data --help)
 
 `config set` is not built. Hand-edit <project>/.kit.toml to change a project-level value; the
 kit-root default lives in kit.toml. See this module's own config-surface design doc.
@@ -529,6 +531,7 @@ main() {
     get) shift; cmd_get "$@" ;;
     explain) shift; cmd_explain "$@" ;;
     seams) shift; cmd_seams "$@" ;;
+    data) shift; exec bash "$CONFIG_SELF/data.sh" "$@" ;;
     ""|-h|--help|help) usage ;;
     *) echo "config: unknown verb '$verb'" >&2; usage >&2; return 64 ;;
   esac

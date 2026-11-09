@@ -66,7 +66,9 @@ else
 fi
 
 # A symlinked hook still finds the map that sits beside the real file.
-K="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; L="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+B="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; L="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+# the hook finds the data-path resolver at ../lib/config of its real file, as it does in an install
+K="$B/hooks"; mkdir -p "$K" "$B/lib"; cp -R "$KIT_DIR/lib/config" "$B/lib/config"
 cp "$HOOK" "$K/context-hints.sh"; printf '{"keyword":"linked-skill"}' > "$K/context-hints-skills-map.json"
 ln -s "$K/context-hints.sh" "$L/context-hints.sh"
 res=$(printf '{"prompt":"hi keyword","session_id":"s1"}' | env -i PATH="$PATH" HOME="$T" CONTEXT_HINTS_STATE="$T/st2" CONTEXT_HINTS_TEMPORAL=0 bash "$L/context-hints.sh")

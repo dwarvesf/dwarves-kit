@@ -19,7 +19,8 @@ import re
 import subprocess
 import sys
 
-DEFAULT_STATE_DIR = os.path.expanduser("~/.claude/dwarves-kit/state/harvest")
+_KIT_DATA_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "config", "kit_data.py")
+_default_state = None
 KINDS = {"concept", "insight", "decision"}
 HOMES = {"til", "research", "glossary", "drop"}
 
@@ -371,8 +372,21 @@ def _safe_session(sid):
     sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(sid or ""))
     return sid[:128] or "nosession"
 
+def _default_state_dir():
+    """The resolver's answer (lib/config/data-path.sh), asked once per process."""
+    global _default_state
+    if _default_state is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("kit_data", _KIT_DATA_PY)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _default_state = mod.path("state", "harvest")
+    return _default_state
+
 def _state_dir():
-    return os.environ.get("HARVEST_STATE_DIR", DEFAULT_STATE_DIR)
+    if "HARVEST_STATE_DIR" in os.environ:
+        return os.environ["HARVEST_STATE_DIR"]
+    return _default_state_dir()
 
 
 def main(argv):

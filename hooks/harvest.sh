@@ -85,12 +85,13 @@ for a in "$@"; do
     *) _auto=0 ;;
   esac
 done
-default_state=~/.claude/dwarves-kit/state/harvest
+# shellcheck source=../lib/config/data-path.sh
+. "$HERE/../lib/config/data-path.sh" 2>/dev/null || exit 0
 if [ "$_auto" = 1 ]; then
   if [ "${HARVEST_SWEEP_CHILD:-}" = "1" ]; then
     exit 0
   fi
-  _state="${HARVEST_STATE_DIR:-$default_state}"
+  _state="${HARVEST_STATE_DIR:-$(kit_data_path state harvest)}"
   if [ -f "$_state/sweep/installed" ]; then
     # shellcheck source=../lib/config/kit-config.sh
     source "$HERE/../lib/config/kit-config.sh"
@@ -146,7 +147,7 @@ Transcript follows:
 
 '
 
-state_dir="${HARVEST_STATE_DIR-$default_state}"
+state_dir="${HARVEST_STATE_DIR-$(kit_data_path state harvest)}"
 state_path() { printf '%s' "${state_dir:+$state_dir/}$1"; }
 truthy_env() { local v; v=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'); case "$v" in 1|true|yes|on) return 0 ;; esac; return 1; }
 readable() { [ -f "$1" ] && [ -r "$1" ] && printf '%s' "$1" || printf '/dev/null'; }

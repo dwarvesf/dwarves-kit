@@ -1,7 +1,7 @@
 #!/bin/bash
 # tool-policy-guard.sh -- PreToolUse hook enforcing the tool-choice policy.
 #
-# The policy file (~/.claude/dwarves-kit/tool-policy.json by default, override
+# The policy file (`config data path config tool-policy.json` prints where it is; override
 # with KIT_TOOL_POLICY) maps tool-name substrings to allow | ask | deny per
 # domain (browser, computer_use, ...). It is the enforcement half of the
 # dashboard's Config & tool policy page: edit there, export, save here.
@@ -15,7 +15,12 @@
 # rides an env var because the python program itself arrives on stdin.
 set -euo pipefail
 
-POLICY="${KIT_TOOL_POLICY:-$HOME/.claude/dwarves-kit/tool-policy.json}"
+POLICY="${KIT_TOOL_POLICY:-}"
+if [ -z "$POLICY" ]; then
+  # shellcheck source=../lib/config/data-path.sh
+  . "${BASH_SOURCE[0]%/*}/../lib/config/data-path.sh" 2>/dev/null || exit 0
+  POLICY="$(kit_data_path config tool-policy.json)"
+fi
 [ -f "$POLICY" ] || exit 0
 
 HOOK_PAYLOAD="$(cat || true)"

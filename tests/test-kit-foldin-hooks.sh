@@ -107,11 +107,11 @@ assert_exit "row 1: skill hint fires on keyword match" 0 $RC
 assert_contains "row 1: hint names the mapped skill" "local-ocr-skill (keyword: ocr)" "$OUT"
 
 # NC: empty stdin never crashes / never blocks.
-RC=0; echo '' | bash "$KIT_DIR/hooks/context-hints.sh" >/dev/null 2>&1 || RC=$?
+RC=0; echo '' | CONTEXT_HINTS_STATE="$STATE" bash "$KIT_DIR/hooks/context-hints.sh" >/dev/null 2>&1 || RC=$?
 assert_exit "NC: empty stdin exits 0" 0 $RC
 
 # NC: malformed JSON never crashes / never blocks.
-RC=0; echo 'not json' | bash "$KIT_DIR/hooks/context-hints.sh" >/dev/null 2>&1 || RC=$?
+RC=0; echo 'not json' | CONTEXT_HINTS_STATE="$STATE" bash "$KIT_DIR/hooks/context-hints.sh" >/dev/null 2>&1 || RC=$?
 assert_exit "NC: malformed JSON exits 0" 0 $RC
 
 # ID-269: session-age cache-hygiene nudge. Threshold is NUDGE_THRESHOLD_SECONDS in

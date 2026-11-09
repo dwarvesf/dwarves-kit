@@ -14,6 +14,8 @@
 # control elsewhere and unrun, in two other repos.)
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# The fixtures name lib/config/; no case reads the host operator kit.toml.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-boundary-lint-none.$$"
 LINT="$KIT_DIR/lib/gate/boundary-lint.sh"
 PASS=0; FAIL=0; TOTAL=0
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo "  PASS $1"; PASS=$((PASS+1)); else echo "  FAIL $1 ${3:-}" >&2; FAIL=$((FAIL+1)); fi; }
@@ -104,6 +106,58 @@ for t in dirname grep find; do ln -s "$(command -v $t)" "$FX/bin/$t"; done
 OUT="$(PATH="$FX/bin" "$BASH" "$LINT" "$FX" 2>&1)"; RC=$?
 assert "no python3 on PATH exits non-zero (rc=$RC)" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)" "$OUT"
 assert "no python3 on PATH says the check could not run" "$(printf '%s' "$OUT" | grep -q 'deny check could not run' && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
+
+echo ""
+echo "=== AC7: a hardcoded runtime data path outside the resolver is caught (SPEC-418) ==="
+# Fresh fixture per case so each exit code proves its own check.
+for lit in '.claude/dwarves-kit/state/x' '.claude/intel' '.claude/skill-proposals' '.claude/skill-curator' '.cache/backlog-sync'; do
+  FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  mkdir -p "$FX/hooks"
+  printf 'DIR="$HOME/%s"\n' "$lit" > "$FX/hooks/new-hook.sh"
+  OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+  assert "planted $lit in a hook exits non-zero" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)" "$OUT"
+  assert "planted $lit names the file and the resolver" "$(printf '%s' "$OUT" | grep -q 'data path hardcoded.*hooks/new-hook.sh:1' && echo 0 || echo 1)" "$OUT"
+  rm -rf "$FX"
+done
+# The same paths spelled in pieces, which is how the Python tools wrote them.
+n=0
+for line in 'p = Path.home() / ".cache" / "backlog-sync"' 'p = os.path.join(h, ".claude", "intel")' \
+            'p = "$HOME/.config/dwarves-kit/board.json"' 'p = os.path.expanduser("~/.config/dwarves-kit/hermes-links.json")'; do
+  n=$((n+1))
+  FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  mkdir -p "$FX/lib/x"
+  printf '%s\n' "$line" > "$FX/lib/x/split$n.py"
+  OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+  assert "planted split-path shape $n is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q "lib/x/split$n.py:1" && echo 0 || echo 1)" "$OUT"
+  rm -rf "$FX"
+done
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/integrations/h/skills/k"
+printf 'Flags come from ~/.config/dwarves-kit/board.json.\n' > "$FX/integrations/h/skills/k/SKILL.md"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "planted path in integrations/ prose is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'integrations/h/skills/k/SKILL.md:1' && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/lib/x" "$FX/skills/y" "$FX/lib/config" "$FX/lib/x/tests" "$FX/docs"
+printf 'p = "~/.claude/intel"\n' > "$FX/lib/x/tool.py"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "planted path in a Python file is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'lib/x/tool.py:1' && echo 0 || echo 1)" "$OUT"
+rm -f "$FX/lib/x/tool.py"
+printf 'Read ~/.claude/skill-proposals/<slug>/SKILL.md first.\n' > "$FX/skills/y/SKILL.md"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "planted path in a skill's prose is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'skills/y/SKILL.md:1' && echo 0 || echo 1)" "$OUT"
+rm -f "$FX/skills/y/SKILL.md"
+# Allowed: the resolver, comments, docstrings, tests, docs, other markdown, the marker.
+printf 'L="$HOME/.claude/intel"\n' > "$FX/lib/config/data-path.sh"
+printf '# default was ~/.claude/intel\nX=1\n' > "$FX/lib/x/a.sh"
+printf '"""Writes ~/.claude/intel."""\n\n\ndef f():\n    return 1\n' > "$FX/lib/x/b.py"
+printf 'L="$HOME/.claude/intel"\n' > "$FX/lib/x/tests/t.sh"
+printf 'Old home: ~/.claude/intel\n' > "$FX/docs/n.txt"
+printf 'Old home: ~/.claude/intel\n' > "$FX/lib/x/README.md"
+printf 'L="$HOME/.claude/intel"  # data-path-ok: migration reads the old home\n' > "$FX/lib/x/c.sh"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "resolver, comments, docstrings, tests, docs, other markdown and the marker pass (rc=$RC)" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)" "$OUT"
 rm -rf "$FX"
 
 echo ""

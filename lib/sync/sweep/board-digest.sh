@@ -28,7 +28,7 @@
 #
 # Flags shared by every mode:
 #   --registry F       boards registry (name path [bridge] [rail=<rail>] ...)
-#   --state-file F     digest state (default ~/.cache/backlog-sync/digest-state.json)
+#   --state-file F     digest state (default: digest-state.json in `config data path state backlog-sync`)
 #   --cluster-map M    `cluster=rail,cluster=rail`. With a map only the listed
 #                      rails are valid and the map order is the sweep order.
 #                      Without one, each distinct rail in the registry is its
@@ -58,7 +58,8 @@ REGISTRY=""
 CLUSTER_MAP=""
 CRIT_PREFIX=""
 FIELD_CAP="1024"
-STATE_FILE="${HOME}/.cache/backlog-sync/digest-state.json"
+SYNC_STATE_DIR="$(bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../config/data-path.sh" path state backlog-sync)"
+STATE_FILE="$SYNC_STATE_DIR/digest-state.json"
 
 while [ $# -gt 0 ]; do case "$1" in
   --repo) REPO="$2"; MODE="repo"; shift 2;;

@@ -37,7 +37,7 @@ skill-review list        # one line per draft: <slug>\t<description>
 ```
 
 `cc-improve status` reads `~/.claude/skill-curator/ledger.jsonl`; `skill-review list` reads
-`~/.claude/skill-proposals/`. SessionStart also surfaces a one-line summary at the top of each new
+the proposals dir (`config data path state skill-proposals`). SessionStart also surfaces a one-line summary at the top of each new
 session.
 
 **Gotcha:** the "staged memory" count in the SessionStart line comes from cc-harvest's ledger, not
@@ -50,7 +50,7 @@ draft into the live library; reject sets it aside (recoverable).
 
 ```bash
 skill-review list                 # pick a slug
-# read ~/.claude/skill-proposals/<slug>/SKILL.md and vet it against the skill-review quality bar
+# read <proposals dir>/<slug>/SKILL.md and vet it against the skill-review quality bar
 skill-review promote <slug>       # mv into ~/.claude/skills/<slug>/
 skill-review promote <slug> --force   # only if a live skill of that name already exists
 skill-review reject <slug>        # mv to skill-proposals/_rejected/<slug>/ (recoverable, not deleted)
@@ -99,7 +99,7 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 | `signal_gate` / `SKILL_CURATOR_SIGNAL_GATE` | `true` | skip the model call for a summary with zero signal markers (default-on cost gate; set `false` to opt out; ADR-0010) |
 | `signal_markers` / `SKILL_CURATOR_SIGNAL_MARKERS` | (built-in regex) | override the marker pattern the gate matches on |
 | `SKILL_CURATOR_STATE_DIR` | `~/.claude/skill-curator` | ledger + lock + config + reports |
-| `SKILL_CURATOR_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
+| `SKILL_CURATOR_PROPOSALS_DIR` | `config data path state skill-proposals` | the staging gate |
 | `SKILL_CURATOR_SKILLS_DIR` | `~/.claude/skills` | the live library + `_archive/` |
 | `SKILL_CURATOR_MEMORY_LEDGER` | (unset; required) | the harvest ledger the surface line counts |
 | `SKILL_CURATOR_SETTINGS` | `~/.claude/settings.json` | install/uninstall target (point elsewhere for a dry run) |

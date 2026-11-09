@@ -17,7 +17,9 @@ import sys
 import time
 from pathlib import Path
 
-from sync_core import ACTIVE_STATUSES, extract_tags, strip_tags, title_for
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config"))
+import kit_data  # noqa: E402
+from sync_core import ACTIVE_STATUSES, extract_tags, strip_tags, title_for  # noqa: E402
 
 
 def title_with_tags(title: str, body: str) -> str:
@@ -85,18 +87,25 @@ function run(argv) {
 # WEDGE_TTL skips at once, so a wedged host costs one probe per sweep.
 PROBE_TIMEOUT = 30          # a healthy launch + answer takes seconds
 WEDGE_TTL = 30 * 60         # under the hourly sweep: each tick probes afresh
-WEDGE_MARKER = Path.home() / ".cache" / "backlog-sync" / "reminders-unresponsive"
+WEDGE_MARKER = None         # None: <backlog-sync state dir>/reminders-unresponsive, resolved on use
 JXA_PROBE = "Application('Reminders').lists.name().length"
 WEDGE_HINT = ("Usual cause: macOS cannot launch apps (LaunchServices wedged; "
               "`open -g -b com.apple.TextEdit` hangs too). Reboot the host.")
 _probed = False
 
 
+def _wedge_marker() -> Path:
+    if WEDGE_MARKER is not None:
+        return WEDGE_MARKER
+    return Path(kit_data.path("state", "backlog-sync")) / "reminders-unresponsive"
+
+
 def _mark_wedged(why: str):
-    WEDGE_MARKER.parent.mkdir(parents=True, exist_ok=True)
-    WEDGE_MARKER.touch()
+    marker = _wedge_marker()
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
     sys.exit(f"reminders: Reminders.app did not answer {why}; skipping "
-             f"reminders for {WEDGE_TTL // 60} min (marker {WEDGE_MARKER}). "
+             f"reminders for {WEDGE_TTL // 60} min (marker {marker}). "
              + WEDGE_HINT)
 
 
@@ -104,13 +113,14 @@ def _ensure_responsive():
     global _probed
     if _probed:
         return
+    marker = _wedge_marker()
     try:
-        age = time.time() - WEDGE_MARKER.stat().st_mtime
+        age = time.time() - marker.stat().st_mtime
     except FileNotFoundError:
         age = None
     if age is not None and age < WEDGE_TTL:
         sys.exit(f"reminders: skipped, Reminders.app did not answer "
-                 f"{int(age // 60)} min ago (marker {WEDGE_MARKER}); next "
+                 f"{int(age // 60)} min ago (marker {marker}); next "
                  f"probe after {WEDGE_TTL // 60} min. " + WEDGE_HINT)
     try:
         subprocess.run(["osascript", "-l", "JavaScript", "-e", JXA_PROBE],
@@ -119,7 +129,7 @@ def _ensure_responsive():
         _mark_wedged(f"a {PROBE_TIMEOUT}s probe")
     # a probe that errors (say -1743) is not a hang: the real call below
     # reports it with the precise message
-    WEDGE_MARKER.unlink(missing_ok=True)
+    marker.unlink(missing_ok=True)
     _probed = True
 
 

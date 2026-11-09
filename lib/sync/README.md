@@ -19,7 +19,7 @@ mechanism. Boundary with the one-way `bridge` cockpit mirror is recorded in
 ```
 
 Each app syncs independently: three-way merge against a per-spoke snapshot
-in `~/.cache/backlog-sync/<source>.state.json`. On conflict the board wins.
+in `<sync state dir>/<source>.state.json` (`config data path state backlog-sync`). On conflict the board wins.
 A spoke-side deletion tombstones the row (mirroring stops; the board is never
 touched). New spoke items without an `ID-` prefix become queued rows in a
 `### Reminders inbox` section and get retitled/keyed with their assigned ID.
@@ -112,7 +112,7 @@ reader); the python engine takes flags only and reads no config file. Flags:
 `--list` · `--notion-db` / `--notion-parent` · `--hermes-target` /
 `--hermes-home` / `--hermes-board` / `--hermes-assignee` /
 `--hermes-workspace`. State snapshots live per board at
-`~/.cache/backlog-sync/<board-slug>/<source>.state.json`.
+`<sync state dir>/<board-slug>/<source>.state.json`.
 
 ### Scheduled runs (cron)
 
@@ -207,7 +207,7 @@ registry would close that repo's live cards.
 sweep's `--health` leg) says whether the boards and the sync legs are healthy,
 on a slow clock, through the same `--poster`. Every sweep tick records each
 sync and mirror outcome (spokes seen, rc, error lines) into
-`~/.cache/backlog-sync/health-state.json`; `--health` then builds one payload
+`health-state.json` in the sync state dir; `--health` then builds one payload
 per cluster once `--health-every-days` (default 3) has passed since its last
 delivered post. A failed post is not stamped, so it retries next tick and
 rides `carried_error`.
@@ -297,7 +297,7 @@ stamped, so it stays due and rides `carried_error`. Brief state lives in the
 health state file under `brief`.
 
 `board health run` and `board brief run` read their flags from `--config FILE`,
-else `$DWARVES_BOARD_CONFIG`, else `~/.config/dwarves-kit/board.json`: JSON with
+else `$DWARVES_BOARD_CONFIG`, else the file `config data path config board.json` prints: JSON with
 `common`, `health`, and `brief` sections, each key a long flag with `-` as `_`
 (a list repeats the flag, `true` is a bare flag). Command-line flags come
 after the file. This is what lets an agent run `board health run --dry-run`
@@ -309,7 +309,7 @@ Hermes skills sit on top: `docs/reference/hermes-layering.md`.
 `$HERMES_HOME`, `hermes config path`, `~/hermes-*/home`, `~/.hermes`), picks the profile that speaks for
 the operator, installs `integrations/hermes/skills/*` into that profile's skills dir with a stamp file
 (`.dwarves-kit-skills.json`: a digest of the skill files, the kit version and sha), records the link in
-`~/.config/dwarves-kit/hermes-links.json` (with the cluster's rail, hub, and boards read from the kit flag
+the file `config data path state hermes-links.json` prints (with the cluster's rail, hub, and boards read from the kit flag
 file), and verifies with one real agent turn: the agent must run `board health run --dry-run --force` and
 answer a nonce, then the command prints `linked`. It previews the plan and asks on a terminal; without
 one it writes only with `--yes`. A profile in another account's home uses `--sudo-user`. No Hermes found

@@ -24,7 +24,7 @@ can never switch the sweep on, because it rides inside an untrusted PR).
 | `~/Library/LaunchAgents/<label>.plist` | the LaunchAgent, rendered from the kit's template |
 | `<state>/sweep/installed` | host marker `{"label","host","kit","ts"}` that ACTIVATES the sweep on this host |
 
-`<state>` is `$HARVEST_STATE_DIR` or `~/.claude/dwarves-kit/state/harvest`.
+`<state>` is `$HARVEST_STATE_DIR` or the dir `config data path state harvest` prints.
 The marker is the per-host switch: an operator `kit.toml` may sync across
 hosts, but only a host where `install --apply` wrote the marker sweeps; every
 other host keeps the session-end hook and wrap's inline distill. The marker is
@@ -49,7 +49,7 @@ bridge stay consumer-side, the same precedent `lib/sync/deploy/macos/`
 <Label>.plist -> deploy/macos/harvest-sweep/harvest-sweep (the launcher)
                   -> python3 hooks/harvest_sweep.py --sweep   (direct: harvest.sh
                      would swallow the rc)
-                  -> ~/.config/harvest-sweep/bridge <rc> <report or ->   (if present)
+                  -> <harvest-sweep config dir>/bridge <rc> <report or ->   (if present)
 ```
 
 The launcher re-checks activation on every scheduled run (marker AND
@@ -64,11 +64,11 @@ path (no `.sh`, `#!/bin/bash` per the BTM rule). The label reaches the
 launcher through the plist's `HARVEST_SWEEP_LABEL` environment variable, so
 the log file tracks `--label` with no second render knob.
 
-**Consumer env (optional).** If `~/.config/harvest-sweep/env` exists, the
+**Consumer env (optional).** If `env` in the harvest-sweep config dir (`config data path config harvest-sweep`) exists, the
 launcher sources it before running (PATH extras, Claude auth settings,
 per-machine overrides). Never committed to the kit repo.
 
-**Consumer bridge (optional).** If `~/.config/harvest-sweep/bridge` is
+**Consumer bridge (optional).** If `bridge` in that config dir is
 executable, the launcher runs it best-effort after every non-skipped run as
 `bridge <rc> <report path or ->`: `-` when the run wrote no report (idle runs
 still ping), the lock-held skip is the only case with no call. The kit ships

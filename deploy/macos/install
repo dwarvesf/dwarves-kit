@@ -7,7 +7,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="$(cd "$HERE/../.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/kit-weekly.plist"
-mkdir -p "$HOME/.claude/intel" "$HOME/Library/LaunchAgents"
+INTEL="$(bash "$KIT/lib/config/data-path.sh" path state intel)"
+mkdir -p "$INTEL" "$HOME/Library/LaunchAgents"
 
 # Retire the pre-ADR per-job agent (no-op when it was never installed).
 OLD="$HOME/Library/LaunchAgents/session-intel-weekly.plist"
@@ -17,7 +18,7 @@ if [ -f "$OLD" ]; then
   echo "[ok] session-intel-weekly retired (plist kept as $OLD.retired; its job now rides kit-weekly)"
 fi
 
-sed -e "s#__HOME__#$HOME#g" -e "s#__KIT__#$KIT#g" \
+sed -e "s#__HOME__#$HOME#g" -e "s#__KIT__#$KIT#g" -e "s#__INTEL__#$INTEL#g" \
   "$HERE/kit-weekly.plist.tmpl" > "$PLIST"
 launchctl bootout "gui/$(id -u)/kit-weekly" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"

@@ -75,11 +75,15 @@ run() { OUT="$(cd "$REPO" && cr "$@" 2>&1)"; RC=$?; printf '%s\n' "$OUT" >> "$OU
 
 # --- the two assertions the lead can tighten --------------------------------------------------
 
-# Dirs a clean-room run may write into. The data-root work narrows this one line to the kit data
-# root (and the bits of HOME the install itself owns); nothing else in this file changes.
-ALLOWED_WRITE_DIRS=("$HOME_DIR" "$REPO" "$REMOTE" "$TMP_DIR" "$BIN_DIR")
+# Dirs a clean-room run may write into. Under the fake HOME that is only what the install owns
+# (~/.claude, the ~/.local/bin shims) and the kit's data dirs (XDG state, XDG cache and the
+# operator config dir, as lib/config/data-path.sh resolves them). A kit feature that writes
+# anywhere else in HOME, or a stranger's legacy ~/.claude/dwarves-kit/state, fails the run.
+ALLOWED_WRITE_DIRS=("$HOME_DIR/.claude" "$HOME_DIR/.local/bin" "$HOME_DIR/.local/state/dwarves-kit"
+                    "$HOME_DIR/.cache/dwarves-kit" "$HOME_DIR/.config/dwarves-kit"
+                    "$REPO" "$REMOTE" "$TMP_DIR" "$BIN_DIR")
 # The harness's own bookkeeping files in the sandbox root.
-HARNESS_PATHS=("$OUT_LOG" "$MARKER" "$SANDBOX/kit.toml.code")
+HARNESS_PATHS=("$OUT_LOG" "$MARKER")
 
 # Kit-owned dirs under the real HOME that a clean-room run must never touch.
 real_home_canaries() {
@@ -312,16 +316,26 @@ eq "...and reads the fresh install default" "$OUT" "true"
 run bash "$KIT/bin/config" list
 eq "config list exits 0" "$RC" "0"
 
+# --- runtime data lands in the data dirs, never in the old ~/.claude paths ------------------------
+echo "== a stranger's runtime data: XDG dirs only =="
+run bash "$KIT/bin/config" data path state harvest
+eq "state resolves under the fake HOME's XDG state dir" "$OUT" "$HOME_DIR/.local/state/dwarves-kit/harvest"
+run bash "$KIT/bin/config" data path cache context-hints
+eq "cache resolves under the fake HOME's XDG cache dir" "$OUT" "$HOME_DIR/.cache/dwarves-kit/context-hints"
+run bash "$KIT/bin/config" data
+lacks "config data shows no legacy path for a stranger" "$OUT" " legacy "
+printf '%s' '{"prompt":"hello","session_id":"cr-ctx"}' | cr bash "$KIT/hooks/context-hints.sh" >/dev/null 2>&1
+eq "a hook writes its state under the XDG cache dir" "$([ -f "$HOME_DIR/.cache/dwarves-kit/context-hints/cr-ctx.json" ] && echo yes || echo no)" "yes"
+eq "...and nothing appears under the old ~/.claude/dwarves-kit/state" "$([ -e "$HOME_DIR/.claude/dwarves-kit/state" ] && echo present || echo absent)" "absent"
+
 # --- the sandbox rules --------------------------------------------------------------------------
 echo "== writes stay in the sandbox; nothing names the host =="
 assert_writes_land_only_in "after the full run" "$SANDBOX" "$SNAP_BEFORE" "${ALLOWED_WRITE_DIRS[@]}" "${HARNESS_PATHS[@]}"
 eq "no operator config appeared in the fake HOME" "$([ -e "$HOME_DIR/.config/dwarves-kit" ] && echo present || echo absent)" "absent"
 
-# Known gap: the shipped kit.toml still names the maintainer's tooling repo in two comments. kit.toml
-# is a hard path (the full lane), so that wording is its own change; only its code lines are scanned.
-grep -vE '^[[:space:]]*#|^[^"]*[[:space:]]#' "$KIT/kit.toml" > "$SANDBOX/kit.toml.code"
+# The whole shipped kit.toml is scanned, comments included: every install copies it to a stranger.
 assert_no_host_leak "generated files" \
-  "$HOME_DIR/.claude/settings.json" "$SANDBOX/kit.toml.code" "$KIT/INSTALL-STAMP" \
+  "$HOME_DIR/.claude/settings.json" "$KIT/kit.toml" "$KIT/INSTALL-STAMP" \
   "$REPO/.kit.toml" "$REPO/AGENTS.md" "$REPO/CLAUDE.md" "$REPO/WORKFLOW.md" "$REPO/docs/verification/README.md"
 assert_no_host_leak "ledger" $(find "$HOME_DIR/.local/state" -type f -name '*.log' 2>/dev/null | head -20)
 eq "no command output names the host" "$(host_leak_hits < "$OUT_LOG")" ""

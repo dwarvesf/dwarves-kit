@@ -32,8 +32,11 @@ for _v in STATE_DIR PROPOSALS_DIR SKILLS_DIR CONFIG SETTINGS MEMORY_LEDGER CURAT
 done
 unset _v _new _old
 
-SKILL_CURATOR_STATE_DIR="$(_expand "${SKILL_CURATOR_STATE_DIR:-$HOME/.claude/skill-curator}")"
-SKILL_CURATOR_PROPOSALS_DIR="$(_expand "${SKILL_CURATOR_PROPOSALS_DIR:-$HOME/.claude/skill-proposals}")"
+# The state and proposals dirs come from the kit's data-path resolver (config data where).
+# shellcheck source=../../config/data-path.sh
+. "$SKILL_CURATOR_LIB/../../config/data-path.sh"
+SKILL_CURATOR_STATE_DIR="$(_expand "${SKILL_CURATOR_STATE_DIR:-$(kit_data_path state skill-curator)}")"
+SKILL_CURATOR_PROPOSALS_DIR="$(_expand "${SKILL_CURATOR_PROPOSALS_DIR:-$(kit_data_path state skill-proposals)}")"
 SKILL_CURATOR_SKILLS_DIR="$(_expand "${SKILL_CURATOR_SKILLS_DIR:-$HOME/.claude/skills}")"
 SKILL_CURATOR_LEDGER="$SKILL_CURATOR_STATE_DIR/ledger.jsonl"
 SKILL_CURATOR_LOCK="$SKILL_CURATOR_STATE_DIR/state/reviewer.lock"

@@ -63,7 +63,7 @@ python3 lib/bench/viewer.py build --ledger name=<rid> --out viewer.html  # diagr
 
 The dashboard's Config & tool policy section renders `kit.toml` and the tool-choice
 policy; the enforcement half is `hooks/tool-policy-guard.sh` reading
-`~/.claude/dwarves-kit/tool-policy.json`.
+the file `config data path config tool-policy.json` prints.
 
 ## Benchmarks
 

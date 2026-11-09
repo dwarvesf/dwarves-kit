@@ -22,7 +22,7 @@ export MONEY_GATE_REPOS=my-books:family-office   # colon-separated repo names
 ```
 
 That alone gives you **log-only** mode: every money-touching edit in those repos is
-appended to `~/.claude/logs/money-gate.log`, nothing is interrupted. Wire it, forget it,
+appended to the money-gate log (`config data path state money-gate.log`), nothing is interrupted. Wire it, forget it,
 read the log later.
 
 ```bash
@@ -54,7 +54,7 @@ broken gate can never wedge an edit.
 |---|---|---|
 | `MONEY_GATE_REPOS` | unset | Colon-separated financial repo names. Unset = inert. |
 | `MONEY_GATE_STRICT` | unset | `1`/`true`/`yes`/`on` = ask-to-confirm. Anything else = log-only. |
-| `MONEY_GATE_LOG` | `~/.claude/logs/money-gate.log` | Log destination. |
+| `MONEY_GATE_LOG` | `config data path state money-gate.log` | Log destination. |
 
 ## Test
 

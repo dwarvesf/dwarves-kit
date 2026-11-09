@@ -10,7 +10,7 @@ lib/config/kit-config.sh (the ONE TOML reader) and hands this engine plain
 flags. This file reads no config file, by design.
 
 Each configured spoke syncs independently via a three-way merge with a
-per-board snapshot in ~/.cache/backlog-sync/<board-slug>/<source>.state.json.
+per-board snapshot in <config data path state backlog-sync>/<board-slug>/<source>.state.json.
 Board wins on conflict; spoke deletions never touch the board.
 """
 
@@ -25,6 +25,8 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "config"))
+import kit_data  # noqa: E402
 
 from sync_core import (ID_TOKEN, apply_board, board_lock, build_state,  # noqa: E402
                        describe, detect_prefix, parse_board,
@@ -403,7 +405,7 @@ def main(argv=None):
                          "spoke card closes only when its id sits here with "
                          "a closed status.")
     ap.add_argument("--state-root", type=Path,
-                    default=Path.home() / ".cache" / "backlog-sync")
+                    default=Path(kit_data.path("state", "backlog-sync")))
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--list", dest="list_name", help="Reminders list name")
     ap.add_argument("--notion-db", help="bind an existing Notion database id")

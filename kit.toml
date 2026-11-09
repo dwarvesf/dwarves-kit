@@ -59,6 +59,12 @@ delivery_ratio_warn = 3         # [impl] KIT_DELIVERY_RATIO_WARN (proof-vs-real 
 delivery_real_floor = 40        # [impl] KIT_DELIVERY_REAL_FLOOR
 # retention         = ...       # [reserved] ledger is append-only today, no rotation
 
+[data]                          # where the kit keeps its runtime state and cache (config data where shows every path)
+# root = ""                     # [impl] one root for state and cache: <root>/state/<name>, <root>/cache/<name>.
+                                #        An absolute path, read from the OPERATOR kit.toml only. KIT_DATA_ROOT beats it; an entry's
+                                #        own env var beats both. Old data keeps being used until you run `config data move`, so
+                                #        writing this ahead of the move resets nothing. Unset: the XDG dirs.
+
 [mega]                          # read when /kit:mega + orchestrate scaffold/run
 wave_cap           = 2          # [impl] WAVE_CAP
 tier4_close        = true       # [impl] TIER4_CLOSE (SPEC-118)
@@ -212,15 +218,15 @@ auto_improvement = false        # [impl] `reflect propose` (SPEC-195): read-plan
                                 #        gates only the WEEKLY unattended cadence, consumer-side
                                 #        (SG-10 LaunchAgent), never kit-side. Default off (opt-in).
 learning_ledger  = true         # [consumer] the orchestration is an external skill
-                                #        (ops-toolkit/dotfiles, SPEC-126); the kit only
+                                #        (the operator's own tooling, SPEC-126); the kit only
                                 #        collects (weekend-batch.sh) + routes. Toggle kept
                                 #        here so the harness config is the single surface.
 memory_tidy      = false        # [consumer] the unattended biweekly memory-audit cadence.
                                 #        The judgment skill itself ships with the kit
                                 #        (skills/memory-tidy, pairing with `stats memory-sweep`)
                                 #        and is always available; this flag gates only the
-                                #        scheduled consumer-side runner (e.g. ops-toolkit
-                                #        tools/memory-tidy LaunchAgent). Default off (opt-in).
+                                #        scheduled consumer-side runner (e.g. a LaunchAgent
+                                #        the operator owns). Default off (opt-in).
 
 # =============== TEAM COLLABORATION (designed, not built , all off) ===============
 # Source: the operator's personal-tools repo, `_meta/megagoals/team-mode/` (ROADMAP + DESIGN-01..07),

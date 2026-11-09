@@ -116,6 +116,10 @@ if [ "${1:-}" = "--run-one" ]; then
   # The host operator kit.toml never reaches a suite (tests/test-operator-pin.sh). A suite that needs
   # its own operator file sets the variable itself.
   export KIT_CONFIG_OPERATOR="$outdir/no-operator-config"
+  # A suite that pins only HOME would still resolve kit data through a real host's XDG dirs (the
+  # data-path resolver honors them) and write there. Take them away from every suite; a suite that
+  # tests the resolver sets what it needs itself.
+  unset XDG_STATE_HOME XDG_CACHE_HOME XDG_CONFIG_HOME KIT_DATA_ROOT
   if _timeout "$_limit" bash "$suite" >"$outdir/$name.log" 2>&1; then
     echo "ok" >"$outdir/$name.status"
     mark="."

@@ -180,7 +180,7 @@ add throttle-interval-float "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3.5"')" "$
 add throttle-before-transcript-read "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600"')" '{"transcript_path":"@CWD@/none.jsonl"}' '{}' '["home/bs/last-run"]'
 add throttle-state-dir-is-a-file "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600","BACKLOG_STAGE_STATE_DIR":"@HOME@/f/bs"')" "$P" "$(S cwd/t.jsonl "$T1" home/f x)"
 add throttle-no-transcript-leaves-no-stamp "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600"')" '{"session_id":"s"}' '{}' '["home/bs/last-run"]'
-add state-dir-default "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600"' | jq -c 'del(.BACKLOG_STAGE_STATE_DIR)')" "$P" "$(S cwd/t.jsonl "$T1")" '["cwd/_meta/backlog-staging.md","home/.claude/dwarves-kit/state/backlog-stage/last-run"]'
+add state-dir-default "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600"' | jq -c 'del(.BACKLOG_STAGE_STATE_DIR)')" "$P" "$(S cwd/t.jsonl "$T1")" '["cwd/_meta/backlog-staging.md","home/.cache/dwarves-kit/backlog-stage/last-run"]'
 add state-dir-empty "$(e "$EJ" '"BACKLOG_STAGE_MIN_INTERVAL":"3600","BACKLOG_STAGE_STATE_DIR":""')" "$P" "$(S cwd/t.jsonl "$T1")" '["cwd/_meta/backlog-staging.md","cwd/last-run"]'
 
 # --- sync knob and the detached child ---

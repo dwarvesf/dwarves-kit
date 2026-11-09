@@ -47,7 +47,7 @@ Run flags:
   --registry F          boards registry (name path [bridge] [rail=<rail>])
   --cluster-map M       cluster=rail,cluster=rail (as for the digest)
   --state-file F        the digest state, read for FLAPPING ids and carried errors
-  --health-state-file F health state (default ~/.cache/backlog-sync/health-state.json)
+  --health-state-file F health state (default: health-state.json in `config data path state backlog-sync`)
   --every-days N        cadence (default 3); a failed post is not stamped, so it stays due and retries
   --stale-days N        staleness threshold (default 7)
   --sync-stale-hours N  a sweep record older than this is itself a problem (default 6)
@@ -85,6 +85,8 @@ from pathlib import Path
 # The active set comes from the declared board machine (lib/board/states.tsv) through
 # sync_core, in declared order, never a hand copy.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config"))
+import kit_data  # noqa: E402
 from sync_core import ACTIVE_STATUSES, BOARD_STATES  # noqa: E402
 ACTIVE = tuple(s for s in BOARD_STATES if s in ACTIVE_STATUSES)
 ID_RE = re.compile(r"^\|\s*([A-Z]+-[0-9]+)\s*\|")
@@ -93,8 +95,9 @@ ROW_ID_RE = re.compile(r"^[A-Z]+-[0-9]+$")
 ERR_WORD_RE = re.compile(r"\b(ERROR|FAILED|Traceback)\b")
 DAY = 86400
 
-DEFAULT_HEALTH_STATE = os.path.expanduser("~/.cache/backlog-sync/health-state.json")
-DEFAULT_DIGEST_STATE = os.path.expanduser("~/.cache/backlog-sync/digest-state.json")
+_SYNC_STATE = kit_data.path("state", "backlog-sync")
+DEFAULT_HEALTH_STATE = os.path.join(_SYNC_STATE, "health-state.json")
+DEFAULT_DIGEST_STATE = os.path.join(_SYNC_STATE, "digest-state.json")
 
 
 def log(msg):
@@ -618,7 +621,7 @@ def prepare_run_args(args):
     args.board_map = per_cluster_flags(args.board)
 
 
-DEFAULT_CONFIG = os.path.expanduser("~/.config/dwarves-kit/board.json")
+DEFAULT_CONFIG = kit_data.path("config", "board.json")
 
 
 def expand_config(argv, mode):

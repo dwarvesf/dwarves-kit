@@ -33,7 +33,8 @@ CLUSTER=""
 POSTER=""
 DRY_RUN=0
 REGISTRY=""
-STATE_FILE="${HOME}/.cache/backlog-sync/digest-state.json"
+SYNC_STATE_DIR="$(bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../config/data-path.sh" path state backlog-sync)"
+STATE_FILE="$SYNC_STATE_DIR/digest-state.json"
 digest_flags=()
 
 while [ $# -gt 0 ]; do case "$1" in

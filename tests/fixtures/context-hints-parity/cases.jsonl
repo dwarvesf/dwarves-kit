@@ -18,8 +18,8 @@
 {"name":"now-unset-uses-clock","env":{"CONTEXT_HINTS_STATE":"@HOME@/st"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{},"read":[]}
 {"name":"crash-now-garbage","env":{"CONTEXT_HINTS_STATE":"@HOME@/st","CONTEXT_HINTS_NOW":"abc"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/st/s1.json":"{\"start\":1000,\"last\":1000}"},"read":["home/st/s1.json"]}
 {"name":"now-padded-spaces","env":{"CONTEXT_HINTS_STATE":"@HOME@/st","CONTEXT_HINTS_NOW":" 1100 "},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/st/s1.json":"{\"start\":1000,\"last\":1000}"},"read":["home/st/s1.json"]}
-{"name":"state-default-dir","env":{"CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/.claude/dwarves-kit/state/context-hints/s1.json":"{\"start\": 1000.0, \"last\": 1000.0}"},"read":["home/.claude/dwarves-kit/state/context-hints/s1.json"]}
-{"name":"state-default-dir-first","env":{"CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{},"read":["home/.claude/dwarves-kit/state/context-hints/s1.json"]}
+{"name":"state-default-dir","env":{"CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/.cache/dwarves-kit/context-hints/s1.json":"{\"start\": 1000.0, \"last\": 1000.0}"},"read":["home/.cache/dwarves-kit/context-hints/s1.json"]}
+{"name":"state-default-dir-first","env":{"CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{},"read":["home/.cache/dwarves-kit/context-hints/s1.json"]}
 {"name":"state-corrupt","env":{"CONTEXT_HINTS_STATE":"@HOME@/st","CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/st/s1.json":"garbage"},"read":["home/st/s1.json"]}
 {"name":"state-empty-file","env":{"CONTEXT_HINTS_STATE":"@HOME@/st","CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/st/s1.json":""},"read":["home/st/s1.json"]}
 {"name":"state-trailing-garbage","env":{"CONTEXT_HINTS_STATE":"@HOME@/st","CONTEXT_HINTS_NOW":"1100"},"payload":{"prompt":"hi","session_id":"s1"},"seed":{"home/st/s1.json":"{\"start\":1000,\"last\":1000} x"},"read":["home/st/s1.json"]}

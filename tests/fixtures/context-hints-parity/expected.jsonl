@@ -18,8 +18,8 @@
 {"name":"now-unset-uses-clock","rc":0,"stdout":"","stderr":"","log":"","stray":"home/st/s1.json","files":{}}
 {"name":"crash-now-garbage","rc":0,"stdout":"","stderr":"","log":"","stray":"home/st/s1.json","files":{"home/st/s1.json":"{\"last\":1000,\"start\":1000}"}}
 {"name":"now-padded-spaces","rc":0,"stdout":"Session time: 1m40s elapsed, 1m40s since your last prompt.","stderr":"","log":"","stray":"home/st/s1.json","files":{"home/st/s1.json":"{\"last\":1100,\"start\":1000}"}}
-{"name":"state-default-dir","rc":0,"stdout":"Session time: 1m40s elapsed, 1m40s since your last prompt.","stderr":"","log":"","stray":"home/.claude/dwarves-kit/state/context-hints/s1.json","files":{"home/.claude/dwarves-kit/state/context-hints/s1.json":"{\"last\":1100,\"start\":1000}"}}
-{"name":"state-default-dir-first","rc":0,"stdout":"","stderr":"","log":"","stray":"home/.claude/dwarves-kit/state/context-hints/s1.json","files":{"home/.claude/dwarves-kit/state/context-hints/s1.json":"{\"last\":1100,\"start\":1100}"}}
+{"name":"state-default-dir","rc":0,"stdout":"Session time: 1m40s elapsed, 1m40s since your last prompt.","stderr":"","log":"","stray":"home/.cache/dwarves-kit/context-hints/s1.json","files":{"home/.cache/dwarves-kit/context-hints/s1.json":"{\"last\":1100,\"start\":1000}"}}
+{"name":"state-default-dir-first","rc":0,"stdout":"","stderr":"","log":"","stray":"home/.cache/dwarves-kit/context-hints/s1.json","files":{"home/.cache/dwarves-kit/context-hints/s1.json":"{\"last\":1100,\"start\":1100}"}}
 {"name":"state-corrupt","rc":0,"stdout":"","stderr":"","log":"","stray":"home/st/s1.json","files":{"home/st/s1.json":"{\"last\":1100,\"start\":1100}"}}
 {"name":"state-empty-file","rc":0,"stdout":"","stderr":"","log":"","stray":"home/st/s1.json","files":{"home/st/s1.json":"{\"last\":1100,\"start\":1100}"}}
 {"name":"state-trailing-garbage","rc":0,"stdout":"","stderr":"","log":"","stray":"home/st/s1.json","files":{"home/st/s1.json":"{\"last\":1100,\"start\":1100}"}}

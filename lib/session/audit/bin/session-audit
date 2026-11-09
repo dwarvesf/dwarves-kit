@@ -39,8 +39,11 @@ import shlex
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "config"))
+import kit_data  # noqa: E402
+
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
-DEFAULT_OUT = os.path.expanduser("~/.claude/intel")
+DEFAULT_OUT = kit_data.path("state", "intel")
 DEFAULT_MODEL = "sonnet"
 DEFAULT_CMD = ("claude -p --model {model} "
                "--allowedTools Bash,Read,Grep,Glob --output-format json")

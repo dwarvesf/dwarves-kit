@@ -23,7 +23,7 @@
 # until context drops back under KIT_CTX_WARN_PCT (e.g. after /compact or /clear),
 # which clears the state so the next crossing warns again.
 #
-# State: ~/.cache/claude-context-budget/<session_id>, one line: last-fired threshold
+# State: <config data path cache context-budget>/<session_id>, one line: last-fired threshold
 # (0 = warn, 1 = strong).
 #
 # Source: percentage rewrite of the operator's personal dotfiles context-budget hook
@@ -55,7 +55,9 @@ CTX=$(printf '%s' "$LAST_TURN" | jq -r '.ctx' 2>/dev/null)
 MODEL=$(printf '%s' "$LAST_TURN" | jq -r '.model' 2>/dev/null)
 case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 
-STATE_DIR="${HOME}/.cache/claude-context-budget"
+# shellcheck source=../lib/config/data-path.sh
+. "${BASH_SOURCE[0]%/*}/../lib/config/data-path.sh" 2>/dev/null || exit 0
+STATE_DIR="$(kit_data_path cache context-budget)"
 # A statusline that sees Claude Code's context_window_size may drop it here; it is the
 # real window, so it beats every guess below (a 1M model often logs a bare model id).
 WINDOW_FILE_VAL=""

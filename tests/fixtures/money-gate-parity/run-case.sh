@@ -28,7 +28,7 @@ if [ "$(jq -r '.payload | type' <<<"$c")" = "object" ]; then
 else
   jq -j .payload <<<"$c" > "$T/payload"
 fi
-if [ "$unset_log" = 1 ]; then eff="$T/home/.claude/logs/money-gate.log"
+if [ "$unset_log" = 1 ]; then eff="$T/home/.local/state/dwarves-kit/money-gate.log"
 else eff=$(printf '%s\n' "${envs[@]}" | grep '^MONEY_GATE_LOG=' | tail -1 | cut -d= -f2-); fi
 if [ "$(jq -r '.prelog // false' <<<"$c")" = "true" ]; then
   case "$eff" in /*) mkdir -p "$(dirname "$eff")"; printf '1\tprior\tline\n' > "$eff" ;; esac

@@ -20,7 +20,7 @@ link, in order (each step previewed; nothing is written before a yes):
   3 install  every skill dir under integrations/hermes/skills into the profile's skills dir, and a
              stamp file (.dwarves-kit-skills.json: a digest of the skill files, the kit version
              and sha, the time). Re-running refreshes.
-  4 record   the link in ~/.config/dwarves-kit/hermes-links.json ($DWARVES_HERMES_LINKS), with
+  4 record   the link in hermes-links.json (`config data path state hermes-links.json`, or $DWARVES_HERMES_LINKS), with
              the cluster's rail, hub, and boards read from the kit flag file (see `board health
              run`) when one is set up.
   5 verify   one real turn through the profile: the agent must load kit-board and run
@@ -55,12 +55,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parents[1] / "config"))
+import kit_data  # noqa: E402
 import sweep_modules  # noqa: E402
 
 KIT = HERE.parent.parent.parent
 SKILLS_SRC = KIT / "integrations" / "hermes" / "skills"
 STAMP_NAME = ".dwarves-kit-skills.json"
-DEFAULT_LINKS = os.path.expanduser("~/.config/dwarves-kit/hermes-links.json")
+DEFAULT_LINKS = kit_data.path("state", "hermes-links.json")
 VERIFY_SESSION = "kit-link-verify"
 
 

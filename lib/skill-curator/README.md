@@ -23,7 +23,7 @@ PreCompact/SessionEnd ─▶ skill-review hook (async) ─▶ nohup reviewer-spa
                           --allowedTools "" --model haiku --output-format json
                               │ returns JSON {draft?, reason}  (model has NO filesystem write)
                               ▼
-     wrapper writes draft ▶ ~/.claude/skill-proposals/<slug>/SKILL.md   (NEVER ~/.claude/skills/)
+     wrapper writes draft ▶ <proposals dir>/<slug>/SKILL.md   (NEVER ~/.claude/skills/)
      wrapper appends cost ▶ ~/.claude/skill-curator/ledger.jsonl
 
    /skill-review ─▶ writing-skills checklist ─▶ mv proposal ─▶ ~/.claude/skills/<name>/   (Phase B)
@@ -91,7 +91,7 @@ also overridable by `SKILL_CURATOR_<KEY>` (env wins; tests use this).
 
 - `enabled` (default on), `model` (default `haiku`), `max_turns` (2), `transcript_k` (40).
 - Paths: `SKILL_CURATOR_STATE_DIR` (`~/.claude/skill-curator`), `SKILL_CURATOR_PROPOSALS_DIR`
-  (`~/.claude/skill-proposals`), `SKILL_CURATOR_SKILLS_DIR` (`~/.claude/skills`).
+  (`config data path state skill-proposals`), `SKILL_CURATOR_SKILLS_DIR` (`~/.claude/skills`).
 - Cost: every reviewer run appends `total_cost_usd` to `ledger.jsonl`; `cc-improve status` shows
   7-day loop spend and the staged-draft count. Dial back by raising `transcript_k` cost via a bigger
   `model` only if needed, or disable via `enabled = false`.

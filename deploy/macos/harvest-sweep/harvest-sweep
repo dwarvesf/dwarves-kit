@@ -8,7 +8,7 @@
 #
 # It calls hooks/harvest_sweep.py --sweep DIRECTLY (never through harvest.sh,
 # which always exits 0 and would swallow the rc), then runs the consumer bridge
-# ~/.config/harvest-sweep/bridge <rc> <report path or -> best-effort (DEC-21).
+# <config data path config harvest-sweep>/bridge <rc> <report path or -> best-effort (DEC-21).
 # Only a lock-held run gets no bridge call -- the sweep prints one fixed marker
 # line on stderr and exits 0; an idle run pings with '-' so the heartbeat still
 # fires (AC4).
@@ -16,6 +16,8 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="$(cd "$HERE/../../.." && pwd)"
+# shellcheck source=../../../lib/config/data-path.sh
+. "$KIT/lib/config/data-path.sh"
 
 # launchd gives a bare PATH (/usr/bin:/bin:...); the sweep shells out to the
 # claude CLI and git, so widen it the same way kit-weekly does.
@@ -23,12 +25,13 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/us
 
 # Optional per-machine env: PATH extras, Claude auth settings, overrides. The
 # kit ships none of it -- consumer config lives on the consumer's machine.
-ENV_FILE="$HOME/.config/harvest-sweep/env"
+CONFIG_DIR="$(kit_data_path config harvest-sweep)"
+ENV_FILE="$CONFIG_DIR/env"
 # shellcheck disable=SC1090
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
 
 LABEL="${HARVEST_SWEEP_LABEL:-harvest-sweep}"
-STATE="${HARVEST_STATE_DIR:-$HOME/.claude/dwarves-kit/state/harvest}"
+STATE="${HARVEST_STATE_DIR:-$(kit_data_path state harvest)}"
 LOG_DIR="$HOME/Library/Logs/dwarves-kit"
 LOG="$LOG_DIR/$LABEL.log"
 mkdir -p "$LOG_DIR"
@@ -72,7 +75,7 @@ if ! grep -q '^harvest-sweep: sweep\.lock held' "$SWEEP_ERR"; then
     case "$mtime" in ''|*[!0-9]*) mtime=0 ;; esac
     [ "$mtime" -ge "$sweep_started" ] && report="$newest"
   fi
-  BRIDGE="$HOME/.config/harvest-sweep/bridge"
+  BRIDGE="$CONFIG_DIR/bridge"
   if [ -x "$BRIDGE" ]; then
     "$BRIDGE" "$rc" "$report" >> "$LOG" 2>&1 || log "bridge exited $?"
   fi
