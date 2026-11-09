@@ -17,9 +17,9 @@ for a in "$@"; do
 done
 [ -d "$G" ] || { echo "stats.sh: no $G here; run from the kit root" >&2; exit 1; }
 
-# A QL-VERDICT line must match this in full (backtick wrapping allowed);
-# anything else naming QL-VERDICT is a malformed marker and a loud error.
-QL_OK='\[\[QL-VERDICT round=[0-9]+ clean=(true|false) findings=[0-9]+\]\]'
+# The QL-VERDICT grammar lives in lib/loop/ql-verdict.sh: a line naming QL-VERDICT that does not
+# match it in full is a malformed marker and a loud error (exit 65 there, exit 1 here).
+QV="$(cd "$(dirname "${BASH_SOURCE[0]}")/../loop" && pwd)/ql-verdict.sh"
 
 TMP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
 trap 'rm -f "$TMP"' EXIT
@@ -75,12 +75,10 @@ for d in "$G"/*/; do
   d="${d%/}"
   [ -L "$d" ] && continue
   while IFS= read -r f; do
-    while IFS= read -r line; do
-      # Full-line match after stripping backticks/whitespace: a line pairing a
-      # valid marker with a corrupted one must still fail, so no substring pass.
-      printf '%s' "$line" | sed 's/`//g; s/^ *//; s/ *$//' | grep -qxE "$QL_OK" \
-        || { echo "stats.sh: malformed QL-VERDICT in $f: $line" >&2; bad=1; }
-    done < <(grep -h 'QL-VERDICT' "$f")
+    msgs="$(bash "$QV" parse "$f" 2>&1 >/dev/null)" || {
+      while IFS= read -r line; do echo "stats.sh: $line" >&2; done <<< "$msgs"
+      bad=1
+    }
   done < <(rounds_files "$d")
 done
 [ "$bad" -eq 0 ] || exit 1
@@ -104,9 +102,7 @@ for d in "$G"/*/; do
       [ -n "$traj" ] && traj="${traj}->"
       traj="${traj}${fi}"
       [ "$cl" = "true" ] && [ "$clean_at" = "-" ] && clean_at="$rno"
-    done < <(grep -h 'QL-VERDICT' "$f" \
-             | sed -E 's/.*round=([0-9]+) clean=(true|false) findings=([0-9]+).*/\1 \2 \3/' \
-             | sort -n)
+    done < <(bash "$QV" parse "$f" | sort -n)
     [ -n "$traj" ] || traj="-"
     # Campaign records: per-row verdict table (| J1 | ... GREEN ... |).
     rows_total=$(grep -cE '^\| *J[0-9]+ *\|' "$f" || true)
