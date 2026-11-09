@@ -73,12 +73,12 @@ doc's own "Backlog reconcile" SDLC-instances row): every adopter repo gets this 
         `bash lib/board/backlog.sh states --class hold`,
         `bash lib/board/backlog.sh states --class terminal`. Put the row's leading `Status`
         keyword in its class.
-      - **Flag only a real contradiction:**
-        1. spec closed but board active;
-        2. board terminal but spec DRAFT.
-        Nothing else flags. A hold row fits any spec.
-      - A VALIDATED spec with a shipped row is NOT a contradiction: nothing advances a spec
-        past VALIDATED, so the spec header lags the board. Same for an APPROVED spec.
+      - **Flag only a real contradiction:** spec closed but board active. Nothing else flags.
+        A hold row fits any spec.
+      - **Header lag is not a contradiction.** A VALIDATED or APPROVED spec with a shipped row:
+        nothing advances a spec past VALIDATED, so the spec header lags the board. A shipped
+        row with a DRAFT spec is the same lag. A dropped row with a DRAFT spec is abandoned
+        work, consistent.
 
       A target repo with an unlisted spec-status word still flags it (unknown keyword = flag)
       rather than silently passing.

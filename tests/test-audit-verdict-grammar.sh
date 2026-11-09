@@ -26,7 +26,7 @@ n="$(grep -c 'Every instance emits only these five words' "$PATTERN")"
 check "audit-loop.md states the five-word rule exactly once (found $n)" "$([ "$n" = 1 ]; echo $?)"
 grep -qF 'goes in the reason' "$PATTERN"
 check "audit-loop.md says the old word goes in the reason" $?
-! grep -qF 'is UNTESTABLE, never REMOVE' "$PATTERN"
+! grep -qF 'is UNTESTABLE, never REMOVE' "$PATTERN" && grep -qF '`UNSURE (untestable from here)`, never REMOVE' "$PATTERN"
 check "audit-loop.md no longer makes UNTESTABLE a verdict" $?
 for s in $SKILLS; do
   c="$(grep -c 'Every instance emits only these five words' "$KIT_DIR/skills/$s/SKILL.md")"
@@ -70,14 +70,18 @@ for cls in active hold terminal; do
 done
 ! grep -qE '^\| `?DRAFT`?, `?APPROVED`? \|' "$BR" && ! grep -qF 'Maps to board `Status`' "$BR"
 check "backlog-reconcile has no spec-keyword to board-word map table" $?
-grep -qF 'spec closed but board active' "$BR" && grep -qF 'board terminal but spec DRAFT' "$BR"
-check "backlog-reconcile names the two real contradictions" $?
-grep -qF 'header lags' "$BR"
-check "backlog-reconcile says a VALIDATED spec with a shipped row is no contradiction" $?
+grep -qF 'spec closed but board active' "$BR" && ! grep -qF 'board terminal but spec DRAFT' "$BR"
+check "backlog-reconcile flags only spec closed while the board row is active" $?
+grep -qF 'header lags' "$BR" && grep -qF 'dropped row with a DRAFT spec' "$BR"
+check "backlog-reconcile exempts header lag and a dropped row with a DRAFT spec" $?
 # The commands the skill cites must run and return the classes it relies on.
 a="$(bash "$BL" states --class active 2>/dev/null | tr '\n' ' ')"; h="$(bash "$BL" states --class hold 2>/dev/null | tr '\n' ' ')"; t="$(bash "$BL" states --class terminal 2>/dev/null | tr '\n' ' ')"
 case " $a" in *" queued "*) case " $t" in *" shipped "*) case " $h" in *" parked "*) rc=0 ;; *) rc=1 ;; esac ;; *) rc=1 ;; esac ;; *) rc=1 ;; esac
 check "states --class active|hold|terminal return queued / parked / shipped" "$rc"
+
+AG="$KIT_DIR/agents/audit-scanner.md"
+grep -qF '`UNSURE (untestable)`, never REMOVE' "$AG" && ! grep -qE '(/|\*\*)UNTESTABLE' "$AG"
+check "audit-scanner agent agrees: untestable is an UNSURE reason, not a verdict" $?
 
 # ---- 5. greenlight documents no terminal state it never emits ----
 GL="$KIT_DIR/commands/greenlight.md"
