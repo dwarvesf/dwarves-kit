@@ -251,8 +251,8 @@ VF="$KIT_DIR/commands/verify.md"
 RT80="$KIT_DIR/commands/review-team.md"
 RC=0; grep -qF 'condition + metric + threshold' "$VF" || RC=1
 assert_eq "verify carries the claim-restatement preamble (ID-077)" 0 $RC
-RC=0; grep -qF 'PASS / FAIL / INCONCLUSIVE' "$VF" && grep -qF 'honest third verdict' "$VF" || RC=1
-assert_eq "INCONCLUSIVE is a legal verdict with named causes" 0 $RC
+RC=0; grep -qF '## Verdict: PASS / FAIL' "$VF" && ! grep -qF 'PASS|FAIL|INCONCLUSIVE' "$VF" && ! grep -qF 'PASS / FAIL / INCONCLUSIVE' "$VF" && grep -qF 'FAIL: inconclusive' "$VF" || RC=1
+assert_eq "verify writes FAIL for an unattributable measurement, never INCONCLUSIVE" 0 $RC
 RC=0; grep -qF 'Baseline:' "$KIT_DIR/docs/verification/README.md" || RC=1
 assert_eq "verification README carries the comparative-evidence line" 0 $RC
 RC=0; grep -qF '1k lines' "$RT80" && grep -qiF 'spaghetti' "$RT80" || RC=1
