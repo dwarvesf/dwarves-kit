@@ -116,6 +116,7 @@ free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
   `... record <rid> gauntlet ran "rounds=N verdict=<V> unaided=<bool>"`.
   The phase name stays the literal `gauntlet` for every preset; the preset is
   recorded in ROUNDS.md, never in the phase name or the marker.
+- At loop start, and after any context loss, run `bash lib/loop/ql-verdict.sh resume <run-dir>/ROUNDS.md` and continue from the printed `round=` and `clean_streak=` (the two-pass SOLID rule reads the streak). Never count rounds in context.
 - After each round's scoring, emit the observe-parseable marker:
   `[[QL-VERDICT round=N clean=<K==0> findings=K]]` (same grammar as
   test-plan-review-team, byte-identical across presets; observe needs no change).

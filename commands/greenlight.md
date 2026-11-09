@@ -64,7 +64,7 @@ Do not reimplement kit:fix-agent's fix logic here; this command only feeds it th
 
 ### Step 5: Retry flaky failures
 
-Track a per-commit-hash retry counter **in this session only** (no persisted state file -- greenlight holds no JSON store). Budget: **3 attempts per commit hash** (the current PR head sha).
+Budget: **3 attempts per commit hash** (the current PR head sha). The count lives in the run ledger, not in context: each retry first appends `bash lib/gate/gate-ledger.sh action <rid> greenlight-retry sha=<sha> n=<k>`, and on start (or after a context loss) the retries already spent on this head are `bash lib/gate/gate-ledger.sh actions <rid> greenlight-retry sha=<sha> --count`. Greenlight holds no JSON store.
 
 To retry: re-run the failed check's workflow run (`gh run list --branch <headRefName> --limit 1 --json databaseId` to find it, then `gh run rerun <databaseId> --failed`), then re-snapshot (Step 2) after it completes.
 

@@ -65,6 +65,14 @@ bash "$QV" resume "$TMP/badvalue" >/dev/null 2>&1; eq "resume: malformed marker 
 if grep -q 'QL_OK=' "$KIT_DIR/lib/gauntlet/stats.sh"; then fail "stats.sh still keeps its own QL-VERDICT grammar"; else pass "stats.sh keeps no copy of the grammar"; fi
 grep -q 'ql-verdict.sh' "$KIT_DIR/lib/gauntlet/stats.sh" && pass "stats.sh calls ql-verdict.sh" || fail "stats.sh does not call ql-verdict.sh"
 
+# ---- prose wiring: every loop command names the resume verb ----
+for c in gauntlet test-plan-review-team ui-design verify; do
+  grep -q 'lib/loop/ql-verdict.sh resume' "$KIT_DIR/commands/$c.md" && pass "commands/$c.md names the resume verb" || fail "commands/$c.md does not name the resume verb"
+done
+grep -q 'gate-ledger.sh action <rid> greenlight-retry' "$KIT_DIR/commands/greenlight.md" && pass "greenlight appends retry ACTION lines" || fail "greenlight does not append retry ACTION lines"
+grep -q 'gate-ledger.sh actions <rid> greenlight-retry' "$KIT_DIR/commands/greenlight.md" && pass "greenlight counts retries from the ledger" || fail "greenlight does not count retries from the ledger"
+if grep -q 'in this session only' "$KIT_DIR/commands/greenlight.md"; then fail "greenlight still counts retries in session only"; else pass "greenlight no longer counts in context"; fi
+
 echo ""
 [ "$FAILED" -eq 0 ] && echo "ql-verdict: all passed" || echo "ql-verdict: $FAILED failed"
 [ "$FAILED" -eq 0 ]

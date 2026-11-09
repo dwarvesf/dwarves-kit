@@ -119,6 +119,7 @@ the ACCEPTED fixes (the per-round approval Phase B already has) -> re-render -> 
   unresolved CRITICAL has zero NEW but an OPEN >=HIGH, so it does NOT quiesce (the falsely-calm
   trap). Severity floor is `>=HIGH` (the kit has no MAJOR); MEDIUM/LOW findings DEFER, they do not
   block.
+- **Resume:** at loop start, and after any context loss, run `bash lib/loop/ql-verdict.sh resume <spec> --section '## Visual critique'` and continue from the printed `round=`. Never count rounds in context.
 - **Round cap: 3** (test-plan-review-team parity). The plain REVISE loop above keeps its cap of 2
   (kit:fix-agent parity); the divergence is deliberate.
 - **Audit markers:** each round emits `[[QL-VERDICT round=N clean=BOOL findings=K]]` (clean = zero
