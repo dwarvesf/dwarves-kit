@@ -298,6 +298,36 @@ jq -n --arg cwd "$R" --arg cmd 'git status' '{cwd: $cwd, tool_input: {command: $
 if [ -s "$SPY/seen" ] && ! grep -qv '^disable$' "$SPY/seen"; then ok "hook children run with os_log silenced"
 else no "hook children should see OS_ACTIVITY_MODE=disable (saw: $(sort -u "$SPY/seen" | tr '\n' ' '))"; fi
 
+# A forked child that dies must not let a push through. Shims on PATH stand in for the crash: each
+# exits 139 with no output when it is the tool that builds one view of the command, and runs the real
+# tool otherwise. The hook has to engage anyway: a dead view can only add engagement.
+DEAD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+for tool in sed awk grep; do
+  real="$(command -v $tool)"
+  case "$tool" in
+    sed)  pat='*IFS*|*git-stash-push*' ;;   # the ${IFS} view and the stash-push view
+    awk)  pat='*"function inert"*' ;;       # the gh view (inert-quote blanking)
+    grep) pat='*@@DEFAULT-PUSH*' ;;         # the push-to-default-branch marker scan
+  esac
+  printf '#!/bin/bash\ncase "$*" in %s) exit 139 ;; esac\nexec "%s" "$@"\n' "$pat" "$real" > "$DEAD/$tool"
+  chmod +x "$DEAD/$tool"
+done
+gate_dead() { # <cwd> <command> -> the hook's exit code with the dying tools first on PATH
+  jq -n --arg cwd "$1" --arg cmd "$2" '{cwd: $cwd, tool_input: {command: $cmd}}' \
+    | PATH="$DEAD:$PATH" CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>&1
+  echo $?
+}
+dead_engages() { [ "$(gate_dead "$R" "$2")" = 2 ] && ok "dead capture: $1 -> engaged" || no "dead capture: $1 -> should engage (exit 2)"; }
+dead_engages "\${IFS} push (ifs view)"          'git${IFS}push${IFS}origin${IFS}HEAD'
+dead_engages "quoted ; in the -C dir (views)"   'git -C "a;b" push -u origin HEAD'
+dead_engages "quoted ; inside backticks"        'echo `git -C "a;b" push`'
+dead_engages "gh pr create (gh view)"           'gh pr create --fill'
+dead_engages "gh pr new after cd (gh view)"     "cd $R && gh pr new --fill"
+M="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/m"
+git init -q -b main "$M"; git -C "$M" config user.email t@t.example; git -C "$M" config user.name t
+echo base > "$M/f"; git -C "$M" add -A; git -C "$M" commit -qm init
+[ "$(gate_dead "$M" 'git push origin main')" = 2 ] && ok "dead capture: push to main still refused" || no "dead capture: push to main should still be refused (exit 2)"
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
