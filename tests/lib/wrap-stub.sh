@@ -296,6 +296,21 @@ mkdir -p "$TMPD/nosleep"; printf '#!/bin/sh\nexit 0\n' > "$TMPD/nosleep/sleep"; 
 # --------------------------------------------------------------------------- fixture
 gitc() { git -C "$1" config user.email t@t; git -C "$1" config user.name t; git -C "$1" config commit.gpgsign false; }
 
+# reword_wrap -- sets $WRAP_REWORDED to the bin/wrap of a kit copy whose _pr_gate reason
+# sentences (the gate alone, never a caller) are reworded. A caller that still compares a
+# verdict by its sentence stops matching in the copy, so a case run through it proves the
+# callers branch on the code.
+reword_wrap() {
+  [ -n "${WRAP_REWORDED:-}" ] && return 0
+  local dir="$TMPD/reworded-kit"
+  mkdir -p "$dir/bin"; cp -R "$KIT_DIR/lib" "$dir/lib"; cp "$KIT_DIR/bin/wrap" "$dir/bin/wrap"
+  sed -i.bak -e '/^_pr_gate()/,/^}/{s/not mergeable (/cannot be merged (/g;s/checks are pending or failing/checks are not yet green/g;}' \
+    "$dir/lib/wrap/wrap-merge.sh"
+  rm -f "$dir/lib/wrap/wrap-merge.sh.bak"
+  grep -q 'cannot be merged (' "$dir/lib/wrap/wrap-merge.sh" || { echo "reword_wrap: sentence not found" >&2; return 1; }
+  WRAP_REWORDED="$dir/bin/wrap"
+}
+
 build_remote() { # build_remote <name> <default branch>
   local name="$1" def="$2" work="$TMPD/work-$1" b
   mkdir -p "$work"

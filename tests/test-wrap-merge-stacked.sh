@@ -92,6 +92,13 @@ chk_has "dry run: announces the rebase" "$out" "note: #21 conflicts; --apply wou
 chk "dry run: origin stack/b untouched" "$([ "$(sk_remote_b dry)" = "$SK_B" ]; echo $?)"
 chk "dry run: no leased push" "$([ "$(sk_force_pushes)" -eq 0 ]; echo $?)"
 
+echo "=== merge --rebase-stacked: a reworded conflict reason still starts the stacked recovery ==="
+reword_wrap
+build_stack reword
+out="$(WRAP="$WRAP_REWORDED" sk_run 21 reword --pr 21 --rebase-stacked)"; rc=$?
+chk "reworded dry run: exits 0" "$rc"
+chk_has "reworded dry run: still announces the rebase" "$out" "note: #21 conflicts; --apply would rebase its branch onto origin/main if its parent PR squash-merged (--rebase-stacked)"
+
 echo "=== merge --rebase-stacked: the squash-merged parent is cut out and the child merges ==="
 # No checkout holds stack/b, so the rebase runs in a scratch worktree. Two merged PRs sit under
 # the child (a1's and a2's): the chain's tip, #20, is the cut point.
