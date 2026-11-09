@@ -3401,6 +3401,96 @@ chk "outcome_usage: the last line is the refused outcome" \
   "$([ "$(oc_last "$out")" = "LAND: refused (preflight, exit 64)" ]; echo $?)"
 } # end sec_outcome
 
+# ===========================================================================
+sec_many() {
+echo "=== land: several worktrees, one at a time ==="
+# ===========================================================================
+# Real git, `gh` stubbed. GH_STUB_LAND_OID=1 lands whatever head the merge call pins on the
+# remote's default branch, so each worktree can carry its own branch. Every worktree here is
+# a never-pushed branch off the same base, so the second and third need a rebase.
+ml_stage() { # ml_stage <name> -- repo ld-repo-<name> with feat/land (wt), feat/two (wt2), feat/three (wt3)
+  local r
+  build_land "$1"
+  r="$TMPD/ld-repo-$1"
+  git -C "$r" worktree add -q -b feat/two "$r/wt2" main >/dev/null 2>&1
+  echo two > "$r/wt2/two.txt"; git -C "$r/wt2" add -A; git -C "$r/wt2" commit -qm "feat: the second change"
+  git -C "$r" worktree add -q -b feat/three "$r/wt3" main >/dev/null 2>&1
+  echo three > "$r/wt3/three.txt"; git -C "$r/wt3" add -A; git -C "$r/wt3" commit -qm "feat: the third change"
+}
+ml_land() { # ml_land <name> <args...> -- wrap land, stdout and stderr merged
+  local name="$1"; shift
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_OID=1 GH_STUB_LAND_DEF=main "$WRAP" land "$@" 2>&1
+}
+
+echo "--- many_ok: two worktrees land in order, the second is rebased first"
+ml_stage m1
+MR="$TMPD/ld-repo-m1"; W1="$(cd "$MR/wt" && pwd -P)"; W2="$(cd "$MR/wt2" && pwd -P)"
+out="$(ml_land m1 "$W1" "$W2" --verify true)"; rc=$?
+chk "many_ok: exits 0" "$rc"
+chk "many_ok: two merge calls" "$([ "$(grep -c '^pr merge ' "$GH_STUB_CALLS")" -eq 2 ]; echo $?)"
+chk "many_ok: the first worktree lands before the second starts" \
+  "$(printf '%s\n' "$out" | grep -e '^== land ' -e '^LAND: ' -e '^rebase ' | head -5 | paste -sd'|' - | grep -q '^== land 1/2.*|LAND: merged.*|== land 2/2.*|rebase feat/two.*|LAND: merged'; echo $?)"
+chk_has "many_ok: the second is rebased before its land" "$out" "rebase feat/two onto origin/main"
+chk_no "many_ok: the first is not rebased" "$out" "rebase feat/land onto"
+chk "many_ok: two LAND lines in the per-land output" "$([ "$(printf '%s\n' "$out" | grep -c '^LAND: merged')" -eq 2 ]; echo $?)"
+chk_has "many_ok: the summary table follows" "$out" "== land summary"
+chk "many_ok: the table has one row per worktree" \
+  "$([ "$(printf '%s\n' "$out" | sed -n '/^== land summary$/,$p' | grep -c "LAND: merged")" -eq 2 ]; echo $?)"
+chk "many_ok: the last line is the second worktree's row" \
+  "$(printf '%s\n' "$out" | tail -1 | grep -q "^${W2}  LAND: merged #42"; echo $?)"
+chk "many_ok: origin holds both changes" \
+  "$([ "$(git -C "$TMPD/ld-bare-m1" show main:two.txt 2>/dev/null)" = two ] && git -C "$TMPD/ld-bare-m1" cat-file -e main:pr-file.txt; echo $?)"
+
+echo "--- many_stop: the second refuses, the run stops, the third is listed as not run"
+ml_stage m2
+MR="$TMPD/ld-repo-m2"; W1="$(cd "$MR/wt" && pwd -P)"; W2="$(cd "$MR/wt2" && pwd -P)"; W3="$(cd "$MR/wt3" && pwd -P)"
+echo scratch > "$W2/untracked.txt"
+out="$(ml_land m2 "$W1" "$W2" "$W3")"; rc=$?
+chk "many_stop: exits with the failing land's code (1)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "many_stop: the first worktree landed" "$out" "LAND: merged #42"
+chk_has "many_stop: the stop names the worktree and the reason" "$out" "STOPPED at ${W2} (2/3): LAND: refused (preflight, exit 1)"
+chk_has "many_stop: the third is listed as not run" "$out" "not run: ${W3}"
+chk "many_stop: the third was never started" "$(printf '%s\n' "$out" | grep -q '^== land 3/3'; [ $? -ne 0 ]; echo $?)"
+chk "many_stop: only one merge call" "$([ "$(grep -c '^pr merge ' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk "many_stop: the third worktree is untouched" "$([ -d "$W3" ]; echo $?)"
+chk "many_stop: the table lists all three, the last as not run" \
+  "$(printf '%s\n' "$out" | tail -1 | grep -q "^${W3}  LAND: not run$"; echo $?)"
+
+echo "--- many_single: one worktree prints nothing new"
+ml_stage m3
+MR="$TMPD/ld-repo-m3"; W1="$(cd "$MR/wt" && pwd -P)"
+out="$(ml_land m3 "$W1")"; rc=$?
+chk "many_single: exits 0" "$rc"
+chk_no "many_single: no per-worktree header" "$out" "== land "
+chk_no "many_single: no summary table" "$out" "land summary"
+chk "many_single: exactly one LAND line, and it is last" \
+  "$([ "$(printf '%s\n' "$out" | grep -c '^LAND: ')" -eq 1 ] && printf '%s\n' "$out" | tail -1 | grep -q '^LAND: merged #42'; echo $?)"
+
+echo "--- many_flags: a one-PR flag with two worktrees exits 64 and names the flag"
+ml_stage m4
+MR="$TMPD/ld-repo-m4"; W1="$(cd "$MR/wt" && pwd -P)"; W2="$(cd "$MR/wt2" && pwd -P)"
+out="$(ml_land m4 "$W1" "$W2" --title "x")"; rc=$?
+chk "many_flags: --title exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "many_flags: --title is named" "$out" "--title cannot combine with more than one worktree"
+out="$(ml_land m4 "$W1" --body-file /dev/null "$W2")"; rc=$?
+chk "many_flags: --body-file exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "many_flags: --body-file is named" "$out" "--body-file cannot combine with more than one worktree"
+out="$(ml_land m4 "$W1" "$W2" --draft)"; rc=$?
+chk "many_flags: --draft exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk "many_flags: nothing was pushed or merged" "$([ ! -s "$GH_STUB_CALLS" ]; echo $?)"
+out="$(ml_land m4 "$W1" "$TMPD/not-a-worktree")"; rc=$?
+chk "many_flags: a bad path exits 64 before any land" "$([ "$rc" -eq 64 ] && ! grep -q '^pr merge ' "$GH_STUB_CALLS"; echo $?)"
+
+echo "--- many_pushed: a branch already on origin is not rebased"
+ml_stage m5
+MR="$TMPD/ld-repo-m5"; W1="$(cd "$MR/wt" && pwd -P)"; W2="$(cd "$MR/wt2" && pwd -P)"
+git -C "$W2" push -q origin feat/two >/dev/null 2>&1
+out="$(ml_land m5 "$W1" "$W2")"
+chk_has "many_pushed: the rebase is skipped" "$out" "rebase skipped: feat/two is already on origin"
+chk_no "many_pushed: no rebase ran" "$out" "rebase feat/two onto"
+} # end sec_many
+
 # One section, in this process. The driver sets LAND_SECTION per child; the last line is the
 # child's result for the driver to sum (it is not the suite's final line).
 [ "$(type -t "$LAND_SECTION")" = function ] || { echo "test-wrap-land: no such section: $LAND_SECTION" >&2; exit 64; }

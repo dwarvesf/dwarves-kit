@@ -7,7 +7,7 @@ The landing step after ship. One pass over every repo a session touched: report 
 - `scan`: report only, never writes.
 - `apply`: gated writes, dry run unless `--apply`. Covers the pull, merged-branch sweep, `--worktrees`, `--own`, `--archive-unmerged`, and `--archive-worktrees`.
 - `merge`: merge one own green PR.
-- `land`: land one hand-made worktree.
+- `land`: land one hand-made worktree, or several in argument order, one at a time.
 - `start`: open a worktree on a fresh branch, with `--pick` and `--carry`.
 - `ship` (`wrap ship`): `start --carry`, commit the named paths, an explicit-only proof override, then `land`, as one call.
 - `rebase`: a worktree branch onto `origin/<default>`, safe conflicts only.
