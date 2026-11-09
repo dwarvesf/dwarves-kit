@@ -66,6 +66,11 @@ main() {
   itok="$(jq -r '.usage.input_tokens // 0' <<<"$envelope" 2>/dev/null | grep -Eo '^[0-9]+' | head -1)"; itok="${itok:-0}"
   otok="$(jq -r '.usage.output_tokens // 0' <<<"$envelope" 2>/dev/null | grep -Eo '^[0-9]+' | head -1)"; otok="${otok:-0}"
   result="$(jq -r '.result // empty' <<<"$envelope" 2>/dev/null)"
+  # An error envelope (not logged in, rate limit) carries its message in .result; never parse it as a verdict.
+  if [ "$(jq -r '.is_error // false' <<<"$envelope" 2>/dev/null)" = "true" ]; then
+    si_log "reviewer: claude returned an error envelope; no draft"; egress_fail skill-review "claude error envelope"
+    _ledger false "" "$cost" "$itok" "$otok" "api-error"; return 0
+  fi
   if [ -z "$result" ]; then
     si_log "reviewer: envelope had no .result; no draft"; egress_fail skill-review "envelope had no result"; _ledger false "" "$cost" "$itok" "$otok" "no-result"; return 0
   fi
@@ -109,11 +114,13 @@ main() {
 
 # run_reviewer: stdin = prompt; stdout = claude -p envelope JSON. CLAUDE_REVIEWING set for the
 # reentrancy guard. SKILL_CURATOR_REVIEWER_CMD overrides the model call (tests). Model = no write.
+# --safe-mode (not --bare): it strips hooks, CLAUDE.md and plugins too, but keeps OAuth/keychain auth.
+# --bare reads only ANTHROPIC_API_KEY, so on a subscription login every call returned "Not logged in".
 run_reviewer() {
   if [ -n "${SKILL_CURATOR_REVIEWER_CMD:-}" ]; then
     CLAUDE_REVIEWING=1 bash -c "$SKILL_CURATOR_REVIEWER_CMD"
   else
-    CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence \
+    CLAUDE_REVIEWING=1 claude -p --safe-mode --no-session-persistence \
       --allowedTools "" --model "$(cfg model haiku)" --max-turns "$(cfg max_turns 2)" \
       --output-format json 2>>"$SKILL_CURATOR_LOG"
   fi

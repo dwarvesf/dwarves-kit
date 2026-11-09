@@ -19,7 +19,7 @@ tool's original name). Suite parity was asserted at the originating cc-elevation
 PreCompact/SessionEnd ─▶ skill-review hook (async) ─▶ nohup reviewer-spawn.sh & ; hook returns now
                                                           │
    reviewer-run.sh (TRUSTED bash):                        ▼
-     last-K turns ─stdin▶ CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence
+     last-K turns ─stdin▶ CLAUDE_REVIEWING=1 claude -p --safe-mode --no-session-persistence
                           --allowedTools "" --model haiku --output-format json
                               │ returns JSON {draft?, reason}  (model has NO filesystem write)
                               ▼

@@ -36,7 +36,7 @@ curate_inventory() {
 
 run_curator() {  # stdin = prompt+inventory; stdout = claude -p envelope
   if [ -n "${SKILL_CURATOR_CURATOR_CMD:-}" ]; then CLAUDE_REVIEWING=1 bash -c "$SKILL_CURATOR_CURATOR_CMD"
-  else CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence --allowedTools "" \
+  else CLAUDE_REVIEWING=1 claude -p --safe-mode --no-session-persistence --allowedTools "" \
     --model "$(cfg curator_model "$(cfg model haiku)")" --max-turns "$(cfg max_turns 2)" --output-format json 2>>"$SKILL_CURATOR_LOG"; fi
 }
 

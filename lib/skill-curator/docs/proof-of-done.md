@@ -35,7 +35,7 @@ is built in three phases (cc-elevation-r4 sub-goals 02/03/04); each phase append
 | Piece | What | Where |
 |---|---|---|
 | Transcript parser | bash + jq; last-K user+assistant text turns; skips thinking/tool/summary | `lib/transcript.sh` |
-| Reviewer (no write) | `claude -p --bare --no-session-persistence --allowedTools "" --model haiku --output-format json`; returns `{draft|null, reason}` | `lib/reviewer-run.sh:run_reviewer` |
+| Reviewer (no write) | `claude -p --safe-mode --no-session-persistence --allowedTools "" --model haiku --output-format json`; returns `{draft|null, reason}` | `lib/reviewer-run.sh:run_reviewer` |
 | Two-layer parse | envelope `.total_cost_usd`/`.usage` + `.result`; `.result` parsed as the draft JSON | `lib/reviewer-run.sh:main` |
 | Secret guard | wrapper drops a draft whose body matches a high-precision secret pattern | `lib/common.sh:contains_secret` |
 | Staging writer | the ONLY draft writer; writes `skill-proposals/<slug>/SKILL.md`, never `skills/` | `lib/reviewer-run.sh:main` |

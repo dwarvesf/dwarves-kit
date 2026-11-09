@@ -25,7 +25,7 @@ self-improvement run must never break your session), and nothing here ever delet
 
 - **Symptom:** several `claude -p` processes alive at once.
 - **Detect:** `pgrep -fl 'claude -p'`; check the tool log `~/.claude/skill-curator/skill-curator.log`.
-- **Why:** should be impossible. Guards: `--bare` strips hooks, the `CLAUDE_REVIEWING` sentinel makes
+- **Why:** should be impossible. Guards: `--safe-mode` strips hooks, the `CLAUDE_REVIEWING` sentinel makes
   the hook a no-op inside a reviewer, and the single-flight lock blocks a second concurrent run.
 - **Fix:** `pkill -f reviewer-run`; the lock self-heals (a dead holder's lock is stolen). If it keeps
   happening, `bash deploy/uninstall.sh` and report it, the reentrancy guard has a hole.
