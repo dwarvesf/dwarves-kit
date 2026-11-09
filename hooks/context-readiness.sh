@@ -108,7 +108,7 @@ else
   case "$SPEC_STATUS" in
     DRAFT)
       SUGGEST="spec is DRAFT; say 'validate it' (or /kit:spec-validate)" ;;
-    APPROVED|VALIDATED)
+    APPROVED|VALIDATED)  # spec-state-ok: the per-state suggestion, not a vocabulary copy
       # Count tasks
       TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
       DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)

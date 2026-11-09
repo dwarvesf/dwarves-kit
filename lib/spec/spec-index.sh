@@ -18,8 +18,8 @@
 # namespace = "central docs/specs" for the central tree, else the co-located prefix
 #             (e.g. "tools/bar" for tools/bar/docs/specs/)
 # title     = the first `# ` heading (leading "# " / "Spec: " stripped), else the filename
-# Status    = the canonical state of the `Status:` header (lib/spec/spec-status.sh get): DRAFT, APPROVED,
-#             VALIDATED, SHIPPED or PARKED, UNKNOWN for an undeclared word, "(none)" with no header
+# Status    = the canonical state of the `Status:` header (lib/spec/spec-status.sh get, declared in
+#             lib/spec/states.tsv), UNKNOWN for an undeclared word, "(none)" with no header
 #
 # Stdlib/bash only -- no deps, no index, no daemon. Re-run to regenerate.
 #

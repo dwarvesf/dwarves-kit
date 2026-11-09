@@ -213,19 +213,23 @@ got="$(pick "$RN" post-compact-reinject.sh 'SPEC: docs/specs/SPEC-[0-9]+')"
 case "$(dg "$RN" dfa02/fa02.go)" in *"not in any active spec"*) fail "spec-drift-guard: NONE treated as closed" ;; *) pass "spec-drift-guard: NONE is live" ;; esac
 
 # ---- 8. no code file hardcodes the spec vocabulary again ----
-# A copy is a line naming two or more distinct spec states (or aliases) in capitals. Docs (*.md),
-# tests, fixtures, the table and its reader are exempt.
-vocab="$(rows | awk -F'\t' '{ printf "%s ", $1; if ($4 != "-") printf "%s ", $4 }')"
+# A copy is a line naming two or more distinct spec states in capitals, in a script
+# (.sh .py .bash or no extension). Docs, tests, fixtures, the table and its reader are exempt, and so
+# is a line carrying `spec-state-ok: <reason>` (a per-state behavior, such as a case arm).
+vocab="$(rows | cut -f1 | paste -sd ' ' -)"  # states only: an alias such as READY is a common word in other machines
 scan() {  # scan <file...>: print lines naming >= 2 distinct vocabulary words
   awk -v vocab="$vocab" '
     BEGIN { n = split(vocab, w, " ") }
+    /spec-state-ok:/ { next }
     { hits = 0
       for (i = 1; i <= n; i++) if ($0 ~ ("(^|[^A-Za-z-])" w[i] "([^A-Za-z-]|$)")) hits++
       if (hits >= 2) print FILENAME ":" FNR ": " $0 }' "$@"
 }
-copies="$(cd "$KIT_DIR" && grep -rlIE '[A-Z]' hooks lib bin 2>/dev/null \
-  | grep -v -e '\.md$' -e '^lib/spec/states.tsv$' -e '^lib/spec/spec-status.sh$' -e '/tests/' -e '/fixtures/' -e '/docs/' \
-  | xargs scan 2>/dev/null)"
+scan_files="$(cd "$KIT_DIR" && grep -rlIE '[A-Z]' hooks lib bin 2>/dev/null \
+  | grep -E '(\.(sh|py|bash)|/[A-Za-z0-9_-]+)$' | grep -v -e '\.md$' -e '^lib/spec/states.tsv$' -e '^lib/spec/spec-status.sh$' -e '/tests/' -e '/fixtures/' -e '/docs/')"
+[ -n "$scan_files" ] || fail "copy scan found no files to read"
+# shellcheck disable=SC2086 # repo paths hold no spaces
+copies="$(cd "$KIT_DIR" && scan $scan_files)"
 [ -z "$copies" ] && pass "no hardcoded copy of the spec vocabulary outside states.tsv" || fail "hardcoded vocabulary, derive it from states.tsv instead:
 $copies"
 
