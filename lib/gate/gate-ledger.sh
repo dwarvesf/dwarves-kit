@@ -15,9 +15,11 @@
 #                                       unless `start --amend --lower --reason "<text>" <rid> ...`, which
 #                                       also logs a `GATE | lane-lower | override` line
 #   review-verdict <rid>                print the last verdict recorded by a review (SHIP | FIX THEN SHIP | DO NOT SHIP)
-#   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision (a `grill`+`skipped`
+#   record   <rid> <phase> <ran|skipped|rejected> [reason]   append a gate decision (a `grill`+`skipped`
 #                                       reason MUST start with reason=<home-turf|density-low|
-#                                       operator-wave>; every other phase/state is free text)
+#                                       operator-wave>; every other phase/state is free text).
+#                                       `rejected` is the validate-round NEEDS-REVISION verdict: a fail
+#                                       state like `skipped`, never satisfying check()
 #   action   <rid> <text>              append an action-log line
 #   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [reason=...]
 #                                       append an understanding-debt verdict;
@@ -51,7 +53,7 @@
 #                                       write one override line per spec-level gate (think..test-plan)
 #                                       whose LAST state in the parent ledger is ran; refuses and
 #                                       writes nothing otherwise; never build/review/docs/ship/reflect
-#   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate has a ran|override entry; else 1
+#   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate's latest row is ran|override; else 1
 #                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist
@@ -273,8 +275,8 @@ start() {
 }
 
 record() {
-  local rid="${1:-}" raw="${2:-}" state="${3:-}"; shift 3 2>/dev/null || { echo "usage: record <rid> <phase> <ran|skipped> [reason]" >&2; return 64; }
-  case "$state" in ran|skipped) ;; *) echo "state must be ran|skipped" >&2; return 64;; esac
+  local rid="${1:-}" raw="${2:-}" state="${3:-}"; shift 3 2>/dev/null || { echo "usage: record <rid> <phase> <ran|skipped|rejected> [reason]" >&2; return 64; }
+  case "$state" in ran|skipped|rejected) ;; *) echo "state must be ran|skipped|rejected" >&2; return 64;; esac
   local phase; phase="$(normalize_phase "$raw")"
   local reason; reason="$(oneline "$@")"
   # Grill unknown-density conditioning: a grill SKIP must carry a reason= token from
@@ -623,7 +625,8 @@ _check_cache_put() {  # <prefix> <fp> <ctime> <result>
   return 0
 }
 
-# exit 0 if every required (measure-twice) gate has a ran|override entry; else 1 + list gaps.
+# exit 0 if every required (measure-twice) gate's LATEST GATE row is ran|override; else 1 + list gaps.
+# A later skipped or rejected row undoes an earlier ran (a NEEDS-REVISION after an approval).
 check() {
   local kl=""; if [ "${3:-}" = "--kit-lanes" ]; then kl=1; fi
   local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes]" >&2; return 64; }
@@ -669,7 +672,7 @@ check() {
   local missing=0 phase missing_phases=""
   while IFS= read -r phase; do
     [ -n "$phase" ] || continue
-    if [ ! -f "$f" ] || ! awk -F' [|] ' -v p="$phase" '$2=="GATE" && $3==p && ($4=="ran"||$4=="override"){f=1} END{exit !f}' "$f"; then
+    if [ ! -f "$f" ] || ! awk -F' [|] ' -v p="$phase" '$2=="GATE" && $3==p {s=$4} END{exit !(s=="ran"||s=="override")}' "$f"; then
       echo "MISSING-GATE: $phase (required for lane '$lane'; no ran/override entry in the ledger)" >&2
       missing=1; missing_phases="$missing_phases${missing_phases:+,}$phase"
     fi
@@ -1065,8 +1068,8 @@ inherit() {
 }
 
 # progress: plan x ledger -> one status line + checklist. A phase counts done when the
-# ledger carries ANY entry for it (ran, skipped-with-reason, override); the current step
-# is the first phase without one. Commands print this at phase entry.
+# ledger carries ANY entry for it (ran, rejected, skipped-with-reason, override); the current
+# step is the first phase without one. A phase whose latest row is rejected shows as ✗. Commands print this at phase entry.
 progress() {
   local rid="${1:-}" lane="${2:-}"
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: progress <rid> <lane>" >&2; return 64; }
@@ -1081,7 +1084,9 @@ progress() {
     if [ -f "$f" ] && awk -F' [|] ' -v p="$ph" '$2=="GATE" && $3==p && ($4!="skipped" || (NF>=5 && $5!="")) {found=1} END{exit !found}' "$f"; then
       # a phase disposed AFTER the current pointer gets its own
       # marker (*), so an out-of-order ✓ can't mislead the at-a-glance read.
-      if [ -n "$cur" ]; then
+      if awk -F' [|] ' -v p="$ph" '$2=="GATE" && $3==p {s=$4} END{exit !(s=="rejected")}' "$f"; then
+        done_n=$((done_n+1)); list="$list ${C_CUR}✗$ph${C_OFF}"
+      elif [ -n "$cur" ]; then
         done_n=$((done_n+1)); ooo=1; list="$list ${C_DONE}*$ph${C_OFF}"
       else
         done_n=$((done_n+1)); list="$list ${C_DONE}✓$ph${C_OFF}"
@@ -1107,7 +1112,7 @@ progress() {
 # order. Replay the ledger timeline; a phase recorded while an EARLIER plan phase is
 # still undisposed at that moment is a descent violation. Detection only: exit 0
 # always (mid-flight never blocks); ship-gate surfaces the count as an
-# advisory. Disposal semantics agree with progress(): ran / override / skipped WITH
+# advisory. Disposal semantics agree with progress(): ran / override / rejected / skipped WITH
 # a non-empty reason dispose; a bare skip does not.
 descent() {
   local rid="${1:-}" lane="${2:-}"
@@ -1369,11 +1374,12 @@ _vr_kv() {
 }
 
 # Write $6.. as a ledger record unless a line with the same fields 2-4 already sits
-# after line $2 (a partially written round is resumed, never duplicated).
+# after line $2 (a partially written round is resumed, never duplicated). A `rejected`
+# record also accepts a `skipped` line there: a round half-written by an older kit.
 _vr_w() {
   local f="$1" clnr="$2" m="$3" p="$4" s="$5"; shift 5
   if awk -F' [|] ' -v a="$clnr" -v m="$m" -v p="$p" -v s="$s" \
-      'NR>a && $2==m && $3==p && $4==s {f=1} END{exit !f}' "$f"; then
+      'NR>a && $2==m && $3==p && ($4==s || (s=="rejected" && $4=="skipped")) {f=1} END{exit !f}' "$f"; then
     return 0
   fi
   "$@"
@@ -1407,10 +1413,11 @@ _vr_load() {
 
 # Normalize a ledger line for plan comparison: drop the field-1 timestamp and
 # mask the volatile at=/dur_s= fields, so only the semantic content compares.
-# A GATE line written before the hyphen spelling reads `NEEDS REVISION:`; fold it
-# so a half-written round from an older kit still resumes.
+# A GATE line written before the hyphen spelling reads `NEEDS REVISION:`, and one written
+# before the rejected state reads `skipped`; fold both so a half-written round from an
+# older kit still resumes.
 _vr_norm() {
-  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g; s/\| NEEDS REVISION: /| NEEDS-REVISION: /'
+  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g; s/\| NEEDS REVISION: /| NEEDS-REVISION: /; s/\| validate \| skipped \| NEEDS-REVISION: /| validate | rejected | NEEDS-REVISION: /'
 }
 
 # Print one foreign ledger line to stderr with a `  foreign: ` prefix, control
@@ -1537,14 +1544,14 @@ _vr_close_records() {
     )
   elif [ "$r6crit" = 1 ]; then
     planned=(
-      "GATE | validate | skipped | NEEDS-REVISION: $summary"
+      "GATE | validate | rejected | NEEDS-REVISION: $summary"
       "OUTCOME | validate | end | at=E caught=true dur_s=D"
       "GATE | design-record | skipped | $r6rest"
       "OUTCOME | design-record | end | at=E caught=true dur_s=D"
     )
   else
     planned=(
-      "GATE | validate | skipped | NEEDS-REVISION: $summary"
+      "GATE | validate | rejected | NEEDS-REVISION: $summary"
       "OUTCOME | validate | end | at=E caught=true dur_s=D"
       "GATE | design-record | ran | $r6"
       "OUTCOME | design-record | end | at=E caught=false dur_s=D"
@@ -1557,7 +1564,7 @@ _vr_close_records() {
     _vr_w "$f" "$clnr" GATE design-record ran     record "$rid" design-record ran "$r6"
     _vr_w "$f" "$clnr" OUTCOME design-record end  outcome "$rid" design-record end caught="$caught_dr"
   else
-    _vr_w "$f" "$clnr" GATE validate skipped      record "$rid" Validate skipped "NEEDS-REVISION: $summary"
+    _vr_w "$f" "$clnr" GATE validate rejected     record "$rid" Validate rejected "NEEDS-REVISION: $summary"
     _vr_w "$f" "$clnr" OUTCOME validate end       outcome "$rid" Validate end caught=true
     if [ "$r6crit" = 1 ]; then
       _vr_w "$f" "$clnr" GATE design-record skipped  record "$rid" design-record skipped "$r6rest"
@@ -1813,7 +1820,7 @@ usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|ou
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
   start --amend --lower --reason "<text>" <rid> <lighter-lane> ...   lowering needs both flags
-  record <rid> <phase> <ran|skipped> [reason]
+  record <rid> <phase> <ran|skipped|rejected> [reason]
   override <rid> <phase> <reason>
   record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
   debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [response=<engage|defer|accept>] [reason=...]

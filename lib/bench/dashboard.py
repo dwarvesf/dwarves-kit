@@ -286,6 +286,7 @@ def fleet_metrics(runs, events, window_days=30):
         "repos": len({r["meta"].get("repo", "?") for r in w if r["meta"].get("repo")}),
         "gate_records": len(gates),
         "ran": gates.count("pass"), "skipped": gates.count("skip"),
+        "rejected": gates.count("fail"),
         "overridden": gates.count("override"),
         "override_rate": round(gates.count("override") / n_g, 3),
         "skip_rate": round(gates.count("skip") / n_g, 3),
@@ -306,7 +307,7 @@ def fleet_metrics(runs, events, window_days=30):
         mix.setdefault(e["phase"], Counter())[e["status"]] += 1
     phases = [p for p in PHASE_ORDER if p in mix] + sorted(set(mix) - set(PHASE_ORDER))
     m["phase_mix"] = [(p, mix[p].get("ran", 0), mix[p].get("skipped", 0),
-                       mix[p].get("override", 0)) for p in phases]
+                       mix[p].get("override", 0), mix[p].get("rejected", 0)) for p in phases]
     m["repo_counts"] = Counter(r["meta"].get("repo") for r in w if r["meta"].get("repo")).most_common(8)
     lane_min = Counter()
     for r in w:
@@ -767,13 +768,13 @@ def verdict_mix(phase_mix):
     secondary encoding (never color alone); 2px gaps between segments."""
     if not phase_mix:
         return ""
-    mx = max(r + s + o for _, r, s, o in phase_mix) or 1
+    mx = max(r + s + o + x for _, r, s, o, x in phase_mix) or 1
     rows = ""
-    for p, r, s, o in phase_mix:
-        tot = r + s + o
+    for p, r, s, o, x in phase_mix:
+        tot = r + s + o + x
         segs = ""
         for cls, v, glyph, name in (("ok", r, "●", "ran"), ("skip", s, "○", "skipped"),
-                                    ("ovr", o, "⚑", "override")):
+                                    ("rej", x, "✗", "rejected"), ("ovr", o, "⚑", "override")):
             if v:
                 segs += (f'<span class="seg {cls}" style="width:{100 * v / mx:.1f}%">'
                          f"<i>{glyph} {name} {v}</i></span>")
@@ -782,6 +783,7 @@ def verdict_mix(phase_mix):
                  f'<span class="val">{tot}</span></div>')
     legend = ('<div class="legend"><span><b class="sw ok"></b>● ran</span>'
               '<span><b class="sw skip"></b>○ skipped</span>'
+              '<span><b class="sw rej"></b>✗ rejected</span>'
               '<span><b class="sw ovr"></b>⚑ override</span></div>')
     return f'<figure class="chart"><figcaption>Verdict mix per gate</figcaption>{legend}{rows}</figure>'
 
@@ -929,6 +931,7 @@ margin-bottom:8px}
 .sw.ok,.seg.ok{background:var(--ok)}
 .sw.skip,.seg.skip{background:var(--ash);opacity:.55}
 .sw.ovr,.seg.ovr{background:var(--warn)}
+.sw.rej,.seg.rej{background:var(--bad)}
 .seg.one{background:var(--ember)}
 .seg.over{background:var(--bad)}
 .mixrow{display:grid;grid-template-columns:7.5rem 1fr 3.2rem;align-items:center;gap:8px;
@@ -1040,6 +1043,7 @@ color:var(--ash);position:sticky;top:0}
 td.mono,.mono{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
 tr.s-missed td{background:color-mix(in srgb,var(--bad) 8%,var(--card))}
 tr.s-override td{background:color-mix(in srgb,var(--warn) 8%,var(--card))}
+tr.s-rejected td{background:color-mix(in srgb,var(--bad) 8%,var(--card))}
 tr:hover td{background:var(--glow)}
 .chip{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
 padding:1px 8px;border:1px solid var(--rule-strong);white-space:nowrap}
@@ -1064,6 +1068,7 @@ color:var(--rule-strong);z-index:1;background:var(--card);line-height:1}
 .step .l{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--iron)}
 .step.ok .g{color:var(--ok)}
 .step.ovr .g{color:var(--warn)}
+.step.rej .g{color:var(--bad)}
 .step.skip .g{color:var(--ash)}
 .step.miss{background:color-mix(in srgb,var(--bad) 7%,var(--card))}
 .step.miss .g{color:var(--bad)}
@@ -1073,8 +1078,9 @@ color:var(--rule-strong);z-index:1;background:var(--card);line-height:1}
 
 
 def _chip(status):
-    cls = {"ran": "ok", "skipped": "dim", "override": "warn"}.get(status, "dim")
-    label = {"ran": "● OK", "skipped": "○ SKIP", "override": "⚑ OVERRIDE"}.get(status, status.upper())
+    cls = {"ran": "ok", "skipped": "dim", "rejected": "bad", "override": "warn"}.get(status, "dim")
+    label = {"ran": "● OK", "skipped": "○ SKIP", "rejected": "✗ REJECTED",
+             "override": "⚑ OVERRIDE"}.get(status, status.upper())
     return f'<span class="chip {cls}">{label}</span>'
 
 
@@ -2274,7 +2280,8 @@ def session_detail(rid, log_dir, dashboard_href="../index.html"):
     # run would walk through, decorated with what actually happened.
     stepper = ""
     if plan:
-        glyph = {"ran": ("ok", "●"), "override": ("ovr", "⚑"), "skipped": ("skip", "○")}
+        glyph = {"ran": ("ok", "●"), "override": ("ovr", "⚑"), "skipped": ("skip", "○"),
+                 "rejected": ("rej", "✗")}
         nodes = ""
         for ph, lvl in plan:
             st = seen_last.get(ph)
@@ -2286,7 +2293,7 @@ def session_detail(rid, log_dir, dashboard_href="../index.html"):
                       f'<span class="g">{g}</span><span class="l">{H.escape(ph)}</span></div>')
         stepper = f"""<h2>Lane plan · {H.escape(lane)}</h2>
 <p class="meta">The workflow this run was classified into, decorated with the record:
-● ran · ○ skipped with reason · ⚑ overridden with reason · ◌ expected but never
+● ran · ○ skipped with reason · ✗ rejected · ⚑ overridden with reason · ◌ expected but never
 recorded · <span class=dim>· optional, not exercised</span>.</p>
 <div class="stepper">{nodes}</div>"""
 
@@ -2314,6 +2321,7 @@ recorded · <span class=dim>· optional, not exercised</span>.</p>
                  if req else '<span class="chip dim">n/a</span>')
     ran = sum(1 for e in timeline if e["status"] == "ran")
     skipped = sum(1 for e in timeline if e["status"] == "skipped")
+    rejected = sum(1 for e in timeline if e["status"] == "rejected")
     over = sum(1 for e in timeline if e["status"] == "override")
 
     return f"""<!DOCTYPE html>
@@ -2341,7 +2349,7 @@ recorded · <span class=dim>· optional, not exercised</span>.</p>
 <div class="tile"><b>{H.escape(lane) or "?"}</b><span>lane
 {"(classifier said " + H.escape(meta.get("classified", "")) + ")" if misfire else "(classifier agreed)"}</span></div>
 <div class="tile"><b>{conf_chip}</b><span>required gates present</span></div>
-<div class="tile"><b>{ran} ● {skipped} ○ {over} ⚑</b><span>ran / skipped / overridden</span></div>
+<div class="tile"><b>{ran} ● {skipped} ○ {over} ⚑{f" {rejected} ✗" if rejected else ""}</b><span>ran / skipped / overridden{" / rejected" if rejected else ""}</span></div>
 <div class="tile"><b>{len(timeline)}</b><span>gate events</span></div>
 </div>
 
@@ -2546,7 +2554,7 @@ def render_sections(runs, events, sessions, bench_rows, metrics, alerts, money=N
             (f"runs / {m['window_days']}d", m["runs"]),
             ("repos active", m["repos"]),
             ("gate records", m["gate_records"]),
-            ("● ran", m["ran"]), ("○ skipped", m["skipped"]),
+            ("● ran", m["ran"]), ("○ skipped", m["skipped"]), ("✗ rejected", m["rejected"]),
             ("⚑ overridden", m["overridden"]),
             ("lane misfires", m["misfires"]),
             ("full conformance", f"{m['full_conformance']}/{m['conf_known']}"),
@@ -2570,7 +2578,10 @@ def render_sections(runs, events, sessions, bench_rows, metrics, alerts, money=N
         conf_html = (f'<span class="chip {"ok" if conf[0] == conf[1] else "bad"}">{conf[0]}/{conf[1]}</span>'
                      if conf else '<span class="chip dim">-</span>')
         g = r["gates"]
+        n_rejected = sum(1 for s, _ in g.values() if s == 'fail')
         counts = f"{sum(1 for s, _ in g.values() if s == 'pass')}● {sum(1 for s, _ in g.values() if s == 'skip')}○ {sum(1 for s, _ in g.values() if s == 'override')}⚑"
+        if n_rejected:
+            counts += f" {n_rejected}✗"
         mis = ' <span class="chip warn">misfire</span>' if r["misfire"] else ""
         mins = (r["t1"] - r["t0"]).total_seconds() / 60 if r["t0"] else 0
         tags = " ".join(filter(None, [

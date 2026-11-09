@@ -20,7 +20,7 @@ for args in "" "no-such-verb"; do
   check "$label: exits 64" '[ "$RC" -eq 64 ]'
   check "$label: keeps the verb list" 'printf "%s\n" "$ERR" | grep -q "^usage: gate-ledger.sh {required|start|record|"'
   check "$label: start signature" 'printf "%s\n" "$ERR" | grep -qF "start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type>"'
-  check "$label: record signature" 'printf "%s\n" "$ERR" | grep -qF "record <rid> <phase> <ran|skipped> [reason]"'
+  check "$label: record signature" 'printf "%s\n" "$ERR" | grep -qF "record <rid> <phase> <ran|skipped|rejected> [reason]"'
   check "$label: override signature" 'printf "%s\n" "$ERR" | grep -qF "override <rid> <phase> <reason>"'
   check "$label: debt signature" 'printf "%s\n" "$ERR" | grep -qF "debt <rid> significance=<low|high> worthiness=<low|high> verdict="'
 done

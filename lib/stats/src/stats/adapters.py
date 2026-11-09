@@ -120,7 +120,7 @@ def _outcome_kv(field: str) -> dict[str, str]:
 def read_kit_gates(runs_dir: Path | None = None):
     """One row per `| GATE |` ledger line: `(rid, gate, outcome, caught, reason, start_ts,
     end_ts, cost)`. A direct line-level parse of the SAME run-ledger files lane-telemetry.sh's
-    `_rows()` aggregates (kit grammar: `TS | GATE | <phase> | ran|skipped|override |
+    `_rows()` aggregates (kit grammar: `TS | GATE | <phase> | ran|skipped|rejected|override |
     <reason>`); `_rows()` has no per-line output mode, so this is a NEW small parser, not a
     second copy of an existing one (see impl-notes).
 

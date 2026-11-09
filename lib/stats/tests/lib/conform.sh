@@ -53,13 +53,13 @@ classify() {
       done
       ;;
     GATE)
-      # payload itself is "<phase> | <ran|skipped|override> | <reason>"
+      # payload itself is "<phase> | <ran|skipped|rejected|override> | <reason>"
       local phase state
       phase="$(printf '%s' "$payload" | awk -F' \\| ' '{print $1}')"
       state="$(printf '%s' "$payload" | awk -F' \\| ' '{print $2}')"
       [ -n "$phase" ] || { echo "FAIL GATE payload missing phase field"; return 1; }
-      printf '%s' "$state" | grep -qE '^(ran|skipped|override)$' \
-        || { echo "FAIL GATE payload's state field is not ran|skipped|override: '${state:-<empty>}'"; return 1; }
+      printf '%s' "$state" | grep -qE '^(ran|skipped|rejected|override)$' \
+        || { echo "FAIL GATE payload's state field is not ran|skipped|rejected|override: '${state:-<empty>}'"; return 1; }
       ;;
     ACTION)
       : # freeform text; non-empty already checked above

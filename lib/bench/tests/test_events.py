@@ -148,6 +148,34 @@ def test_run_end_fails_on_skipped_required_gate():
         assert st.result == "pass", st.result
 
 
+def test_rejected_gate_is_a_fail_state():
+    """`rejected` (a NEEDS-REVISION verdict) maps to fail, never pass or unknown: it fails
+    the run when the gate is required, and a later `ran` clears it (latest state wins)."""
+    import tempfile
+    rejected = LEDGER_FIXTURE + "2026-07-04T20:44:20Z | GATE | validate | rejected | NEEDS-REVISION: 1 critical\n"
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "demo-run.log")
+        p.write_text(rejected)
+        req = [("think", "required"), ("validate", "required")]
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=req):
+            st.apply(ev)
+        assert st.by_name["validate"]["status"] == "fail"
+        assert "NEEDS-REVISION" in st.by_name["validate"]["detail"]
+        assert "1 rejected" in st.totals["gates"] and "unknown" not in st.totals["gates"]
+        assert st.result == "fail", st.result
+        light = [("think", "required"), ("validate", "lite")]
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=light):
+            st.apply(ev)
+        assert st.result == "pass", st.result
+        p.write_text(rejected + "2026-07-04T20:45:00Z | GATE | validate | ran | APPROVED\n")
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=req):
+            st.apply(ev)
+        assert st.by_name["validate"]["status"] == "pass" and st.result == "pass", st.result
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

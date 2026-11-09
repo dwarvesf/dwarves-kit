@@ -60,7 +60,7 @@ operator overlay, then the kit root). A phase in `phases` and not in `light` is 
 rid=$(gate ledger rid)                       # branch slug, `type/` prefix stripped
 gate ledger required full                    # the lane's required gate keys
 gate ledger record "$rid" Build ran "note"   # a gate decision
-gate ledger check full "$rid"                # exit 0 iff every required gate has ran|override
+gate ledger check full "$rid"                # exit 0 iff every required gate's latest row is ran|override
 gate ledger progress "$rid" full             # step k/n + checklist
 gate ledger inherit "$rid" full --from <spec-rid>   # a task branch carries its spec's gates
 gate ledger record-batch "$rid" full think=ran:"design PR" reflect=override:"at wrap"   # several gates, one call
@@ -86,7 +86,7 @@ Records are append-only, redacted (no command bodies), and one physical line per
 
 ```
 TS | START   | lane=.. classified=.. type=.. repo=..
-TS | GATE    | <phase> | ran|skipped|override | [reason]
+TS | GATE    | <phase> | ran|skipped|rejected|override | [reason]
 TS | ACTION  | <text>
 TS | TOKENS  | in=N out=N cache_read=N cache_create=N [cost=N]
 TS | DEBT    | significance=.. worthiness=.. verdict=.. [response=..] [reason=..]
@@ -94,8 +94,19 @@ TS | OUTCOME | <phase> | start|end | at=<epoch> [caught=<bool> dur_s=N]
 TS | MUTATION| verdict=flag|clean|skip [k=v ...]
 ```
 
-**The load-bearing invariant:** only a `| GATE |` line in state `ran` or `override` satisfies
-`check()`. Every other marker is *additive*, meaning `check()` / `override()` / `descent()` and
+| GATE state | Meaning | Satisfies `check()` |
+|---|---|---|
+| `ran` | the gate ran | yes |
+| `override` | the gate was waived with a logged reason | yes |
+| `skipped` | a deliberate skip, or an incomplete round | no |
+| `rejected` | a validate round closed NEEDS-REVISION | no |
+
+`check()` decides on each required phase's LATEST `| GATE |` row, so a later `skipped` or
+`rejected` undoes an earlier `ran`, and a later `ran` clears a rejection. Ledgers written before
+`rejected` existed carry `skipped` with a `NEEDS-REVISION:` reason; they read as before.
+
+**The load-bearing invariant:** only a `| GATE |` line in state `ran` or `override`, as the
+phase's latest row, satisfies `check()`. Every other marker is *additive*, meaning `check()` / `override()` / `descent()` and
 the ship-gate all ignore it (they key on `$2=="GATE"`). A TOKENS, DEBT, OUTCOME or MUTATION line
 can never fake, satisfy, or mask a gate. Keep that property when adding a marker verb.
 
@@ -243,10 +254,10 @@ bash tests/test-ship-gate-profiles.sh    # install-dependent, see below
 
 ## The three things a newcomer gets wrong
 
-**1. Recording a gate is not the same as passing it.** `check()` counts only `ran` and
+**1. Recording a gate is not the same as passing it.** `check()` counts only a latest `ran` or
 `override`. But `progress()` and `descent()` count a phase as *disposed* if it is anything other
 than a bare skip, so a `skipped` entry **with a reason** shows up as a green tick in `progress`
-and still fails `check`. The checklist saying done does not mean the ship-gate agrees. That
+and still fails `check`. A `rejected` phase counts as disposed too, but `progress` marks it `✗`. The checklist saying done does not mean the ship-gate agrees. That
 divergence is deliberate (a skip is a decision worth seeing, not a pass), but it surprises
 everyone once.
 

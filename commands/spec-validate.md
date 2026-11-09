@@ -156,7 +156,7 @@ If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if
 
 After the verdict, record it for lane telemetry, one line. On APPROVED only:
 `bash lib/gate/gate-ledger.sh record <rid> Validate ran "APPROVED critical=0 warnings=<K>"`.
-On NEEDS-REVISION: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS-REVISION: <criticals>"`, which the full lane's ship-gate refuses and `/kit:execute`'s preflight does not count. A direct run's note carries no `fresh agent=`; that marker is the lead's, for a fresh-context validator, so an audit can tell the two apart.
+On NEEDS-REVISION: `bash lib/gate/gate-ledger.sh record <rid> Validate rejected "NEEDS-REVISION: <criticals>"`, which the full lane's ship-gate refuses and `/kit:execute`'s preflight does not count. A direct run's note carries no `fresh agent=`; that marker is the lead's, for a fresh-context validator, so an audit can tell the two apart.
 Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS-REVISION, else false>`.
 
 Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point

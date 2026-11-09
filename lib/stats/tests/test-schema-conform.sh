@@ -64,6 +64,8 @@ check "no timestamp" FAIL "not-a-timestamp | START | lane=normal classified=norm
 check "unknown verb" FAIL "2026-07-03T18:54:29Z | BOGUS | whatever=here"
 check "no pipe delimiters at all" FAIL "just a plain line with no structure whatsoever"
 check "START missing required k=v token" FAIL "2026-07-03T18:54:29Z | START | repo=acme-app"
+check "GATE rejected state conforms" PASS "2026-07-03T18:54:29Z | GATE | validate | rejected | NEEDS-REVISION: 1 critical"
+check "GATE with an unknown state is rejected" FAIL "2026-07-03T18:54:29Z | GATE | validate | frobnicated | odd"
 
 echo
 echo "== Outlier adapter samples parse under their contract =="

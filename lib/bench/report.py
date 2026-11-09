@@ -3,7 +3,7 @@
 
 Where viewer.py replays ONE run, report.py renders a fleet: swimlane timeline
 (per-worker bars, model-colored), worker minutes by model, the gate-coverage
-matrix (recorded / skipped-with-reason / override / absent, reasons on hover),
+matrix (recorded / skipped-with-reason / rejected / override / absent, reasons on hover),
 an optional wave dispatch board, and incidents.
 
 Data split, honest by construction:
@@ -31,7 +31,7 @@ from events import GATE_STATE, resolve_run  # noqa: E402
 PHASE_ORDER = ["grill", "think", "design", "design-critique", "ui-design", "spec",
                "validate", "design-record", "test-plan", "build", "review", "docs",
                "ship", "reflect"]
-CELL = {"pass": "●", "skip": "○", "override": "⚑", "unknown": "?"}
+CELL = {"pass": "●", "skip": "○", "fail": "✗", "override": "⚑", "unknown": "?"}
 
 
 def run_summary(path, rid=None):
@@ -104,7 +104,7 @@ th,td{border:1px solid var(--line);padding:.3rem .55rem;font-size:.82rem;text-al
 th{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em}
 td.c{text-align:center;cursor:default}
 td.c.pass{color:var(--pass)}td.c.skip{color:var(--muted)}
-td.c.override{color:var(--warn)}td.c.unknown{color:var(--fail)}td.c.absent{color:var(--line)}
+td.c.override{color:var(--warn)}td.c.fail{color:var(--fail)}td.c.unknown{color:var(--fail)}td.c.absent{color:var(--line)}
 .wave td.state-dispatched{color:var(--accent);font-weight:600}
 .wave td.state-queued{color:var(--muted)}
 .wave td.state-hold{color:var(--warn)}
@@ -229,7 +229,7 @@ trace spine records it. Hover any bar or matrix cell for its detail and reason.<
 <div class="tl">{tl}</div>
 <h2>Worker minutes by model</h2>
 <div class="tl mins">{mins}</div>
-<h2>Gate coverage (● recorded · ○ skipped-with-reason · ⚑ override · − not recorded)</h2>
+<h2>Gate coverage (● recorded · ○ skipped-with-reason · ✗ rejected · ⚑ override · − not recorded)</h2>
 <table>{head}{body}</table>
 <figcaption>{key}</figcaption>
 {gaps}{waves}{incidents}

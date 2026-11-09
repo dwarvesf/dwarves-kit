@@ -148,7 +148,7 @@ forge-tui run <rid>               # replay a REAL recorded kit session from
 ### Replaying real sessions (the condition tree)
 
 Every kit run already locks its history: gate-ledger writes `logs/runs/<rid>.log`
-(`START` = the routing decision, `GATE <phase> ran|skipped|override <reason>`,
+(`START` = the routing decision, `GATE <phase> ran|skipped|rejected|override <reason>`,
 `OUTCOME` = ship timings). `ledger_to_events` adapts that record into the event
 protocol, so a recorded session replays in the TUI (`tui.py run <rid>`) or the
 web viewer (`viewer.py build --ledger name=<rid>`). The decision tree is shown

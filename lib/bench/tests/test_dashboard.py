@@ -49,6 +49,27 @@ def test_collect_and_metrics():
         assert len(evs) == 6 and evs[0]["ts"] >= evs[-1]["ts"]
 
 
+def test_rejected_gate_state_is_counted_and_shown():
+    """`rejected` is a fail state: counted apart from ran/skipped/override, drawn in the
+    verdict mix, chipped REJECTED, and never counted as a present required gate."""
+    with tempfile.TemporaryDirectory() as d:
+        runs_dir = Path(d, "runs")
+        runs_dir.mkdir()
+        (runs_dir / "rej.log").write_text(_ledger(10, phases=[
+            ("think", "ran", "read"), ("validate", "rejected", "NEEDS-REVISION: 1 critical")]))
+        runs = dashboard.collect_runs(d)
+        events = dashboard.collect_events(d)
+        m = dashboard.fleet_metrics(runs, events, 30)
+        assert m["rejected"] == 1 and m["skipped"] == 0 and m["ran"] == 1
+        assert ("validate", 0, 0, 0, 1) in m["phase_mix"]
+        mix = dashboard.verdict_mix(m["phase_mix"])
+        assert "rejected" in mix and "✗" in mix
+        assert "✗ REJECTED" in dashboard._chip("rejected")
+        assert "chip bad" in dashboard._chip("rejected")
+        page = dashboard.session_detail("rej", d)
+        assert "step rej" in page and "✗ REJECTED" in page
+
+
 def test_alert_rules_fire():
     m = {"override_rate": 0.5, "misfire_rate": 0.0, "skip_rate": 0.1, "runs": 3}
     fired = {a["id"]: a["firing"] for a in dashboard.eval_alerts(m, dashboard.DEFAULT_ALERTS)}

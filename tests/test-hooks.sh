@@ -1706,6 +1706,18 @@ GL record val-order validate ran "APPROVED critical=0 warnings=0 fresh agent=a2"
 GL record val-order validate skipped "NEEDS REVISION: critical=1"
 preflight_last val-order
 assert_exit "preflight grep: ran then skipped -> last line wins, dispatch" 1 $?
+GL record val-order4 validate ran "APPROVED critical=0 warnings=0 fresh agent=a5"
+GL record val-order4 validate rejected "NEEDS-REVISION: critical=1"
+preflight_last val-order4
+assert_exit "preflight grep: ran then rejected -> last line wins, dispatch" 1 $?
+for PH in think design design-critique spec design-record test-plan build review docs ship reflect; do GL record val-rej "$PH" ran "done"; done
+GL record val-rej validate ran "APPROVED critical=0 warnings=0 fresh agent=a6"
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check full val-rej >/dev/null 2>&1
+assert_exit "check: full with every gate ran exits 0" 0 $?
+GL record val-rej validate rejected "NEEDS-REVISION: critical=1"
+VAL_R_OUT="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" check full val-rej 2>&1)"; VAL_R_RC=$?
+assert_exit "check: validate ran then rejected exits 1" 1 "$VAL_R_RC"
+assert_output_contains "check: rejected validate is named missing" "MISSING-GATE: validate" "$VAL_R_OUT"
 GL record val-order2 validate skipped "NEEDS REVISION: critical=1"
 GL record val-order2 validate ran "APPROVED critical=0 warnings=0 fresh agent=a3"
 preflight_last val-order2
@@ -2088,6 +2100,8 @@ VD=$(_vsz_repo vsz-small 2)
 _vsz_push "$VD" vsz-small >/dev/null; assert_exit "ship-gate: small normal spec with no validate passes" 0 $?
 VD=$(_vsz_repo vsz-skip 5); bash "$GL" record vsz-skip Validate skipped "NEEDS REVISION: critical=1" >/dev/null 2>&1
 _vsz_push "$VD" vsz-skip >/dev/null; assert_exit "ship-gate: large normal spec whose last validate is skipped is blocked" 2 $?
+VD=$(_vsz_repo vsz-rej 5); bash "$GL" record vsz-rej Validate ran "APPROVED critical=0" >/dev/null 2>&1; bash "$GL" record vsz-rej Validate rejected "NEEDS-REVISION: critical=1" >/dev/null 2>&1
+_vsz_push "$VD" vsz-rej >/dev/null; assert_exit "ship-gate: large normal spec whose last validate is rejected (after a ran) is blocked" 2 $?
 
 # ============================================================
 echo ""
@@ -2405,6 +2419,15 @@ printf '%s\n' \
   '2026-06-11T01:03:00Z | GATE | debug | ran | rc found' > "$LOG76/runs/skipok.log"
 OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent skipok bug 2>&1)
 assert_output_contains "skipped-with-reason disposes for descent" "descent clean" "$OUT"
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:01:00Z | GATE | build | ran | done' \
+  '2026-06-11T01:02:00Z | GATE | review | rejected | NEEDS-REVISION: 1 critical' \
+  '2026-06-11T01:03:00Z | GATE | debug | ran | rc found' > "$LOG76/runs/rejok.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent rejok bug 2>&1)
+assert_output_contains "rejected disposes for descent like skipped-with-reason" "descent clean" "$OUT"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" progress rejok bug 2>&1)
+assert_output_contains "progress marks a rejected phase with a cross" "✗review" "$OUT"
 printf '%s\n' \
   '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
   '2026-06-11T01:01:00Z | GATE | build | ran | done' \
