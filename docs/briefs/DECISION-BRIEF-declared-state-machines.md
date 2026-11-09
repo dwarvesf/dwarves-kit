@@ -153,7 +153,7 @@ A cleanup pass followed phase 1. Each PR removed a duplicate spelling or a secon
 
 **Open for the operator.**
 - The debt verdict `wave` rename needs a ledger migration.
-- NEEDS-REVISION is stored as `skipped`.
+- NEEDS-REVISION is stored as `rejected` from the latest-state change on; older ledgers keep `skipped`.
 - The override share is 34% against the 15% alert.
-- Gate `check()` decides on each phase's latest GATE row (fixed); a later `skipped` undoes an earlier `ran`.
+- Gate `check()` decides on each phase's latest GATE row (fixed); a later `skipped` or `rejected` undoes an earlier `ran`.
 - No writer sets SHIPPED on specs.

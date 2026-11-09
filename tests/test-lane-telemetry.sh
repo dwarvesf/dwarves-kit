@@ -140,7 +140,7 @@ legacy_rows() {
         for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
       }
       $2=="GATE" && $4=="ran"      { ran++ }
-      $2=="GATE" && $4=="skipped"  { skip++ }
+      $2=="GATE" && ($4=="skipped" || $4=="rejected") { skip++ }
       $2=="GATE" && $4=="override" { ovr++ }
       $2=="GATE" && $3=="review" && $4=="ran" { review=$5; for (i=6; i<=NF; i++) review = review " | " $i }
       $2=="GATE" && $3=="ship"   && $4=="ran" { ship=1 }
@@ -181,17 +181,20 @@ L() { printf '2026-01-01T00:00:%s | %s\n' "$@"; }   # sec, rest-of-line
 { L 01Z "START | lane=tiny classified=tiny type=doc ctype=doc repo=r"
   L 02Z "GATE | ship | ran | done"
   L 03Z "START-AMEND | lane=normal classified=normal type=doc ctype=doc repo=r"; } > "$FX/runs/h-amended.log"
+{ L 01Z "START | lane=full classified=full type=doc ctype=doc repo=r"
+  L 02Z "GATE | validate | rejected | NEEDS-REVISION: 1 critical"; L 03Z "GATE | spec | ran | s"; } > "$FX/runs/i-rejected.log"
 : > "$FX/runs/z-empty.log"                          # a trailing empty ledger must still emit its row
 ln -s "$FX/runs/does-not-exist" "$FX/runs/y-dangling.log"   # a dangling symlink ledger is skipped, never fatal
 
 legacy="$(RUNS_DIR="$FX/runs" legacy_rows)"
 new="$(rows_src "$FX" _rows)"
 [ "$new" = "$legacy" ]; ok "single-awk _rows is byte-identical to the per-file loop (fixture, incl. START-AMEND, tab scrub, empty ledger)" $?
-[ "$(printf '%s\n' "$new" | grep -c .)" -eq 9 ]; ok "_rows emits one row per regular ledger, empty ones included, the dangling symlink skipped" $?
+[ "$(printf '%s\n' "$new" | grep -c .)" -eq 10 ]; ok "_rows emits one row per regular ledger, empty ones included, the dangling symlink skipped" $?
 printf '%s\n' "$new" | tail -n 1 | grep -q '^z-empty'; ok "_rows: a trailing empty ledger is still emitted last" $?
 NC=0; NO_COLOR=1 DWARVES_KIT_LOG_DIR="$FX" bash "$LT" misfires >/dev/null 2>&1 || NC=$?
 [ "$NC" -eq 0 ]; ok "misfires exits 0 with a dangling symlink ledger present (rc=$NC)" $?
 echo "$new" | grep -qF "$(printf 'b-amend\tr\tbug\tnormal\tb\tb\t')"; ok "_rows: last START-AMEND wins, the second plain START is ignored" $?
+echo "$new" | grep -qF "$(printf 'i-rejected\tr\tfull\tfull\tdoc\tdoc\t1\t1\t0\t')"; ok "_rows: a rejected gate counts with skipped (ran=1 skip=1 ovr=0), not as ran" $?
 echo "$new" | grep -qF "$(printf 'good | with a tab')"; ok "_rows: review text joins with ' | ' and the tab is scrubbed" $?
 
 EXP_MIS="$(NO_COLOR=1 DWARVES_KIT_LOG_DIR="$FX" bash "$LT" misfires 2>&1)"

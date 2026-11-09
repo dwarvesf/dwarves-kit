@@ -42,6 +42,16 @@ def test_unknown_gate_state_is_not_pass():
         assert "?" in out.read_text()
 
 
+def test_rejected_gate_state_is_fail_not_unknown():
+    with tempfile.TemporaryDirectory() as d:
+        s = report.run_summary(_write(d, "j.log", L1 + "2026-07-04T08:31:00Z | GATE | validate | rejected | NEEDS-REVISION: 2 critical\n"))
+        assert s["gates"]["validate"][0] == "fail"
+        out = Path(d, "r.html")
+        report.render([s], {"title": "t", "runs": {}}, out)
+        html = out.read_text()
+        assert "✗" in html and 'class="c fail"' in html
+
+
 def test_render_report():
     with tempfile.TemporaryDirectory() as d:
         runs = [report.run_summary(_write(d, "a.log", L1)),

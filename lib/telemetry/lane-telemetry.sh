@@ -18,7 +18,7 @@
 # Line formats consumed (produced by gate-ledger.sh):
 #   TS | START | lane=<chosen> classified=<suggested> type=<t> [ctype=<suggested-type>] repo=<r>
 #   TS | ACTION | ... escaped-from=<spec-slug> ...   (: a bug run indicting a shipped spec)
-#   TS | GATE | <phase> | ran|skipped|override | <reason>
+#   TS | GATE | <phase> | ran|skipped|rejected|override | <reason>   (rejected counts with skipped)
 #   TS | OUTCOME | <phase> | end | at=<epoch> caught=<bool> [policy=<close|escalate|continue>]
 #                                    (: `report`'s failure-policy breakdown, when present)
 # A run with no START line surfaces as lane "?" (an untracked run is itself a signal).
@@ -209,7 +209,7 @@ _rows() {
       for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
     }
     $2=="GATE" && $4=="ran"      { ran++ }
-    $2=="GATE" && $4=="skipped"  { skip++ }
+    $2=="GATE" && ($4=="skipped" || $4=="rejected") { skip++ }
     $2=="GATE" && $4=="override" { ovr++ }
     $2=="GATE" && $3=="review" && $4=="ran" { review=$5; for (i=6; i<=NF; i++) review = review " | " $i }
     $2=="GATE" && $3=="ship"   && $4=="ran" { ship=1 }
@@ -582,7 +582,7 @@ render() {
   [ -n "$cov" ] && printf '%s\n' "$cov" || echo "    (none)"
 
   echo ""
-  printf '  legend: gates r/s/o = ran / skipped / override summed over those runs;\n'
+  printf '  legend: gates r/s/o = ran / skipped or rejected / override summed over those runs;\n'
   printf '          "?" lane/type = runs with no START line (untracked).\n'
   return 0
 }
