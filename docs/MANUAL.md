@@ -340,7 +340,7 @@ Related, **builder lookup** (inside `/kit:execute`): the spec text is classified
 
 **Phase:** review gate, version bump, changelog, commit, PR
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md` (including its `## Review` verdict), `VERSION`, the resolved changelog file (a changelog under `docs/` if the repo keeps one, else root `CHANGELOG.md`)
-**Writes:** bumped `VERSION`, a new entry in the resolved changelog file, git tag, PR via `gh`
+**Writes:** bumped `VERSION`, a new entry in the resolved changelog file, the spec's `Status:` header flipped to SHIPPED in the ship commit (`lib/spec/spec-status.sh`), git tag, PR via `gh`
 **When to invoke:** review is green and docs are synced
 **Common gotcha:** the command stops, and `hooks/ship-gate.sh` refuses `git push` and `gh pr create` (`[gate] review_verdict`, on by default), while the last verdict in the spec's `## Review` section is DO NOT SHIP. Use `/review-team` and `responding-to-review` to triage, then re-run `/kit:review`: it replaces the section and clears the block.
 **Release-hygiene warn (Step 4a):** at the version step it warns (never blocks) on a phantom cut, `VERSION` naming a version with no matching git tag, with a heads-up when `[Unreleased]` is accumulating above it. Warn-only; tag `v<version>` or confirm intentional, then continue.

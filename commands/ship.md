@@ -133,6 +133,8 @@ Rules:
 
 Stage files intentionally. Do NOT `git add .` blindly.
 
+**Flip the spec header in this commit.** When the branch has an active spec (the one Step 1 resolved), run `bash lib/spec/spec-status.sh set docs/specs/SPEC-NNN-<slug>.md SHIPPED` before staging and stage that file with the ship commit, so the header flip rides the feature PR. It is a no-op on a spec already SHIPPED, and exit 1 (no `Status:` header) is a warning to report, never a stop. No active spec: skip.
+
 Read `kit_config_get_root ship.confirm_commit false`. False, the default: commit, then show what landed, subject line and file count per commit. True: show the proposed commits and wait for a yes. The operator invoked `/kit:ship`, which is the request to commit; nothing is pushed at this step, so a wrong message is one `git commit --amend` away.
 
 ### Step 7: Update docs
@@ -150,7 +152,7 @@ Create a single commit: `docs: update [list of files] to match current codebase`
 
 ### Step 7b: Archive shipped goal drafts
 
-Once the spec is marked SHIPPED, retire its goal draft so `.claude/goals/` stops showing finished work as live. Run:
+Once Step 6 has marked the spec SHIPPED, retire its goal draft so `.claude/goals/` stops showing finished work as live. Run:
 
 ```bash
 bash lib/goal/goal-drafts.sh archive
