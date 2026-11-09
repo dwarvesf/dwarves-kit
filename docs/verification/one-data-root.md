@@ -107,6 +107,16 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Rollback
+
+Nothing moves by itself, so before the operator runs `config data move --apply` a rollback is `git revert` of the merge: every site goes back to its hardcoded path, which is where the data still is.
+
+After a `move --apply`, the code and the data must go back together. `config data move` prints one `moved <kind>/<name>: <old> -> <new>` line per entry; reverse each with `mv <new> <old>`, then revert the merge. A `<new>.part` left by an interrupted cross-disk move is a copy: the old path still holds the data, so delete the `.part` (by hand) and retry.
+
+## UAT
+
+Exercised on the Mini, read-only: `config data` and the dry run of `config data move` resolve every entry to its old path and change nothing (0 differences over 11624 listed entries). The operator accepts the move itself when they run it.
+
 ## Not proven
 
 - The Air. Only the Mini was read; the Air's paths follow the same table, but its live state was not inspected.
