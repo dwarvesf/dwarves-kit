@@ -55,3 +55,12 @@ every skip and defeat the point.
   precision) is left to an audit of `skip-no-signal` ledger lines against a manual re-review.
   `cc-improve status` breaks out `gate-skips (7d)` from real `reviewer runs (7d)` to make that
   audit legible (a skip is a 0-cost row, so it never distorts the spend line).
+
+## Amendment: default flipped to ON
+
+`signal_gate` now defaults to `true`; `signal_gate = false` (or `SKILL_CURATOR_SIGNAL_GATE=false`) opts out. Why: the reviewer
+never worked before the `--safe-mode` fix (every call failed auth, no draft was ever staged), so no
+user loses behavior. It also ran 560 times in one day during a subagent fan-out, and once it works
+each run spends quota. The "no behaviour changes on upgrade" line under Alternatives held for the
+original opt-in default only. The false-negative audit above still applies: review the
+`skip-no-signal` ledger rows.

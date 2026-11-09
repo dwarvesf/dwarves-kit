@@ -83,7 +83,7 @@ n="$(lines)"; run_bs "$T/good.sh"
 [ "$(lines)" = "$n" ]; check "a healthy backlog-stage extractor adds no line" $?
 
 echo "== skill-review: an empty reviewer output is ledgered =="
-export SKILL_CURATOR_STATE_DIR="$T/sc" SKILL_CURATOR_PROPOSALS_DIR="$T/proposals" SKILL_CURATOR_SKILLS_DIR="$T/skills"
+export SKILL_CURATOR_SIGNAL_GATE=false SKILL_CURATOR_STATE_DIR="$T/sc" SKILL_CURATOR_PROPOSALS_DIR="$T/proposals" SKILL_CURATOR_SKILLS_DIR="$T/skills"
 mkdir -p "$SKILL_CURATOR_SKILLS_DIR"
 jq -n --arg tp "$KIT_DIR/lib/skill-curator/tests/fixtures/sample-transcript.jsonl" '{session_id:"sess-x",transcript_path:$tp}' > "$T/sc-payload.json"
 SKILL_CURATOR_REVIEWER_CMD="exit 3" bash "$KIT_DIR/lib/skill-curator/lib/reviewer-run.sh" "$T/sc-payload.json" >/dev/null 2>&1; rc=$?

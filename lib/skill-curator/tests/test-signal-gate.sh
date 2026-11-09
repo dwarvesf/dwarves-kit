@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Signal-marker pre-gate (opt-in via signal_gate): a summary with zero cheap signal markers is
-# skipped BEFORE the model call, preserving quota. Gate defaults OFF (behaviour unchanged); a
+# Signal-marker pre-gate (default on, opt out via signal_gate=false): a summary with zero cheap signal markers is
+# skipped BEFORE the model call, preserving quota. Gate defaults ON; a
 # summary WITH markers still runs the model (recall guard, tested per marker CATEGORY so a regex
 # regression on one half of the pattern can't hide). Mock the model via SKILL_CURATOR_REVIEWER_CMD; a
 # `touch $INVOKED` proves whether the reviewer ran. Run: bash tests/test-signal-gate.sh
@@ -43,11 +43,17 @@ keeps(){
 NO_MARK="$(mk_txn "deploy the worker to production" "deployed the worker to production" nomark)"
 pay(){ jq -nc --arg tp "$1" '{session_id:"sig-test",transcript_path:$tp}'; }
 
-echo "[1] gate DEFAULT-OFF: a marker-free summary STILL runs the reviewer (behaviour unchanged)"
+echo "[1] gate DEFAULT-ON: with no env or config, a marker-free summary is skipped before the model"
 reset
 pay "$NO_MARK" > "$TMP/p.json"
 SKILL_CURATOR_REVIEWER_CMD="$MOCK" bash "$RUN" "$TMP/p.json"
-if [[ -e "$INVOKED" ]]; then ok "gate off -> reviewer ran on marker-free session"; else no "gate off but reviewer skipped"; fi
+if [[ ! -e "$INVOKED" ]] && ledger_has 'select(.note=="skip-no-signal")'; then ok "default -> marker-free session skipped, no model call"; else no "default did not gate a marker-free session"; fi
+
+echo "[1b] opt-out: signal_gate=false still runs the reviewer on a marker-free summary"
+reset
+pay "$NO_MARK" > "$TMP/p.json"
+SKILL_CURATOR_SIGNAL_GATE=false SKILL_CURATOR_REVIEWER_CMD="$MOCK" bash "$RUN" "$TMP/p.json"
+if [[ -e "$INVOKED" ]]; then ok "signal_gate=false -> reviewer ran on marker-free session"; else no "opt-out ignored"; fi
 
 echo "[2] gate ON + marker-free summary: reviewer SKIPPED, ledger note=skip-no-signal, exit 0"
 reset

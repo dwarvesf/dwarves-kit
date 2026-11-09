@@ -19,7 +19,7 @@ tool's original name). Suite parity was asserted at the originating cc-elevation
 PreCompact/SessionEnd ─▶ skill-review hook (async) ─▶ nohup reviewer-spawn.sh & ; hook returns now
                                                           │
    reviewer-run.sh (TRUSTED bash):                        ▼
-     last-K turns ─stdin▶ CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence
+     last-K turns ─stdin▶ CLAUDE_REVIEWING=1 claude -p --safe-mode --no-session-persistence
                           --allowedTools "" --model haiku --output-format json
                               │ returns JSON {draft?, reason}  (model has NO filesystem write)
                               ▼
@@ -98,7 +98,7 @@ also overridable by `SKILL_CURATOR_<KEY>` (env wins; tests use this).
 
 - `auto_promote` (default OFF): closer Hermes parity; auto-passes only the lowest-risk class (a
   `references/` add to an existing umbrella) via `skill-review auto`. Everything else stays manual.
-- `signal_gate` (default OFF): a deterministic pre-gate that skips the reviewer model call for a
+- `signal_gate` (default ON; set `false` to opt out): a deterministic pre-gate that skips the reviewer model call for a
   session summary with zero signal markers, preserving quota. Broad, keep-biased pattern
   (overridable via `signal_markers`); skips are ledgered as `skip-no-signal` for audit. See ADR-0010.
 

@@ -13,8 +13,9 @@ self-improvement run must never break your session), and nothing here ever delet
 - **Detect:** `cc-improve status`; or `jq -s 'map(.total_cost_usd)|add' ~/.claude/skill-curator/ledger.jsonl`.
 - **Why:** one Haiku call per substantial session; the per-session trigger + single-flight lock bound
   it, so a spike usually means many short sessions or a too-large `transcript_k`.
-- **Fix:** lower nothing first, check the rows. Then, cheapest lever first, set `signal_gate = true`
-  to skip the model on no-signal sessions (audit the `skip-no-signal` ledger rows first; ADR-0010);
+- **Fix:** lower nothing first, check the rows. Then, cheapest lever first, confirm `signal_gate` is
+  not set to `false` (it is on by default and skips the model on no-signal sessions; audit the
+  `skip-no-signal` ledger rows; ADR-0010);
   otherwise keep `model = haiku`, raise `transcript_k` only if drafts lack context (it does not lower
   cost to lower it below the default), set `enabled = false`, or `bash deploy/uninstall.sh` as the
   kill switch.
@@ -25,7 +26,7 @@ self-improvement run must never break your session), and nothing here ever delet
 
 - **Symptom:** several `claude -p` processes alive at once.
 - **Detect:** `pgrep -fl 'claude -p'`; check the tool log `~/.claude/skill-curator/skill-curator.log`.
-- **Why:** should be impossible. Guards: `--bare` strips hooks, the `CLAUDE_REVIEWING` sentinel makes
+- **Why:** should be impossible. Guards: `--safe-mode` strips hooks, the `CLAUDE_REVIEWING` sentinel makes
   the hook a no-op inside a reviewer, and the single-flight lock blocks a second concurrent run.
 - **Fix:** `pkill -f reviewer-run`; the lock self-heals (a dead holder's lock is stolen). If it keeps
   happening, `bash deploy/uninstall.sh` and report it, the reentrancy guard has a hole.

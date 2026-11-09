@@ -96,7 +96,7 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 | `max_turns` / `SKILL_CURATOR_MAX_TURNS` | `2` | `claude -p --max-turns` for both calls |
 | `transcript_k` / `SKILL_CURATOR_TRANSCRIPT_K` | `40` | last-K turns fed to the reviewer (smaller = cheaper) |
 | `auto_promote` / `SKILL_CURATOR_AUTO_PROMOTE` | `false` | enable `skill-review auto` (references-add to an existing umbrella only) |
-| `signal_gate` / `SKILL_CURATOR_SIGNAL_GATE` | `false` | skip the model call for a summary with zero signal markers (opt-in cost gate; ADR-0010) |
+| `signal_gate` / `SKILL_CURATOR_SIGNAL_GATE` | `true` | skip the model call for a summary with zero signal markers (default-on cost gate; set `false` to opt out; ADR-0010) |
 | `signal_markers` / `SKILL_CURATOR_SIGNAL_MARKERS` | (built-in regex) | override the marker pattern the gate matches on |
 | `SKILL_CURATOR_STATE_DIR` | `~/.claude/skill-curator` | ledger + lock + config + reports |
 | `SKILL_CURATOR_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
@@ -107,9 +107,9 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 
 To spend less: raise `transcript_k` only if drafts are missing context (smaller is cheaper), keep
 `model = haiku`, or set `enabled = false`. The per-session trigger + single-flight lock already bound
-cost to roughly one Haiku call per substantial session. For a sharper cut, set `signal_gate = true`
-to skip the model entirely on sessions with no signal markers (opt-in; skips are ledgered as
-`skip-no-signal` so you can audit what it dropped before trusting it , see ADR-0010).
+cost to roughly one Haiku call per substantial session. `signal_gate` is on by default: it skips the
+model entirely on sessions with no signal markers (skips are ledgered as `skip-no-signal` so you can
+audit what it dropped; set `signal_gate = false` to review every session , see ADR-0010).
 
 **Gotcha:** the reviewer always runs `--allowedTools ""` (the model can write nothing); that is not
 configurable by design.

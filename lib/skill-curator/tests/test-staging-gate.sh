@@ -3,6 +3,7 @@
 # adversarial path-traversal slug cannot escape proposals/; the reviewer model has no write.
 # Run: bash tests/test-staging-gate.sh
 set -uo pipefail
+export SKILL_CURATOR_SIGNAL_GATE=false   # tests the reviewer pipeline on marker-free fixtures; the gate itself is test-signal-gate.sh
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$DIR/lib/reviewer-run.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT

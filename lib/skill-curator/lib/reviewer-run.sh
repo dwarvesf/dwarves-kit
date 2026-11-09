@@ -35,11 +35,11 @@ main() {
   local summary; summary="$(transcript_compact "$transcript_path" "$(cfg transcript_k 40)")"
   if [ -z "${summary//[[:space:]]/}" ]; then si_log "reviewer: empty transcript, nothing to review"; return 0; fi
 
-  # Deterministic signal-marker pre-gate (opt-in via signal_gate): skip the model call for a summary
+  # Deterministic signal-marker pre-gate (default on; opt out with signal_gate=false): skip the model call for a summary
   # with zero cheap markers of a draftable signal, preserving quota. Conservative by design (broad
   # pattern biases toward KEEPING a session over dropping a real one); skips are ledgered so the
   # false-negative rate is auditable before the gate is trusted. Runs before the lock + the model.
-  if [ "$(cfg signal_gate false)" = "true" ] && ! has_signal_markers "$summary"; then
+  if [ "$(cfg signal_gate true)" = "true" ] && ! has_signal_markers "$summary"; then
     si_log "reviewer: signal-gate , no signal markers in summary, skipping (quota preserved)"
     _ledger false "" 0 0 0 "skip-no-signal"; return 0
   fi
@@ -66,6 +66,11 @@ main() {
   itok="$(jq -r '.usage.input_tokens // 0' <<<"$envelope" 2>/dev/null | grep -Eo '^[0-9]+' | head -1)"; itok="${itok:-0}"
   otok="$(jq -r '.usage.output_tokens // 0' <<<"$envelope" 2>/dev/null | grep -Eo '^[0-9]+' | head -1)"; otok="${otok:-0}"
   result="$(jq -r '.result // empty' <<<"$envelope" 2>/dev/null)"
+  # An error envelope (not logged in, rate limit) carries its message in .result; never parse it as a verdict.
+  if [ "$(jq -r '.is_error // false' <<<"$envelope" 2>/dev/null)" = "true" ]; then
+    si_log "reviewer: claude returned an error envelope; no draft"; egress_fail skill-review "claude error envelope"
+    _ledger false "" "$cost" "$itok" "$otok" "api-error"; return 0
+  fi
   if [ -z "$result" ]; then
     si_log "reviewer: envelope had no .result; no draft"; egress_fail skill-review "envelope had no result"; _ledger false "" "$cost" "$itok" "$otok" "no-result"; return 0
   fi
@@ -109,11 +114,13 @@ main() {
 
 # run_reviewer: stdin = prompt; stdout = claude -p envelope JSON. CLAUDE_REVIEWING set for the
 # reentrancy guard. SKILL_CURATOR_REVIEWER_CMD overrides the model call (tests). Model = no write.
+# --safe-mode (not --bare): it strips hooks, CLAUDE.md and plugins too, but keeps OAuth/keychain auth.
+# --bare reads only ANTHROPIC_API_KEY, so on a subscription login every call returned "Not logged in".
 run_reviewer() {
   if [ -n "${SKILL_CURATOR_REVIEWER_CMD:-}" ]; then
     CLAUDE_REVIEWING=1 bash -c "$SKILL_CURATOR_REVIEWER_CMD"
   else
-    CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence \
+    CLAUDE_REVIEWING=1 claude -p --safe-mode --no-session-persistence \
       --allowedTools "" --model "$(cfg model haiku)" --max-turns "$(cfg max_turns 2)" \
       --output-format json 2>>"$SKILL_CURATOR_LOG"
   fi

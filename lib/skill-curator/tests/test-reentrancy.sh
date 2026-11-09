@@ -3,6 +3,7 @@
 # reviewer sets CLAUDE_REVIEWING for the model call, so a hook fired from inside the reviewer is a
 # no-op (no runaway recursion). Run: bash tests/test-reentrancy.sh
 set -uo pipefail
+export SKILL_CURATOR_SIGNAL_GATE=false   # tests the reviewer pipeline on marker-free fixtures; the gate itself is test-signal-gate.sh
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$DIR/hooks/skill-review.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT

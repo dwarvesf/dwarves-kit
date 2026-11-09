@@ -29,7 +29,7 @@ The only cross-tool tie is read-only: the SessionStart line counts cc-harvest's 
 
 ```
   ┌── UNTRUSTED: the model ───────────────┐        ┌── TRUSTED: bash wrappers ───────────────┐
-  │ claude -p --bare --no-session-        │  JSON  │ reviewer-run.sh / promote.sh / curate.sh │
+  │ claude -p --safe-mode --no-session-   │  JSON  │ reviewer-run.sh / promote.sh / curate.sh │
   │   persistence --allowedTools ""       │ ─────▶ │ have ALL the filesystem writes           │
   │   --model haiku --output-format json  │ stdout │                                          │
   │                                       │        │ write ONLY to fixed paths:               │

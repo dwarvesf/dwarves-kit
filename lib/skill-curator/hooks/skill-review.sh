@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../lib/common.sh"
 
 # Reentrancy: if we are already inside a reviewer's `claude -p`, do nothing (a reviewer must never
-# trigger a reviewer). --bare also strips hooks; this is belt-and-suspenders.
+# trigger a reviewer). --safe-mode also strips hooks; this is belt-and-suspenders.
 reviewing_sentinel_set && exit 0
 
 # Master switch (config/env). Default on.

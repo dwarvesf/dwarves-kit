@@ -38,7 +38,7 @@ contract.
 - The reviewer never writes `~/.claude/skills/`; only `/skill-review` promote (human) and the
   default-off `auto_promote` references-add path do.
 - The curator never deletes: `git mv` to `_archive/` is the maximum action; `restore` reverses it.
-- A reviewer never triggers a reviewer (`CLAUDE_REVIEWING` sentinel + `--bare`); single-flight via an
+- A reviewer never triggers a reviewer (`CLAUDE_REVIEWING` sentinel + `--safe-mode`); single-flight via an
   atomic mkdir lock (the host has no `flock(1)`).
 - Every path is exit-0 on failure: a self-improvement run must never break a session.
 

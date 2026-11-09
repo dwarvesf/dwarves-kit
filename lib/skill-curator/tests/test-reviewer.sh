@@ -3,6 +3,7 @@
 # claude -p --output-format json ENVELOPE), so the parse / secret-drop / staging / ledger logic is
 # tested with no live model. Run: bash tests/test-reviewer.sh  Pass: "...: all N passed", exit 0.
 set -uo pipefail
+export SKILL_CURATOR_SIGNAL_GATE=false   # tests the reviewer pipeline on marker-free fixtures; the gate itself is test-signal-gate.sh
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$DIR/lib/reviewer-run.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
@@ -101,6 +102,33 @@ if [[ ! -e "$TMP/INVOKED" ]] && [[ -z "$(find "$SKILL_CURATOR_PROPOSALS_DIR" -na
 
 echo "[10] the default reviewer invocation pins --allowedTools \"\" (model-no-write, DEC-008)"
 if grep -Eq -- '--allowedTools[[:space:]]+""' "$RUN"; then ok "reviewer pins --allowedTools \"\""; else no "reviewer does not pin empty allowedTools"; fi
+
+echo "[11] envelope with is_error:true (e.g. not logged in) -> no draft, ledger note=api-error, not bad-json"
+reset
+jq -nc '{type:"result",subtype:"success",is_error:true,total_cost_usd:0,result:"Not logged in",usage:{input_tokens:0,output_tokens:0}}' > "$TMP/env5.json"
+SKILL_CURATOR_REVIEWER_CMD="cat $TMP/env5.json" bash "$RUN" "$PAY"
+if [[ -z "$(find "$SKILL_CURATOR_PROPOSALS_DIR" -name SKILL.md 2>/dev/null)" ]] && ledger_has 'select(.note=="api-error")' && ! ledger_has 'select(.note=="bad-json")'; then
+  ok "is_error envelope -> api-error"; else no "is_error envelope misledgered: $(cat "$LEDGER" 2>/dev/null)"; fi
+
+echo "[12] real claude path: a CLI that refuses --bare (OAuth login, the live host) still stages a draft"
+reset
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/claude" <<STUB
+#!/usr/bin/env bash
+cat >/dev/null
+for a in "\$@"; do
+  if [ "\$a" = "--bare" ]; then cat "$TMP/env-notloggedin.json"; exit 1; fi
+done
+cat "$TMP/env1.json"
+STUB
+chmod +x "$TMP/bin/claude"
+cp "$TMP/env5.json" "$TMP/env-notloggedin.json"
+PATH="$TMP/bin:$PATH" bash "$RUN" "$PAY"
+if [[ -f "$SKILL_CURATOR_PROPOSALS_DIR/deploy-via-wrangler/SKILL.md" ]] && ledger_has 'select(.staged==true)'; then
+  ok "default invocation survives a --bare-hostile CLI"; else no "default invocation uses --bare: $(cat "$LEDGER" 2>/dev/null)"; fi
+
+echo "[13] curate.sh default invocation does not use --bare either"
+if ! grep -Eq -- 'claude -p[^#]*--bare' "$DIR/lib/curate.sh" "$RUN"; then ok "no --bare in the claude -p calls"; else no "--bare still in a claude -p call"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "test-reviewer: $pass passed, $fail FAILED" >&2; exit 1; fi
