@@ -16,6 +16,11 @@
 # differs from the last one the run ledger recorded, refuses the push (ship_rule_review_verdict,
 # [gate] review_verdict). Exit 2 = block.
 set -uo pipefail
+# Homebrew bash 5 on macOS 27 can segfault in a forked child (os_log preferences refresh), and a
+# parent that hit it keeps crashing its children. A dead child fails a pipeline below and flips the
+# engage verdict at random (about 5% of runs under load). Silencing os_log for this process tree
+# removes the crash.
+export OS_ACTIVITY_MODE=disable
 # Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
 . "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
 # Preserve fail-open even on the pathological case (HOME unset under set -u): the lib
@@ -126,7 +131,17 @@ _strip_heredocs() {
 _join_continuations() {
   awk '{ while ($0 ~ /\\$/) { sub(/\\$/, ""); if ((getline nxt) > 0) $0 = $0 nxt; else break } print }'
 }
-CMD_CODE=$(printf '%s\n' "$CMD_RAW" | _strip_heredocs | _join_continuations)
+# A view of the command below is built in a forked child, and a child can die (see the OS_ACTIVITY_MODE
+# note up top). A capture that fails, or comes back empty from non-empty input, falls back to its
+# source and sets CAP_FAIL; the engage check then engages whenever the raw command looks like a push,
+# so a dead child can only add engagement, never skip the gate.
+CAP_FAIL=0
+_cap() {   # _cap <var> <rc> <source>
+  local _v="$1" _rc="$2" _src="$3"
+  if [ "$_rc" -ne 0 ] || { [ -z "${!_v}" ] && [ -n "$_src" ]; }; then CAP_FAIL=1; printf -v "$_v" '%s' "$_src"; fi
+}
+CMD_CODE=$(printf '%s\n' "$CMD_RAW" | _strip_heredocs | _join_continuations); _rc=$?
+_cap CMD_CODE "$_rc" "$CMD_RAW"
 
 # Engage on anything that looks like a ship action: `git ... push` (with any options between) or
 # `gh pr create` / its alias `gh pr new`, in CODE not prose. What the command actually pushes is decided by
@@ -179,8 +194,12 @@ _blank_inert_quotes() {
     }'
 }
 # The engage checks read `$IFS` / `${IFS..}` as the space it splits into: `git${IFS}push` is a push.
-CMD_IFS=$(printf '%s\n' "$CMD_CODE" | LC_ALL=C sed -E 's/\$\{IFS[^}]*\}/ /g; s/\$IFS([^[:alnum:]_]|$)/ \1/g') || CMD_IFS="$CMD_CODE"
-CMD_GH=$(printf '%s' "$CMD_IFS" | _blank_inert_quotes)
+# `env LC_ALL=C sed`, not `LC_ALL=C sed`: a temp-env prefix makes bash reset its own locale in the
+# forked child, which is where the os_log crash fires.
+CMD_IFS=$(printf '%s\n' "$CMD_CODE" | env LC_ALL=C sed -E 's/\$\{IFS[^}]*\}/ /g; s/\$IFS([^[:alnum:]_]|$)/ \1/g'); _rc=$?
+_cap CMD_IFS "$_rc" "$CMD_CODE"
+CMD_GH=$(printf '%s' "$CMD_IFS" | _blank_inert_quotes); _rc=$?
+_cap CMD_GH "$_rc" "$CMD_IFS"
 # A quoted or escaped `;`, `&` or `|` does not end a command, but GIT_RE stops at it: `git -C "a;b" push`.
 # A second engage copy blanks quoted text and escaped characters to `_`, tracking `$(..)` and backticks
 # inside double quotes as code. It is an extra match beside the plain one, so it can only add engagement.
@@ -221,8 +240,15 @@ _blank_quoted() {
 # A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
 # gate cannot see what is pushed: it is refused below (once the repo is known).
 SHELL_HD=0
-if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(printf '%s\n' "$CMD") \
-   && grep -qE "$ENGAGE_RE" < <(printf '%s' "$CMD"); then SHELL_HD=1; fi
+# _hit <regex> <text>: grep -qE on a here-string. A grep that errors (rc above 1, a dead child) marks
+# a failed capture and the same regex is run by bash itself, so a dead grep never reads as "no match".
+_hit() {
+  grep -qE "$1" <<< "$2"; local _g=$?
+  if [ "$_g" -gt 1 ]; then CAP_FAIL=1; [[ $2 =~ $1 ]]; return $?; fi
+  return "$_g"
+}
+_SHELL_RE='(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<'
+if _hit "$_SHELL_RE" "$CMD" && _hit "$ENGAGE_RE" "$CMD"; then SHELL_HD=1; fi
 # `git [globals] stash push` saves a stash and pushes nothing, but GIT_RE reads "stash" as an option and
 # push-refs.sh (rightly) names no ref, which the gate would block as "no answer". Blank that subcommand
 # for the engage check only. The globals are git's own exact list, so `git -C stash push` (a push run in
@@ -230,11 +256,25 @@ if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' < <(print
 # engages: `git -C $(git stash push) push` must not lose its outer push.
 _GV='[^`$()[:space:];&|"'"'"'\\]'
 STASH_PUSH_RE='(^|[^[:alnum:]_-])git([[:space:]]+(-[Cc][[:space:]]+'"$_GV"'+|--(git-dir|work-tree|namespace|exec-path)='"$_GV"'*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs))*[[:space:]]+stash[[:space:]]+push([[:space:]]|$|[`);&|])'
-_blank_stash() { LC_ALL=C sed -E "s/$STASH_PUSH_RE/\\1git-stash-push \\5/g"; }
-CMD_GIT=$(printf '%s\n' "$CMD_IFS" | _blank_stash) || CMD_GIT="$CMD_IFS"
-CMD_ENG=$(printf '%s\n' "$CMD_IFS" | _blank_quoted | _blank_stash) || CMD_ENG="$CMD_IFS"
-[ "$SHELL_HD" = 1 ] || grep -qE "$GIT_RE" < <(echo "$CMD_GIT") || grep -qE "$GIT_RE" < <(echo "$CMD_ENG") \
-  || grep -qE "$GH_RE" < <(echo "$CMD_GH") || exit 0
+_blank_stash() { env LC_ALL=C sed -E "s/$STASH_PUSH_RE/\\1git-stash-push \\5/g"; }
+CMD_GIT=$(printf '%s\n' "$CMD_IFS" | _blank_stash); _rc=$?
+_cap CMD_GIT "$_rc" "$CMD_IFS"
+CMD_ENG=$(printf '%s\n' "$CMD_IFS" | _blank_quoted | _blank_stash); _rc=$?
+_cap CMD_ENG "$_rc" "$CMD_IFS"
+# The fallback test needs no forked child: bash's own regex on the command with `${IFS..}` and `$IFS`
+# read as a space. It is ENGAGE_RE with the `;` `&` `|` stop removed, because the view that reads a
+# quoted separator is the one that died. It over-matches; it only runs after a view died.
+_LOOSE_RE='(^|[^[:alnum:]_-])git[[:space:]].*push([[:space:]]|$|[`);&|])|gh["'"'"']?([[:space:]]+.*)?[[:space:]]+["'"'"']?pr["'"'"']?[[:space:]]+["'"'"']?(create|new)'
+_raw_engages() {
+  local _s="$CMD_CODE" _m _n=0 _ire='\$\{IFS[^}]*\}'
+  while [ "$_n" -lt 20 ] && [[ $_s =~ $_ire ]]; do _m="${BASH_REMATCH[0]}"; _s="${_s/"$_m"/ }"; _n=$((_n + 1)); done
+  _s="${_s//\$IFS/ }"
+  [[ $_s =~ $_LOOSE_RE ]]
+}
+# Here-strings, not `< <(echo ..)`: a dead process-substitution child left grep an empty input.
+if [ "$SHELL_HD" = 1 ] || _hit "$GIT_RE" "$CMD_GIT" || _hit "$GIT_RE" "$CMD_ENG" || _hit "$GH_RE" "$CMD_GH"; then :
+elif [ "$CAP_FAIL" = 1 ] && _raw_engages; then :   # a view died and the raw command looks like a push: engage
+else exit 0; fi
 
 # A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
@@ -351,19 +391,32 @@ if [ -f "$PREFS" ]; then
   PUSH_OUT=$(bash "$PREFS" "$ROOT" "$CMD_CODE" "$CURBRANCH" "${DEFNAME#origin/}" 2>/dev/null || true)
   # Whole lines only: the parser's markers start with @@ and a ref name appears only inside a
   # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
-  _DPUSH=$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@DEFAULT-PUSH ' || true)
+  # The marker scan is pure bash (no forked grep): a dead grep child used to read as "no marker" and
+  # let a push to the default branch through.
+  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0; _BLOCKMSG=""; _NREF=0; _FIRSTREF=""; _SEENREFS=$'\n'
+  while IFS= read -r _pl; do
+    case "$_pl" in
+      '@@DEFAULT-PUSH '*) [ -n "$_DPUSH" ] || _DPUSH="$_pl" ;;
+      '@@FORCE'|'@@DEFAULT') _HAS_FORCE=1 ;;
+      '@@BLOCK '*) [ "$_HAS_BLOCK" = 1 ] || _BLOCKMSG="${_pl#@@BLOCK }"; _HAS_BLOCK=1 ;;
+      '@@REF '*)
+        case "$_SEENREFS" in
+          *$'\n'"$_pl"$'\n'*) ;;
+          *) _SEENREFS="$_SEENREFS$_pl"$'\n'; _NREF=$((_NREF + 1)); [ -n "$_FIRSTREF" ] || _FIRSTREF="$_pl" ;;
+        esac ;;
+    esac
+  done <<< "$PUSH_OUT"
   if [ -n "$_DPUSH" ]; then read -r _ _DBR _DREM <<< "$_DPUSH"; _default_block "$_DBR" "$_DREM"; fi
-  if grep -qxE '@@FORCE|@@DEFAULT' < <(printf '%s\n' "$PUSH_OUT"); then exit 0; fi
-  if grep -q '^@@BLOCK ' < <(printf '%s\n' "$PUSH_OUT"); then
-    _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@BLOCK ' | sed 's/^@@BLOCK //')"
+  if [ "$_HAS_FORCE" = 1 ]; then exit 0; fi
+  if [ "$_HAS_BLOCK" = 1 ]; then
+    _fc_applies && _refs_block "$_BLOCKMSG"
   elif [ -z "$PUSH_OUT" ]; then
     _fc_applies && _refs_block "the command parser gave no answer"
   else
-    _NREF=$(printf '%s\n' "$PUSH_OUT" | grep '^@@REF ' | sort -u | wc -l | tr -d ' ')
-    if [ "${_NREF:-0}" -gt 1 ]; then
+    if [ "$_NREF" -gt 1 ]; then
       _fc_applies && _refs_block "it pushes more than one branch"
-    elif [ "${_NREF:-0}" = 1 ]; then
-      read -r _ PHEAD BRANCH <<< "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@REF ')"
+    elif [ "$_NREF" = 1 ]; then
+      read -r _ PHEAD BRANCH <<< "$_FIRSTREF"
     fi
   fi
 fi
