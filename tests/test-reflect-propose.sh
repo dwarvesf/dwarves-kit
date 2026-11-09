@@ -274,8 +274,8 @@ cat > "$RT/RETRO-2026-07-15.md" <<'EOF'
 ## What worked
 - the negative controls.
 ## Action items
-- [ ] Route Explore subagents to Haiku instead of the inherited Opus -- owner: @tieubao -- deadline: 2026-07-22
-- [ ] Compose commit subjects under 72 chars -- owner: tieubao
+- [ ] Route Explore subagents to Haiku instead of the inherited Opus -- owner: @acme-dev -- deadline: 2026-07-22
+- [ ] Compose commit subjects under 72 chars -- owner: acme-dev
 - [x] Close the money-gate snake_case hole
 - [ ] [concrete change] -- owner: [person] -- deadline: [date]
 ## Kit feedback
@@ -289,11 +289,11 @@ OUT="$(python3 "$PROPOSE" --retro "$RT/RETRO-2026-07-15.md" --staging "$RSTG" --
 assert_true "T7a: the two OPEN action items are staged" $?
 grep -q '^## \[staged\] Route Explore subagents to Haiku instead of the inherited Opus$' "$RSTG"
 assert_true "T7b: the title is the change alone (owner/deadline stripped, not swallowed)" $?
-grep -q '^- Source: retro 2026-07-15 | RETRO-2026-07-15.md owner=@tieubao' "$RSTG"
-assert_true "T7c: owner rides on the citation as a GitHub handle (@tieubao)" $?
+grep -q '^- Source: retro 2026-07-15 | RETRO-2026-07-15.md owner=@acme-dev' "$RSTG"
+assert_true "T7c: owner rides on the citation as a GitHub handle (@acme-dev)" $?
 # The second item writes a BARE handle; it must be normalized to @handle, not passed through.
-grep -c 'owner=@tieubao' "$RSTG" | grep -q '^2$'
-assert_true "T7c2: a bare handle is normalized to @tieubao (both items)" $?
+grep -c 'owner=@acme-dev' "$RSTG" | grep -q '^2$'
+assert_true "T7c2: a bare handle is normalized to @acme-dev (both items)" $?
 
 # NEGATIVE CONTROL: a CHECKED item is already done; staging it would propose finished work.
 grep -q 'snake_case' "$RSTG" && bad "T7d NC: a [x] item was staged" || ok "T7d NC: a checked [x] item is NOT staged"
@@ -329,7 +329,7 @@ printf '# registry\nother  %s/other/BACKLOG.md\n' "$TD" > "$TD/boards.txt"
 cat > "$TD/megagoals/nft-migration/TODO.md" <<'EOF'
 # TODO
 
-- [ ] Retire the legacy indexer -- owner: @tieubao
+- [ ] Retire the legacy indexer -- owner: @acme-dev
 - [x] Backfill the token metadata
 EOF
 mock_interp '[
@@ -367,7 +367,7 @@ assert_true "off: no staging file written" "$([ ! -f "$STAGING" ]; echo $?)"
 assert_true "off: the block is printed on stdout" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q '## \[staged\] Printed not staged'; echo $?)"
 assert_true "off: the summary says it did not stage" "$({ trap '' PIPE; echo "$OUT" 2>/dev/null || :; } | grep -q 'BACKLOG_STAGE_AUTO is off'; echo $?)"
 RT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; SANDBOXES+=("$RT")
-printf '# Retro\n## Action items\n- [ ] Print this retro item -- owner: @tieubao\n' > "$RT/RETRO-2026-09-18.md"
+printf '# Retro\n## Action items\n- [ ] Print this retro item -- owner: @acme-dev\n' > "$RT/RETRO-2026-09-18.md"
 printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$RT/BACKLOG.md"
 OUT="$(env -u BACKLOG_STAGE_AUTO python3 "$PROPOSE" --retro "$RT/RETRO-2026-09-18.md" --staging "$RT/staging.md" --backlog "$RT/BACKLOG.md" 2>&1)"; RC=$?
 assert_true "off --retro: exit 0" "$([ $RC -eq 0 ]; echo $?)"

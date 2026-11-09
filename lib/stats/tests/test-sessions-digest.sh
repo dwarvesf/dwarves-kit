@@ -414,7 +414,7 @@ if [ -f "$ADDBL" ]; then
   ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
   has "P-digest-propose add-backlog sees the staged proposal" "token footprint over budget" "$ADDBL_OUT"
 else
-  echo "SKIP  P-digest-propose add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
+  echo "SKIP  P-digest-propose add-backlog cross-check (cc-backlog is a consumer-only sibling tool; not present in this repo)"
 fi
 
 echo ""

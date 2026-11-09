@@ -118,7 +118,7 @@ mkdir -p "$LOCKED"; : > "$LOCKED/fixture-file"; chmod 000 "$LOCKED"
   printf 'See `%s/fixture-file` for context; an absolute path whose\n' "$LOCKED"
   printf 'parent dir is unreadable on this host makes Path.exists() RAISE PermissionError instead of\n'
   printf 'returning False. That is untestable-here, not dead: the sweep must skip it (no ref, no crash),\n'
-  printf 'found via the first ops-toolkit real-corpus run.\n'
+  printf 'found via the first real-corpus run.\n'
 } > "$GITREPO/.claude/memory/unreadable-abs-path-note.md"
 
 cat > "$GITREPO/.claude/memory/MEMORY.md" <<'EOF'
@@ -347,7 +347,7 @@ with tempfile.TemporaryDirectory() as td:
     results.append(("O2-undecodable-file-no-crash", ok2))
 
 # O3: a URL-shaped code span (op://...) is never tested (the :// URL guard).
-refs = ml.extract_refs("see `op://Toolkit/xyz/credential` for the token")
+refs = ml.extract_refs("see `op://Vault/xyz/credential` for the token")
 results.append(("O3-url-shaped-skipped", refs == []))
 
 # O4: a bare word (a prose noun in backticks, e.g. `README.md`, `main`, `parents`) is NEVER

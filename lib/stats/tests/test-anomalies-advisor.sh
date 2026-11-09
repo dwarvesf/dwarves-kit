@@ -323,7 +323,7 @@ if [ -f "$ADDBL" ]; then
   ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
   has  "P-propose add-backlog lists the proposal" "gate ran but never caught anything" "$ADDBL_OUT"
 else
-  echo "SKIP  P-propose add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
+  echo "SKIP  P-propose add-backlog cross-check (cc-backlog is a consumer-only sibling tool; not present in this repo)"
 fi
 OUT2="$(R anomalies --propose --json)"
 has  "P-dedup second run marks duplicate" '"action": "duplicate"' "$OUT2"

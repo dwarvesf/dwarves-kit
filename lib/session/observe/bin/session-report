@@ -28,9 +28,9 @@ Read-only producer: session-observe / session-intel never store state; only vps-
 
 Why this mirrors vps_mon_agent.py rather than importing it: the agent is a
 root-owned Linux/macOS host agent with its own state dir and key file; this is
-a one-shot client that reads its key + token from the environment (op:// refs
-at runtime) and signs one body. The signing scheme is identical and is unit-
-tested deterministically against a hand-computed expected value in
+a one-shot client that reads its key + token from the environment, or from the
+commands the operator names in kit.toml, and signs one body. The signing scheme is
+identical and is unit-tested deterministically against a hand-computed expected value in
 tests/test-vps-report.sh BEFORE any live POST (a wrong signature is a silent
 401, so the signer is proven offline first).
 
@@ -52,11 +52,14 @@ Stdlib only (no external deps) so it runs from a launchd job with no venv.
 from __future__ import annotations
 
 import argparse
+import functools
 import gzip
 import hashlib
 import hmac
 import json
 import os
+import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -65,11 +68,62 @@ import urllib.request
 from pathlib import Path
 
 SCHEMA_VERSION = 1
-DEFAULT_URL = "https://mon-ingest.han-ws.workers.dev"
-HOST_ID = "cc-air"
 ROLE = "ai-substrate"
 USER_AGENT = "session-report/1"
 HB_ID = "session-intel-weekly"  # informational; the token is what the GET uses
+
+
+# ----------------------------------------------------------------- operator config
+
+_KIT_CONFIG = Path(__file__).resolve().parents[3] / "config" / "kit-config.sh"
+
+
+def kit_root_get(dotkey: str, default: str = "") -> str:
+    """kit_config_get_root through lib/config/kit-config.sh, the one TOML reader: operator
+    file, else kit-root file, else default. A project .kit.toml is never read: it rides
+    inside an untrusted PR and must not pick the host this tool signs requests for."""
+    try:
+        r = subprocess.run(
+            ["bash", "-c", 'source "$1" && kit_config_get_root "$2" "$3"', "_",
+             str(_KIT_CONFIG), dotkey, default],
+            capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return default
+    return r.stdout.strip() if r.returncode == 0 else default
+
+
+@functools.lru_cache(maxsize=1)
+def host_id() -> str:
+    """[session_report] host_id, else the local short hostname. The worker registers the id
+    it expects, so an operator who reports to a worker sets the key."""
+    return kit_root_get("session_report.host_id") or socket.gethostname().split(".")[0]
+
+
+def base_url(flag: str | None) -> str:
+    """--url, else $SESSION_REPORT_URL, else [session_report] url. Empty means unset."""
+    return flag or os.environ.get("SESSION_REPORT_URL") or kit_root_get("session_report.url")
+
+
+def secret(env_name: str, cmd_key: str) -> str | None:
+    """The env var, else the stdout of the command in [session_report] <cmd_key> (for example
+    a keychain-cache reader), else None. The kit holds no credential and no vault reference."""
+    v = os.environ.get(env_name)
+    if v:
+        return v
+    cmd = kit_root_get(cmd_key)
+    if not cmd:
+        return None
+    try:
+        argv = shlex.split(cmd)
+        argv[0] = os.path.expanduser(argv[0])
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError) as e:
+        print(f"session-report: {cmd_key} could not run: {e.__class__.__name__}", file=sys.stderr)
+        return None
+    if r.returncode != 0:
+        print(f"session-report: {cmd_key} exited {r.returncode}", file=sys.stderr)
+        return None
+    return r.stdout.strip() or None
 
 
 # ----------------------------------------------------------------- distill
@@ -147,7 +201,7 @@ def build_envelope(metrics: dict, ts: int) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "ts": ts,
-        "host_id": HOST_ID,
+        "host_id": host_id(),
         "role": ROLE,
         "metrics": metrics,
         "hashes": {},
@@ -173,13 +227,14 @@ def post_snapshot(url: str, key: bytes, payload: dict, ts: int,
                   timeout: int = 10) -> tuple[int | None, str]:
     """Gzip, sign, POST. Returns (status_code_or_None, response_body)."""
     body = gzip.compress(json.dumps(payload, separators=(",", ":")).encode())
+    hid = host_id()
     headers = {
         "Content-Type": "application/json",
         "Content-Encoding": "gzip",
         "User-Agent": USER_AGENT,
-        "X-Host-Id": HOST_ID,
+        "X-Host-Id": hid,
         "X-Timestamp": str(ts),
-        "X-Signature": sign_request(key, ts, HOST_ID, body),
+        "X-Signature": sign_request(key, ts, hid, body),
     }
     req = urllib.request.Request(
         url.rstrip("/") + "/v1/snapshot", data=body, headers=headers, method="POST"
@@ -236,8 +291,9 @@ def main(argv=None) -> int:
                     "--snapshot, ALSO POST a distilled session-observe metrics "
                     "snapshot to vps-mon (opt-in; see --snapshot help).",
     )
-    p.add_argument("--url", default=os.environ.get("SESSION_REPORT_URL", DEFAULT_URL),
-                   help="vps-mon base URL (default mon-ingest)")
+    p.add_argument("--url", default=None,
+                   help="vps-mon base URL (default $SESSION_REPORT_URL, else [session_report] url "
+                        "in the operator kit.toml; no built-in default)")
     p.add_argument("--report-json", help="read report json from this file "
                                          "instead of running session-observe")
     p.add_argument("--days", type=int, default=7,
@@ -264,14 +320,21 @@ def main(argv=None) -> int:
         envelope = build_envelope(metrics, ts)
         body = gzip.compress(json.dumps(envelope, separators=(",", ":")).encode())
         key = key_bytes(os.environ.get("SESSION_REPORT_HMAC_KEY", "DRYRUN_KEY"))
+        hid = host_id()
         print(json.dumps({
             "envelope": envelope,
-            "X-Signature": sign_request(key, ts, HOST_ID, body),
-            "X-Host-Id": HOST_ID,
+            "X-Signature": sign_request(key, ts, hid, body),
+            "X-Host-Id": hid,
             "X-Timestamp": str(ts),
             "gzip_bytes": len(body),
         }, indent=2))
         return 0
+
+    url = base_url(args.url)
+    if not url:
+        print("session-report: no vps-mon URL: set [session_report] url in the operator "
+              "kit.toml, SESSION_REPORT_URL, or --url", file=sys.stderr)
+        return 2
 
     # Opt-in snapshot POST. OFF by default to avoid the agent-silent false-alarm
     # (see module docstring). Runs BEFORE the heartbeat so a snapshot failure
@@ -281,13 +344,13 @@ def main(argv=None) -> int:
         metrics = distill(report)
         ts = int(time.time())
         envelope = build_envelope(metrics, ts)
-        secret = os.environ.get("SESSION_REPORT_HMAC_KEY")
-        if not secret:
-            print("session-report: SESSION_REPORT_HMAC_KEY not set (op:// ref at runtime)",
-                  file=sys.stderr)
+        hmac_key = secret("SESSION_REPORT_HMAC_KEY", "session_report.hmac_key_cmd")
+        if not hmac_key:
+            print("session-report: no HMAC key: set SESSION_REPORT_HMAC_KEY or "
+                  "[session_report] hmac_key_cmd", file=sys.stderr)
             return 2
-        key = key_bytes(secret)
-        code, resp = post_snapshot(args.url, key, envelope, ts)
+        key = key_bytes(hmac_key)
+        code, resp = post_snapshot(url, key, envelope, ts)
         print(f"snapshot: {code}")
         if code != 202:
             print(f"  body: {resp}", file=sys.stderr)
@@ -296,12 +359,12 @@ def main(argv=None) -> int:
     # Default + always-run: the heartbeat is the correct weekly liveness signal.
     # It does not touch the `hosts` table, so the 600s agent-silent rule cannot
     # see it; it flips silent only after >8 days (interval 604800 + grace 86400).
-    token = os.environ.get("SESSION_REPORT_HB_TOKEN")
+    token = secret("SESSION_REPORT_HB_TOKEN", "session_report.hb_token_cmd")
     if not token:
-        print("session-report: SESSION_REPORT_HB_TOKEN not set (op:// ref at runtime)",
-              file=sys.stderr)
+        print("session-report: no heartbeat token: set SESSION_REPORT_HB_TOKEN or "
+              "[session_report] hb_token_cmd", file=sys.stderr)
         return 2
-    hb = ping_heartbeat(args.url, token)
+    hb = ping_heartbeat(url, token)
     print(f"heartbeat: {hb}")
     return 0 if hb == 204 else 1
 

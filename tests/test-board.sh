@@ -20,10 +20,10 @@
 #                                    static source-audit that neither lib file ever `eval`s or
 #                                    `sh -c`'s parsed content)
 #   NC-e RENDER NON-REGRESSION    -> board/next/priority[overview|matrix]/states against the REAL
-#                                    ops-toolkit cockpit are byte-identical to the pre-migration
+#                                    consumer cockpit are byte-identical to the pre-migration
 #                                    `_meta/board`/`_meta/board-all` output. The cockpit lives in a
 #                                    sibling repo whose location is per-operator, so the test reads
-#                                    $KIT_SIBLING_ROOT/ops-toolkit and hard-codes no home. SKIPS
+#                                    $KIT_SIBLING_ROOT/$KIT_COCKPIT_REPO and hard-codes no home. SKIPS
 #                                    (not fails) when that is unset or absent, which is the CI case
 #                                    -- same precedent as test-weekend-batch.sh's dotfiles skip.
 #                                    Both sides run THIS checkout: the shim resolves the kit
@@ -354,8 +354,8 @@ assert "AC7: a current estate emits no trailer and no marker" \
   "$(printf '%s\n' "$CLEAN_OUT" | grep -q 'STALE' && echo 1 || echo 0)"
 
 echo ""
-echo "=== NC-e: RENDER NON-REGRESSION against the REAL ops-toolkit cockpit ==="
-OPS="${KIT_SIBLING_ROOT:-}/ops-toolkit"
+echo "=== NC-e: RENDER NON-REGRESSION against a REAL consumer cockpit ==="
+OPS="${KIT_SIBLING_ROOT:-}/${KIT_COCKPIT_REPO:-}"
 if [ -x "$OPS/_meta/board" ] && [ -x "$OPS/_meta/board-all" ] && [ -f "$OPS/_meta/BACKLOG.md" ]; then
   RP="$TMPDIR_T/render-proof"; mkdir -p "$RP"
   pair() {
@@ -379,7 +379,7 @@ if [ -x "$OPS/_meta/board" ] && [ -x "$OPS/_meta/board-all" ] && [ -f "$OPS/_met
   pair "all-priority-matrix"     "$OPS/_meta/board-all priority matrix"    "bash $BOARD all priority matrix --repo-root $OPS"
   pair "all-states"              "$OPS/_meta/board-all states"             "bash $BOARD all states --repo-root $OPS"
 else
-  skip "NC-e (ops-toolkit path absent -- $OPS; not present in CI, run locally to exercise)"
+  skip "NC-e (cockpit path absent -- set KIT_SIBLING_ROOT and KIT_COCKPIT_REPO to exercise locally: $OPS)"
 fi
 
 echo ""

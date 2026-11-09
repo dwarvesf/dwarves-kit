@@ -124,7 +124,7 @@ ver, sha, b64 = sys.argv[1], sys.argv[2], sys.argv[3]
 body = json.dumps({"version": ver, "sha256": sha, "bundle_b64": b64,
                    "notes": os.environ.get("RELEASE_NOTES", "")}).encode()
 req = urllib.request.Request(
-    "https://forge-api.infras.workers.dev/admin/release", data=body,
+    os.environ.get("FORGE_API", "https://forge-api.infras.workers.dev").rstrip("/") + "/admin/release", data=body,
     headers={"Authorization": "Bearer " + os.environ["FORGE_ADMIN_TOKEN"],
              "Content-Type": "application/json",
              "User-Agent": "dwarves-kit-release/1"}, method="PUT")

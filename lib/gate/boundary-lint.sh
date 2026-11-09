@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # boundary-lint.sh -- the engine never names a consumer, by path or by
-# skill (learning-boundary). Two checks, both read-only, both grep-with-an-allowlist.
+# skill (learning-boundary), and its code never carries the operator's identity. Three checks,
+# all read-only.
 #
 # PATH: all of lib/ and hooks/ (minus four modules named below), commands/, tests/, kit.toml
 # for a hardcoded dotfiles or ops-toolkit path -- the shape behind the PR #554 regression (a
@@ -18,6 +19,16 @@
 # hits elsewhere (commands/pitch.md composes narrate-log for an unrelated feature;
 # tests/test-wrap.sh uses "learning-ledger" as generic fixture text). See
 # the engine-learn-seam spec.
+#
+# DENY: executable code and fixtures never carry the operator's identity. The tokens in
+# deny_re (the operator's workers.dev host, GitHub handle, personal monorepo, vault name) are
+# the shape of a default that belonged in the operator's kit.toml (lib/config/kit-config.sh,
+# kit_config_get_root) instead of the code. Scope: every text file under the tree except
+# markdown, docs/, and tool dirs (.git, .claude, node_modules, .venv). A comment line (first
+# non-blank character `#` or `//`) is provenance prose and is skipped; so is a Python
+# docstring (found with ast). Anything else that must keep a token (a check that greps for the
+# token itself, an optional local-only test) carries the marker `boundary-ok: <reason>` on its
+# line. No module is exempt: the four PATH-check exclusions above do not apply here.
 #
 # name_files/name_re are a hand-maintained list, not derived from lib/config/module-
 # registry.md's "## Seams" table: that table's Filled-by column is free-text prose ("the
@@ -63,6 +74,74 @@ while IFS= read -r hit; do
   [ -n "$hit" ] || continue
   flag "consumer skill named directly: ${hit#"$ROOT/"}"
 done < <(grep -nE "$name_re" "${name_files[@]}" 2>/dev/null || true)
+
+# DENY check. The pattern is assembled from halves so this file is not its own hit.
+deny_re="h""an-ws|tie""ubao|ops-""toolkit|op://""Toolkit"
+deny_scan() {
+  command -v python3 >/dev/null 2>&1 || { echo "needs python3 on PATH"; return 1; }
+  python3 - "$ROOT" "$SELF/boundary-lint.sh" "$deny_re" <<'PY'
+import ast, os, re, sys
+
+root, self_path, pattern = sys.argv[1], sys.argv[2], sys.argv[3]
+deny = re.compile(pattern, re.I)
+skip_dirs = {".git", ".claude", "node_modules", ".venv", "__pycache__", "docs"}
+skip_ext = {".md", ".lock", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg", ".pdf",
+            ".woff", ".woff2", ".gz", ".zip", ".tar", ".tgz"}
+
+
+def docstring_lines(text):
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return set()
+    lines = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        body = node.body
+        if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], "value", None), ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            lines.update(range(body[0].lineno, body[0].end_lineno + 1))
+    return lines
+
+
+for dirpath, dirs, files in os.walk(root):
+    dirs[:] = sorted(d for d in dirs if d not in skip_dirs)
+    for name in sorted(files):
+        if name == ".git":  # a linked worktree's gitdir pointer file
+            continue
+        path = os.path.join(dirpath, name)
+        if path == self_path or os.path.splitext(name)[1].lower() in skip_ext or os.path.islink(path):
+            continue
+        try:
+            with open(path, "rb") as fh:
+                raw = fh.read()
+        except OSError:
+            continue
+        if b"\0" in raw:
+            continue
+        text = raw.decode("utf-8", "replace")
+        first = text.split("\n", 1)[0]
+        is_py = name.endswith(".py") or (first.startswith("#!") and "python" in first)
+        skip = docstring_lines(text) if is_py else set()
+        for n, line in enumerate(text.split("\n"), 1):
+            stripped = line.lstrip()
+            if n in skip or stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            if deny.search(line) and "boundary-ok:" not in line:
+                print(f"{os.path.relpath(path, root)}:{n}: {line.strip()[:160]}")
+PY
+}
+# Captured, not piped through process substitution: a failed scan (no python3, a crash) must
+# fail the lint, and a substitution's exit status is lost.
+if deny_out="$(deny_scan)"; then
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    flag "operator identity in code: $hit"
+  done <<< "$deny_out"
+else
+  flag "deny check could not run: $deny_out"
+fi
 
 [ "$fail" = 0 ] && echo "boundary-lint: PASS"
 exit "$fail"

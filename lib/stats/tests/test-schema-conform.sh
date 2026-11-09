@@ -63,7 +63,7 @@ echo "== Negative control: a malformed line is REJECTED (load-bearing) =="
 check "no timestamp" FAIL "not-a-timestamp | START | lane=normal classified=normal type=x"
 check "unknown verb" FAIL "2026-07-03T18:54:29Z | BOGUS | whatever=here"
 check "no pipe delimiters at all" FAIL "just a plain line with no structure whatsoever"
-check "START missing required k=v token" FAIL "2026-07-03T18:54:29Z | START | repo=ops-toolkit"
+check "START missing required k=v token" FAIL "2026-07-03T18:54:29Z | START | repo=acme-app"
 
 echo
 echo "== Outlier adapter samples parse under their contract =="
@@ -94,7 +94,7 @@ fi
 # fail-safe, when that sibling simply is not present in THIS repo.
 TIDE_SCHEMA="$(cd "$HERE/../../.." && pwd)/tools/tide/src/tide/state.py"
 if [ ! -f "$TIDE_SCHEMA" ]; then
-  echo "SKIP  tide state.py not present in this repo (ops-toolkit-only sibling tool; nothing to cross-check here)"
+  echo "SKIP  tide state.py not present in this repo (consumer-only sibling tool; nothing to cross-check here)"
 else
   tide_ok=1
   for col in id ts source_path target_path content_sha size_bytes route confidence ai_response_json undone_at; do

@@ -128,7 +128,7 @@ has "it says to pass --yes" "$out" "pass --yes"
 echo "case install (skills, stamp, record with the cluster's mapping):"
 reset; mkhome "$HOME/hermes-alpha/home"
 cat > "$WORK/board.json" <<'EOF'
-{"cluster_map":"ops=personal,family=family","common":{"hub":["ops=ops-toolkit"],"board":["ops=df-content","family=other"]}}
+{"cluster_map":"ops=personal,family=family","common":{"hub":["ops=acme-hub"],"board":["ops=df-content","family=other"]}}
 EOF
 out="$(DWARVES_BOARD_CONFIG="$WORK/board.json" link --yes --no-verify --cluster ops --label chonky)"; rc=$?
 eq "exit 0" "$rc" "0"
@@ -138,7 +138,7 @@ eq "the stamp carries a 16-char digest" "$(jq -r '.skills_digest | length' "$sta
 eq "and the skill names" "$(jq -r '.skills | join(" ")' "$stamp")" "$SKILL_NAMES"
 eq "and the kit version" "$(jq -r '.kit_version' "$stamp")" "$(cat "$HERE/../VERSION")"
 eq "the link is recorded with its label and cluster" "$(jq -r '.links[0] | [.label, .profile, .cluster] | join(" ")' "$DWARVES_HERMES_LINKS")" "chonky default ops"
-eq "with the cluster's rail, hub, boards" "$(jq -r '.links[0] | [.rail, .hub, (.boards | join(","))] | join(" ")' "$DWARVES_HERMES_LINKS")" "personal ops-toolkit df-content"
+eq "with the cluster's rail, hub, boards" "$(jq -r '.links[0] | [.rail, .hub, (.boards | join(","))] | join(" ")' "$DWARVES_HERMES_LINKS")" "personal acme-hub df-content"
 eq "the links file is 0600" "$(stat -c '%a' "$DWARVES_HERMES_LINKS" 2>/dev/null || stat -f '%Lp' "$DWARVES_HERMES_LINKS")" "600"
 has "no verify: says so" "$out" "installed, not verified"
 

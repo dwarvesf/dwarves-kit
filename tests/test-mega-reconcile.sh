@@ -39,7 +39,7 @@ grep -qE '^description:' "$MEGA_MD"; assert "AC1: mega.md frontmatter has a desc
 grep -qiE 'decompose' "$MEGA_MD"; assert "AC1: mega.md carries the decompose beat" $?
 grep -qiE 'front-load|front-loaded' "$MEGA_MD"; assert "AC1: mega.md carries the front-load-checkpoint beat" $?
 grep -qiE 'merge config|merge_autonomy|MEGA_MERGE_POSTURE' "$MEGA_MD"; assert "AC1: mega.md carries the per-run-merge-config beat" $?
-grep -qiE 'plan-for-mega-goal' "$MEGA_MD"; assert "AC1: mega.md names the ops-toolkit plan-for-mega-goal skill as the mirror source" $?
+grep -qiE 'plan-for-mega-goal' "$MEGA_MD"; assert "AC1: mega.md names the plan-for-mega-goal skill as the mirror source" $?
 grep -qiE 'mirror|does NOT fork' "$MEGA_MD"; assert "AC1: mega.md states it mirrors, not forks, the skill" $?
 grep -qF 'lib/goal/mega-merge.sh' "$MEGA_MD"; assert "AC1: mega.md wires lib/goal/mega-merge.sh into the hand-off step" $?
 

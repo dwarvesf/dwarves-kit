@@ -70,6 +70,17 @@ def test_bootstrap_creates_database_with_full_schema():
     assert "queued" in names and "shipped" in names and "parked" in names
 
 
+def test_bootstrap_title_defaults_neutral_and_takes_the_configured_one():
+    def title_of(**kw):
+        fake = FakeNtn({"api v1/databases -X": {
+            "id": "db1", "data_sources": [{"id": "ds1"}]}})
+        NotionSource(parent="page-1", runner=fake, **kw).ensure_binding()
+        (_args, body) = fake.calls[0]
+        return body["title"][0]["text"]["content"]
+    assert title_of() == "Backlog"
+    assert title_of(title="Acme Backlog") == "Acme Backlog"
+
+
 def test_bind_existing_discovers_and_patches_missing_props():
     fake = FakeNtn({
         "datasources resolve db2": {"data_sources": [{"id": "ds2"}]},

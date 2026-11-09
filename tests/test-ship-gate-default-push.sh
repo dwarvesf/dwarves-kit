@@ -16,7 +16,7 @@ ERR="$LOGDIR/stderr"
 
 mkrepo() { # $1=dir $2=default branch $3=adopted(yes/no)
   git init -q -b "$2" "$1"
-  git -C "$1" config user.email tieubao@users.noreply.github.com; git -C "$1" config user.name "Han Ngo"
+  git -C "$1" config user.email dev@users.noreply.github.com; git -C "$1" config user.name "Dev Tester"
   if [ "$3" = yes ]; then mkdir -p "$1/docs/verification"; echo marker > "$1/docs/verification/README.md"; fi
   echo base > "$1/f"; git -C "$1" add -A; git -C "$1" commit -qm "chore: init"
 }

@@ -36,22 +36,22 @@ export KIT_CONFIG_OPERATOR="$TMPD/op"
 mkdir -p "$TMPD/op"
 cat > "$TMPD/op/kit.toml" <<'TOML'
 [proof]
-base_url_tieubao = "https://proof.han.ws"
+base_url_acme = "https://proof.example.test"
 base_url_dwarvesf = "https://proof.d.foundation"
 TOML
 # The fetch seam: fail closed by default so an unexpected fetch can never reach curl.
 export PROOF_ASSET_FETCH="$TMPD/fetch-fail"
 printf '#!/bin/sh\nexit 1\n' > "$PROOF_ASSET_FETCH"; chmod +x "$PROOF_ASSET_FETCH"
 
-# new_repo <name> -- one base commit, origin = git@github.com:tieubao/widget.git so the
-# owner/repo the gate derives is tieubao/widget and the bucket prefix is
-# https://proof.han.ws/tieubao/widget/ (base from the operator fixture above).
+# new_repo <name> -- one base commit, origin = git@github.com:acme/widget.git so the
+# owner/repo the gate derives is acme/widget and the bucket prefix is
+# https://proof.example.test/acme/widget/ (base from the operator fixture above).
 new_repo() {
   local d="$TMPD/$1"
   mkdir -p "$d/docs/verification" "$d/lib" "$d/app"
   git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
   git -C "$d" config commit.gpgsign false
-  git -C "$d" remote add origin git@github.com:tieubao/widget.git
+  git -C "$d" remote add origin git@github.com:acme/widget.git
   echo "# Verification log (proof of done)" > "$d/docs/verification/README.md"
   echo baseline > "$d/lib/thing.sh"
   git -C "$d" add -A; git -C "$d" commit -qm base
@@ -95,7 +95,7 @@ fetch_ok(){ # fetch_ok <repo> <fixture-file> <tag>: stub PROOF_ASSET_FETCH to em
 }
 
 RAND="0123456789abcdef0123456789abcdef"
-URL="https://proof.han.ws/tieubao/widget/ui/$RAND/shot.webp"
+URL="https://proof.example.test/acme/widget/ui/$RAND/shot.webp"
 
 echo "=== case 1: R1 off, UI diff, text-only proof passes exactly as on master ==="
 D="$(new_repo c1)"; ui_diff "$D"; proof_ok "$D" </dev/null
@@ -170,7 +170,7 @@ mkdir -p "$TMPD/op-visual"
 cat > "$TMPD/op-visual/kit.toml" <<'TOML'
 [proof]
 visual = true
-base_url_tieubao = "https://proof.han.ws"
+base_url_acme = "https://proof.example.test"
 TOML
 D="$(new_repo c9)"; local_on "$D"; ui_diff "$D"   # .kit.toml stays untracked
 mkdir -p "$D/.kit/proof-assets/ui"; printf 'local-bytes' > "$D/.kit/proof-assets/ui/shot.webp"
@@ -184,7 +184,7 @@ fi
 
 echo "=== case 10: entry url outside <base>/<owner>/<repo>/ -> named so ==="
 D="$(new_repo c10)"; visual_on "$D"; ui_diff "$D"
-BAD="https://proof.han.ws/tieubao/other/ui/$RAND/shot.webp"
+BAD="https://proof.example.test/acme/other/ui/$RAND/shot.webp"
 manifest "$D" uploaded "$BAD" "$SHA"
 printf '![shot](%s)\n' "$BAD" | proof_ok "$D"
 blocks "case 10: url outside the proof bucket" "$D"
@@ -205,13 +205,13 @@ accepts "case 12: app/models/user.rb only, text-only proof passes" "$D"
 
 echo "=== case 13: an R3a url holding '..' or '%' is refused, prefix or not ==="
 D="$(new_repo c13a)"; visual_on "$D"; ui_diff "$D"
-BAD="https://proof.han.ws/tieubao/widget/../other/ui/$RAND/shot.webp"
+BAD="https://proof.example.test/acme/widget/../other/ui/$RAND/shot.webp"
 manifest "$D" r2 "$BAD" "$SHA"
 printf '![shot](%s)\n' "$BAD" | proof_ok "$D"
 blocks "case 13a: '..' inside a bucket-prefixed url" "$D"
 msg_has "case 13a: the block names the unsafe url" "$D" "unsafe url: $BAD"
 D="$(new_repo c13b)"; visual_on "$D"; ui_diff "$D"
-BAD="https://proof.han.ws/tieubao/widget/ui/$RAND/%2e%2e/shot.webp"
+BAD="https://proof.example.test/acme/widget/ui/$RAND/%2e%2e/shot.webp"
 manifest "$D" r2 "$BAD" "$SHA"
 printf '![shot](%s)\n' "$BAD" | proof_ok "$D"
 blocks "case 13b: '%' inside the url" "$D"
@@ -240,10 +240,10 @@ mkdir -p "$D/docs/verification/ui"
   for i in 1 2 3 4 5 6 7; do
     [ "$i" -gt 1 ] && printf ','
     printf '{"name":"s%s","file":"s%s.webp","status":"r2","url":"%s","sha256":"%s","bytes":12}' \
-      "$i" "$i" "https://proof.han.ws/tieubao/widget/ui/$RAND/s$i.webp" "$SHA"
+      "$i" "$i" "https://proof.example.test/acme/widget/ui/$RAND/s$i.webp" "$SHA"
   done
   printf ']}' ; } > "$D/docs/verification/ui/assets.json"
-{ for i in 1 2 3 4 5 6 7; do printf '![s%s](https://proof.han.ws/tieubao/widget/ui/%s/s%s.webp)\n' "$i" "$RAND" "$i"; done; } | proof_ok "$D"
+{ for i in 1 2 3 4 5 6 7; do printf '![s%s](https://proof.example.test/acme/widget/ui/%s/s%s.webp)\n' "$i" "$RAND" "$i"; done; } | proof_ok "$D"
 if PROOF_ASSET_FETCH="$TMPD/fetch-spy-15" gate "$D" >/dev/null 2>&1; then
   fail "case 15: seven unverifiable entries (ACCEPTED, want BLOCK)"
 else
@@ -286,7 +286,7 @@ mkdir -p "$TMPD/op-visual"
 cat > "$TMPD/op-visual/kit.toml" <<'TOML'
 [proof]
 visual = true
-base_url_tieubao = "https://proof.han.ws"
+base_url_acme = "https://proof.example.test"
 TOML
 D="$(new_repo c18)"
 printf '[proof]\nvisual = false\n' > "$D/.kit.toml"    # untracked: tracked_clean fails

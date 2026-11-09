@@ -329,7 +329,7 @@ def find_chain(actions, d_cards, args):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip() or os.getcwd()
-    ap.add_argument("--registry", default=str(Path(root) / "_meta" / "boards.txt"))
+    ap.add_argument("--registry", default=os.environ.get("KIT_BOARDS_REGISTRY") or str(Path(root) / "_meta" / "boards.txt"))
     ap.add_argument("--snapshot", default=str(Path(root) / "_meta" / ".board-mirror-snapshot.jsonl"))
     ap.add_argument("--hermes-home", default=os.environ.get("HERMES_HOME"),
                     help="the kanban store to reconcile; default $HERMES_HOME, no other default")
