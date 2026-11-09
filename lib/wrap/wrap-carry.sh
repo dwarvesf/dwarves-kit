@@ -69,8 +69,23 @@ _carry_branch_ours() {
 # refusal leaves the PR open for step 3, and a failed merge or tree check sets FAILURES.
 # <oid> is the head the caller checked; a branch or PR head anywhere else by the merge refuses,
 # so a push landing during the check wait never rides the merge unchecked.
+_CHECKS_SECS_ENV_SET="${KIT_WRAP_CARRY_CHECKS_SECS:+1}"
 KIT_WRAP_CARRY_CHECKS_SECS=${KIT_WRAP_CARRY_CHECKS_SECS:-300}
 case "$KIT_WRAP_CARRY_CHECKS_SECS" in ''|*[!0-9]*) KIT_WRAP_CARRY_CHECKS_SECS=300 ;; esac
+# _checks_secs_for <repo> -- settle the checks wait for a land of <repo>: the env bound when set,
+# else <repo>'s [wrap] checks_secs, else 300. A project value only lengthens or shortens a wait
+# and authorizes no write, so it reads through kit_config_get, not the root-only accessor.
+_checks_secs_for() {
+  [ -z "$_CHECKS_SECS_ENV_SET" ] || return 0
+  local v; v="$(KIT_PROJECT_ROOT="$1" kit_config_get wrap.checks_secs "")"
+  [ -n "$v" ] || return 0
+  case "$v" in *[!0-9]*|0*) v="" ;; esac
+  if [ -z "$v" ] || [ "${#v}" -gt 4 ] || [ "$v" -gt 3600 ]; then
+    echo "wrap: ignoring wrap.checks_secs in $1/.kit.toml (want a whole number of seconds, 1 to 3600); waiting 300s" >&2
+    return 0
+  fi
+  KIT_WRAP_CARRY_CHECKS_SECS="$v"
+}
 _autoland_carry() {
   local repo="$1" def="$2" branch="$3" want="$4" ghs url tip open cnt n title created out rc waited=0 pending
   ghs="$(_gh_state)"

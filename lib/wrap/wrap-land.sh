@@ -424,6 +424,8 @@ _land_run() {
     echo "wrap.sh land: ${wt} is the main checkout, not a worktree" >&2; return 1
   fi
 
+  _checks_secs_for "$wt"
+
   # The visual-proof flush (opt-in via proof.visual): the branch's proof-asset manifests can
   # hold entries an offline `put` left pending, so they flush here, inside the worktree
   # being landed, before the dirty check and before the push. The flag reads from the
