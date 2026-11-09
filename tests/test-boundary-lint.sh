@@ -14,6 +14,8 @@
 # control elsewhere and unrun, in two other repos.)
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# The fixtures name lib/config/; no case reads the host operator kit.toml.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-boundary-lint-none.$$"
 LINT="$KIT_DIR/lib/gate/boundary-lint.sh"
 PASS=0; FAIL=0; TOTAL=0
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo "  PASS $1"; PASS=$((PASS+1)); else echo "  FAIL $1 ${3:-}" >&2; FAIL=$((FAIL+1)); fi; }
