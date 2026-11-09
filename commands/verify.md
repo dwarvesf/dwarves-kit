@@ -189,7 +189,7 @@ When a behavioral/stateful artifact is hardened across rounds (produce -> critiq
 hard round cap (default 3), stopping when findings reach zero. Each round's reviewer ends
 with `[[QL-VERDICT round=N clean=BOOL findings=K]]`, and the finding count must **strictly
 fall** across rounds (a loop where findings do not decrease is a finding, not a pass). Record
-the converged verdict + the round-by-round counts in the run. `/kit:verify` itself is
+the converged verdict + the round-by-round counts in the run. At the start of each round, and after any context loss, run `bash lib/loop/ql-verdict.sh resume <run record>` and continue from the printed `round=`; never count rounds in context. `/kit:verify` itself is
 read-only (it reports, it does not revise); the revise step is `/kit:next` / `/kit:execute`.
 
 The run record follows the layout in `docs/verification/README.md`: the directory shape

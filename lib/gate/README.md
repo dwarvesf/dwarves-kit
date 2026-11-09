@@ -82,6 +82,8 @@ Records are append-only, redacted (no command bodies), and one physical line per
 (`oneline()` collapses newlines, because a forged `| ran |` line would otherwise make
 `check()` believe a gate ran).
 
+`actions <rid> <prefix> [--count]` is the read side of `action`: it prints the text of this run's ACTION lines that equal `<prefix>` or start with `<prefix> ` (so `sha=abc` never matches `sha=abc123`), or with `--count` how many. A missing ledger gives nothing, or 0. A loop that must resume from its own record uses it: greenlight counts `greenlight-retry sha=<head>` lines to rebuild its per-commit retry budget.
+
 ### Ledger line grammar
 
 ```

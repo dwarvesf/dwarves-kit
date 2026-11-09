@@ -30,6 +30,7 @@ Every `lib/` directory has one row.
 | [`intake/`](intake/README.md) | `intake.sh`, the knowledge-intake dedup gate (`bin/intake`). No command, skill or hook in this kit calls it: the callers are an operator's own intake skills, so a kit-only install never exercises it. |
 | [`ledger/`](ledger/README.md) | `ledger.sh`, the kit's one append substrate that the gate, proof and telemetry writers share. |
 | [`lint/`](lint/README.md) | `scattered-ids.sh`, the lint for spec, task and ADR ids outside their sanctioned homes. Entry: `bin/lint`. |
+| [`loop/`](loop/README.md) | `ql-verdict.sh`, the one QL-VERDICT parser and the `resume` verb that derives a bounded loop's next round from its own record. |
 | [`mega/`](mega/README.md) | The mega-goal engine: `mega.sh` status reconcile against git truth, report, review and runs-dashboard halves. Entry: `bin/mega`. |
 | [`money-gate/`](money-gate/README.md) | The `money_gate` module: a PreToolUse guard that asks before a money-touching edit lands in a repo you named financial. |
 | [`plugin-check/`](plugin-check/README.md) | Read-only freshness lens over the installed Claude Code plugins. Entry: `bin/plugin-check`. |

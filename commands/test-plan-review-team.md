@@ -49,6 +49,8 @@ After the lenses complete:
 
 ### Step 4: Bounded revise loop (tighten the plan, never block)
 
+At loop start, and after any context loss, run `bash lib/loop/ql-verdict.sh resume <spec> --section '## Test plan critique'` and continue from the printed `round=` and `last_findings=` (the strictly-falling rule compares against it). Never count rounds in context.
+
 If round N found K > 0 findings AND N < 3:
 
 1. Dispatch a **distinct reviser** subagent (NOT one of the lens reviewers , producer must not be reviewer) with the merged findings and the current `## Test plan`. Its job: revise the spec's `## Test plan` to address the findings (add the missing AC's test row, name the missing negative control, replace a vague proof with a concrete command, etc.), writing the revised matrix back via the replace-not-stack rule below. It changes the `## Test plan`, nothing else.
