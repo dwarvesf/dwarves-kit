@@ -56,6 +56,10 @@
 #   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate's latest row is ran|override; else 1
 #                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
+#   lane     <rid> [--spec <path>] [--default]
+#                                       the run's effective lane: last START-AMEND, else first START, else the
+#                                       spec Lane: header, else (--default) the classifier default;
+#                                       prints "<lane>\t<source>\t<spec header>", exit 1 when none answers
 #   plan     <lane>                    the lane's ordered phase checklist
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
 #   rid                                the canonical run id for the cwd: branch slug
@@ -249,12 +253,15 @@ start() {
   ctype="$(printf '%s' "$ctype" | tr ' ' '-')"
   lane="$(printf '%s' "$lane" | tr ' ' '-')"
   classified="$(printf '%s' "$classified" | tr ' ' '-')"
-  # An unknown lane is refused on a plain START too: readers resolve the lane against the lane data
-  # (lane_effective), so a stray name (fix, light, standard) would only read as absent. The amend arm
-  # also needs it: ship-gate reads the lane back with [a-z-]+, so a look-alike name (tiny2, tiny_x)
-  # would read as tiny and dodge the lowering guard below. Old ledgers stay readable, none is rewritten.
-  if ! lane_known "$lane"; then
-    echo "$uprefix: '$lane' is not a lane (known: $LANE_NAMES)." >&2
+  # An unknown lane is refused on a plain START too: readers resolve the lane against the declared lanes
+  # (lane_effective), so a stray name (fix, light, standard) would only read as absent. A lanes.d overlay lane
+  # (a vertical kit's `study`) is declared, so a plain START may use it. The amend arm takes the five kit lanes
+  # only: ship-gate reads the lane back with [a-z-]+, so a look-alike name (tiny2, tiny_x) would read as
+  # tiny and dodge the lowering guard below. Old ledgers stay readable, none is rewritten.
+  if [ "$marker" = START-AMEND ]; then
+    lane_known "$lane" || { echo "$uprefix: '$lane' is not a lane (known: $LANE_NAMES)." >&2; return 64; }
+  elif ! lane_declared "$lane"; then
+    echo "$uprefix: '$lane' is not a lane (known: $(lane_declared_names))." >&2
     return 64
   fi
   mkdir -p "$RUNS_DIR"
@@ -1842,7 +1849,7 @@ _vr_dispatch() {
 # sessions reach for most. The other verbs print their own `usage:` line when called bare.
 usage() {
   cat <<'EOF'
-usage: gate-ledger.sh {required|start|lane|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round} ...
+usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round|lane} ...
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
   start --amend --lower --reason "<text>" <rid> <lighter-lane> ...   lowering needs both flags

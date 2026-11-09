@@ -145,6 +145,13 @@ at the merge base (an opt-out must already sit on the default branch). Proof:
 
 ### Amending a run's lane
 
+A run owes one lane, resolved in one place (`lane_effective` in `lane-data.sh`, printed by
+`gate ledger lane <rid> [--spec <path>] [--default]`): the LAST `START-AMEND`, else the FIRST
+`START`, else the spec's `Lane:` header, else (only with `--default`) the classifier default.
+ship-gate reads the lane through that verb. A `START` whose lane is not one of the five lane names
+(old ledgers carry `fix`, `light`, `standard`) reads as absent, so the next source answers; no
+ledger is rewritten. A plain `start` with an unknown lane exits 64 and lists the valid names.
+
 `gate ledger start --amend <rid> <lane> ...` appends a `START-AMEND` line; every reader, ship-gate
 included, takes the LAST one as the run's lane. An amend may raise the lane. It refuses (exit 65,
 nothing written) to lower it, because a lighter lane sheds required gates. Order: `tiny` <

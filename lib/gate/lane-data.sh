@@ -65,6 +65,26 @@ lane_known() {
   return 1
 }
 
+# lane_declared_names: every lane name a run may be started in, one line, space separated: LANE_NAMES plus the
+# overlay lanes a vertical kit drops into lanes.d as <lane>.plan (the same directory `gate-ledger.sh plan` reads).
+# Overlay lanes carry a plan only: they have no gate data, so `check` still fails closed on them.
+lane_declared_names() {
+  local d="${DWARVES_KIT_LANES_D:-$HOME/.config/dwarves-kit/lanes.d}" f n out="$LANE_NAMES"
+  for f in "$d"/*.plan; do
+    [ -f "$f" ] || continue
+    n="${f##*/}"; n="${n%.plan}"
+    printf '%s' "$n" | grep -Eq '^[a-z0-9][a-z0-9-]*$' || continue
+    case " $out " in *" $n "*) ;; *) out="$out $n" ;; esac
+  done
+  printf '%s' "$out"
+}
+
+# lane_declared <name>: 0 when <name> is a kit lane or a lanes.d overlay lane.
+lane_declared() {
+  case " $(lane_declared_names) " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
 # lane_spec_header <spec>: the lane a spec's header declares, raw (an unknown name comes back as written so
 # check() can fail closed on it). `Lane: full` is canonical; the markdown-bold variants (`**Lane**: full`,
 # `**Lane:** full`) parse the same. A leading `- ` list marker is NOT accepted: specs use `- **Lane:** ...`
@@ -77,7 +97,7 @@ lane_spec_header() {
 
 # lane_effective [--default] <ledger-file> [<spec>]: the ONE answer to "which lane does this run owe".
 # Order: the last START-AMEND, else the first START, else the spec `Lane:` header, else (only with
-# --default) the classifier default. A START or START-AMEND whose lane is not one of LANE_NAMES (old
+# --default) the classifier default. A START or START-AMEND whose lane is not a declared lane (old
 # ledgers carry stray `fix`, `light`, `standard`) reads as absent, so the next source answers; ledgers
 # are never rewritten. Prints "<lane>\t<source>\t<spec header>", source = amend|start|spec|default.
 # Prints nothing and exits 1 when no source answers. The header column is the raw header, for callers
@@ -89,7 +109,7 @@ lane_effective() {
   hdr="$(lane_spec_header "$spec")"
   lane=""; src=""
   if [ -r "$f" ]; then
-    IFS=$'\t' read -r lane src < <(awk -F' [|] ' -v names=" $LANE_NAMES " '
+    IFS=$'\t' read -r lane src < <(awk -F' [|] ' -v names=" $(lane_declared_names) " '
       function lane_of(s) { if (match(s, /lane=[^ ]+/)) return substr(s, RSTART + 5, RLENGTH - 5); return "" }
       function ok(l) { return l != "" && index(names, " " l " ") > 0 }
       $2 == "START-AMEND" { l = lane_of($3); if (ok(l)) a = l }

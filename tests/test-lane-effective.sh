@@ -43,6 +43,17 @@ ERR="$(gl start --amend v-am fix normal feature feature r 2>&1 >/dev/null)"; RC=
 check "start --amend to an unknown lane: still exit 64" '[ "$RC" -eq 64 ] && printf "%s" "$ERR" | grep -q "tiny normal full bug backfill"'
 check "gate-ledger.sh holds no literal copy of the lane list outside lane-data.sh" '! grep -n "tiny normal full bug backfill" "$KIT_DIR/lib/gate/gate-ledger.sh" | grep -v "^[0-9]*:[[:space:]]*#"'
 
+echo "an overlay lane in lanes.d is declared"
+LD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf ' 1. study  required\n' > "$LD/study.plan"
+gl start ov-no study study lesson lesson r >/dev/null 2>&1; RC=$?
+check "start lane 'study' without a drop-in: exit 64" '[ "$RC" -eq 64 ]'
+DWARVES_KIT_LANES_D="$LD" gl start ov-yes study study lesson lesson r >/dev/null 2>&1; RC=$?
+check "start lane 'study' with a drop-in: accepted" '[ "$RC" -eq 0 ] && log ov-yes | grep -q "| START | lane=study "'
+ERR="$(DWARVES_KIT_LANES_D="$LD" gl start --amend ov-yes study study lesson lesson r 2>&1 >/dev/null)"; RC=$?
+check "start --amend to an overlay lane is still refused (exit 64)" '[ "$RC" -eq 64 ]'
+check "the overlay START resolves as the effective lane" '[ "$(DWARVES_KIT_LANES_D="$LD" gl lane ov-yes | cut -f1)" = study ]'
+check "without the drop-in the same START reads as absent" '! gl lane ov-yes >/dev/null 2>&1'
+
 echo "the resolver order"
 legacy r-amend  "$(st normal)" "$(am full)" "$(am tiny)"
 legacy r-first  "$(st normal)" "$(st full)"
