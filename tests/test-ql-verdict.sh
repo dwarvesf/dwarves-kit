@@ -6,6 +6,8 @@
 set -uo pipefail
 
 KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Pin the operator config layer so a real ~/.config/dwarves-kit never reaches the resolver.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 QV="$KIT_DIR/lib/loop/ql-verdict.sh"
 FAILED=0
 pass() { printf 'PASS %s\n' "$1"; }
