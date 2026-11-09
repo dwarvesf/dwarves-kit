@@ -186,7 +186,9 @@ EOF
   CHROME="$chrome" DOC_FIGURES_ROOT="$RM" bash "$DF" render >"$TMPD/render.log" 2>&1
   rrc=$?
   chk "render exits 0 on a one-sheet model" "$rrc"
-  [ "$rrc" -eq 0 ] || { echo "  --- render log ($chrome) ---"; tail -20 "$TMPD/render.log"; }
+  # run-all surfaces only the FAIL lines and a tail, so the log rides on FAIL-prefixed lines.
+  [ "$rrc" -eq 0 ] || { echo "  FAIL render diag: browser $chrome, node $(node --version), ${SECONDS}s into the suite"
+    tail -12 "$TMPD/render.log" | cut -c1-240 | while IFS= read -r l; do echo "  FAIL render diag> $l"; done; }
   chk "render writes <id>.png, not d-<id>.png" "$([ -s "$RM/docs/figures/tiny-flow.png" ] && [ ! -e "$RM/docs/figures/d-tiny-flow.png" ]; echo $?)"
   chk "render writes MANIFEST.tsv with the id and a 16-hex digest" "$(grep -qE '^tiny-flow	[0-9a-f]{16}$' "$RM/docs/figures/MANIFEST.tsv"; echo $?)"
   run "$RM"
