@@ -130,6 +130,29 @@ if [[ -f "$SKILL_CURATOR_PROPOSALS_DIR/deploy-via-wrangler/SKILL.md" ]] && ledge
 echo "[13] curate.sh default invocation does not use --bare either"
 if ! grep -Eq -- 'claude -p[^#]*--bare' "$DIR/lib/curate.sh" "$RUN"; then ok "no --bare in the claude -p calls"; else no "--bare still in a claude -p call"; fi
 
+echo "[14] a slug already rejected (plain or timestamped) is not re-staged; ledger note=skip-rejected"
+for rej in deploy-via-wrangler deploy-via-wrangler-20260101-120000; do
+  reset
+  mkdir -p "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/$rej"; printf 'OLD-REJECT\n' > "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/$rej/SKILL.md"
+  SKILL_CURATOR_REVIEWER_CMD="cat $TMP/env1.json" bash "$RUN" "$PAY"
+  if [[ ! -e "$SKILL_CURATOR_PROPOSALS_DIR/deploy-via-wrangler" ]] && ledger_has 'select(.staged==false and .note=="skip-rejected")'; then
+    ok "rejected '$rej' not re-staged"; else no "rejected '$rej' re-staged or unledgered: $(cat "$LEDGER" 2>/dev/null)"; fi
+done
+
+echo "[15] a slug that is already a live skill is not overwritten by a draft; ledger note=skip-live"
+reset
+mkdir -p "$SKILL_CURATOR_SKILLS_DIR/deploy-via-wrangler"; printf 'LIVE\n' > "$SKILL_CURATOR_SKILLS_DIR/deploy-via-wrangler/SKILL.md"
+SKILL_CURATOR_REVIEWER_CMD="cat $TMP/env1.json" bash "$RUN" "$PAY"
+if [[ ! -e "$SKILL_CURATOR_PROPOSALS_DIR/deploy-via-wrangler" ]] && ledger_has 'select(.staged==false and .note=="skip-live")'; then
+  ok "live skill shadows the draft"; else no "live slug re-staged or unledgered"; fi
+rm -rf "$SKILL_CURATOR_SKILLS_DIR/deploy-via-wrangler"
+
+echo "[16] negative control: a similar-prefix rejected slug does not block a different draft"
+reset
+mkdir -p "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/deploy-via-wrangler-extra"
+SKILL_CURATOR_REVIEWER_CMD="cat $TMP/env1.json" bash "$RUN" "$PAY"
+if [[ -f "$SKILL_CURATOR_PROPOSALS_DIR/deploy-via-wrangler/SKILL.md" ]]; then ok "unrelated rejected name did not block"; else no "prefix-match over-blocked"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "test-reviewer: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-reviewer: all $pass passed"

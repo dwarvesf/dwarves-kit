@@ -40,7 +40,8 @@ echo "[4] the reviewer model has NO write: source pins --allowedTools \"\""
 if grep -Eq -- '--allowedTools[[:space:]]+""' "$DIR/lib/reviewer-run.sh"; then ok "reviewer pins --allowedTools \"\""; else no "reviewer missing empty allowedTools"; fi
 
 echo "[5] the reviewer wrapper never writes under skills/ (only proposals/ + ledger)"
-if ! grep -qE '"?\$SKILL_CURATOR_SKILLS_DIR' "$DIR/lib/reviewer-run.sh"; then ok "reviewer-run.sh does not reference skills dir as a target"; else no "reviewer-run.sh references skills dir"; fi
+# The one allowed reference is the read-only `[ -e ... ]` live-slug check (skip-live); any other use is a write risk.
+if ! grep -E '"?\$SKILL_CURATOR_SKILLS_DIR' "$DIR/lib/reviewer-run.sh" | grep -vE '^[[:space:]]*if \[ -e "\$SKILL_CURATOR_SKILLS_DIR/\$slug" \]; then$' | grep -q .; then ok "reviewer-run.sh does not reference skills dir as a target"; else no "reviewer-run.sh references skills dir"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "test-staging-gate: $pass passed, $fail FAILED" >&2; exit 1; fi
