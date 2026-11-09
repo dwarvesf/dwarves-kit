@@ -46,7 +46,7 @@ Env / seams:
   BACKLOG_STAGE_STAGING / BACKLOG_STAGE_BACKLOG   staging + board defaults (shared with the
                                 hook + add-backlog, so propose writes where board promote reads).
   LEARN_PROPOSE_COCKPIT         cross-repo board registry read for dedup (default
-                                <repo>/_meta/boards.txt).
+                                $KIT_BOARDS_REGISTRY, else <repo>/_meta/boards.txt).
   LEARN_PROPOSE_MEGAGOALS       megagoal tree whose ROADMAP/TODO files join the dedup anchor
                                 (default <repo>/_meta/megagoals).
   REPO_ROOT                     consumer seam for the two defaults above.
@@ -132,6 +132,7 @@ def _dedup_sources(staging, backlog):
     root = _repo_root()
     sources = [("staging", staging), ("board", backlog)]
     sources.append(("cockpit", os.environ.get("LEARN_PROPOSE_COCKPIT")
+                    or os.environ.get("KIT_BOARDS_REGISTRY")
                     or os.path.join(root, "_meta", "boards.txt")))
     megagoals = os.environ.get("LEARN_PROPOSE_MEGAGOALS") or os.path.join(
         root, "_meta", "megagoals")

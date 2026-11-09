@@ -233,6 +233,7 @@
 #                                                               stale (`sweep` records it, `brief` says so).
 #                                                               Forwards to lib/sync/sweep/board-hermes.
 #
+# Registry location: `--registry F` > $KIT_BOARDS_REGISTRY > `<repo-root>/_meta/boards.txt`.
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
 # rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
 # exactly the literal token `on` opts in; absent, `off`, or any other value stays OUT (default
@@ -551,7 +552,7 @@ cmd_all() {
   _parse_flags "$@"
   local args=("${POSITIONAL[@]}")
   local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
+  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
   [ -f "$registry" ] || { echo "board all: no registry at $registry" >&2; return 1; }
 
   local sub="${args[0]:-board}"
@@ -621,7 +622,7 @@ cmd_all() {
 cmd_queue() {
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
+  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
   [ -f "$registry" ] || { echo "queue: no registry at $registry" >&2; return 1; }
 
   # `queue` is read-only by construction (it never writes to any BACKLOG.md, unlike `set`), so
@@ -664,7 +665,7 @@ cmd_queue() {
 cmd_mirror() {
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
+  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
 
   _legacy_bridge_note
@@ -744,7 +745,7 @@ cmd_status() {
   _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
+  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
   [ -f "$registry" ] || { echo "status: no registry at $registry" >&2; return 1; }
 
@@ -818,7 +819,7 @@ cmd_writeback() {
   _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
+  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
   local branch="${OPT_BRANCH:-chore/board-sync}"
   [ -f "$registry" ] || { echo "writeback: no registry at $registry" >&2; return 1; }
