@@ -34,20 +34,27 @@ PIN_RE='KIT_CONFIG_OPERATOR|XDG_CONFIG_HOME|(^|[^A-Za-z_])HOME=|export HOME'
 code_of() { grep -vE '^[[:space:]]*#' "$1" 2>/dev/null; }
 
 # unpinned_suites <libdir> <suite>...: the suites that reach the resolver and pin nothing. A suite
-# that names a helper under <libdir> (source or call) counts the helper's code as its own.
+# that names a helper under <libdir> (source or call) counts the helper's code as its own, so the
+# helpers are read once: which ones pin, which ones reach.
 unpinned_suites() {
   local libdir="$1"; shift
-  local f text helper
+  local helper name pin_helpers="" reach_helpers="" f text
+  for helper in "$libdir"/*.sh; do
+    [ -f "$helper" ] || continue
+    name="$(basename "$helper")"; name="${name//./\\.}"
+    code_of "$helper" | grep -qE "$PIN_RE" && pin_helpers="${pin_helpers:+$pin_helpers|}$name"
+    code_of "$helper" | grep -qE "$REACH_RE" && reach_helpers="${reach_helpers:+$reach_helpers|}$name"
+  done
   for f in "$@"; do
     [ -f "$f" ] || continue
     grep -q '^# operator-layer: unpinned-ok' "$f" && continue
     text="$(code_of "$f")"
-    for helper in "$libdir"/*.sh; do
-      [ -f "$helper" ] || continue
-      grep -qF -- "$(basename "$helper")" <<<"$text" && text="$text"$'\n'"$(code_of "$helper")"
-    done
-    grep -qE "$REACH_RE" <<<"$text" || continue
-    grep -qE "$PIN_RE" <<<"$text" || printf '%s\n' "$f"
+    if ! grep -qE "$REACH_RE" <<<"$text"; then
+      [ -n "$reach_helpers" ] && grep -qE "$reach_helpers" <<<"$text" || continue
+    fi
+    grep -qE "$PIN_RE" <<<"$text" && continue
+    [ -n "$pin_helpers" ] && grep -qE "$pin_helpers" <<<"$text" && continue
+    printf '%s\n' "$f"
   done
 }
 
