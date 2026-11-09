@@ -285,6 +285,19 @@ engages "-C value is a stash push backtick"  'git -C `git stash push` push origi
 engages "--git-dir= value is a stash subst"  'git --git-dir=$(git stash push) push origin HEAD'
 inert "quoted ; then push in a commit msg"  'git commit -qm "a; then push it"'
 
+# Homebrew bash 5 on macOS 27 segfaults in a forked child at random, which flips the engage verdict
+# (a dead sed fails a capture and the gate falls back to the unblanked command). The hook silences
+# os_log for its process tree. A shim sed on PATH records the environment its child sees.
+SPY="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"
+REAL_SED="$(command -v sed)"
+printf '#!/bin/bash\necho "${OS_ACTIVITY_MODE:-unset}" >> "%s/seen"\nexec "%s" "$@"\n' "$SPY" "$REAL_SED" > "$SPY/sed"
+chmod +x "$SPY/sed"
+: > "$SPY/seen"
+jq -n --arg cwd "$R" --arg cmd 'git status' '{cwd: $cwd, tool_input: {command: $cmd}}' \
+  | env -u OS_ACTIVITY_MODE PATH="$SPY:$PATH" CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>&1
+if [ -s "$SPY/seen" ] && ! grep -qv '^disable$' "$SPY/seen"; then ok "hook children run with os_log silenced"
+else no "hook children should see OS_ACTIVITY_MODE=disable (saw: $(sort -u "$SPY/seen" | tr '\n' ' '))"; fi
+
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]
