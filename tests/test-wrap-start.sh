@@ -306,6 +306,104 @@ chk "pick: a usage error created no worktree" "$([ ! -e "$PREPO/.claude/worktree
 chk_has "wrap --help names --pick" "$("$WRAP" --help 2>&1)" "--pick <branch>"
 chk_has "commands/wrap.md names --pick" "$(cat "$KIT_DIR/commands/wrap.md")" '`--pick <branch>`'
 
+# ===========================================================================
+echo "=== start --existing: a worktree on a branch already on origin ==="
+# ===========================================================================
+# st-pusher plays the PR author: it pushes feat/pr-open AFTER each clone below, so the
+# clone's tracking refs never hold it and the worktree's tip proves the verb fetched it.
+git -C "$TMPD/st-pusher" switch -q -c feat/pr-open origin/main
+echo pr1 > "$TMPD/st-pusher/pr1.txt"; git -C "$TMPD/st-pusher" add -A; git -C "$TMPD/st-pusher" commit -qm pr1
+echo pr2 > "$TMPD/st-pusher/pr2.txt"; git -C "$TMPD/st-pusher" add -A; git -C "$TMPD/st-pusher" commit -qm pr2
+git -C "$TMPD/st-pusher" push -q origin feat/pr-open
+git -C "$TMPD/st-pusher" switch -q main
+PRTIP="$(git -C "$TMPD/bare-rmain" rev-parse feat/pr-open)"
+
+echo "--- happy path: tracks origin/<branch> at its tip, pushes normally"
+build_start ex-ok rmain main
+EREPO="$TMPD/st-repo-ex-ok"
+EWT="$(cd "$EREPO" && pwd -P)/.claude/worktrees/pr-open"
+out="$("$WRAP" start "$EREPO" feat/pr-open --existing 2>"$TMPD/ex.err")"; rc=$?
+chk "existing: exits 0 on the happy path" "$rc"
+chk "existing: stdout is only the worktree path" "$([ "$out" = "$EWT" ]; echo $?)"
+chk "existing: the worktree sits at the fetched origin branch tip" \
+  "$([ "$(git -C "$EWT" rev-parse HEAD)" = "$PRTIP" ]; echo $?)"
+chk "existing: the worktree is on the local branch of the same name" \
+  "$([ "$(git -C "$EWT" branch --show-current)" = "feat/pr-open" ]; echo $?)"
+chk "existing: the local branch tracks origin/<branch>" \
+  "$([ "$(git -C "$EREPO" rev-parse --abbrev-ref feat/pr-open@{upstream} 2>/dev/null)" = "origin/feat/pr-open" ]; echo $?)"
+chk "existing: the worktree is registered" \
+  "$(git -C "$EREPO" worktree list --porcelain | grep -qxF "worktree $EWT" && echo 0 || echo 1)"
+echo more > "$EWT/more.txt"; git -C "$EWT" add -A; git -C "$EWT" commit -qm more
+git -C "$EWT" push -q >/dev/null 2>&1; rc=$?
+chk "existing: a plain push from the worktree exits 0" "$rc"
+chk "existing: the push extended the origin branch" \
+  "$([ "$(git -C "$TMPD/bare-rmain" rev-parse feat/pr-open)" = "$(git -C "$EWT" rev-parse HEAD)" ]; echo $?)"
+chk "existing: the push kept the earlier PR commits" \
+  "$([ "$(git -C "$TMPD/bare-rmain" rev-list --count main..feat/pr-open)" = 3 ]; echo $?)"
+
+echo "--- refusals, each before any write"
+build_start ex-ref rmain main
+RREPO="$TMPD/st-repo-ex-ref"
+
+out="$("$WRAP" start "$RREPO" feat/not-on-origin --existing 2>&1)"; rc=$?
+chk "existing: a branch absent on origin exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "existing: the refusal names the branch and origin" "$out" "--existing branch feat/not-on-origin does not exist on origin"
+chk "existing: an absent-branch refusal created no worktree" \
+  "$([ ! -e "$RREPO/.claude/worktrees/not-on-origin" ]; echo $?)"
+chk "existing: an absent-branch refusal created no branch" \
+  "$(git -C "$RREPO" show-ref --verify --quiet refs/heads/feat/not-on-origin && echo 1 || echo 0)"
+
+git -C "$RREPO" branch feat/pr-open origin/main
+out="$("$WRAP" start "$RREPO" feat/pr-open --existing 2>&1)"; rc=$?
+chk "existing: an existing local branch exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "existing: the refusal names the local branch" "$out" "branch feat/pr-open already exists in"
+chk "existing: a local-branch refusal left that branch where it was" \
+  "$([ "$(git -C "$RREPO" rev-parse feat/pr-open)" = "$(git -C "$RREPO" rev-parse origin/main)" ]; echo $?)"
+chk "existing: a local-branch refusal created no worktree" \
+  "$([ ! -e "$RREPO/.claude/worktrees/pr-open" ]; echo $?)"
+git -C "$RREPO" branch -q -D feat/pr-open
+
+mkdir -p "$RREPO/.claude/worktrees/pr-open"
+out="$("$WRAP" start "$RREPO" feat/pr-open --existing 2>&1)"; rc=$?
+chk "existing: an existing path exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "existing: the refusal names the path" "$out" ".claude/worktrees/pr-open already exists"
+chk "existing: a path refusal created no branch" \
+  "$(git -C "$RREPO" show-ref --verify --quiet refs/heads/feat/pr-open && echo 1 || echo 0)"
+rmdir "$RREPO/.claude/worktrees/pr-open"
+
+touch -t 202601010000 "$RREPO/.git/index.lock"
+out="$("$WRAP" start "$RREPO" feat/pr-open --existing 2>&1)"; rc=$?
+rm -f "$RREPO/.git/index.lock"
+chk "existing: a held index.lock exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "existing: the refusal names index.lock" "$out" "index.lock held by another writer"
+chk "existing: an index.lock refusal created no worktree" \
+  "$([ ! -e "$RREPO/.claude/worktrees/pr-open" ]; echo $?)"
+chk "existing: an index.lock refusal created no branch" \
+  "$(git -C "$RREPO" show-ref --verify --quiet refs/heads/feat/pr-open && echo 1 || echo 0)"
+
+build_start ex-broken rmain main
+git -C "$TMPD/st-repo-ex-broken" remote set-url origin /nonexistent
+out="$("$WRAP" start "$TMPD/st-repo-ex-broken" feat/pr-open --existing 2>&1)"; rc=$?
+chk "existing: a failed fetch exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "existing: the refusal names the failed fetch" "$out" "fetch origin feat/pr-open failed"
+chk "existing: a failed fetch left no worktree" \
+  "$([ ! -e "$TMPD/st-repo-ex-broken/.claude/worktrees/pr-open" ]; echo $?)"
+
+echo "--- without --existing the same name on origin still refuses"
+build_start ex-plain rmain main
+out="$("$WRAP" start "$TMPD/st-repo-ex-plain" feat/pr-open 2>&1)"; rc=$?
+chk "default: a name already on origin still exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "default: the refusal still names origin" "$out" "branch feat/pr-open already exists on origin"
+chk "default: the refusal created no worktree" \
+  "$([ ! -e "$TMPD/st-repo-ex-plain/.claude/worktrees/pr-open" ]; echo $?)"
+out="$("$WRAP" start "$TMPD/st-repo-ex-plain" feat/fresh-default 2>/dev/null)"; rc=$?
+chk "default: a fresh branch still starts off origin/main" "$rc"
+chk "default: the fresh branch sits at origin/main and keeps its old upstream" \
+  "$([ "$(git -C "$out" rev-parse HEAD)" = "$(git -C "$TMPD/bare-rmain" rev-parse main)" ] \
+     && [ "$(git -C "$out" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)" = "origin/main" ]; echo $?)"
+chk_has "wrap --help names --existing" "$("$WRAP" --help 2>&1)" "--existing"
+chk_has "commands/wrap.md names --existing" "$(cat "$KIT_DIR/commands/wrap.md")" '`--existing`'
+
 echo "=== start: flags packed into one positional are refused ==="
 out="$("$WRAP" start " --carry" br 2>&1)"; rc=$?
 chk "packed arg to start exits 64" "$([ "$rc" = 64 ]; echo $?)"
