@@ -123,8 +123,37 @@ Every row was found by four read-only scouts and spot-checked in code. "Enforced
 | Phase | Machine | Why this order |
 |---|---|---|
 | 1 (SPEC-417) | board row | the hub: 7 writers, 6 copies, both languages |
-| 2 | spec `Status:` | 5 readers disagree on "live"; no writer script exists |
+| 2 | spec `Status:` | 5 readers disagree on "live"; no writer script exists. Shipped in #1106 |
 | 3 | gate phase + lane | `check()` on stale `ran`; three lane sources |
 | 4 | queue verdict + mega box | two readers, two terminal sets; six box parsers |
 
 Each later phase reuses the phase 1 shape: a `states.tsv` beside the writer, a `machine` verb, a copy-detector test. The second and third instances decide whether a shared loader earns its place.
+
+## Simplification pass
+
+A cleanup pass followed phase 1. Each PR removed a duplicate spelling or a second source of truth, with no stored data rewritten.
+
+| PR | What shipped |
+|---|---|
+| #1104 | Audit verdict grammar cut to five words |
+| #1105 | Queue terminal set unified; dead goal status fields removed |
+| #1106 | Spec Status machine in `lib/spec/states.tsv` with one reader helper (rollout phase 2) |
+| #1107 | skill-curator reviewer revived: `--bare` could not log in; signal gate on by default |
+| #1108 | Wrap PR gate decides by code, not by sentence |
+| #1109 | NEEDS-REVISION has one spelling; INCONCLUSIVE folds into FAIL; dead proof `pending` removed; bench `unknown` is never pass; one lane rank |
+
+**Kept on purpose.** Each is a separate concept, not a copy.
+- Gate `ran` / `skipped` / `override`
+- Validate round states
+- Land kind
+- Attempt state
+- `SOLID` / `REVISE` / `RECONSIDER`
+- Staging headers
+- The mutation marker that `break-it` reads
+
+**Open for the operator.**
+- The debt verdict `wave` rename needs a ledger migration.
+- NEEDS-REVISION is stored as `skipped`.
+- The override share is 34% against the 15% alert.
+- Gate `check()` can count a stale `ran`.
+- No writer sets SHIPPED on specs.

@@ -128,6 +128,26 @@ def test_run_end_derives_from_gate_results():
         assert st.result == "pass", st.result
 
 
+def test_run_end_fails_on_skipped_required_gate():
+    """A required gate whose last state is `skipped` fails the run (gate-ledger check()
+    never counts skipped as satisfied); a skipped light gate and an override stay fine."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "demo-run.log")
+        p.write_text(LEDGER_FIXTURE)  # ui-design skipped, reflect override
+        req_skipped = [("think", "required"), ("ui-design", "required"), ("build", "required")]
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=req_skipped):
+            st.apply(ev)
+        assert st.result == "fail", st.result
+        light_skipped = [("think", "required"), ("ui-design", "lite"), ("reflect", "required"),
+                         ("build", "required")]
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=light_skipped):
+            st.apply(ev)
+        assert st.result == "pass", st.result
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

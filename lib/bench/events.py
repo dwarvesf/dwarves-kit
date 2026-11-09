@@ -270,8 +270,9 @@ def ledger_to_events(path, rid=None, expected=None):
     if req:  # conformance: required gates only; lite/intake advisory levels don't count
         seen = sum(1 for n in req if last.get(n) in ("pass", "override"))
         totals["conformance"] = f"{seen}/{len(req)} required gates present"
-    # the run fails when a required gate was never recorded or sits in an unknown state
-    failed = any(last.get(n, "missed") in ("missed", "unknown") for n in req)
+    # the run fails when a required gate was never recorded, is unknown, or ended skipped
+    # (gate-ledger check() never counts skipped as satisfied); light gates may skip
+    failed = any(last.get(n, "missed") in ("missed", "unknown", "skip") for n in req)
     evs.append({"dt": .3, "ev": "run_end", "status": "fail" if failed else "pass", "totals": totals})
     return evs
 
