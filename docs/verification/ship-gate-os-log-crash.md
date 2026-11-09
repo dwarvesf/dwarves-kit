@@ -4,7 +4,7 @@ The nightly regression run failed `test-ship-gate-command-words` on one case ("g
 
 Three changes, all in `hooks/ship-gate.sh`:
 
-- Guard: a capture (`CMD_CODE`, `CMD_IFS`, `CMD_GH`, `CMD_GIT`, `CMD_ENG`) that fails or comes back empty from non-empty input sets `CAP_FAIL`; the engage check then engages whenever the raw command looks like a push or a `gh pr create`, by bash's own regex (no fork). The engage greps read here-strings instead of `< <(echo ..)`. The parser-output marker scan (`@@DEFAULT-PUSH`, `@@FORCE`, `@@DEFAULT`, `@@BLOCK`) is pure bash, so a dead grep cannot hide a push to the default branch.
+- Guard: a capture (`CMD_CODE`, `CMD_IFS`, `CMD_GH`, `CMD_GIT`, `CMD_ENG`) that fails or comes back empty from non-empty input sets `CAP_FAIL`; the engage check then engages whenever the raw command looks like a push or a `gh pr create`, by bash's own regex (no fork). The engage greps read here-strings instead of `< <(echo ..)`. `_hit` runs the same regex in bash itself when grep errors, so a dead grep never reads as "no match"; the heredoc-to-shell check goes through it. The parser-output scan (`@@DEFAULT-PUSH`, `@@FORCE`, `@@DEFAULT`, `@@BLOCK`, `@@REF`) is one pure-bash loop, so a dead grep can neither hide a push to the default branch nor leave the pushed branch unresolved. The `${IFS..}` fallback replaces the matched text literally, so `${IFS[*]}`, `${IFS[0]}` and `${IFS#?}` are read as spaces too.
 - Trigger: `LC_ALL=C sed` becomes `env LC_ALL=C sed`, so bash never resets its own locale in the forked child.
 - Belt and braces: `export OS_ACTIVITY_MODE=disable` at the top.
 
@@ -51,7 +51,7 @@ Output:
 ```
 Verdict: PASS (flake reproduced)
 
-Command: probe on the final hook, 2 inert workers (`git stash push -m x`, `git${IFS}stash${IFS}push`) and 2 engaging workers (`git -C "a;b" push -u origin HEAD`, `git${IFS}push${IFS}origin${IFS}HEAD`), 40 runs each, 2 rounds
+Command: probe on the final hook, 2 inert workers (`git stash push -m x`, `git${IFS}stash${IFS}push`) and 2 engaging workers (`git -C "a;b" push -u origin HEAD`, `git${IFS[*]}push${IFS[*]}origin${IFS[*]}HEAD`), 40 runs each, 2 rounds. An earlier run of this probe had a typo in the inert commands (`puush`), so it proved less than it claimed; this is the corrected run.
 Exit: 0
 Output:
 ```
@@ -83,9 +83,13 @@ ok - dead capture: quoted ; in the -C dir (views) -> engaged
 ok - dead capture: quoted ; inside backticks -> engaged
 ok - dead capture: gh pr create (gh view) -> engaged
 ok - dead capture: gh pr new after cd (gh view) -> engaged
+ok - dead capture: ${IFS[*]} push (ifs view, glob form) -> engaged
+ok - dead capture: ${IFS[0]} push (ifs view, index form) -> engaged
+ok - dead capture: heredoc to bash holding a push (shell check) -> engaged
+ok - dead capture: single-branch push (@@REF scan) -> engaged
 ok - dead capture: push to main still refused
 ---
-PASS=140 FAIL=0
+PASS=145 FAIL=0
 ```
 Verdict: PASS
 
@@ -95,8 +99,8 @@ Command: the same suite under system bash 3.2 (`env -i PATH=/usr/bin:/bin:/usr/s
 Exit: 0
 Output:
 ```
-bash 3.2.57: PASS=140 FAIL=0
-4 concurrent, nightly env: run1..run4  PASS=140 FAIL=0 (all four)
+bash 3.2.57: PASS=145 FAIL=0
+4 concurrent, nightly env: run1..run4  PASS=145 FAIL=0 (all four)
 ```
 Verdict: PASS
 
@@ -129,18 +133,16 @@ Verdict: PASS (run on the first revision of this branch)
 
 ## Negative control
 
-Command: `bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-command-words.sh" "git show HEAD~2:hooks/ship-gate.sh >| hooks/ship-gate.sh"` (the env-switch-only hook)
+Command: `bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-command-words.sh" "git show HEAD~1:hooks/ship-gate.sh >| hooks/ship-gate.sh"` (the hook as of the previous review round)
 Exit: 0
 Output:
 ```
 Exit: 1 (under mutation, RED expected)
-  NOT ok - dead capture: ${IFS} push (ifs view) -> should engage (exit 2)
-  NOT ok - dead capture: quoted ; in the -C dir (views) -> should engage (exit 2)
-  NOT ok - dead capture: quoted ; inside backticks -> should engage (exit 2)
-  NOT ok - dead capture: gh pr create (gh view) -> should engage (exit 2)
-  NOT ok - dead capture: gh pr new after cd (gh view) -> should engage (exit 2)
-  NOT ok - dead capture: push to main should still be refused (exit 2)
-  PASS=134 FAIL=6
+  NOT ok - dead capture: ${IFS[*]} push (ifs view, glob form) -> should engage (exit 2)
+  NOT ok - dead capture: ${IFS[0]} push (ifs view, index form) -> should engage (exit 2)
+  NOT ok - dead capture: heredoc to bash holding a push (shell check) -> should engage (exit 2)
+  NOT ok - dead capture: single-branch push (@@REF scan) -> should engage (exit 2)
+  PASS=141 FAIL=4
 Exit: 0 (green after restore)
 ```
 Verdict: PASS (RED on the previous branch head, green after restore)
@@ -150,14 +152,15 @@ Exit: 0
 Output:
 ```
 Exit: 1 (under mutation, RED expected)
-  NOT ok - hook children should see OS_ACTIVITY_MODE=disable (saw: unset )
-  NOT ok - dead capture: ${IFS} push (ifs view) -> should engage (exit 2)
-  ... (the five other dead-capture cases, and the push-to-main case)
-  PASS=133 FAIL=7
+  NOT ok - hook children should see OS_ACTIVITY_MODE=disable
+  NOT ok - nine of the ten dead-capture cases (all but push-to-main)
+  PASS=135 FAIL=10
 Exit: 0 (green after restore)
 ```
 Verdict: PASS (RED on the master hook, green after restore)
 
-## Not covered
+Earlier round: against the env-switch-only hook six dead-capture cases were red (134/6).
 
-Later gates in the hook still read command output through `< <(..)` or pipelines that a dead child could empty (`_NREF` count, the BACKLOG, FEATURES and ledger checks around lines 464 to 760). They run after the engage and push-to-default decisions, so a dead child there can skip a later gate (the multi-branch count, a spec or ledger check) but not the push-to-default block. They are worth the same here-string treatment in a follow-up.
+## Not covered (named follow-up)
+
+Later gates in the hook still read command output through `< <(..)` or pipelines that a dead child could empty: the cd/-C directory extraction near the top of the repo resolution, the BACKLOG slug check, the default-branch and FEATURES diff checks, the hooks-dir archive check, the ledger greps, and the `jq` and `awk` calls that parse the payload. They run after the engage and push-to-default decisions, so a dead child there can skip a later gate (a spec, ledger or registry check) but not the push-to-default block. They need the same here-string and pure-bash treatment in a follow-up.
