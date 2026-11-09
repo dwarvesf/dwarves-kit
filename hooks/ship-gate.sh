@@ -19,7 +19,7 @@ set -uo pipefail
 # Homebrew bash 5 on macOS 27 can segfault in a forked child (os_log preferences refresh), and a
 # parent that hit it keeps crashing its children. A dead child fails a pipeline below and flips the
 # engage verdict at random (about 5% of runs under load). Silencing os_log for this process tree
-# removes the crash; OS_ACTIVITY_MODE is the documented switch.
+# removes the crash.
 export OS_ACTIVITY_MODE=disable
 # Hook logs live under the ledger root (lib/telemetry/hook-log-dir.sh); the fallback keeps a hook running without lib/.
 . "${BASH_SOURCE[0]%/*}/../lib/telemetry/hook-log-dir.sh" 2>/dev/null || kit_hook_log_dir() { printf '%s' "${KIT_LEDGER_DIR:-${DWARVES_KIT_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs}}/hooks"; }
