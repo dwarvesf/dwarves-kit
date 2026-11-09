@@ -8,7 +8,11 @@ _pr_detail() {
     --json number,title,body,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,isDraft,isCrossRepository,autoMergeRequest 2>/dev/null
 }
 
-# _pr_gate <json> <default branch> -- "OK" or "SKIP <reason>". mergeStateStatus carries the
+# _pr_gate <json> <default branch> -- "OK", or "<CODE> <reason>" with CODE one of CONFLICT
+# (mergeable is CONFLICTING), WAIT (checks are pending or failing, or an empty rollup on a
+# state that is not CLEAN), SKIP (every other refusal). Callers branch on the code, `${v%% *}`,
+# and print the reason, `${v#* }`; no caller compares a reason sentence. An empty verdict is
+# unreadable PR JSON. mergeStateStatus carries the
 # unresolved-conversation signal: gh pr view has no reviewThreads field, and BLOCKED is the
 # state GitHub reports for an unresolved thread or an unmet review requirement. Anything but
 # a clean state fails closed here. An empty or null rollup proves nothing on its own, so it
@@ -43,12 +47,13 @@ _pr_gate() {
       | map(sort_by([(if pending then 1 else 0 end), rtime]) | last);
     if (.isDraft == true) then "SKIP draft"
     elif (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
+    elif (.mergeable == "CONFLICTING") then "CONFLICT not mergeable (CONFLICTING)"
     elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"
     elif ((checks | length) == 0 and ((.mergeStateStatus // "") != "CLEAN"))
-      then "SKIP checks are pending or failing"
+      then "WAIT checks are pending or failing"
     elif ((checks | map(select(((.conclusion // .state // "") | ascii_upcase) as $c
                                | $c != "SUCCESS" and $c != "SKIPPED")) | length) > 0)
-      then "SKIP checks are pending or failing"
+      then "WAIT checks are pending or failing"
     elif (.reviewDecision == "CHANGES_REQUESTED") then "SKIP changes requested"
     elif ((.mergeStateStatus // "CLEAN") as $m
           | $m != "CLEAN" and $m != "HAS_HOOKS" and $m != "UNSTABLE")
@@ -473,9 +478,9 @@ _squash_fallback() {
   masked="$(printf '%s' "$detail" | jq '(.mergeable = "MERGEABLE")
     | if .mergeStateStatus == "DIRTY" then .mergeStateStatus = "CLEAN" else . end' 2>/dev/null)"
   verdict="$(_pr_gate "$masked" "$def")"
-  case "$verdict" in
+  case "${verdict%% *}" in
     OK) ;;
-    SKIP*) echo "     #${n} is not one squash away from green: ${verdict#SKIP }"; return 1 ;;
+    SKIP|CONFLICT|WAIT) echo "     #${n} is not one squash away from green: ${verdict#* }"; return 1 ;;
     *)     echo "     #${n} is not one squash away from green: unreadable PR JSON"; return 1 ;;
   esac
 
@@ -556,8 +561,8 @@ _squash_fallback() {
   fi
   verdict="$(_pr_gate "$new_detail" "$def")"
   if [ "$verdict" != "OK" ]; then
-    case "$verdict" in
-      SKIP*) echo "     SKIP #${new_n} after the squash fallback: ${verdict#SKIP }" ;;
+    case "${verdict%% *}" in
+      SKIP|CONFLICT|WAIT) echo "     SKIP #${new_n} after the squash fallback: ${verdict#* }" ;;
       *)     echo "     SKIP #${new_n} after the squash fallback: unreadable PR JSON" ;;
     esac
     echo "     ${sq_branch} and replacement PR #${new_n} stay open; #${n} is unchanged"
@@ -804,7 +809,7 @@ _stacked_recover() {
 #   2. a head with no check run at all, on a repo that carries a `ci` label, gets the label
 #      through the same `_ci_label_sync` and `_ci_checks_wait` that `land` uses: a
 #      label-gated repo starts no run until the label lands after the head.
-# Only a PR whose verdict is OK or "checks are pending or failing" is labeled; a draft, a
+# Only a PR whose verdict code is OK or WAIT (checks pending or failing) is labeled; a draft, a
 # conflict or a requested change would be refused anyway. Dry run prints a note and acts on
 # nothing. Sets PREP_DETAIL (the detail to gate) and PREP_ARMED (set when the label sync
 # ran). 0 continue; 3 refused with the reason printed, exit 0 as every merge refusal; 2
@@ -815,7 +820,7 @@ _merge_pr_prepare() {
   PREP_DETAIL="$detail"; PREP_ARMED=""
   verdict="$(_pr_gate "$detail" "$def")"
 
-  if [ "$stacked" = 1 ] && [ "$verdict" = "SKIP not mergeable (CONFLICTING)" ]; then
+  if [ "$stacked" = 1 ] && [ "${verdict%% *}" = "CONFLICT" ]; then
     if [ "$apply" != 1 ]; then
       echo "note: #${n} conflicts; --apply would rebase its branch onto origin/${def} if its parent PR squash-merged (--rebase-stacked), then force-with-lease push it"
     else
@@ -827,8 +832,8 @@ _merge_pr_prepare() {
     fi
   fi
 
-  case "$verdict" in
-    OK|"SKIP checks are pending or failing") ;;
+  case "${verdict%% *}" in
+    OK|WAIT) ;;
     *) return 0 ;;
   esac
   if ! _ci_zero_checks "$detail"; then
@@ -1002,9 +1007,9 @@ cmd_merge() {
       echo "eligible #${n} ${title} [${head}]"
       [ -n "$first_eligible" ] || first_eligible="$n"
     else
-      echo "SKIP #${n} ${title}: ${verdict#SKIP }"
-      case "$verdict" in
-        "SKIP not mergeable (CONFLICTING)")
+      echo "SKIP #${n} ${title}: ${verdict#* }"
+      case "${verdict%% *}" in
+        CONFLICT)
           conflict_count=$(( conflict_count + 1 )); conflict_n="$n" ;;
       esac
     fi
@@ -1079,11 +1084,11 @@ cmd_merge() {
           head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
           echo "eligible #${conflict_n} after the re-merge"
         else
-          echo "SKIP #${conflict_n} after the re-merge: ${verdict#SKIP }"
+          echo "SKIP #${conflict_n} after the re-merge: ${verdict#* }"
           # The same anomaly one merge later: the re-merge pushed, the head now holds
           # origin/<def>, and GitHub still reports CONFLICTING. The squash fallback
           # applies to the pushed head the re-gate just read.
-          if [ "$verdict" = "SKIP not mergeable (CONFLICTING)" ]; then
+          if [ "${verdict%% *}" = "CONFLICT" ]; then
             local r_oid
             r_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
             if _fallback_ok "$cache" "$c_head" "$conflict_n" \
@@ -1128,7 +1133,7 @@ cmd_merge() {
         return 2
       fi
       if [ "$verdict" != "OK" ]; then
-        echo "FAILED merge #${first_eligible}: ${verdict#SKIP } once the ci label's checks ran; left open" >&2
+        echo "FAILED merge #${first_eligible}: ${verdict#* } once the ci label's checks ran; left open" >&2
         return 2
       fi
       # No new check reported inside the grace hold, so the verdict rests on checks that

@@ -703,6 +703,28 @@ chk "the branch was deleted" \
   "$(git -C "$LREPO_U" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 
 
+echo "=== the gate verdict is a code: callers do not depend on the reason wording ==="
+# Run the same cases through a kit copy whose reason sentences are reworded. A caller that
+# compared the sentence would stop recovering from a conflict or stop continuing to the ci
+# label sync; both still must, and the printed reason follows the reworded text.
+reword_wrap
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_OPEN_PRS="$(cw_open 191)" GH_STUB_PR_191="$(cw_full 191 DIRTY '[{"conclusion":"SUCCESS"}]' CONFLICTING)" \
+  "$WRAP_REWORDED" merge "$TMPD/clone-scan-main" 2>&1)"
+chk_has "code gate: a reworded conflict reason still prints on the SKIP line" "$out" "SKIP #191 ci wait: cannot be merged (CONFLICTING)"
+chk_has "code gate: a reworded conflict reason still starts the conflict recovery" "$out" "note: #191 conflicts; --apply would try one re-merge of main into feat/ci-gate"
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 190)" \
+  GH_STUB_PR_190="$(zc_json 190 BLOCKED '[]')" \
+  GH_STUB_PR_190_3='{"number":190,"labels":[],"statusCheckRollup":[]}' \
+  GH_STUB_PR_190_4='{"number":190,"statusCheckRollup":[{"name":"pr-check","status":"IN_PROGRESS"}]}' \
+  GH_STUB_PR_190_5="{\"number\":190,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_190_6="$(zc_json 190 CLEAN "$ZC_GREEN")" \
+  "$WRAP_REWORDED" merge --apply --pr 190 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "code gate: a reworded pending reason still exits 0" "$rc"
+chk_has "code gate: a reworded pending reason still reaches the ci label sync" "$out" "labeled #190 ci"
+chk_has "code gate: the reworded pending case still merges once green" "$out" "merged #190 ($(git -C "$TMPD/bare-rmain" rev-parse main)): tree verified"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-ci: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap-ci: all $PASS passed"
