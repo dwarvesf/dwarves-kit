@@ -161,7 +161,7 @@ assert "weekend-batch: lib/reflect/weekend-batch.sh exposes 'collect' + 'mark-pa
 RC=0
 grep -A60 -E '^## The understanding axis' "$WORKFLOW" | grep -qiE 'Han-invoked|Han invoked' || RC=1
 grep -A60 -E '^## The understanding axis' "$WORKFLOW" | grep -qiE 'weekend-debt-paydown' || RC=1
-assert "weekend-batch: WORKFLOW.md honestly scopes it Han-invoked (no scheduled job), names the weekend-debt-paydown skill" $RC
+assert "weekend-batch: WORKFLOW.md honestly scopes it Han-invoked (no scheduled job), names the weekend-debt-paydown skill (not shipped)" $RC
 
 echo ""
 echo "=== AC3: wiring check -- commands/ship.md now calls significance-classify.sh record (SPEC-136) ==="

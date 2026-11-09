@@ -10,10 +10,10 @@ Delta from the brief. Only the two debt meanings of `wave` change; the mega-goal
 - Readers (`weekend-batch.sh`, `dashboard.py collect_debt`) accept both words and give identical results. Stored rows are never rewritten.
 - `quiz-gate.sh respond <rid> wave` works as an alias: it prints one note line saying `accept` is the new name and logs `accept`.
 
-## Left alone (outside the slice)
+## Prose follow-up (same branch)
 
-Prose or probes that still say `wave` for the debt meaning: `commands/ship.md`, `commands/grill.md` (a literal `verdict=wave` command, and `tests/test-self-grill-watcher.sh` greps for it), `commands/explain.md`, `docs/MANUAL.md`, `docs/WORKFLOW.md`, `lib/stats/docs/ledger-event-schema.md`. All still valid input. A follow-up can reword them together with the grill probe.
+`commands/ship.md`, `commands/grill.md`, `commands/explain.md`, `docs/MANUAL.md`, `docs/WORKFLOW.md` and `lib/stats/docs/ledger-event-schema.md` now use `log` / `accept`. `commands/grill.md` writes `verdict=log`, and `tests/test-self-grill-watcher.sh` greps for it. `docs/WORKFLOW.md` says the `weekend-debt-paydown` skill is not shipped; the name stays because `tests/test-understanding-wiring.sh` checks for it. One `waved` mention remains on purpose, where WORKFLOW explains the split.
 
 ## Open
 
-An outside consumer may read the string `disposition: waved` from `collect` (the `weekend-debt-paydown` skill is named in `lib/reflect`, but I found no copy to check). The lead should confirm before landing.
+None. The lead confirmed no outside consumer reads `disposition: waved`.
