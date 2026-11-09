@@ -50,7 +50,7 @@ Verdict: PASS
 The planted real-HOME file was a one-off scratch file made by the mutation; it was moved out of `~/.local/state/dwarves-kit` afterwards. The same assertions also run inside the clean-room test as self-checks against a stray entry and against leak strings.
 
 ## Rollback
-Test and doc changes only, plus two comment lines in `kit.toml` and one `export` line in each of `tests/run-all.sh` and `bin/test-affected`. No state, no install on the live hosts changes: `git revert` of the merge commit restores the old tree, and the next `chezmoi apply` or pull needs nothing else.
+Test and doc changes only, plus one `export` line in each of `tests/run-all.sh` and `bin/test-affected`. No state, no install on the live hosts changes: `git revert` of the merge commit restores the old tree, and the next `chezmoi apply` or pull needs nothing else.
 
 ## Not proven
 - The plugin install path: it needs a running Claude Code, so no shell test reaches it.

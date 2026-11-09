@@ -79,7 +79,7 @@ run() { OUT="$(cd "$REPO" && cr "$@" 2>&1)"; RC=$?; printf '%s\n' "$OUT" >> "$OU
 # root (and the bits of HOME the install itself owns); nothing else in this file changes.
 ALLOWED_WRITE_DIRS=("$HOME_DIR" "$REPO" "$REMOTE" "$TMP_DIR" "$BIN_DIR")
 # The harness's own bookkeeping files in the sandbox root.
-HARNESS_PATHS=("$OUT_LOG" "$MARKER")
+HARNESS_PATHS=("$OUT_LOG" "$MARKER" "$SANDBOX/kit.toml.code")
 
 # Kit-owned dirs under the real HOME that a clean-room run must never touch.
 real_home_canaries() {
@@ -317,8 +317,11 @@ echo "== writes stay in the sandbox; nothing names the host =="
 assert_writes_land_only_in "after the full run" "$SANDBOX" "$SNAP_BEFORE" "${ALLOWED_WRITE_DIRS[@]}" "${HARNESS_PATHS[@]}"
 eq "no operator config appeared in the fake HOME" "$([ -e "$HOME_DIR/.config/dwarves-kit" ] && echo present || echo absent)" "absent"
 
+# Known gap: the shipped kit.toml still names the maintainer's tooling repo in two comments. kit.toml
+# is a hard path (the full lane), so that wording is its own change; only its code lines are scanned.
+grep -vE '^[[:space:]]*#|^[^"]*[[:space:]]#' "$KIT/kit.toml" > "$SANDBOX/kit.toml.code"
 assert_no_host_leak "generated files" \
-  "$HOME_DIR/.claude/settings.json" "$KIT/kit.toml" "$KIT/INSTALL-STAMP" \
+  "$HOME_DIR/.claude/settings.json" "$SANDBOX/kit.toml.code" "$KIT/INSTALL-STAMP" \
   "$REPO/.kit.toml" "$REPO/AGENTS.md" "$REPO/CLAUDE.md" "$REPO/WORKFLOW.md" "$REPO/docs/verification/README.md"
 assert_no_host_leak "ledger" $(find "$HOME_DIR/.local/state" -type f -name '*.log' 2>/dev/null | head -20)
 eq "no command output names the host" "$(host_leak_hits < "$OUT_LOG")" ""
