@@ -683,14 +683,14 @@ bash bin/session observe burn --json         # {window_min, sessions[]}
   per repo (median measured fee):
   project                                         sessions  median-fee
   ----------------------------------------------  --------  ----------
-  -Users-tieubao-workspace-tieubao-family-office         1      112659
-  -Users-tieubao-workspace-tieubao-dfoundation           1      107022
-  -Users-tieubao-workspace-tieubao-dotfiles              1      104169
-  ...ieubao-workspace-dwarvesf-dwarves-kit-queue         1       94938
-  -Users-tieubao                                         3       88987
-  -Users-tieubao-workspace-tieubao-ops-toolkit         396       54957
-  ...ce-tieubao-ops-toolkit-tools-vps-mon-worker         4       53352
-  ...tieubao-ops-toolkit-experiments-webnovel-dl         6       47507
+  -Users-dev-workspace-acme-household                    1      112659
+  -Users-dev-workspace-acme-company                      1      107022
+  -Users-dev-workspace-acme-dotfiles                     1      104169
+  ...v-workspace-acme-kit-queue                          1       94938
+  -Users-dev                                             3       88987
+  -Users-dev-workspace-acme-app                        396       54957
+  ...ce-acme-app-tools-monitor-worker                    4       53352
+  ...e-acme-app-experiments-sample-fetcher               6       47507
   weekly trend (median measured fee):
   week      sessions  median-fee
   --------  --------  ----------
@@ -870,7 +870,7 @@ Exit: 0
   prefix                                                              count  share
   <tool_use_error>EnterWorktree cannot create a worktree from a subagent   31    84%
     with a cwd override (isolation: "worktree" or explicit cwd)...
-  Cannot enter worktree: the current working directory .../ops-toolkit      4    11%
+  Cannot enter worktree: the current working directory .../acme-app         4    11%
     is the repository root, not an isolated worktree...
   <tool_use_error>Already in a worktree session. Pass `path`...              1     3%
   Cannot create a worktree: not in a git repository and no                  1     3%
@@ -960,12 +960,12 @@ bash bin/session observe tools --errors Bash --days 7 --json     # tool_error_gr
 
 ### Live run (2026-09-28, real transcript, before/after)
 
-Same real ops-toolkit transcript used to ground the spec's Problem section (294 `hook_success` attachments, 22 `stop_hook_summary` entries).
+Same real consumer-repo transcript used to ground the spec's Problem section (294 `hook_success` attachments, 22 `stop_hook_summary` entries).
 
 Before this change (pre-fix `bin/session-observe`, `git show 77aea8e9:...` swapped in, then restored):
 
 ```
-Command: session-observe hooks --file <ops-toolkit transcript> --top 8
+Command: session-observe hooks --file <consumer-repo transcript> --top 8
 # hooks  (2 hook errors across 1 transcripts)
   hook                       runs  p50ms  p95ms  maxms                                     sample
   anchor-root.sh               60    102    866    901  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...
@@ -983,7 +983,7 @@ Every row is a Stop hook (no `event` column at all; SessionStart/PreToolUse/Post
 After this change:
 
 ```
-Command: session-observe hooks --file <ops-toolkit transcript> --top 8
+Command: session-observe hooks --file <consumer-repo transcript> --top 8
 # hooks  (2 hook errors across 1 transcripts)
   hook                         event  runs  p50ms  p95ms  maxms                                sample
   anchor-root.sh         PostToolUse     6     78   2215   2215  bash ${CLAUDE_PLUGIN_ROOT}/hooks/anchor-root.sh ...

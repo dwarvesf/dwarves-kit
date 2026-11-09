@@ -764,15 +764,16 @@ fi
 
 # ============================================================
 echo ""
-echo "=== Done gate: no ops-toolkit path leaked into the new files ==="
+echo "=== Done gate: no operator workspace path leaked into the new files ==="
 # ============================================================
-LEAK=$(grep -rln 'workspace/tieubao' \
+OPERATOR_HANDLE="tie""ubao"
+LEAK=$(grep -rln "workspace/$OPERATOR_HANDLE" \
   "$KIT_DIR/hooks/backlog-stage.sh" \
   "$KIT_DIR/hooks/citation-guard.sh" \
   "$KIT_DIR/hooks/context-hints.sh" \
   "$KIT_DIR/hooks/context-hints-skills-map.json" \
   "$KIT_DIR/hooks/harvest.sh" "$KIT_DIR/hooks/harvest_lib.py" 2>/dev/null || true)
-assert_eq "no 'workspace/tieubao' in any new file" "" "$LEAK"
+assert_eq "no operator workspace path in any new file" "" "$LEAK"
 
 # ============================================================
 echo ""

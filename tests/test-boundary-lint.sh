@@ -57,5 +57,45 @@ assert "planted name violation names itself in the message" "$(printf '%s' "$OUT
 rm -rf "$FX"
 
 echo ""
+echo "=== AC4: negative control -- an operator identity planted in executable code is caught ==="
+# The four tokens are assembled from halves so this test's own source (tests/ is in the scan
+# set) never carries one.
+T_HOST="han""-ws"; T_HANDLE="tie""ubao"; T_REPO="ops""-toolkit"; T_VAULT="op://""Toolkit"
+for pair in "host:$T_HOST" "handle:$T_HANDLE" "repo:$T_REPO" "vault:$T_VAULT"; do
+  kind="${pair%%:*}"; tok="${pair#*:}"
+  FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  mkdir -p "$FX/lib/anywhere"
+  printf 'URL = "https://example.%s.dev"\n' "$tok" > "$FX/lib/anywhere/tool.py"
+  OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+  assert "planted $kind token in a lib/ .py file exits non-zero" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)"
+  assert "planted $kind token names the file and the check" "$(printf '%s' "$OUT" | grep -q 'operator identity in code: lib/anywhere/tool.py:1' && echo 0 || echo 1)" "$OUT"
+  rm -rf "$FX"
+done
+# A fixture that sits in a tests/ dir and a shell file under a module the PATH check excludes.
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/lib/stats/tests"
+printf 'echo "owner %s"\n' "$T_HANDLE" > "$FX/lib/stats/tests/test-x.sh"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "a token in a module the PATH check excludes is still caught" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
+
+echo ""
+echo "=== AC5: provenance prose and the marker stay green ==="
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/lib/x" "$FX/docs"
+printf '# moved from %s in the kit-foldin sweep\nX=1\n' "$T_REPO" > "$FX/lib/x/a.sh"
+printf '"""Ported from %s.\n\nSecond docstring line %s."""\n\n\ndef f():\n    """Doc mentions %s."""\n    return 1\n' "$T_REPO" "$T_HANDLE" "$T_HOST" > "$FX/lib/x/b.py"
+printf 'Prose naming %s is documentation.\n' "$T_REPO" > "$FX/lib/x/README.md"
+printf 'Spec text naming %s.\n' "$T_REPO" > "$FX/docs/note.txt"
+printf 'CHK="%s"  # boundary-ok: the check greps for the token itself\n' "$T_HANDLE" > "$FX/lib/x/c.sh"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "comment lines, docstrings, markdown, docs/ and a boundary-ok line pass (rc=$RC)" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)" "$OUT"
+# A docstring does not shield code after it.
+printf '"""Doc."""\nURL = "%s"\n' "$T_HOST" > "$FX/lib/x/d.py"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "code after a docstring is still scanned" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'lib/x/d.py:2' && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
+
+echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]

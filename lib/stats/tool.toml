@@ -16,7 +16,7 @@ created = 2026-07-03
 # `ledger anomalies --propose` feedback loop are agent-driven, on-demand, and point at
 # ops-toolkit-specific sources (BACKLOG_STAGE_STAGING/BACKLOG_STAGE_BACKLOG/OPS_TOOLKIT) only when
 # an operator sets them explicitly -- no default post-move (05K adapter-default split).
-consumers = ["ops-toolkit"]
+consumers = []
 
 # Sources it reads (all read-only, in place). Not external services; local ledger stores.
 systems = ["dwarves-kit-logs", "tide-state-sqlite", "tg-cleanup-json", "learned-ledger-md", "rejected-findings-md"]

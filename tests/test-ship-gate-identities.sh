@@ -7,13 +7,13 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
-REAL=tieubao@users.noreply.github.com
+REAL=dev@users.noreply.github.com
 
 mkrepo() { # $1=dir; a fresh bare origin per repo
   local ORIGIN; ORIGIN="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; git init -q --bare -b master "$ORIGIN" 2>/dev/null
   git clone -q "$ORIGIN" "$1" 2>/dev/null
   git -C "$1" symbolic-ref HEAD refs/heads/master
-  git -C "$1" config user.email "$REAL"; git -C "$1" config user.name "Han Ngo"
+  git -C "$1" config user.email "$REAL"; git -C "$1" config user.name "Dev Tester"
   echo base > "$1/f"; git -C "$1" add -A; git -C "$1" commit -qm "chore: init"
   git -C "$1" push -q origin master 2>/dev/null
   git -C "$1" remote set-head origin master 2>/dev/null

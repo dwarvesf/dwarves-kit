@@ -183,7 +183,7 @@ if [ -f "$ADDBL" ]; then
   ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
   has  "F-pnaf add-backlog lists the proposal" "waived gates over threshold" "$ADDBL_OUT"
 else
-  echo "SKIP  F-pnaf add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
+  echo "SKIP  F-pnaf add-backlog cross-check (cc-backlog is a consumer-only sibling tool; not present in this repo)"
 fi
 
 echo "== F-dedup: a second --propose stages NOTHING new (idempotent) =="
@@ -195,7 +195,7 @@ eq   "F-dedup still exactly one block"     "$(staged_n)" "1"
 echo "== F-no-staging-config (05K over-test): --propose with a real proposal to stage, but
            NO staging destination configured, fails LOUD (clean CLI error, exit 2) -- never a
            crash, and NEVER a silent write to a stray cwd-relative path (the exact failure
-           mode CC_BACKLOG_STAGING/OPS_TOOLKIT losing their ops-toolkit-hardcoded default
+           mode CC_BACKLOG_STAGING/OPS_TOOLKIT losing their consumer-hardcoded default
            post-05K-move could have reintroduced) =="
 reset; kitrun ns1 "full full data data" 6; REBUILD   # waived_gates fires, same shape as F-pnaf
 reset_staging

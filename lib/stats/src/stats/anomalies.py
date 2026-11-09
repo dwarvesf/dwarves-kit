@@ -809,7 +809,7 @@ def stage_proposals(anomalies: list[Anomaly], staging: str | None, backlog: str 
             raise RuntimeError(
                 "ledger anomalies --propose has a proposal to stage but no destination is "
                 "configured: set BACKLOG_STAGE_STAGING (or OPS_TOOLKIT) to an explicit "
-                "absolute path (ops-toolkit-specific source, no default post-05K move)"
+                "absolute path (an explicit destination, no default post-05K move)"
             )
         _append_blocks(staging, new_blocks)
     return staged, skipped

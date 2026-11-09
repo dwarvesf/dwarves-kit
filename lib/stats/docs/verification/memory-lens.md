@@ -99,19 +99,19 @@ docstring precision fix.
 +--------------------------------------------------------+----------------------------------------+----------------+
 | store                                                  | slug                                   | dead_ref_count |
 +--------------------------------------------------------+----------------------------------------+----------------+
-| builtin:...tieubao-family-office                       | project_hermes_family_topology         | 5              |
-| builtin:...tieubao-trading                             | feedback_config_file_deletion          | 5              |
-| builtin:...tieubao-ops-toolkit                         | project_pi_cockpit                     | 4              |
-| builtin:...tieubao-ops-toolkit                         | project_telegram_plugin_cpu_orphan_bug | 4              |
-| builtin:...tieubao-ops-toolkit                         | MEMORY                                 | 3              |  <- the MIGRATED tombstones
-| repo:ops-toolkit                                       | hermes-install-sh-dir-flag             | 3              |
-| repo:ops-toolkit                                       | mini-tailnet-subdomain-pattern         | 3              |
+| builtin:...acme-household                              | project_bot_topology                   | 5              |
+| builtin:...acme-trading                                | feedback_config_file_deletion          | 5              |
+| builtin:...acme-app                                    | project_demo_cockpit                   | 4              |
+| builtin:...acme-app                                    | project_plugin_cpu_orphan_bug          | 4              |
+| builtin:...acme-app                                    | MEMORY                                 | 3              |  <- the MIGRATED tombstones
+| repo:acme-app                                          | agent-install-sh-dir-flag              | 3              |
+| repo:acme-app                                          | host-network-subdomain-pattern         | 3              |
 +--------------------------------------------------------+----------------------------------------+----------------+
 ```
 
-These are genuinely-stale references: `project_hermes_family_topology` points at
-`/Users/hermes-dwarves/.hermes` and `/Users/hermes-family/.hermes` paths that no longer exist;
-`hermes-install-sh-dir-flag` references a `/Users/server/dev/hermes-agent` install dir since
+These are genuinely-stale references: `project_bot_topology` points at
+`/Users/bot-a/.agent` and `/Users/bot-b/.agent` paths that no longer exist;
+`agent-install-sh-dir-flag` references a `/Users/server/dev/agent` install dir since
 moved. Propose-only: a human reviews the paydown table and decides.
 
 ## Never-delete negative control (the absolute requirement)

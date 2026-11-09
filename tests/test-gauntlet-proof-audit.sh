@@ -54,7 +54,7 @@ sed -i.bak 's/| GREEN |/| RED |/' "$REC/ROUNDS.md" && rm -f "$REC/ROUNDS.md.bak"
 # 3. Scrub axis: a resolved credential VALUE is a leak; a bare op:// is not.
 LEAK="$(_mk)"; printf 'ANTHROPIC_API_KEY=sk-ant-abcdef0123456789ABCDEF\n' > "$LEAK/transcript.jsonl"
 grep -qE 'sk-ant-[A-Za-z0-9]|ANTHROPIC_API_KEY=[A-Za-z0-9+/]{20}' "$LEAK/transcript.jsonl"; assert "credential VALUE is detected as a leak" $?
-PTR="$(_mk)"; printf 'key from op://Toolkit/anthropic-api-key/credential\n' > "$PTR/transcript.jsonl"
+PTR="$(_mk)"; printf 'key from op://Vault/anthropic-api-key/credential\n' > "$PTR/transcript.jsonl"
 ! grep -qE 'sk-ant-[A-Za-z0-9]|ANTHROPIC_API_KEY=[A-Za-z0-9+/]{20}' "$PTR/transcript.jsonl"; assert "bare op:// pointer is NOT a leak" $?
 grep -qi 'op://.*pointer is allowed\|op://.*NOT a leak\|pointer, allowed' "$SKILL"; assert "SKILL states op:// pointer is allowed" $?
 
