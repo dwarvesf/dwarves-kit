@@ -38,31 +38,21 @@ fi
 
 # Spec status + command suggestion
 # Resolve the active spec (dual-detect, reconciled with the unified spec-location decision):
-# docs/specs/ is primary (kit + downstream). Among non-SHIPPED/PARKED specs:
-# exactly one -> use it; more than one -> the one whose slug matches the git
+# docs/specs/ is primary (kit + downstream). Among the open specs (lib/spec/states.tsv, class
+# not terminal): exactly one -> use it; more than one -> the one whose slug matches the git
 # branch; zero/multiple branch matches -> emit spec:ambiguous and pick none
 # (never silently guess).
 SPEC_FILE=""
 SPEC_AMBIG=""
-# One awk pass over every spec: two greps per file cost ~2s on a 267-spec repo,
-# and SessionStart blocks on it. A file is live when some line starts with
-# Status: (any case) and no such line says SHIPPED or PARKED.
-# awk aborts the whole pass on a path it cannot open, so drop dangling links,
-# directories and unreadable files first; the per-file greps skipped those too.
+# One helper pass over every spec: per-file greps cost ~2s on a 267-spec repo, and SessionStart
+# blocks on it. A spec with no Status header is not open here (--none dead). The helper drops
+# dangling links, directories and unreadable files itself. Without lib/ no spec is resolved.
+SPEC_STATUS_SH="${BASH_SOURCE[0]%/*}/../lib/spec/spec-status.sh"
 SPEC_FILES=()
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
-  [ -f "$F" ] && [ -r "$F" ] && SPEC_FILES+=("$F")
-done
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do SPEC_FILES+=("$F"); done
 CANDIDATES=""
-if [ ${#SPEC_FILES[@]} -gt 0 ]; then
-  CANDIDATES=$(awk '
-    function flush() { if (f != "" && has && !closed) print f }
-    FNR == 1 { flush(); f = FILENAME; has = 0; closed = 0 }
-    { l = tolower($0) }
-    l ~ /^status:/ { has = 1 }
-    l ~ /^status:[ \t\r\f\v]*(shipped|parked)/ { closed = 1 }
-    END { flush() }
-  ' "${SPEC_FILES[@]}" 2>/dev/null || true)
+if [ -f "$SPEC_STATUS_SH" ] && [ ${#SPEC_FILES[@]} -gt 0 ]; then
+  CANDIDATES=$(bash "$SPEC_STATUS_SH" live --none dead "${SPEC_FILES[@]}" 2>/dev/null || true)
 fi
 N=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
 if [ "$N" -eq 1 ]; then
@@ -112,13 +102,13 @@ elif [ -z "$SPEC_FILE" ]; then
   fi
 else
   # Read spec status
-  SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
+  SPEC_STATUS=$(bash "$SPEC_STATUS_SH" get "$SPEC_FILE" 2>/dev/null || echo "UNKNOWN")
   STATE+="spec:${SPEC_STATUS} "
 
   case "$SPEC_STATUS" in
     DRAFT)
       SUGGEST="spec is DRAFT; say 'validate it' (or /kit:spec-validate)" ;;
-    APPROVED|VALIDATED)
+    APPROVED|VALIDATED)  # spec-state-ok: the per-state suggestion, not a vocabulary copy
       # Count tasks
       TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
       DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)

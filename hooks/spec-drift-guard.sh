@@ -27,17 +27,19 @@ case "$FILE" in
     exit 0 ;;
 esac
 
-# Resolve what to check the new file against (the union rule, reconciled with the
-# unified spec-location decision): the UNION of all non-SHIPPED/PARKED specs in
-# docs/specs/ (a file in ANY active design is "known"), else .gsd/.
+# Resolve what to check the new file against (the union rule, reconciled with the unified spec-location
+# decision): the UNION of all open specs in docs/specs/ (lib/spec/states.tsv, class not terminal; a
+# spec with no Status header counts as open), a file in ANY active design is "known"; else .gsd/.
 # Grepping the union (not a single spec) avoids a false-positive storm while more
-# than one spec is open.
-SPEC_SRCS=""
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
-  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" && continue
-  SPEC_SRCS="$SPEC_SRCS $F"
-done
-SPEC_SRCS=$(echo "$SPEC_SRCS" | sed 's/^ *//')
+# than one spec is open. Without lib/ every spec counts as open.
+SPEC_STATUS_SH="${BASH_SOURCE[0]%/*}/../lib/spec/spec-status.sh"
+SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true)
+if [ -f "$SPEC_STATUS_SH" ]; then
+  # shellcheck disable=SC2086 # spec paths never contain spaces
+  SPEC_SRCS=$(bash "$SPEC_STATUS_SH" live --none live $SPEC_LIST 2>/dev/null | paste -sd ' ' - || true)
+else
+  SPEC_SRCS=$(printf '%s\n' "$SPEC_LIST" | paste -sd ' ' - || true)
+fi
 [ -z "$SPEC_SRCS" ] && [ -d ".gsd" ] && SPEC_SRCS=".gsd"
 [ -z "$SPEC_SRCS" ] && exit 0
 
