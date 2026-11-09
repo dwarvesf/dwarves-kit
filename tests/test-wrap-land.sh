@@ -605,6 +605,105 @@ chk "packed arg to land exits 64" "$([ "$rc" = 64 ]; echo $?)"
 chk_has "packed arg to land names the packed-flags refusal" "$out" "wrap.sh land: argument '"
 } # end sec_adopt
 
+sec_adoptsha() {
+echo "=== land: adopting the operator's own open PR by head sha when its branch name differs ==="
+# ===========================================================================
+# A subagent pushes its work under a renamed branch and opens the PR; its worktree keeps the
+# default branch name. The by-name lookup finds nothing, so land used to push and open a
+# second PR with the same commits. The head sha finds the first.
+asha_pr() { # asha_pr <number> <headRefName> <headRefOid> [author]
+  printf '{"number":%s,"baseRefName":"main","author":{"login":"%s"},"isDraft":false,"isCrossRepository":false,"headRefName":"%s","headRefOid":"%s"}' \
+    "$1" "${4:-me}" "$2" "$3"
+}
+asha_land() { # asha_land <name> -- sets LWT_A, LTIP_A, BARE_A for build_land <name>
+  LWT_A="$(cd "$TMPD/ld-repo-$1/wt" && pwd -P)"; LTIP_A="$(git -C "$LWT_A" rev-parse HEAD)"; BARE_A="$TMPD/ld-bare-$1"
+}
+
+echo "--- one own PR at the tip under another name: adopted, nothing pushed, its branch retired"
+build_land asha-one
+asha_land asha-one
+git -C "$LWT_A" push -q origin HEAD:refs/heads/fix/renamed
+git -C "$LWT_A" push -q origin HEAD:refs/heads/fix/keep-me
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="[$(asha_pr 71 fix/renamed "$LTIP_A"),$(asha_pr 72 fix/keep-me 1111111111111111111111111111111111111111)]" \
+  GH_STUB_LAND_REPO="$LWT_A" GH_STUB_LAND_REMOTE="$BARE_A" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_A" 2>&1)"; rc=$?
+CALLS_A="$(cat "$GH_STUB_CALLS")"
+chk "asha one: exits 0" "$rc"
+chk_has "asha one: prints the by-head adoption line" "$out" "adopted #71 by head sha (branch fix/renamed)"
+chk_no "asha one: never creates a PR" "$CALLS_A" "pr create"
+chk_has "asha one: merges the adopted PR" "$CALLS_A" "pr merge 71 --repo"
+chk_no "asha one: never merges the other PR" "$CALLS_A" "pr merge 72"
+chk_no "asha one: does not push the worktree branch" "$out" "pushed feat/land"
+chk "asha one: worktree branch never reached origin" \
+  "$(git -C "$BARE_A" rev-parse --verify refs/heads/feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk_has "asha one: reports retiring the adopted branch on origin" "$out" "deleted fix/renamed on origin"
+chk "asha one: adopted branch is gone from origin" \
+  "$(git -C "$BARE_A" rev-parse --verify refs/heads/fix/renamed >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "asha one: another branch on origin is untouched" \
+  "$(git -C "$BARE_A" rev-parse --verify refs/heads/fix/keep-me >/dev/null 2>&1; echo $?)"
+chk "asha one: worktree removed" "$([ ! -e "$LWT_A" ]; echo $?)"
+chk_has "asha one: ends on the LAND line" "$(printf '%s\n' "$out" | tail -1)" "LAND: merged #71"
+
+echo "--- two own PRs at the tip: refuse by name, touch nothing"
+build_land asha-two
+asha_land asha-two
+git -C "$LWT_A" push -q origin HEAD:refs/heads/fix/one
+git -C "$LWT_A" push -q origin HEAD:refs/heads/fix/two
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="[$(asha_pr 81 fix/one "$LTIP_A"),$(asha_pr 82 fix/two "$LTIP_A")]" \
+  GH_STUB_LAND_REPO="$LWT_A" GH_STUB_LAND_REMOTE="$BARE_A" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_A" 2>&1)"; rc=$?
+CALLS_A="$(cat "$GH_STUB_CALLS")"
+chk "asha two: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "asha two: names both PRs and branches" "$out" "PR REFUSED: 2 open PRs of yours sit at head"
+chk_has "asha two: first PR named" "$out" "#81 (fix/one)"
+chk_has "asha two: second PR named" "$out" "#82 (fix/two)"
+chk_no "asha two: never creates a PR" "$CALLS_A" "pr create"
+chk_no "asha two: never merges" "$CALLS_A" "pr merge"
+chk_no "asha two: pushes nothing" "$out" "pushed feat/land"
+chk "asha two: worktree branch never reached origin" \
+  "$(git -C "$BARE_A" rev-parse --verify refs/heads/feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "asha two: both PR branches stay on origin" \
+  "$(git -C "$BARE_A" rev-parse --verify refs/heads/fix/one >/dev/null 2>&1 && git -C "$BARE_A" rev-parse --verify refs/heads/fix/two >/dev/null 2>&1; echo $?)"
+chk "asha two: worktree left in place" "$([ -d "$LWT_A" ]; echo $?)"
+chk_has "asha two: ends on the refused LAND line" "$(printf '%s\n' "$out" | tail -1)" "LAND: refused"
+
+echo "--- no PR at the tip (or one by another author): a new PR opens as before"
+build_land asha-none
+asha_land asha-none
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="[$(asha_pr 91 fix/other 1111111111111111111111111111111111111111),$(asha_pr 92 fix/theirs "$LTIP_A" someone-else)]" \
+  GH_STUB_CREATE_NUM=45 GH_STUB_LAND_REPO="$LWT_A" GH_STUB_LAND_REMOTE="$BARE_A" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_A" 2>&1)"; rc=$?
+CALLS_A="$(cat "$GH_STUB_CALLS")"
+chk "asha none: exits 0" "$rc"
+chk_has "asha none: pushes the worktree branch" "$out" "pushed feat/land (${LTIP_A:0:7})"
+chk_has "asha none: opens a new PR" "$out" "opened PR #45"
+chk_has "asha none: called pr create" "$CALLS_A" "pr create"
+chk_no "asha none: no by-head adoption" "$out" "by head sha"
+chk_no "asha none: never merges the lookalikes" "$CALLS_A" "pr merge 9"
+
+echo "--- a PR found by branch name still wins over one found by head sha"
+build_land asha-name
+asha_land asha-name
+git -C "$LWT_A" push -q origin HEAD:refs/heads/fix/renamed
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_HEAD_feat_land="$(open_pr_json 7 main me)" \
+  GH_STUB_OPEN_PRS="[$(asha_pr 71 fix/renamed "$LTIP_A")]" \
+  GH_STUB_LAND_REPO="$LWT_A" GH_STUB_LAND_REMOTE="$BARE_A" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$LWT_A" 2>&1)"; rc=$?
+CALLS_A="$(cat "$GH_STUB_CALLS")"
+chk "asha name: exits 0" "$rc"
+chk_has "asha name: adopted by name" "$out" "adopted PR #7"
+chk_no "asha name: not adopted by head sha" "$out" "by head sha"
+chk_has "asha name: merges the name match" "$CALLS_A" "pr merge 7 --repo"
+chk_no "asha name: never merges the sha match" "$CALLS_A" "pr merge 71"
+chk_has "asha name: pushes the worktree branch as before" "$out" "pushed feat/land"
+chk "asha name: the sha-match branch on origin is left alone" \
+  "$(git -C "$BARE_A" rev-parse --verify refs/heads/fix/renamed >/dev/null 2>&1; echo $?)"
+} # end sec_adoptsha
+
 sec_merge1() {
 echo "=== land-merge: a CONFLICTING land merges origin/<def> in, then retries (part 1 of 4) ==="
 # ===========================================================================

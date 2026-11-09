@@ -353,6 +353,24 @@ _land_ignored_guard() {
   return 1
 }
 
+# _land_open_by_head <repo-url> <tip> -- the operator's own open PRs whose head commit is <tip>,
+# as a JSON array on stdout. The by-name lookup misses a PR a subagent pushed under a renamed
+# branch while the worktree kept its default name; the head sha finds it. A fork's PR never
+# counts. Returns 2 when the list cannot be read, 3 when candidates exist but the operator's
+# login does not resolve; with no candidate it answers `[]` without asking for the login.
+_land_open_by_head() {
+  local url="$1" tip="$2" all cand me
+  all="$(gh pr list --repo "$url" --state open --limit 200 \
+    --json number,baseRefName,author,isDraft,isCrossRepository,title,body,url,headRefName,headRefOid 2>/dev/null)" || return 2
+  cand="$(printf '%s' "$all" | jq -c --arg t "$tip" \
+    '[.[] | select(((.isCrossRepository // false) | not) and .headRefOid == $t)]' 2>/dev/null)" || return 2
+  [ "$(printf '%s' "$cand" | jq -r 'length' 2>/dev/null)" != "0" ] || { printf '[]\n'; return 0; }
+  me="$(gh api user --jq .login 2>/dev/null)"
+  [ -n "$me" ] || return 3
+  printf '%s' "$cand" | jq -c --arg me "$me" \
+    '[.[] | select(((.author.login // "") | ascii_downcase) == ($me | ascii_downcase))]' 2>/dev/null
+}
+
 # cmd_land <worktree> [--title T] [--body-file F] [--no-pull] [--with-ci] [--verify C] [--draft] -- the landing loop for ONE committed
 # branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
 # forward the main checkout, remove the worktree, delete the branch. Each step prints one
@@ -513,6 +531,35 @@ _land_run() {
     echo "     PR REFUSED: open-PR lookup for ${branch} failed" >&2; return 2 ;;
   esac
 
+  # No PR under the worktree branch's name: look for the operator's own open PR at the same
+  # head commit under another name (a subagent that pushed under a renamed branch). Exactly
+  # one is adopted, with nothing pushed; two or more refuse by name before anything is
+  # touched. A PR found by name above always wins.
+  local by_sha=0 obranch="$branch"
+  if [ "$open_count" -eq 0 ]; then
+    local hit hrc hit_n
+    hit="$(_land_open_by_head "$url" "$tip")"; hrc=$?
+    case "$hrc" in
+      0) ;;
+      3) echo "     PR REFUSED: open-PR head lookup: operator login did not resolve" >&2; return 2 ;;
+      *) echo "     PR REFUSED: open-PR lookup by head $(_short "$tip") failed" >&2; return 2 ;;
+    esac
+    hit_n="$(printf '%s' "$hit" | jq -r 'length' 2>/dev/null)"
+    case "$hit_n" in ''|*[!0-9]*)
+      echo "     PR REFUSED: open-PR lookup by head $(_short "$tip") failed" >&2; return 2 ;;
+    esac
+    if [ "$hit_n" -ge 2 ]; then
+      echo "     PR REFUSED: ${hit_n} open PRs of yours sit at head $(_short "$tip"): $(printf '%s' "$hit" | jq -r '[.[] | "#\(.number) (\(.headRefName))"] | join(", ")' 2>/dev/null); close the extras and rerun; nothing pushed" >&2
+      return 2
+    elif [ "$hit_n" -eq 1 ]; then
+      open_json="$hit"; open_count=1; by_sha=1
+      obranch="$(printf '%s' "$hit" | jq -r '.[0].headRefName // ""' 2>/dev/null)"
+      if [ -z "$obranch" ] || [ "$obranch" = "$def" ]; then
+        echo "     PR REFUSED: the PR found by head $(_short "$tip") names no usable head branch" >&2; return 2
+      fi
+    fi
+  fi
+
   # The branch's content may already be on the default branch by another route: a squash
   # merge writes a new commit, so `ahead` stays above zero and the branch looks unlanded. The
   # ancestor route cannot fire here (ahead > 0 above), so an ancestor-shaped proof is dropped
@@ -617,12 +664,16 @@ _land_run() {
   fi
 
   _LAND_STEP=push
-  git -C "$wt" push origin "$branch"; rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
-    return "$rc"
+  if [ "$by_sha" -eq 1 ]; then
+    echo "     no push: origin/${obranch} already holds $(_short "$tip")"
+  else
+    git -C "$wt" push origin "$branch"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "     PUSH REFUSED: git push origin ${branch} exited ${rc}" >&2
+      return "$rc"
+    fi
+    echo "     pushed ${branch} ($(_short "$tip"))"
   fi
-  echo "     pushed ${branch} ($(_short "$tip"))"
 
   local created n pr_ref=""
   _LAND_STEP=pr
@@ -651,7 +702,8 @@ _land_run() {
       gh pr ready "$n" --repo "$url" >/dev/null 2>&1 || {
         echo "     PR REFUSED: open PR #${n} is a draft and gh pr ready failed" >&2; return 2; }
     fi
-    if [ "$draft" -eq 1 ]; then echo "     adopted draft PR #${n}"; else echo "     adopted PR #${n}"; fi
+    if [ "$by_sha" -eq 1 ]; then echo "     adopted #${n} by head sha (branch ${obranch})"
+    elif [ "$draft" -eq 1 ]; then echo "     adopted draft PR #${n}"; else echo "     adopted PR #${n}"; fi
     [ "$flags_given" -eq 1 ] && echo "     note: adopted PR #${n} keeps its own title and body" >&2
     pr_ref="$(printf '%s' "$open_json" | jq -r '.[0].url // ""' 2>/dev/null)"
     # An adopted PR keeps the body its author wrote. One that has none (empty, or only its
@@ -745,6 +797,10 @@ _land_run() {
     m="$(printf '%s' "$mdetail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
     if [ "$m" != "CONFLICTING" ]; then
       echo "     MERGE FAILED #${n}: exit ${rc}" >&2; return 2
+    fi
+    if [ "$by_sha" -eq 1 ]; then
+      echo "     #${n} is CONFLICTING and was adopted by head sha (branch ${obranch}); the merge-in would push ${branch}, not the PR's branch; PR left open, run wrap merge --apply --pr ${n}" >&2
+      return 2
     fi
     echo "     #${n} is CONFLICTING: merging origin/${def} into ${branch}"
     mgen=""; [ -f "$wt/$_RB_GENERATOR" ] && mgen="$wt/$_RB_GENERATOR"
@@ -904,12 +960,12 @@ _land_run() {
   local proof_block=""
   [ -z "$proof_base" ] || proof_block="$(_land_proof_block "$wt" "$proof_base" "${pr_ref:-#${n}}")"
   _LAND_STEP=tidy
-  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored"; rc=$?
+  _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored" "$obranch"; rc=$?
   [ -z "$proof_block" ] || printf '%s\n' "$proof_block"
   return "$rc"
 }
 
-# _land_tidy <repo> <wt> <branch> <def> <url> <tip> [<origin_probe> [<allowed>]] -- the tail both land
+# _land_tidy <repo> <wt> <branch> <def> <url> <tip> [<origin_probe> [<allowed> [<origin_branch>]]] -- the tail both land
 # paths share once the branch is proven on the default branch: retire the origin branch,
 # fast-forward the main checkout, remove the worktree, delete the local branch. <origin_probe>
 # is `absent` or `present` when the caller already read origin's copy of the branch; without
@@ -917,37 +973,39 @@ _land_run() {
 # failure falls through to the delete attempt and its own FAILED line. <allowed> is the
 # caller's expected tree state: the `status --porcelain` lines the tree may show at removal.
 # Empty means clean. The caller takes it before the work that could write, never here, so a
-# write made during that work is a difference and not a baseline.
+# write made during that work is a difference and not a baseline. <origin_branch> is the
+# branch retired on origin (default <branch>): a PR adopted by head sha lives on a branch of
+# another name, and that one is deleted on origin; the local branch keeps its own name.
 _land_tidy() {
-  local repo="$1" wt="$2" branch="$3" def="$4" url="$5" tip="$6" probe="${7:-}" allowed="${8:-}"
+  local repo="$1" wt="$2" branch="$3" def="$4" url="$5" tip="$6" probe="${7:-}" allowed="${8:-}" obranch="${9:-$branch}"
   # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
   # open PR still bases off this branch (deleting it would close that PR), and never fails
   # land, since the merge is already verified.
   if [ "$(kit_config_get_root wrap.delete_merged_remote_branches true)" != "true" ]; then
-    echo "     ${branch} left on origin (wrap.delete_merged_remote_branches=false)"
+    echo "     ${obranch} left on origin (wrap.delete_merged_remote_branches=false)"
   else
     if [ -z "$probe" ]; then
-      git -C "$wt" ls-remote --exit-code origin "refs/heads/${branch}" >/dev/null 2>&1
+      git -C "$wt" ls-remote --exit-code origin "refs/heads/${obranch}" >/dev/null 2>&1
       [ "$?" -eq 2 ] && probe=absent
     fi
     local base_open
     if [ "$probe" = "absent" ]; then
-      echo "     ${branch} already gone from origin"
+      echo "     ${obranch} already gone from origin"
       base_open=skip
     else
       base_open="$(gh pr list --repo "$url" --state open --json baseRefName 2>/dev/null \
-        | jq -r --arg b "$branch" '[.[] | select(.baseRefName == $b)] | length' 2>/dev/null)"
+        | jq -r --arg b "$obranch" '[.[] | select(.baseRefName == $b)] | length' 2>/dev/null)"
     fi
     case "$base_open" in
       skip) ;;
       0)
-        if git -C "$wt" push -q origin "--force-with-lease=refs/heads/${branch}:${tip}" ":refs/heads/${branch}" 2>/dev/null; then
-          echo "     deleted ${branch} on origin"
+        if git -C "$wt" push -q origin "--force-with-lease=refs/heads/${obranch}:${tip}" ":refs/heads/${obranch}" 2>/dev/null; then
+          echo "     deleted ${obranch} on origin"
         else
-          echo "     FAILED delete ${branch} on origin (protected, no permission, or pushed since land read it)"
+          echo "     FAILED delete ${obranch} on origin (protected, no permission, or pushed since land read it)"
         fi ;;
-      ''|*[!0-9]*) echo "     FAILED delete ${branch} on origin (open-PR lookup failed)" ;;
-      *) echo "     ${branch} left on origin: an open PR bases off it" ;;
+      ''|*[!0-9]*) echo "     FAILED delete ${obranch} on origin (open-PR lookup failed)" ;;
+      *) echo "     ${obranch} left on origin: an open PR bases off it" ;;
     esac
   fi
 
