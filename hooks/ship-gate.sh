@@ -600,19 +600,30 @@ if [ -f "$ROOT/lib/codex/repin.sh" ] && [ -f "$ROOT/hooks/codex-hooks.json" ] &&
   fi
 fi
 
+# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
+# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
+# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
+SPEC=""
+SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
+if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
+  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
+else
+  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+fi
 # Build-ran advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is
 # gitignored by design). The proof-gate BLOCKS behavioral diffs in adopted repos; this
 # covers its deliberate fail-open seams (non-adopted repo, tests/CI-only diff). Lane
-# comes from the ledger's own START line, never the spec; base is computed locally.
+# comes from the one lane resolver; base is computed locally.
 # Placed deliberately AFTER the proof block: in adopted repos a behavioral diff already
 # hard-BLOCKS above; this covers only the proof-gate's fail-open seams.
 LEDGER62="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
 if [ -f "$LEDGER62" ]; then
   RLED=$(bash "$LEDGER62" show "$SLUG" 2>/dev/null || true)
-  # RLANE derived from START unconditionally (review: descent must not depend on the
-  # build-ran gate; a run can violate order without ever recording build).
-  RLANE=$( { printf '%s' "$RLED" | grep '| START-AMEND |' | tail -1; printf '%s' "$RLED" | grep '| START |' | head -1; } | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
+  # RLANE from the one lane resolver (gate-ledger.sh lane): last START-AMEND, else first START, else the
+  # spec header (review: descent must not depend on the build-ran gate; a run can violate order without
+  # ever recording build).
+  RLANE=$(bash "$LEDGER62" lane "$SLUG" ${SPEC:+--spec "$SPEC"} 2>/dev/null | cut -f1)
   if grep -q '| GATE | build | ran' < <(printf '%s' "$RLED"); then
     case "$RLANE" in
       normal|full|bug)
@@ -635,16 +646,6 @@ if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
   fi
 fi
 
-# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
-# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
-# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
-SPEC=""
-SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
-if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
-  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
-else
-  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
-fi
 if [ -z "$SPEC" ]; then
   # No spec means no lane to compare, but the floor needs no lane: a hard-path diff still owes the
   # full lane's gates (or an audited override) for this slug. Renaming a branch must not dodge it.
@@ -675,12 +676,13 @@ if [ -f "$PGATE" ] && grep -qE '^## Test plan[[:space:]]*$' "$SPEC" 2>/dev/null;
   esac
 fi
 
-# `Lane: full` is the canonical header. Markdown-bold variants (`**Lane**: full`,
-# `**Lane:** full`) parse the same, because a spec author reaching for the bold form
-# used elsewhere in the header block should not get a BLOCKED push. A leading `- `
-# list marker is deliberately NOT accepted: specs use `- **Lane:** ...` for prose
-# bullets, and accepting it would parse a sentence as the lane.
-LANE=$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$SPEC" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//' || true)
+# The lane comes from the one resolver (lane-data.sh lane_effective, through `gate-ledger.sh lane`): the
+# last START-AMEND, else the first START, else the spec `Lane:` header. The header grammar lives in
+# lane_spec_header. Trust: gate-ledger.sh has no operator/agent split on `start`, so any ledger writer can
+# amend; the diff floor (_floor_check) still applies full-lane gates to hard paths whatever the lane says.
+LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
+LANE=""; LANE_SRC=""; SPEC_LANE=""
+[ -f "$LEDGER" ] && IFS=$'\t' read -r LANE LANE_SRC SPEC_LANE < <(bash "$LEDGER" lane "$SLUG" --spec "$SPEC" 2>/dev/null)
 if [ -z "$LANE" ]; then
   # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
   # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).
@@ -701,20 +703,13 @@ if [ -z "$LANE" ]; then
   exit 0
 fi
 
-LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
 
-# A sanctioned `start --amend` correction wins over the spec header: every reader takes the LAST
-# START-AMEND as canonical (gate-ledger.sh start, lane-telemetry.sh), and the push gate must agree,
-# else a re-laned run keeps owing the lane it left. A plain START never overrides the header.
-# Trust: gate-ledger.sh has no operator/agent split on this verb, so any ledger writer can amend.
-# The diff floor (_floor_check) still applies full-lane gates to hard paths whatever the lane says.
-AMEND_LANE=$(bash "$LEDGER" show "$SLUG" 2>/dev/null | grep '| START-AMEND |' | tail -1 \
-  | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
-if [ -n "$AMEND_LANE" ] && [ "$AMEND_LANE" != "$LANE" ]; then
-  echo "[advisory] run '$SLUG': ledger START-AMEND lane=$AMEND_LANE overrides the spec's Lane: $LANE" >&2
-  LANE="$AMEND_LANE"
-fi
+# A ledger lane that differs from the spec header is announced: the run keeps owing the lane it recorded.
+case "$LANE_SRC" in
+  amend) [ -n "$SPEC_LANE" ] && [ "$SPEC_LANE" != "$LANE" ] && echo "[advisory] run '$SLUG': ledger START-AMEND lane=$LANE overrides the spec's Lane: $SPEC_LANE" >&2 ;;
+  start) [ -n "$SPEC_LANE" ] && [ "$SPEC_LANE" != "$LANE" ] && echo "[advisory] run '$SLUG': ledger START lane=$LANE overrides the spec's Lane: $SPEC_LANE" >&2 ;;
+esac
 
 # Bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
 # the live invocation path for the additive OUTCOME marker. It is BEST-EFFORT and writes ONLY

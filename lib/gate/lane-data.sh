@@ -59,6 +59,49 @@ lane_rank_of() {
   esac
 }
 
+# lane_known <name>: 0 when <name> is one of LANE_NAMES.
+lane_known() {
+  case " $LANE_NAMES " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+
+# lane_spec_header <spec>: the lane a spec's header declares, raw (an unknown name comes back as written so
+# check() can fail closed on it). `Lane: full` is canonical; the markdown-bold variants (`**Lane**: full`,
+# `**Lane:** full`) parse the same. A leading `- ` list marker is NOT accepted: specs use `- **Lane:** ...`
+# in prose bullets, and accepting it would parse a sentence as the lane.
+lane_spec_header() {
+  [ -r "${1:-}" ] || return 0
+  grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$1" 2>/dev/null \
+    | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//' || true
+}
+
+# lane_effective [--default] <ledger-file> [<spec>]: the ONE answer to "which lane does this run owe".
+# Order: the last START-AMEND, else the first START, else the spec `Lane:` header, else (only with
+# --default) the classifier default. A START or START-AMEND whose lane is not one of LANE_NAMES (old
+# ledgers carry stray `fix`, `light`, `standard`) reads as absent, so the next source answers; ledgers
+# are never rewritten. Prints "<lane>\t<source>\t<spec header>", source = amend|start|spec|default.
+# Prints nothing and exits 1 when no source answers. The header column is the raw header, for callers
+# that announce an override of it.
+lane_effective() {
+  local want_default=0 f spec hdr lane src
+  if [ "${1:-}" = "--default" ]; then want_default=1; shift; fi
+  f="${1:-}"; spec="${2:-}"
+  hdr="$(lane_spec_header "$spec")"
+  lane=""; src=""
+  if [ -r "$f" ]; then
+    IFS=$'\t' read -r lane src < <(awk -F' [|] ' -v names=" $LANE_NAMES " '
+      function lane_of(s) { if (match(s, /lane=[^ ]+/)) return substr(s, RSTART + 5, RLENGTH - 5); return "" }
+      function ok(l) { return l != "" && index(names, " " l " ") > 0 }
+      $2 == "START-AMEND" { l = lane_of($3); if (ok(l)) a = l }
+      $2 == "START" && !seen { seen = 1; l = lane_of($3); if (ok(l)) first = l }
+      END { if (a != "") print a "\tamend"; else if (first != "") print first "\tstart" }' "$f") || true
+  fi
+  if [ -z "$lane" ] && [ -n "$hdr" ]; then lane="$hdr"; src=spec; fi
+  if [ -z "$lane" ] && [ "$want_default" = 1 ]; then lane="$(lane_default)"; src=default; fi
+  [ -n "$lane" ] || return 1
+  printf '%s\t%s\t%s\n' "$lane" "$src" "$hdr"
+}
+
 # lane_project_applies: 0 when the project .kit.toml is tracked and unmodified.
 lane_project_applies() {
   local pf; pf="$(kit_config_project)"
