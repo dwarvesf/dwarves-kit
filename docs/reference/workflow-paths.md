@@ -93,7 +93,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
  |        |        [H/I] /kit:visual-team (5 design lenses) -> fix-agent revise (max 2) -> SOLID
  |        v
  |   [H/I] /kit:spec-validate  7 lenses (1 blocking verdict on the design record; reviewer prose, no hook)
- |        |     NEEDS REVISION ==> back to /kit:spec
+ |        |     NEEDS-REVISION ==> back to /kit:spec
  |        v  Status: VALIDATED
  |   [H/I] /kit:test-plan ...... coverage matrix -> ## Test plan (default on normal/full)
  |        |
@@ -242,7 +242,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
         |                + research-pitfalls + research-stack (brownfield, read-only)
         v
      SPEC-NNN DRAFT ──> [H/I] /kit:spec-validate (7 lenses, 1 blocking verdict on the design record)
-        |                        NEEDS REVISION ──> back to /kit:spec
+        |                        NEEDS-REVISION ──> back to /kit:spec
         v
      Status: VALIDATED ──> Build
 ```

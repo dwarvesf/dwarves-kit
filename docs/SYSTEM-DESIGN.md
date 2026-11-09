@@ -1119,7 +1119,7 @@ states:
   - {name: PARKED, at: [0, 2]}
 transitions:
   - {from: DRAFT, to: APPROVED, event: operator approves}
-  - {from: APPROVED, to: APPROVED, event: NEEDS REVISION at ceiling}
+  - {from: APPROVED, to: APPROVED, event: NEEDS-REVISION at ceiling}
   - {from: APPROVED, to: VALIDATED, event: "round APPROVED, or override Validate"}
   - {from: VALIDATED, to: VALIDATED, event: add-only amend}
   - {from: VALIDATED, to: SHIPPED, event: "/kit:ship (drafts archive)"}
