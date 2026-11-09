@@ -2804,7 +2804,8 @@ assert_output_contains "anchor: ship-gate payload cwd resolves root via git -C (
   "appears nowhere in _meta/BACKLOG.md" "$AN_SG_ERR"
 
 # Case 7: every entry in BOTH dispatch tables launches through the wrapper (never 126/127).
-# Side effects fenced: HOME is a temp dir, and PATH stubs shadow the notifier and indexer.
+# Side effects fenced: HOME is a temp dir, the XDG dirs are unset (the kit's data dirs follow them),
+# and PATH stubs shadow the notifier and indexer.
 AN_HOME=$(mktemp -d "${TMPDIR:-/tmp}/dk-anhome.XXXXXX") || exit 1
 mkdir -p "$AN_HOME/stubs"
 for _b in osascript notify-send codebase-memory-mcp; do
@@ -2818,7 +2819,7 @@ while IFS= read -r _cmd; do
   AN_N=$((AN_N + 1))
   _rc=0
   ( cd "$AN_SMOKE/sub" && echo '{"stop_hook_active":true}' \
-    | env -u CLAUDE_PLUGIN_ROOT HOME="$AN_HOME" PATH="$AN_HOME/stubs:$PATH" sh -c "$_cmd" >/dev/null 2>&1 ) || _rc=$?
+    | env -u CLAUDE_PLUGIN_ROOT -u XDG_STATE_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME -u KIT_DATA_ROOT HOME="$AN_HOME" PATH="$AN_HOME/stubs:$PATH" sh -c "$_cmd" >/dev/null 2>&1 ) || _rc=$?
   case "$_rc" in 126|127) AN_BAD="$AN_BAD [$_rc] $_cmd" ;; esac
 done <<EOF
 $(jq -r '.hooks[][].hooks[].command' "$KIT_DIR/hooks/hooks.json" | sed 's|${CLAUDE_PLUGIN_ROOT}|'"$KIT_DIR"'|g')
