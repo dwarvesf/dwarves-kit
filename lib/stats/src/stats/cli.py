@@ -147,19 +147,21 @@ def render(
 
 @app.command(name="gate-yield")
 def gate_yield(as_json: bool = _FMT):
-    """Per-gate ceremony detector over `kit_gates`: ran/override/skipped/caught + override_pct.
-    High `ran` + zero `caught` over many runs is the ceremony signal (a gate that structurally
-    cannot fail); this turns that hand probe into a query. Read-only: goes through the SAME
+    """Per-gate ceremony detector over `kit_gates`: ran/override/skipped/caught + override_pct,
+    then rejected. A `rejected` row is a gate that ran and failed, so it counts as a catch and
+    sits in its own column. High `ran` + zero `caught` over many runs is the ceremony signal
+    (a gate that structurally cannot fail); this turns that hand probe into a query. Read-only: goes through the SAME
     `materialize.query()` path `show`/`query` already use, no new duckdb connection."""
     cols, rows = materialize.query(
         "SELECT gate, "
         "sum(CASE WHEN outcome = 'ran' THEN 1 ELSE 0 END) AS ran, "
         "sum(CASE WHEN outcome = 'override' THEN 1 ELSE 0 END) AS override, "
         "sum(CASE WHEN outcome = 'skipped' THEN 1 ELSE 0 END) AS skipped, "
-        "sum(CASE WHEN caught THEN 1 ELSE 0 END) AS caught, "
+        "sum(CASE WHEN caught OR outcome = 'rejected' THEN 1 ELSE 0 END) AS caught, "
         "count(*) AS total, "
         "round(100.0 * sum(CASE WHEN outcome = 'override' THEN 1 ELSE 0 END) "
-        "/ count(*), 1) AS override_pct "
+        "/ count(*), 1) AS override_pct, "
+        "sum(CASE WHEN outcome = 'rejected' THEN 1 ELSE 0 END) AS rejected "
         "FROM kit_gates GROUP BY gate ORDER BY gate"
     )
     _emit(cols, rows, as_json)

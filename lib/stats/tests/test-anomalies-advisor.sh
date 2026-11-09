@@ -137,6 +137,17 @@ has   "C-cut action=CUT"           "action=CUT"  "$OUT"
 has   "C-cut names gate grill"     "gate=grill"  "$OUT"
 hasnt "C-cut no token_runaway (never armed, even while ceremony fires)" "$TRK" "$OUT"
 
+echo "== C-rejected: 5 ran rows plus a 6th, rejected, row on one rid -> a rejection is a catch, must NOT fire =="
+reset
+gate_row rj1 grill ran false
+gate_row rj2 grill ran false
+gate_row rj3 grill ran false
+gate_row rj4 grill ran false
+gate_row rj5 grill ran false
+gate_row rj6 grill rejected -
+REBUILD
+hasnt "C-rejected no ceremony (a rejected gate caught something)" "$CER" "$(R anomalies --json)"
+
 echo "== C-cut-floor: only 4 caught=false rows (< ceremony_min_ran=5) does NOT fire =="
 reset
 gate_row f1 grill ran false

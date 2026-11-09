@@ -86,7 +86,7 @@ Records are append-only, redacted (no command bodies), and one physical line per
 
 ```
 TS | START   | lane=.. classified=.. type=.. repo=..
-TS | GATE    | <phase> | ran|skipped|rejected|override | [reason]
+TS | GATE    | <phase> | ran|skipped|rejected|override | [reason] [| via=<source>]
 TS | ACTION  | <text>
 TS | TOKENS  | in=N out=N cache_read=N cache_create=N [cost=N]
 TS | DEBT    | significance=.. worthiness=.. verdict=.. [response=..] [reason=..]
@@ -100,6 +100,8 @@ TS | MUTATION| verdict=flag|clean|skip [k=v ...]
 | `override` | the gate was waived with a logged reason | yes |
 | `skipped` | a deliberate skip, or an incomplete round | no |
 | `rejected` | a validate round closed NEEDS-REVISION | no |
+
+An `override` row ends in a `| via=<source>` field naming the writer: `hand` (the `override` verb), `plan` (`plan-record`), `batch` (`record-batch`), `inherit` (`inherit`), `lane-lower` (`start --amend --lower`). The reason stays field 5. A row written before the field existed has none and reads as `hand`. A trailing `| via=` typed into a reason is dropped, so only the verb stamps it. Readers that join fields 5 to the end strip a trailing ` | via=<token>`. The dashboard `override-rate` alert counts only `hand` overrides on required phases.
 
 `check()` decides on each required phase's LATEST `| GATE |` row, so a later `skipped` or
 `rejected` undoes an earlier `ran`, and a later `ran` clears a rejection. Ledgers written before

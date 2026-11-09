@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "config"))
 import kit_data  # noqa: E402
 from report import run_summary  # noqa: E402
-from events import expected_plan  # noqa: E402
+from events import expected_plan, split_via  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 UTC = dtm.timezone.utc
@@ -108,6 +108,7 @@ def collect_runs(log_dir):
             continue
         lane = r["meta"].get("lane")
         conf = None
+        req = []
         if lane:
             if lane not in plans:
                 plans[lane] = [p for p, lvl in expected_plan(lane) if "required" in lvl]
@@ -116,6 +117,10 @@ def collect_runs(log_dir):
                 seen = sum(1 for p in req if r["gates"].get(p, ("",))[0] in ("pass", "override"))
                 conf = (seen, len(req))
         r["conformance"] = conf
+        # A hand override of a gate the lane requires: the alert signal. Bulk writers (plan,
+        # batch, inherit, lane-lower) and light phases are not a person skipping a required gate.
+        r["hand_required_overrides"] = sum(
+            1 for p in req if r["gates"].get(p, ("",))[0] == "override" and r["via"].get(p) == "hand")
         r["misfire"] = bool(lane and r["meta"].get("classified") and lane != r["meta"]["classified"])
         out.append(r)
     return sorted(out, key=lambda r: r["t1"], reverse=True)
@@ -135,8 +140,11 @@ def collect_events(log_dir):
                 except ValueError:
                     continue
                 status, _, reason = parts[3].partition(" | ")
-                evs.append({"ts": ts, "rid": rid, "phase": parts[2],
-                            "status": status.strip(), "reason": reason.strip()})
+                reason, tag = split_via(reason.strip())
+                status = status.strip()
+                evs.append({"ts": ts, "rid": rid, "phase": parts[2], "status": status,
+                            "reason": reason,
+                            "via": (tag or "hand") if status == "override" else ""})
     evs.sort(key=lambda e: e["ts"], reverse=True)
     return evs
 
@@ -281,6 +289,7 @@ def fleet_metrics(runs, events, window_days=30):
     ev_w = [e for e in events if e["ts"] >= cut]
     gates = [s for r in w for s, _ in r["gates"].values()]
     n_g = len(gates) or 1
+    hand = sum(r["hand_required_overrides"] for r in w)
     confs = [r["conformance"] for r in w if r["conformance"]]
     m = {
         "window_days": window_days,
@@ -291,6 +300,8 @@ def fleet_metrics(runs, events, window_days=30):
         "rejected": gates.count("fail"),
         "overridden": gates.count("override"),
         "override_rate": round(gates.count("override") / n_g, 3),
+        "hand_overridden": hand,
+        "hand_override_rate": round(hand / n_g, 3),
         "skip_rate": round(gates.count("skip") / n_g, 3),
         "misfires": sum(1 for r in w if r["misfire"]),
         "misfire_rate": round(sum(1 for r in w if r["misfire"]) / (len(w) or 1), 3),
@@ -465,8 +476,9 @@ def efficiency_rankings(sessions, min_cost=1.0):
 
 
 DEFAULT_ALERTS = [
-    {"id": "override-rate", "metric": "override_rate", "op": ">", "threshold": 0.15,
-     "severity": "warn", "note": "gates being overridden too often; check reasons in the stream"},
+    {"id": "override-rate", "metric": "hand_override_rate", "op": ">", "threshold": 0.15,
+     "severity": "warn", "note": "required gates being overridden by hand too often; "
+     "plan, batch, inherit and lane-lower overrides do not count; check reasons in the stream"},
     {"id": "misfire-rate", "metric": "misfire_rate", "op": ">", "threshold": 0.2,
      "severity": "warn", "note": "lane chosen disagrees with classifier too often (feed for keyword fixes)"},
     {"id": "skip-rate", "metric": "skip_rate", "op": ">", "threshold": 0.5,
@@ -2264,7 +2276,7 @@ def session_detail(rid, log_dir, dashboard_href="../index.html"):
         elif kind == "GATE" and len(parts) == 4:
             status, _, reason = parts[3].partition(" | ")
             timeline.append({"ts": ts, "phase": parts[2], "status": status.strip(),
-                             "reason": reason.strip()})
+                             "reason": split_via(reason.strip())[0]})
         elif kind == "OUTCOME" and len(parts) == 4:
             outcomes.append({"ts": ts, "phase": parts[2], "detail": parts[3]})
         elif kind == "DEBT":

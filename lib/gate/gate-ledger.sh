@@ -258,7 +258,7 @@ start() {
         echo "To lower the lane on purpose: start --amend --lower --reason \"<why>\" $rid $lane ... (flags before the rid; record-batch has none, so run start --amend --lower first). Recorded as a lane-lower override for audit." >&2
         return 65
       fi
-      append_run_line "$rid" "$(printf '%s | GATE | lane-lower | override | %s -> %s: %s' "$(now)" "$prev" "$lane" "$reason")"
+      append_run_line "$rid" "$(printf '%s | GATE | lane-lower | override | %s -> %s: %s | via=lane-lower' "$(now)" "$prev" "$lane" "$reason")"
     fi
   fi
   local line
@@ -539,9 +539,21 @@ outcome_read() {
     }' "$f" | sort -n | cut -f2-
 }
 
-override() {
+# Every override row ends in a ` | via=<source>` field naming its writer, so a reader can tell a
+# lone hand override from a bulk writer's: hand (the override verb), plan (plan-record), batch
+# (record-batch), inherit (inherit), lane-lower (start --amend --lower). The reason stays field 5,
+# the tag is field 6, and a reader that joins fields 5..NF strips a trailing ` | via=<token>`.
+# A row written before the tag existed has no field and reads as hand.
+override() { _override_via hand "$@"; }
+
+# Usage: _override_via <source> <rid> <phase> <reason...>
+_override_via() {
+  local via="$1"; shift
   local rid="${1:-}" raw="${2:-}"; shift 2 2>/dev/null || { echo "usage: override <rid> <phase> <reason>" >&2; return 64; }
-  local reason; reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
+  local reason; reason="$(oneline "$@")"
+  # A typed trailing tag would read as the writer's own: drop it, the verb stamps the real one.
+  reason="$(printf '%s' "$reason" | sed -E 's/ [|] via=[a-z-]+$//')"
+  [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
   local phase; phase="$(normalize_phase "$raw")"
   local f; f="$(ledger_file "$rid")"
   # Blanket-override guard: a reason already used to override a DIFFERENT phase
@@ -554,6 +566,7 @@ override() {
         BEGIN { p = ENVIRON["KIT_AWK_P"]; r = ENVIRON["KIT_AWK_R"] }
         $2=="GATE" && $4=="override" && $3!=p {
           rr=$5; for (i=6; i<=NF; i++) rr=rr " | " $i   # reason may contain " | "
+          sub(/ [|] via=[a-z-]+$/, "", rr)              # the writer tag is not part of the reason
           if (rr==r) found=1
         }
         END { exit !found }' "$f"; then
@@ -561,7 +574,7 @@ override() {
     return 65
   fi
   mkdir -p "$RUNS_DIR"
-  append_run_line "$rid" "$(printf '%s | GATE | %s | override | %s' "$(now)" "$phase" "$reason")"
+  append_run_line "$rid" "$(printf '%s | GATE | %s | override | %s | via=%s' "$(now)" "$phase" "$reason" "$via")"
 }
 
 # review-verdict <rid>: the LAST verdict the review commands recorded for this run, one of SHIP,
@@ -726,7 +739,7 @@ _plan_record_apply() {
   local i=0
   while [ "$i" -lt "$_pr_n" ]; do
     case "${_pr_kind[$i]}" in
-      override) override "$_pr_rid" "${_pr_phase[$i]}" "${_pr_reason[$i]}" || return $? ;;
+      override) _override_via "${_pr_via:-plan}" "$_pr_rid" "${_pr_phase[$i]}" "${_pr_reason[$i]}" || return $? ;;
       *)        record "$_pr_rid" "${_pr_phase[$i]}" "${_pr_kind[$i]}" "${_pr_reason[$i]}" || return $? ;;
     esac
     i=$((i+1))
@@ -811,7 +824,7 @@ plan_record() {
     [ -n "$ph" ] && plan_phases="$plan_phases$ph "
   done <<< "$plan_out"
 
-  _pr_rid="$rid"; _pr_n=0; _pr_kind=(); _pr_phase=(); _pr_reason=()
+  _pr_rid="$rid"; _pr_via=plan; _pr_n=0; _pr_kind=(); _pr_phase=(); _pr_reason=()
   local seen=" " kind arg raw reason
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -916,7 +929,7 @@ record_batch() {
   done
   [ "${#items[@]}" -gt 0 ] || { echo "record-batch: no <phase>=<state>:<evidence> items given" >&2; echo "$usage" >&2; return 64; }
 
-  _pr_rid="$rid"; _pr_n=0; _pr_kind=(); _pr_phase=(); _pr_reason=()
+  _pr_rid="$rid"; _pr_via=batch; _pr_n=0; _pr_kind=(); _pr_phase=(); _pr_reason=()
   local seen=" "
   for item in "${items[@]}"; do
     case "$item" in
@@ -1061,7 +1074,7 @@ inherit() {
          END { exit !f }' "$cf"; then
       printf '%s already inherited from %s\n' "$ph" "$parent"; continue
     fi
-    override "$rid" "$ph" "${TOK}$ph ran there at $ts" || { rc=$?; echo "inherit: override() refused the $ph write (exit $rc); earlier lines stay, re-run the same call to finish" >&2; return "$rc"; }
+    _override_via inherit "$rid" "$ph" "${TOK}$ph ran there at $ts" || { rc=$?; echo "inherit: override() refused the $ph write (exit $rc); earlier lines stay, re-run the same call to finish" >&2; return "$rc"; }
     printf '%s inherited from %s\n' "$ph" "$parent"
   done <<< "$judge"
   return 0
