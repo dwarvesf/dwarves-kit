@@ -383,6 +383,20 @@ _captured_output() {
 }
 _has_captured_output() { [ -n "$(_captured_output)" ]; }
 
+# _green_marks: stdin = proof text. 0 when the text carries a green-run marker; the FAIL/INCONCLUSIVE
+# veto on the last Verdict line stays with the caller (last_ok). A bare PASS in prose is NOT a marker.
+#   (a) the last line-start `Verdict:` is PASS    (b) an `Exit: 0` line
+#   (c) a table cell starting PASS/PASSED, and no cell that is exactly FAIL/INCONCLUSIVE
+#   (d) a line-start `PASS` harness token
+_green_marks() {
+  local t lv; t="$(cat)"
+  grep -qE 'Exit:[[:space:]]*0' <<<"$t" && return 0
+  lv="$(grep -iE '^[[:space:]]*Verdict:' <<<"$t" | tail -1)"
+  grep -qiE '^[[:space:]]*Verdict:[[:space:]]*PASS' <<<"$lv" && return 0
+  { grep -qE '\|[[:space:]]*PASS(ED)?([[:space:]][^|]*)?(\||$)' <<<"$t" || grep -qE '^PASS[[:space:]]' <<<"$t"; } || return 1
+  ! grep -qE '\|[[:space:]]*(FAIL|INCONCLUSIVE)[[:space:]]*(\||$)' <<<"$t"
+}
+
 # _negctl_required <root> <base> <slug>: prints yes|no, whether a behavioral proof must carry a
 # NEGATIVE CONTROL. [gate] negative_control = always (default, every behavioral change) | full
 # (only a hard-path diff per lane-classify, or a spec whose Lane: is full). A project-level
@@ -632,7 +646,7 @@ check() {
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
         has_negctl=1; { [ "$negctl_req" = no ] || grep -qi 'NEGATIVE CONTROL' "$p"; } && has_negctl=0
-        has_green=1; [ "$has_out" -eq 0 ] && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } && has_green=0
+        has_green=1; [ "$has_out" -eq 0 ] && { _green_marks < "$p" || _has_committed_image "$p" "$root"; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
           ok=0; break
@@ -669,7 +683,7 @@ check() {
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         has_negctl=1; { [ "$negctl_req" = no ] || grep -qi 'NEGATIVE CONTROL' < <(printf '%s' "$content"); } && has_negctl=0
-        has_green=1; [ "$has_out" -eq 0 ] && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' < <(printf '%s' "$content") || [ "$grp_img" -eq 0 ]; } && has_green=0
+        has_green=1; [ "$has_out" -eq 0 ] && { _green_marks < <(printf '%s' "$content") || [ "$grp_img" -eq 0 ]; } && has_green=0
         last_ok=1; ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && last_ok=0
         if [ "$has_negctl" -eq 0 ] && [ "$has_green" -eq 0 ] && [ "$last_ok" -eq 0 ]; then
           ok=0; break
