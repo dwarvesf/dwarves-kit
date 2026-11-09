@@ -87,7 +87,7 @@ A `🔴 **Needs you:**` block lists lettered actions instead. Each one opens wit
 | You see | Do this |
 |---|---|
 | `is not a git repo` | You passed a bare name. Pass an absolute path. |
-| `wrap start` says `branch <name> already exists` | No verb adds a worktree for an existing branch. Pick a new name. |
+| `wrap start` says `branch <name> already exists` | Pick a new name. To work on a branch already on origin (an open PR's), run `wrap start <repo> <branch> --existing`; a branch that exists locally still refuses. |
 | `PULL BLOCKED` | The main checkout stayed behind. Another session may own it, or a dirty file blocks the pull. The report names the checkout under `Left alone`. |
 | `SKIP <worktree>: busy, held by pid ...` | A live process sits in that worktree. Let it exit, then run the tidy again. |
 | `LAND REFUSED` | The worktree holds an ignored file under a directory the branch touches. A clean checkout would not have it. Commit it, move it, or remove it. |

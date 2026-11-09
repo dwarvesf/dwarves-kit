@@ -2,7 +2,7 @@
 
 # --------------------------------------------------------------------------- start
 
-# cmd_start <repo> <branch> [--pick <branch>]... [--carry [<path>...]] -- the start half `land` finishes.
+# cmd_start <repo> <branch> [--existing] [--pick <branch>]... [--carry [<path>...]] -- the start half `land` finishes.
 # Sessions repeatedly hand-run "worktree off origin/<default> with a fresh branch" when the
 # main checkout is dirty or foreign; this is that step as a verb. It resolves the repo's
 # default branch through the same `_default_branch` helper every other verb uses, fetches it
@@ -19,6 +19,13 @@
 # already on disk; no default branch resolved; a failed fetch; a held
 # index.lock; and a `worktree add` git itself refuses.
 #
+# --existing starts from a branch that is already on origin (an open PR's branch) instead of
+# refusing it: the verb fetches origin/<branch> alone, then creates the worktree on a local
+# <branch> tracking origin/<branch> at that tip, so commits added there push normally. It
+# keeps every other refusal: an existing path, an existing LOCAL <branch>, a held index.lock
+# and a failed fetch; a <branch> absent on origin refuses by name. Without the flag the
+# same-name-on-origin refusal above is unchanged.
+#
 # --carry moves the main checkout's own uncommitted edits into the freshly created worktree,
 # once the worktree exists exactly as it would without the flag: `_start_carry` (below) owns
 # that half. A carry refusal (a foreign index.lock, or an apply conflict) never undoes the
@@ -32,7 +39,7 @@
 # A pick refusal or conflict skips the carry and leaves the main checkout's edits untouched.
 # Like a carry refusal, a pick refusal never undoes the worktree and exits 2.
 cmd_start() {
-  local repo="" branch="" carry=0 ncarry=0 seen_repo=0 seen_branch=0 arg
+  local repo="" branch="" existing=0 carry=0 ncarry=0 seen_repo=0 seen_branch=0 arg
   local carry_paths npick=0 pick_branches
   while [ $# -gt 0 ]; do
     arg="$1"
@@ -44,6 +51,7 @@ cmd_start() {
           ncarry=$(( ncarry + 1 )); carry_paths[ncarry]="$1"; shift
         done
         ;;
+      --existing) existing=1; shift ;;
       --pick)
         [ $# -ge 2 ] && case "$2" in -*) false ;; esac \
           || { echo "wrap.sh start: --pick needs a branch name" >&2; return 64; }
@@ -61,7 +69,7 @@ cmd_start() {
     esac
   done
   [ "$seen_repo" = 1 ] && [ "$seen_branch" = 1 ] \
-    || { echo "usage: wrap.sh start <repo> <branch> [--pick <branch>]... [--carry [<path>...]]" >&2; return 64; }
+    || { echo "usage: wrap.sh start <repo> <branch> [--existing] [--pick <branch>]... [--carry [<path>...]]" >&2; return 64; }
   _is_repo "$repo" || { echo "wrap.sh start: ${repo} is not a git repo" >&2; return 64; }
   # git records a worktree fully resolved, so the printed path resolves the same way.
   repo="$(cd "$repo" 2>/dev/null && pwd -P)" \
@@ -86,13 +94,30 @@ cmd_start() {
   wt="${repo}/.claude/worktrees/${slug}"
   [ -e "$wt" ] && { echo "wrap.sh start: ${wt} already exists" >&2; return 1; }
 
-  git -C "$repo" fetch -q origin "$def" 2>/dev/null \
-    || { echo "wrap.sh start: fetch origin ${def} failed" >&2; return 1; }
+  local base_ref="origin/${def}" track=()
+  if [ "$existing" = 1 ]; then
+    # ls-remote exits 2 when origin answers but has no such branch; any other failure
+    # means origin was unreachable, which is a failed fetch, not an absent branch.
+    local lsrc=0
+    git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1 || lsrc=$?
+    case "$lsrc" in
+      0) ;;
+      2) echo "wrap.sh start: --existing branch ${branch} does not exist on origin" >&2; return 1 ;;
+      *) echo "wrap.sh start: fetch origin ${branch} failed" >&2; return 1 ;;
+    esac
+    git -C "$repo" fetch -q origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" 2>/dev/null \
+      || { echo "wrap.sh start: fetch origin ${branch} failed" >&2; return 1; }
+    base_ref="origin/${branch}"; track=(--track)
+  else
+    git -C "$repo" fetch -q origin "$def" 2>/dev/null \
+      || { echo "wrap.sh start: fetch origin ${def} failed" >&2; return 1; }
+  fi
   # `worktree add -b` never sees the remote, so the same-name-on-origin check runs
   # here, live (ls-remote) plus the tracking ref for an unreachable remote's
   # already-known state. A local branch created anyway would collide at push.
-  if _ref_exists "$repo" "refs/remotes/origin/${branch}" \
-     || git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+  if [ "$existing" = 0 ] \
+     && { _ref_exists "$repo" "refs/remotes/origin/${branch}" \
+          || git -C "$repo" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; }; then
     echo "wrap.sh start: branch ${branch} already exists on origin" >&2
     return 1
   fi
@@ -102,8 +127,8 @@ cmd_start() {
   # pruning first keeps that state a non-event.
   git -C "$repo" worktree prune 2>/dev/null
   mkdir -p "${repo}/.claude/worktrees" 2>/dev/null
-  git -C "$repo" worktree add -b "$branch" "$wt" "origin/${def}" >/dev/null 2>&1 \
-    || { echo "wrap.sh start: git worktree add refused ${wt} (${branch} at origin/${def})" >&2; return 1; }
+  git -C "$repo" worktree add ${track[@]+"${track[@]}"} -b "$branch" "$wt" "$base_ref" >/dev/null 2>&1 \
+    || { echo "wrap.sh start: git worktree add refused ${wt} (${branch} at ${base_ref})" >&2; return 1; }
   printf '%s\n' "$wt"
   if [ "$npick" -gt 0 ]; then
     _start_pick "$repo" "$wt" "$def" "${pick_branches[@]}" || return $?
