@@ -35,11 +35,11 @@ main() {
   local summary; summary="$(transcript_compact "$transcript_path" "$(cfg transcript_k 40)")"
   if [ -z "${summary//[[:space:]]/}" ]; then si_log "reviewer: empty transcript, nothing to review"; return 0; fi
 
-  # Deterministic signal-marker pre-gate (opt-in via signal_gate): skip the model call for a summary
+  # Deterministic signal-marker pre-gate (default on; opt out with signal_gate=false): skip the model call for a summary
   # with zero cheap markers of a draftable signal, preserving quota. Conservative by design (broad
   # pattern biases toward KEEPING a session over dropping a real one); skips are ledgered so the
   # false-negative rate is auditable before the gate is trusted. Runs before the lock + the model.
-  if [ "$(cfg signal_gate false)" = "true" ] && ! has_signal_markers "$summary"; then
+  if [ "$(cfg signal_gate true)" = "true" ] && ! has_signal_markers "$summary"; then
     si_log "reviewer: signal-gate , no signal markers in summary, skipping (quota preserved)"
     _ledger false "" 0 0 0 "skip-no-signal"; return 0
   fi

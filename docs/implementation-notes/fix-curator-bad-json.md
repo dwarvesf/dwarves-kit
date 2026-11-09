@@ -19,5 +19,5 @@ The reviewer called `claude -p --bare`. `--bare` reads auth only from `ANTHROPIC
 - `--safe-mode` needs a recent claude CLI. An older CLI would reject the flag and ledger `no-output`, which now shows up in the egress ledger.
 
 ## Open
-- The curator now spends quota: 20 to 45 reviews a day normally, a burst of 560 rows on one day. Single-flight and the empty-transcript skip stay as the only throttles. The `signal_gate` option (default off) would cut calls.
+- The curator now spends quota: 20 to 45 reviews a day normally, a burst of 560 rows on one day. Lead decision: `signal_gate` now defaults to true (opt out with `signal_gate = false`), so only sessions with signal markers spend quota. The suites that test the reviewer pipeline on marker-free fixtures export `SKILL_CURATOR_SIGNAL_GATE=false`.
 - 1541 old `bad-json` rows stay as written.

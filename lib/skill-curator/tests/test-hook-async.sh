@@ -3,6 +3,7 @@
 # reentrancy + enabled gates hold. The fuller sleep-30 async + reentrancy suite is sub-goal 03.
 # Run: bash tests/test-hook-async.sh   Pass: "...: all N passed", exit 0.
 set -uo pipefail
+export SKILL_CURATOR_SIGNAL_GATE=false   # tests the reviewer pipeline on marker-free fixtures; the gate itself is test-signal-gate.sh
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="$DIR/hooks/skill-review.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; trap 'rm -rf "$TMP"' EXIT
