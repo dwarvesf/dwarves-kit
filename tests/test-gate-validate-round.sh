@@ -209,7 +209,7 @@ if want C3; then
   T="$(gl validate-round open vr-c3 "$SP")"
   gl validate-round close vr-c3 "$T" verdict=NEEDS-REVISION critical=2 warnings=1 agents=7 r6="design-bearing=no pass" summary="stale fixture" >/dev/null 2>&1
   EXP="ROUND | closing | token=$T kind=close verdict=NEEDS-REVISION critical=2 warnings=1 agents=7 | design-bearing=no pass | stale fixture
-GATE | validate | skipped | NEEDS REVISION: stale fixture
+GATE | validate | skipped | NEEDS-REVISION: stale fixture
 OUTCOME | validate | end | at=E caught=true dur_s=D
 GATE | design-record | ran | design-bearing=no pass
 OUTCOME | design-record | end | at=E caught=false dur_s=D
@@ -221,7 +221,7 @@ ROUND | close | token=$T verdict=NEEDS-REVISION"
   T="$(gl validate-round open vr-c3 "$SP")"
   gl validate-round close vr-c3 "$T" verdict=NEEDS-REVISION critical=2 warnings=0 agents=4 r6="design-bearing=yes pass" >/dev/null 2>&1
   G="$(tailn vr-c3 6 | sed -n '2p')"
-  assert "C3 missing summary defaults to '<critical> critical'" "$([ "$G" = 'GATE | validate | skipped | NEEDS REVISION: 2 critical' ]; echo $?)"
+  assert "C3 missing summary defaults to '<critical> critical'" "$([ "$G" = 'GATE | validate | skipped | NEEDS-REVISION: 2 critical' ]; echo $?)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ if want C4; then
   T="$(gl validate-round open vr-c4 "$SP")"
   gl validate-round close vr-c4 "$T" verdict=NEEDS-REVISION critical=1 warnings=0 agents=5 r6="design-bearing=yes critical: empty Design section" summary="1 critical" >/dev/null 2>&1
   EXP="ROUND | closing | token=$T kind=close verdict=NEEDS-REVISION critical=1 warnings=0 agents=5 | design-bearing=yes critical: empty Design section | 1 critical
-GATE | validate | skipped | NEEDS REVISION: 1 critical
+GATE | validate | skipped | NEEDS-REVISION: 1 critical
 OUTCOME | validate | end | at=E caught=true dur_s=D
 GATE | design-record | skipped | critical: empty Design section
 OUTCOME | design-record | end | at=E caught=true dur_s=D
@@ -694,6 +694,16 @@ GATE | design-record | skipped | incomplete: died mid-flight
 OUTCOME | design-record | end | at=E caught=false dur_s=D
 ROUND | incomplete | token=$T"
   assert "C10d resume completes the full incomplete block" "$([ "$(tailn vr-c10d 6)" = "$EXP" ]; echo $?)"
+
+  # a half-written close from before the hyphen spelling (space form) resumes cleanly
+  new_log
+  T="$(gl validate-round open vr-c10d "$SP")"
+  printf '%s | ROUND | closing | token=%s kind=close verdict=NEEDS-REVISION critical=1 warnings=0 agents=3 | design-bearing=no pass | 1 critical\n' "$TS" "$T" >> "$(ledger vr-c10d)"
+  printf '%s | GATE | validate | skipped | NEEDS REVISION: 1 critical\n' "$TS" >> "$(ledger vr-c10d)"
+  gl validate-round close vr-c10d "$T" >/dev/null 2>&1; RC=$?
+  assert "C10d legacy space-form line resumes: exits 0" "$([ "$RC" = 0 ]; echo $?)"
+  G=$(grep -c ' | GATE | validate | skipped' "$(ledger vr-c10d)")
+  assert "C10d legacy space-form line not duplicated" "$([ "$G" = 1 ]; echo $?)"
 
   # a forged line after `closing` is foreign, never adopted: both resume paths
   # must list it on stderr, refuse 1, and leave the ledger byte-identical

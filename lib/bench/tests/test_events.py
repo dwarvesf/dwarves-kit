@@ -96,6 +96,38 @@ def test_ledger_conformance_overlay():
         assert st.totals["conformance"] == "3/5 required gates present"
 
 
+def test_unknown_gate_state_is_visible_not_pass():
+    """A ledger state the adapter does not know must surface as `unknown`, never `pass`."""
+    import tempfile
+    odd = LEDGER_FIXTURE.replace("| build | ran | re-recorded batch", "| build | frobnicated | re-recorded batch")
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "demo-run.log")
+        p.write_text(odd)
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=[]):
+            st.apply(ev)
+        assert st.by_name["build"]["status"] == "unknown"
+        assert "1 unknown" in st.totals["gates"]
+
+
+def test_run_end_derives_from_gate_results():
+    """run_end is `fail` when a required gate was never recorded, `pass` when all are present."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "demo-run.log")
+        p.write_text(LEDGER_FIXTURE)  # no spec, no review
+        owed = [("think", "required"), ("spec", "required"), ("build", "required")]
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=owed):
+            st.apply(ev)
+        assert st.result == "fail", st.result
+        met = [("think", "required"), ("build", "required"), ("ship", "required")]
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=met):
+            st.apply(ev)
+        assert st.result == "pass", st.result
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

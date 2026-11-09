@@ -47,6 +47,18 @@ _ld_array() {
   return "$rc"
 }
 
+# lane_rank_of <lane>: strictness rank, tiny 1, normal 2, full 3. The special lanes bug and backfill
+# sit at normal's rank. A lane outside the set prints nothing (and exits 1); callers choose how an
+# unknown lane reads (the ledger: empty, the classifier: -1). The one place the rank is declared.
+lane_rank_of() {
+  case "$1" in
+    tiny) echo 1 ;;
+    normal|bug|backfill) echo 2 ;;
+    full) echo 3 ;;
+    *) return 1 ;;
+  esac
+}
+
 # lane_project_applies: 0 when the project .kit.toml is tracked and unmodified.
 lane_project_applies() {
   local pf; pf="$(kit_config_project)"

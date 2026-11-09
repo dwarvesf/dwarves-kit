@@ -192,16 +192,12 @@ _effective_lane() {
     END { l = (a != "") ? a : first; if (match(l, /lane=[^ ]+/)) print substr(l, RSTART+5, RLENGTH-5) }' "$f"
 }
 
-# Strictness rank of a lane, for the amend guard: tiny 1, normal 2, full 3. The special lanes bug and
-# backfill sit at normal's rank, so moving between them stays free (their old rule) while a drop from
+# Strictness rank of a lane, for the amend guard (the table is lane_rank_of in lane-data.sh): tiny 1, normal 2,
+# full 3. The special lanes bug and backfill sit at normal's rank, so moving between them stays free (their old rule) while a drop from
 # full to either still needs --lower. A lane outside this set has no rank; an amend to one is refused,
 # and an amend FROM one (a hand-written first START) is not compared.
 _lane_rank() {
-  case "$1" in
-    tiny) echo 1 ;;
-    normal|bug|backfill) echo 2 ;;
-    full) echo 3 ;;
-  esac
+  lane_rank_of "$1" || true
 }
 
 # START records the run's routing facts for lane telemetry: the lane the
@@ -1403,8 +1399,10 @@ _vr_load() {
 
 # Normalize a ledger line for plan comparison: drop the field-1 timestamp and
 # mask the volatile at=/dur_s= fields, so only the semantic content compares.
+# A GATE line written before the hyphen spelling reads `NEEDS REVISION:`; fold it
+# so a half-written round from an older kit still resumes.
 _vr_norm() {
-  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g'
+  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g; s/\| NEEDS REVISION: /| NEEDS-REVISION: /'
 }
 
 # Print one foreign ledger line to stderr with a `  foreign: ` prefix, control
@@ -1531,14 +1529,14 @@ _vr_close_records() {
     )
   elif [ "$r6crit" = 1 ]; then
     planned=(
-      "GATE | validate | skipped | NEEDS REVISION: $summary"
+      "GATE | validate | skipped | NEEDS-REVISION: $summary"
       "OUTCOME | validate | end | at=E caught=true dur_s=D"
       "GATE | design-record | skipped | $r6rest"
       "OUTCOME | design-record | end | at=E caught=true dur_s=D"
     )
   else
     planned=(
-      "GATE | validate | skipped | NEEDS REVISION: $summary"
+      "GATE | validate | skipped | NEEDS-REVISION: $summary"
       "OUTCOME | validate | end | at=E caught=true dur_s=D"
       "GATE | design-record | ran | $r6"
       "OUTCOME | design-record | end | at=E caught=false dur_s=D"
@@ -1551,7 +1549,7 @@ _vr_close_records() {
     _vr_w "$f" "$clnr" GATE design-record ran     record "$rid" design-record ran "$r6"
     _vr_w "$f" "$clnr" OUTCOME design-record end  outcome "$rid" design-record end caught="$caught_dr"
   else
-    _vr_w "$f" "$clnr" GATE validate skipped      record "$rid" Validate skipped "NEEDS REVISION: $summary"
+    _vr_w "$f" "$clnr" GATE validate skipped      record "$rid" Validate skipped "NEEDS-REVISION: $summary"
     _vr_w "$f" "$clnr" OUTCOME validate end       outcome "$rid" Validate end caught=true
     if [ "$r6crit" = 1 ]; then
       _vr_w "$f" "$clnr" GATE design-record skipped  record "$rid" design-record skipped "$r6rest"

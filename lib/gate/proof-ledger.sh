@@ -502,7 +502,7 @@ _visual_proof() {
     assets_local=yes
   fi
 
-  local reasons="" pending=0 fetches=0 m mfile mslug n st url sha f by got
+  local reasons="" pending=0 fetches=0 m mfile mslug st url sha f by got
   while IFS= read -r m; do
     [ -n "$m" ] || continue
     mfile="$root/$m"; [ -f "$mfile" ] || continue
@@ -512,9 +512,7 @@ _visual_proof() {
     mslug="$(jq -r '.slug // empty' "$mfile" 2>/dev/null)"
     [ -n "$mslug" ] || mslug="$(basename "$(dirname "$m")")"
     # Upload progress is the gitignored queue file, never the manifest: a leftover
-    # .pending line (or a legacy pending status) is what the flush hint points at.
-    n="$(jq '[.assets[]? | select(.status == "pending")] | length' "$mfile" 2>/dev/null)"
-    [ "${n:-0}" -gt 0 ] 2>/dev/null && pending=1
+    # .pending line is what the flush hint points at.
     _visual_slug_ok "$mslug" && [ -s "$root/.kit/proof-assets/$mslug/.pending" ] && pending=1
     # fields joined on \x1f, never \t: read collapses consecutive IFS whitespace, so an
     # empty url/sha256 would shift the file field into url's slot.

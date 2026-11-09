@@ -26,12 +26,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from events import resolve_run  # noqa: E402
+from events import GATE_STATE, resolve_run  # noqa: E402
 
 PHASE_ORDER = ["grill", "think", "design", "design-critique", "ui-design", "spec",
                "validate", "design-record", "test-plan", "build", "review", "docs",
                "ship", "reflect"]
-CELL = {"pass": "●", "skip": "○", "override": "⚑"}
+CELL = {"pass": "●", "skip": "○", "override": "⚑", "unknown": "?"}
 
 
 def run_summary(path, rid=None):
@@ -55,7 +55,7 @@ def run_summary(path, rid=None):
                 meta.setdefault(k, v)
         elif parts[1] == "GATE" and len(parts) == 4:
             status, _, reason = parts[3].partition(" | ")
-            status = {"ran": "pass", "skipped": "skip", "override": "override"}.get(status.strip(), "pass")
+            status = GATE_STATE.get(status.strip(), "unknown")
             gates[parts[2]] = (status, reason.strip())
     return {"rid": rid, "t0": first_ts, "t1": last_ts, "gates": gates, "meta": meta}
 
@@ -104,7 +104,7 @@ th,td{border:1px solid var(--line);padding:.3rem .55rem;font-size:.82rem;text-al
 th{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em}
 td.c{text-align:center;cursor:default}
 td.c.pass{color:var(--pass)}td.c.skip{color:var(--muted)}
-td.c.override{color:var(--warn)}td.c.absent{color:var(--line)}
+td.c.override{color:var(--warn)}td.c.unknown{color:var(--fail)}td.c.absent{color:var(--line)}
 .wave td.state-dispatched{color:var(--accent);font-weight:600}
 .wave td.state-queued{color:var(--muted)}
 .wave td.state-hold{color:var(--warn)}

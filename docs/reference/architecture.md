@@ -656,7 +656,7 @@ guard), and how do I trigger it.
 | `TRIAGING` | intake: intent -> lane + (eventually) an ID | `/assign`, `/think`, "apply SDD", a vague brief | lane chosen |
 | `DESIGNING` | solution exploration (iterative) | full lane, or "let's design" | solution approved |
 | `SPECIFYING` | the spec is being written | `/spec` | spec `DRAFT` exists |
-| `VALIDATING` | adversarial spec review | `/spec-validate` | `VALIDATED` or NEEDS REVISION |
+| `VALIDATING` | adversarial spec review | `/spec-validate` | `VALIDATED` or NEEDS-REVISION |
 | `BUILDING` | execution sub-machine (builder -> end verifiers -> fix) | `/execute`, `/next` | all tasks + integration PASS |
 | `REVIEWING` | code review | `/review`, `/review-team` | verdict recorded |
 | `DOCUMENTING` | doc sync + doc-verifier | `/docs` | docs match code |
@@ -710,7 +710,7 @@ guard), and how do I trigger it.
 | DESIGNING | "design is good, write the spec" | solution approved | SPECIFYING |
 | SPECIFYING | `/spec` done | spec `DRAFT` exists | VALIDATING (full) / BUILDING (normal) |
 | VALIDATING | `/spec-validate` verdict | VALIDATED | BUILDING |
-| VALIDATING | NEEDS REVISION | revisions required | SPECIFYING |
+| VALIDATING | NEEDS-REVISION | revisions required | SPECIFYING |
 | BUILDING | task FAIL:fixable | retries < 2 | BUILDING (fix-agent) |
 | BUILDING | task FAIL:escalate / retries == 2 | unfixable | BLOCKED |
 | BUILDING | "also do Y" / "amend the spec" | at a task checkpoint; completed tasks frozen; Status stays VALIDATED | SPECIFYING (amend, not restart) |

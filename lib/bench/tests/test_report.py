@@ -33,6 +33,15 @@ def test_run_summary():
         assert (s["t1"] - s["t0"]).total_seconds() == 30 * 60
 
 
+def test_unknown_gate_state_is_not_pass():
+    with tempfile.TemporaryDirectory() as d:
+        s = report.run_summary(_write(d, "u.log", L1 + "2026-07-04T08:31:00Z | GATE | review | frobnicated | odd\n"))
+        assert s["gates"]["review"][0] == "unknown"
+        out = Path(d, "r.html")
+        report.render([s], {"title": "t", "runs": {}}, out)
+        assert "?" in out.read_text()
+
+
 def test_render_report():
     with tempfile.TemporaryDirectory() as d:
         runs = [report.run_summary(_write(d, "a.log", L1)),

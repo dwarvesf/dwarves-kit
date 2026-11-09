@@ -1688,6 +1688,31 @@ case_kit_own_session_not_auth() {
 # mkrepo_keep_config: reset feat/x to main (which carries the kit's own config) between probes.
 mkrepo_keep_config() { _git checkout -q -f main >/dev/null 2>&1; _git branch -q -D feat/x >/dev/null 2>&1; _git checkout -q -b feat/x >/dev/null 2>&1; }
 
+# lane-rank-one-source: the strictness rank is declared once (lane-data.sh) and both callers
+# wrap it: the classifier maps an unknown lane to -1, the ledger leaves it empty.
+case_lane_rank_one_source() {
+  local out want="tiny=1 normal=2 bug=2 backfill=2 full=3 nope=<empty>"
+  out="$(bash -c '
+    source "$1/lib/gate/lane-data.sh"
+    for l in tiny normal bug backfill full nope; do printf "%s=%s " "$l" "$(lane_rank_of "$l" || true)"; done' _ "$KIT_DIR" | sed -e 's/nope= /nope=<empty> /')"
+  [ "${out% }" = "$want" ] && pass "lane-rank-one-source: lane-data ranks" || fail "lane-rank-one-source" "lane-data got [$out]"
+  out="$(bash -c '
+    source "$1/lib/classify/lane-classify.sh"
+    for l in tiny normal bug backfill full nope; do printf "%s=%s " "$l" "$(lane_rank "$l")"; done' _ "$KIT_DIR")"
+  [ "${out% }" = "tiny=1 normal=2 bug=2 backfill=2 full=3 nope=-1" ] \
+    && pass "lane-rank-one-source: classifier keeps -1 for an unknown lane" || fail "lane-rank-one-source" "classifier got [$out]"
+  out="$(bash -c '
+    source "$1/lib/gate/lane-data.sh"
+    eval "$(sed -n "/^_lane_rank() {/,/^}/p" "$1/lib/gate/gate-ledger.sh")"
+    for l in tiny normal bug backfill full nope; do printf "%s=%s " "$l" "$(_lane_rank "$l")"; done' _ "$KIT_DIR" | sed -e 's/nope= /nope=<empty> /')"
+  [ "${out% }" = "$want" ] && pass "lane-rank-one-source: ledger keeps empty for an unknown lane" || fail "lane-rank-one-source" "ledger got [$out]"
+  if grep -qE '^[[:space:]]*(tiny\)|normal\|bug\|backfill\))' "$LC" "$GL"; then
+    fail "lane-rank-one-source" "a second rank table survives in lane-classify.sh or gate-ledger.sh"
+  else
+    pass "lane-rank-one-source: no second rank table"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 run_case() {
   local fn="case_${1//-/_}"
@@ -1695,7 +1720,7 @@ run_case() {
 }
 # `parity` (byte-identical against the baseline) holds only at the refactor commit; after the
 # flip the standing check is parity-after-flip.
-ALL="parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-review-repros floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head kit-own-session-not-auth"
+ALL="lane-rank-one-source parity-after-flip plan-flip four-false-hits webhook-signature-suggests suggest-records explain-suggest-line classify-files-full escalate-suggest floor-paths floor-rename-counts-both-sides floor-data-loss floor-extra-paths-union floor-invalid-extra-ere override-drop-review override-uncommitted override-typo override-no-light pinned-root malformed-array-fails-closed policy-at-base ship-migration-blocks ship-migration-absent-quiet ship-switch-off-on-base ship-flip-gate-in-pr ship-hollow-full-override ship-data-loss ship-no-spec-blocks ship-suggest-advisory workflow-view floor-timing floor-non-ascii hook-timeout floor-submodule override-empty-phases ship-operator-hollow-full ship-push-forms ship-base-is-origin-head ship-checks-pushed-ref ship-slug-quoted risk-verb significance-uses-risk floor-no-leaks override-unknown-lane-name toml-valid ship-merge-base-once override-operator-precedence default-lane-layers start-no-duplicate-skips ship-fail-closed-refs floor-diff-hardening floor-plus-line floor-where-boundary floor-timing-30k default-rejects-tiny safety-push-forms ship-marker-collisions ship-continuation-and-heredoc ship-marker-at-base exempt-reader-rejects exempt-glob-semantics floor-test-paths-not-auth floor-test-paths-other-kinds floor-test-path-notice floor-exempt-fixture-quiet floor-exempt-glob-bounded floor-exempt-per-kind floor-exempt-migration-only floor-exempt-notice-rules floor-exempt-real-auth-still-hits floor-exempt-working-tree-ignored floor-exempt-forbidden-kinds-rejected floor-exempt-reason-required floor-exempt-canary-rejected floor-exempt-malformed-rejected floor-exempt-never-kit-config floor-exempt-old-shape-ignored floor-exempt-data-loss-still-hits classify-files-exempt ship-exempt-in-pr-blocks ship-exempt-logged ship-test-path-skip-visible ship-notices-env-ignored ship-rid-folded floor-data-loss-sqli-canonical floor-data-loss-sqli-guards floor-data-loss-sqli-paths floor-data-loss-sqli-crossline floor-data-loss-sqli-show-fails floor-data-loss-sqli-cap floor-data-loss-sqli-optin floor-data-loss-sqli-payload floor-data-loss-sqli-tab-path floor-data-loss-sqli-review-repros floor-data-loss-sqli-awk-fails ship-sqli-skip-visible floor-data-loss-sqli-long-line floor-data-loss-sqli-many-lines floor-data-loss-sqli-big-head kit-own-session-not-auth"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]

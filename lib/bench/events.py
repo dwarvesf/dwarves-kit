@@ -178,6 +178,10 @@ def _merge_order(observed, expected_names):
     return merged
 
 
+# Ledger GATE state -> viewer status. An unmapped state stays visible as "unknown".
+GATE_STATE = {"ran": "pass", "skipped": "skip", "override": "override"}
+
+
 def ledger_to_events(path, rid=None, expected=None):
     """Adapt a real kit run ledger (logs/runs/<rid>.log, pipe-delimited lines
     written by gate-ledger.sh) into the event protocol, so recorded sessions
@@ -215,7 +219,7 @@ def ledger_to_events(path, rid=None, expected=None):
         elif kind == "GATE" and len(parts) == 4:
             phase, rest = parts[2], parts[3]
             status, _, reason = rest.partition(" | ")
-            status = {"ran": "pass", "skipped": "skip", "override": "override"}.get(status.strip(), "pass")
+            status = GATE_STATE.get(status.strip(), "unknown")
             if phase not in last:
                 order.append(phase)
                 timeline.append((_ledger_dt(prev, ts), phase))
@@ -256,16 +260,19 @@ def ledger_to_events(path, rid=None, expected=None):
         if name not in last:
             evs.append({"dt": .15, "ev": "stage_end", "stage": name, "status": "missed",
                         "detail": f"expected by the {lane or '?'} lane ({exp_level.get(name, '?')}), never recorded"})
-    counts = {s: sum(1 for p in order if last[p] == s) for s in ("pass", "skip", "override")}
+    counts = {s: sum(1 for p in order if last[p] == s) for s in ("pass", "skip", "override", "unknown")}
     wall = int((last_ts - first_ts).total_seconds()) if first_ts and last_ts else 0
     totals = {"duration_s": wall,
               "reproduce": f"bash lib/telemetry/lane-telemetry.sh trace {rid}",
-              "gates": f"{counts['pass']} ran · {counts['skip']} skipped · {counts['override']} overridden"}
+              "gates": f"{counts['pass']} ran · {counts['skip']} skipped · {counts['override']} overridden"
+                       + (f" · {counts['unknown']} unknown" if counts["unknown"] else "")}
     req = [n for n in exp_names if "required" in exp_level.get(n, "")]
     if req:  # conformance: required gates only; lite/intake advisory levels don't count
         seen = sum(1 for n in req if last.get(n) in ("pass", "override"))
         totals["conformance"] = f"{seen}/{len(req)} required gates present"
-    evs.append({"dt": .3, "ev": "run_end", "status": "pass", "totals": totals})
+    # the run fails when a required gate was never recorded or sits in an unknown state
+    failed = any(last.get(n, "missed") in ("missed", "unknown") for n in req)
+    evs.append({"dt": .3, "ev": "run_end", "status": "fail" if failed else "pass", "totals": totals})
     return evs
 
 

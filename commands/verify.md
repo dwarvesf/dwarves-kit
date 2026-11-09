@@ -101,14 +101,15 @@ Base ref: <sha> (<how it was resolved>)
 ## Mutation smoke (advisory)
 - QUIET | FLAG | SKIP -- [file:line the mutation survived, or the skip reason] (never changes the verdict)
 
-## Verdict: PASS / FAIL / INCONCLUSIVE
+## Verdict: PASS / FAIL
 ```
 
-`INCONCLUSIVE` is the honest third verdict, legal when: no valid
-baseline exists, the signal is noisy across reruns, or a confound (env drift,
-concurrent change) breaks attribution. Name the cause. INCONCLUSIVE is NOT a
-pass: the proof-of-done gate still demands a green run; an INCONCLUSIVE verify
-means design a better measurement, not ship.
+There is no third verdict. A measurement that cannot be attributed (no valid
+baseline, a signal that is noisy across reruns, or a confound such as env drift
+or a concurrent change) is a `FAIL`: write `FAIL: inconclusive, <cause>` and name
+the cause. It is NOT a pass: the proof-of-done gate still demands a green run,
+and the fix is a better measurement, not a ship. The gate reader still accepts a
+legacy `INCONCLUSIVE` line in old verification files.
 
 ### Step 7b: Visual capture (only when `proof.visual` is on)
 
@@ -158,9 +159,9 @@ regression-check this verdict.
 
 Also record the verdict for lane telemetry, one line (`verify` carries no matrix
 row of its own -- this is RUN_REPORT observability, never a new required gate):
-`bash lib/gate/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
+`bash lib/gate/gate-ledger.sh record <rid> verify ran "<PASS|FAIL>"`.
 
-Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> verify end caught=<true if the verdict is FAIL or INCONCLUSIVE, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> verify end caught=<true if the verdict is FAIL, else false>`.
 
 Gate what the proof needs by the spec's **proof class** (`lib/gate/proof-gate.sh class
 "<spec title or task>"`):
@@ -196,7 +197,7 @@ The run record follows the layout in `docs/verification/README.md`: the director
 work, or the back-compat flat `docs/verification/<slug>.md` (append-entry) for existing logs.
 
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
-On INCONCLUSIVE, end with: "Measurement ambiguous; design a better check (baseline pair, fixed env), then re-run `/kit:verify`."
+On `FAIL: inconclusive`, end with: "Measurement ambiguous; design a better check (baseline pair, fixed env), then re-run `/kit:verify`."
 
 ## Edge cases
 
