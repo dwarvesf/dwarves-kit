@@ -24,3 +24,8 @@ Delta from the worker brief. One section per item.
 
 - One map, `GATE_STATE` in `lib/bench/events.py`; `report.py` imports it. An unmapped state is `unknown`, shown as `?` in the matrix and the viewer.
 - `run_end` is `fail` when a required gate (per the lane plan) was never recorded or is `unknown`; else `pass`. A required gate that is `skipped` still counts as recorded, as before. Open question: should a skipped required gate fail the run? Conformance already scores it as absent.
+
+## 6. Lane rank, one source
+
+- The brief said make one of the two the source. Both already source `lib/gate/lane-data.sh` (the one reader of lane data), so the table lives there as `lane_rank_of`. Sourcing `lane-classify.sh` into the ledger would load the whole flag engine.
+- `gate-ledger.sh` `_lane_rank` still prints empty for an unknown lane. `lane-classify.sh` `lane_rank` still prints `-1`. Each keeps its caller contract.

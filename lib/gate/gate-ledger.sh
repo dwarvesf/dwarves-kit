@@ -192,16 +192,12 @@ _effective_lane() {
     END { l = (a != "") ? a : first; if (match(l, /lane=[^ ]+/)) print substr(l, RSTART+5, RLENGTH-5) }' "$f"
 }
 
-# Strictness rank of a lane, for the amend guard: tiny 1, normal 2, full 3. The special lanes bug and
-# backfill sit at normal's rank, so moving between them stays free (their old rule) while a drop from
+# Strictness rank of a lane, for the amend guard (the table is lane_rank_of in lane-data.sh): tiny 1, normal 2,
+# full 3. The special lanes bug and backfill sit at normal's rank, so moving between them stays free (their old rule) while a drop from
 # full to either still needs --lower. A lane outside this set has no rank; an amend to one is refused,
 # and an amend FROM one (a hand-written first START) is not compared.
 _lane_rank() {
-  case "$1" in
-    tiny) echo 1 ;;
-    normal|bug|backfill) echo 2 ;;
-    full) echo 3 ;;
-  esac
+  lane_rank_of "$1" || true
 }
 
 # START records the run's routing facts for lane telemetry: the lane the

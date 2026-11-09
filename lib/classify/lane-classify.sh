@@ -331,12 +331,7 @@ classify_core() {
 # assigning it, never from task words. An unrecognized lane returns -1 so lane_check can flag
 # it distinctly.
 lane_rank() {
-  case "$1" in
-    tiny)                echo 1;;
-    normal|bug|backfill) echo 2;;
-    full)                echo 3;;
-    *)                   echo -1;;
-  esac
+  lane_rank_of "$1" || echo -1
 }
 
 # Advisory floor check: compare the lane a human/LLM CHOSE against the deterministic
