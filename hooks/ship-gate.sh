@@ -240,8 +240,15 @@ _blank_quoted() {
 # A heredoc or here-string fed to a shell hides its body from CMD_CODE. If that body pushes, the
 # gate cannot see what is pushed: it is refused below (once the repo is known).
 SHELL_HD=0
-if grep -qE '(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<' <<< "$CMD" \
-   && grep -qE "$ENGAGE_RE" <<< "$CMD"; then SHELL_HD=1; fi
+# _hit <regex> <text>: grep -qE on a here-string. A grep that errors (rc above 1, a dead child) marks
+# a failed capture and the same regex is run by bash itself, so a dead grep never reads as "no match".
+_hit() {
+  grep -qE "$1" <<< "$2"; local _g=$?
+  if [ "$_g" -gt 1 ]; then CAP_FAIL=1; [[ $2 =~ $1 ]]; return $?; fi
+  return "$_g"
+}
+_SHELL_RE='(^|[^[:alnum:]_.-])(bash|sh|zsh)([[:space:]][^<|;&]*)?<<'
+if _hit "$_SHELL_RE" "$CMD" && _hit "$ENGAGE_RE" "$CMD"; then SHELL_HD=1; fi
 # `git [globals] stash push` saves a stash and pushes nothing, but GIT_RE reads "stash" as an option and
 # push-refs.sh (rightly) names no ref, which the gate would block as "no answer". Blank that subcommand
 # for the engage check only. The globals are git's own exact list, so `git -C stash push` (a push run in
@@ -260,13 +267,11 @@ _cap CMD_ENG "$_rc" "$CMD_IFS"
 _LOOSE_RE='(^|[^[:alnum:]_-])git[[:space:]].*push([[:space:]]|$|[`);&|])|gh["'"'"']?([[:space:]]+.*)?[[:space:]]+["'"'"']?pr["'"'"']?[[:space:]]+["'"'"']?(create|new)'
 _raw_engages() {
   local _s="$CMD_CODE" _m _n=0 _ire='\$\{IFS[^}]*\}'
-  while [ "$_n" -lt 20 ] && [[ $_s =~ $_ire ]]; do _m="${BASH_REMATCH[0]}"; _s="${_s/$_m/ }"; _n=$((_n + 1)); done
+  while [ "$_n" -lt 20 ] && [[ $_s =~ $_ire ]]; do _m="${BASH_REMATCH[0]}"; _s="${_s/"$_m"/ }"; _n=$((_n + 1)); done
   _s="${_s//\$IFS/ }"
   [[ $_s =~ $_LOOSE_RE ]]
 }
-# Here-strings, not `< <(echo ..)`: a dead process-substitution child left grep an empty input. A grep
-# that errors (rc above 1) counts as a failed capture too.
-_hit() { grep -qE "$1" <<< "$2"; local _g=$?; [ "$_g" -gt 1 ] && CAP_FAIL=1; return "$_g"; }
+# Here-strings, not `< <(echo ..)`: a dead process-substitution child left grep an empty input.
 if [ "$SHELL_HD" = 1 ] || _hit "$GIT_RE" "$CMD_GIT" || _hit "$GIT_RE" "$CMD_ENG" || _hit "$GH_RE" "$CMD_GH"; then :
 elif [ "$CAP_FAIL" = 1 ] && _raw_engages; then :   # a view died and the raw command looks like a push: engage
 else exit 0; fi
@@ -388,26 +393,30 @@ if [ -f "$PREFS" ]; then
   # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
   # The marker scan is pure bash (no forked grep): a dead grep child used to read as "no marker" and
   # let a push to the default branch through.
-  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0
+  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0; _BLOCKMSG=""; _NREF=0; _FIRSTREF=""; _SEENREFS=$'\n'
   while IFS= read -r _pl; do
     case "$_pl" in
       '@@DEFAULT-PUSH '*) [ -n "$_DPUSH" ] || _DPUSH="$_pl" ;;
       '@@FORCE'|'@@DEFAULT') _HAS_FORCE=1 ;;
-      '@@BLOCK '*) _HAS_BLOCK=1 ;;
+      '@@BLOCK '*) [ "$_HAS_BLOCK" = 1 ] || _BLOCKMSG="${_pl#@@BLOCK }"; _HAS_BLOCK=1 ;;
+      '@@REF '*)
+        case "$_SEENREFS" in
+          *$'\n'"$_pl"$'\n'*) ;;
+          *) _SEENREFS="$_SEENREFS$_pl"$'\n'; _NREF=$((_NREF + 1)); [ -n "$_FIRSTREF" ] || _FIRSTREF="$_pl" ;;
+        esac ;;
     esac
   done <<< "$PUSH_OUT"
   if [ -n "$_DPUSH" ]; then read -r _ _DBR _DREM <<< "$_DPUSH"; _default_block "$_DBR" "$_DREM"; fi
   if [ "$_HAS_FORCE" = 1 ]; then exit 0; fi
   if [ "$_HAS_BLOCK" = 1 ]; then
-    _fc_applies && _refs_block "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@BLOCK ' | sed 's/^@@BLOCK //')"
+    _fc_applies && _refs_block "$_BLOCKMSG"
   elif [ -z "$PUSH_OUT" ]; then
     _fc_applies && _refs_block "the command parser gave no answer"
   else
-    _NREF=$(printf '%s\n' "$PUSH_OUT" | grep '^@@REF ' | sort -u | wc -l | tr -d ' ')
-    if [ "${_NREF:-0}" -gt 1 ]; then
+    if [ "$_NREF" -gt 1 ]; then
       _fc_applies && _refs_block "it pushes more than one branch"
-    elif [ "${_NREF:-0}" = 1 ]; then
-      read -r _ PHEAD BRANCH <<< "$(printf '%s\n' "$PUSH_OUT" | grep -m1 '^@@REF ')"
+    elif [ "$_NREF" = 1 ]; then
+      read -r _ PHEAD BRANCH <<< "$_FIRSTREF"
     fi
   fi
 fi

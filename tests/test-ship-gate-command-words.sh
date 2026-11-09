@@ -307,7 +307,7 @@ for tool in sed awk grep; do
   case "$tool" in
     sed)  pat='*IFS*|*git-stash-push*' ;;   # the ${IFS} view and the stash-push view
     awk)  pat='*"function inert"*' ;;       # the gh view (inert-quote blanking)
-    grep) pat='*@@DEFAULT-PUSH*' ;;         # the push-to-default-branch marker scan
+    grep) pat='*"(bash|sh|zsh)"*|*"^@@REF "*' ;;   # the heredoc-to-shell check and the @@REF scan
   esac
   printf '#!/bin/bash\ncase "$*" in %s) exit 139 ;; esac\nexec "%s" "$@"\n' "$pat" "$real" > "$DEAD/$tool"
   chmod +x "$DEAD/$tool"
@@ -321,6 +321,20 @@ dead_engages() { [ "$(gate_dead "$R" "$2")" = 2 ] && ok "dead capture: $1 -> eng
 dead_engages "\${IFS} push (ifs view)"          'git${IFS}push${IFS}origin${IFS}HEAD'
 dead_engages "quoted ; in the -C dir (views)"   'git -C "a;b" push -u origin HEAD'
 dead_engages "quoted ; inside backticks"        'echo `git -C "a;b" push`'
+dead_engages "\${IFS[*]} push (ifs view, glob form)"  'git${IFS[*]}push${IFS[*]}origin${IFS[*]}HEAD'
+dead_engages "\${IFS[0]} push (ifs view, index form)" 'git${IFS[0]}push${IFS[0]}origin${IFS[0]}HEAD'
+dead_engages "heredoc to bash holding a push (shell check)" "$(printf "bash <<'EOF'\ngit push origin HEAD\nEOF")"
+# A single-branch push names its branch through an @@REF line. With that scan dead the gate must still
+# judge the PUSHED branch (spec 'lane', no Lane header), not the checked-out one (chore/idle).
+L="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/l"
+git init -q -b master "$L"; git -C "$L" config user.email t@t.example; git -C "$L" config user.name t
+mkdir -p "$L/docs/specs" "$L/docs/verification"; echo marker > "$L/docs/verification/README.md"
+git -C "$L" add -A; git -C "$L" commit -qm init
+git -C "$L" switch -qc feat/lane
+printf '# Spec: x\nStatus: DRAFT\n' > "$L/docs/specs/SPEC-001-lane.md"; git -C "$L" add -A; git -C "$L" commit -qm spec
+git -C "$L" switch -qc chore/idle
+[ "$(gate "$L" 'git push origin feat/lane')" = 2 ] && ok "pushed branch other than the checked-out one is judged" || no "setup: pushing feat/lane should be refused (exit 2)"
+[ "$(gate_dead "$L" 'git push origin feat/lane')" = 2 ] && ok "dead capture: single-branch push (@@REF scan) -> engaged" || no "dead capture: single-branch push (@@REF scan) -> should engage (exit 2)"
 dead_engages "gh pr create (gh view)"           'gh pr create --fill'
 dead_engages "gh pr new after cd (gh view)"     "cd $R && gh pr new --fill"
 M="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/m"
