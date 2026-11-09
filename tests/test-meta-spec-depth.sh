@@ -378,8 +378,8 @@ RC=0; fhas "$SPEC_CMD_F" 'docs/implementation-notes/<slug>.md` for the builder' 
 assert_eq "spec.md and spec-validate.md route build-catchable warnings to implementation notes" "0" "$RC"
 RC=0; fhas "$KIT_DIR/docs/WORKFLOW.md" 'copies its `Lane:` from `lib/classify/lane-classify.sh`' && fhas "$KIT_DIR/docs/WORKFLOW.md" 'a misroute' || RC=1
 assert_eq "WORKFLOW.md: a kit spec copies its lane from the classifier; full by habit is a misroute" "0" "$RC"
-RC=0; fhas "$SPEC_CMD_F" 'Validate ran "APPROVED critical=0 warnings=<K> fresh agent=<id>"' && fhas "$SPEC_CMD_F" 'Validate skipped "NEEDS-REVISION: <criticals>"' || RC=1
-assert_eq "spec.md: the lead records ran on APPROVED, skipped otherwise" "0" "$RC"
+RC=0; fhas "$SPEC_CMD_F" 'Validate ran "APPROVED critical=0 warnings=<K> fresh agent=<id>"' && fhas "$SPEC_CMD_F" 'Validate rejected "NEEDS-REVISION: <criticals>"' || RC=1
+assert_eq "spec.md: the lead records ran on APPROVED, rejected otherwise" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'VALIDATE PENDING: <spec path>' || RC=1
 assert_eq "spec.md: no subagent tool stops with VALIDATE PENDING" "0" "$RC"
 RC=0; fhas "$SPEC_CMD_F" 'Remind the user they can run `/kit:spec-validate`' && RC=1
@@ -404,8 +404,8 @@ RC=0; fhas "$WRAP_CMD_F" 'runs the `kit:spec-validate` lenses' && RC=1
 assert_eq "wrap.md: the self-run validate sentence is gone" "0" "$RC"
 RC=0; fhas "$WRAP_CMD_F" 'nothing is committed and the item stays' && RC=1
 assert_eq "wrap.md: the nothing-is-committed BLOCK sentence is gone" "0" "$RC"
-RC=0; fhas "$VALIDATE_CMD" 'On APPROVED only' && fhas "$VALIDATE_CMD" 'Validate skipped "NEEDS-REVISION: <criticals>"' || RC=1
-assert_eq "spec-validate.md records ran on APPROVED only, skipped otherwise" "0" "$RC"
+RC=0; fhas "$VALIDATE_CMD" 'On APPROVED only' && fhas "$VALIDATE_CMD" 'Validate rejected "NEEDS-REVISION: <criticals>"' || RC=1
+assert_eq "spec-validate.md records ran on APPROVED only, rejected otherwise" "0" "$RC"
 RC=0; fhas "$VALIDATE_CMD" 'design-record skipped "critical: <finding>"' || RC=1
 assert_eq "spec-validate.md records a Reviewer 6 critical as design-record skipped" "0" "$RC"
 RC=0; fhas "$VALIDATE_CMD" 'Validate ran "<APPROVED|NEEDS-REVISION>' && RC=1
