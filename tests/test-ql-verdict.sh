@@ -71,6 +71,9 @@ for c in gauntlet test-plan-review-team ui-design verify; do
 done
 grep -q 'gate-ledger.sh action <rid> greenlight-retry' "$KIT_DIR/commands/greenlight.md" && pass "greenlight appends retry ACTION lines" || fail "greenlight does not append retry ACTION lines"
 grep -q 'gate-ledger.sh actions <rid> greenlight-retry' "$KIT_DIR/commands/greenlight.md" && pass "greenlight counts retries from the ledger" || fail "greenlight does not count retries from the ledger"
+# ui-design: visual-team rewrites '## Visual critique' each round, so markers and resume must use the append-only section.
+grep -q "resume <spec> --section '## UI design rounds'" "$KIT_DIR/commands/ui-design.md" && pass "ui-design resumes from the append-only rounds section" || fail "ui-design resumes from a section visual-team rewrites"
+if grep -q "ql-verdict.sh resume <spec> --section '## Visual critique'" "$KIT_DIR/commands/ui-design.md"; then fail "ui-design still resumes from ## Visual critique"; else pass "ui-design no longer resumes from ## Visual critique"; fi
 if grep -q 'in this session only' "$KIT_DIR/commands/greenlight.md"; then fail "greenlight still counts retries in session only"; else pass "greenlight no longer counts in context"; fi
 
 echo ""
