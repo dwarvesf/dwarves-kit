@@ -555,6 +555,22 @@ case_D5() {
 }
 run_case "D5 no-delta-idempotence: the second run over the same tsv opens no second window" case_D5
 
+# D6 any gated row is terminal: a gated row with a non-no-delta reason is not relaunched by
+# `queue run`, so the queue reader and the watcher share one terminal set.
+case_D6() {
+  local repo="$WORK/rd6"; mkrepo "$repo"
+  echo x > "$WORK/pd6.txt"
+  printf '%s\tgt1\tgated\tmerge-gate-held\n' "2026-07-05T00:00:00Z" > "$JOURNAL"
+  seed_transcript gt1 "RUNNER_DONE"
+  row gt1 "$repo" "$WORK/pd6.txt" > "$WORK/q.tsv"
+
+  run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  ! grep -q "new-window slug=gt1" "$QLOG"
+  [ "$(grep -c 'gt1' "$JOURNAL")" -eq 1 ]
+}
+run_case "D6 gated-terminal: a gated row with any reason is not relaunched" case_D6
+
 echo
 if [ "$fail" -gt 0 ]; then echo "test-queue: $pass passed, $fail FAILED ->$failed_names"; exit 1; fi
 echo "test-queue: all $pass passed"

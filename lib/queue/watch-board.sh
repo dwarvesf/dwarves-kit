@@ -20,8 +20,8 @@
 #   5. no runaway guard is holding it back (no live heartbeat, not quarantined,
 #      past its stall backoff, past its breaker cooldown)
 #
-# Rule 4 is the idempotency rule and it deliberately differs from `queue run`'s own
-# `done`-only skip: gated-final merge is the DEFAULT posture, so `gated` is the COMMON
+# Rule 4 is the idempotency rule. `queue run` reads the same terminal set (queue.sh
+# `_verdict_is_terminal`): gated-final merge is the DEFAULT posture, so `gated` is the COMMON
 # terminal state, and a done-only rule would re-plan every gated row on every run forever
 #. `error`/`stalled`/`skipped` stay re-planned: those are retryable.
 #
@@ -102,15 +102,6 @@ _repo_name() {
 # surrounding-character check is what keeps `#automation` / `#auto-merge` out.
 _has_auto() {
   printf '%s' "$1" | grep -qE '(^|[^A-Za-z0-9_-])#auto([^A-Za-z0-9_-]|$)'
-}
-
-# _journal_last_verdict <journal> <slug> -- the slug's most recent verdict, or "" if it has
-# never run. Field-exact (col2=slug, col3=verdict), the same read shape queue.sh's
-# _journal_has_done uses, so a slug named inside another row's free-text reason never matches.
-_journal_last_verdict() {
-  local journal="$1" slug="$2"
-  [ -f "$journal" ] || return 0
-  awk -F'\t' -v s="$slug" '$2==s {v=$3} END{if(v!="") print v}' "$journal"
 }
 
 # ---- the stale-window reaper --------------------------------------------------------
@@ -276,12 +267,11 @@ cmd_watch() {
     fi
     slug="${repo_name}__${id}"
     verdict="$(_journal_last_verdict "$journal" "$slug")"
-    case "$verdict" in
-      done|gated)
-        _say "[watch] skip $id: already $verdict in the queue journal (slug $slug)"
-        skipped=$((skipped + 1))
-        continue ;;
-    esac
+    if _verdict_is_terminal "$verdict"; then
+      _say "[watch] skip $id: already $verdict in the queue journal (slug $slug)"
+      skipped=$((skipped + 1))
+      continue
+    fi
     # the re-pick gate: in-flight claim, quarantine, stall backoff, breaker cooldown. Runs
     # AFTER the terminal-verdict rule above, so a `done` row is still skipped for the shipped
     # reason rather than for a timer.

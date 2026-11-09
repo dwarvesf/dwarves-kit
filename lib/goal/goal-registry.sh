@@ -18,7 +18,9 @@
 # GOAL_REGISTRY_DIR for tests.
 #
 # Each goal is ONE file (single-writer: only that goal's session writes it):
-#   <slug>.goal      key=value claim record (slug/lane/status/branch/worktree/touches/...)
+#   <slug>.goal      key=value claim record (slug/lane/branch/worktree/touches/...). A record
+#                    is live until `release`, so `list` shows STATUS "running" unless an old
+#                    record still carries its own `status=` line.
 #   <slug>.attempts  append-only, timestamped, human-legible "what it tried" log
 #
 # The disjointness rule is REUSED from dispatch-gate.sh (gate_normalize_glob +
@@ -29,7 +31,6 @@
 #                                   on overlap, name the colliding goal (exit 1)
 #   list                            print a table of every active goal (the monitor)
 #   log <slug> <message...>         append one timestamped line to <slug>.attempts
-#   status <slug> <state>           update the record's status= (running|blocked|ready|done)
 #   release <slug>                  remove the goal's files (call on completion)
 #   dir                             print the resolved registry root
 
@@ -162,7 +163,6 @@ reg_claim() {
   {
     printf 'slug=%s\n' "$slug"
     printf 'lane=%s\n' "$lane"
-    printf 'status=running\n'
     printf 'branch=%s\n' "$branch"
     printf 'worktree=%s\n' "$worktree"
     printf 'touches=%s\n' "${globs[*]}"
@@ -191,12 +191,13 @@ reg_list() {
     return 0
   fi
   printf '%-22s %-9s %-9s %-22s %s\n' SLUG LANE STATUS BRANCH STARTED
-  local f
+  local f recorded
   for f in "${files[@]}"; do
+    recorded="$(reg_get "$f" status)"
     printf '%-22s %-9s %-9s %-22s %s\n' \
       "$(reg_get "$f" slug)" \
       "$(reg_get "$f" lane)" \
-      "$(reg_get "$f" status)" \
+      "${recorded:-running}" \
       "$(reg_get "$f" branch)" \
       "$(reg_get "$f" started)"
   done
@@ -213,25 +214,6 @@ reg_log() {
   local dir; dir="$(registry_dir)" || return $?
   mkdir -p "$dir"
   printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" >> "$dir/$slug.attempts"
-}
-
-reg_status() {
-  local slug="${1:-}" new="${2:-}"
-  if [ -z "$slug" ] || [ -z "$new" ]; then
-    echo "usage: goal-registry status <slug> <state>" >&2
-    return 64
-  fi
-  _reg_check_slug "$slug" || return $?
-  local dir; dir="$(registry_dir)" || return $?
-  local file="$dir/$slug.goal"
-  [ -f "$file" ] || { echo "goal-registry: no such goal '$slug'" >&2; return 1; }
-  local now tmp; now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; tmp="$file.tmp.$$"
-  awk -F= -v s="$new" -v u="$now" '
-    $1=="status"  {print "status=" s; next}
-    $1=="updated" {print "updated=" u; next}
-    {print}
-  ' "$file" > "$tmp" && mv "$tmp" "$file"
-  echo "STATUS $slug -> $new"
 }
 
 reg_release() {
@@ -251,10 +233,9 @@ main() {
     claim)   reg_claim "$@";;
     list)    reg_list "$@";;
     log)     reg_log "$@";;
-    status)  reg_status "$@";;
     release) reg_release "$@";;
     dir)     registry_dir;;
-    *) echo "usage: goal-registry.sh {claim|list|log|status|release|dir} ..." >&2; return 64;;
+    *) echo "usage: goal-registry.sh {claim|list|log|release|dir} ..." >&2; return 64;;
   esac
 }
 

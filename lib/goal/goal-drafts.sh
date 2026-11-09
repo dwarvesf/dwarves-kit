@@ -8,8 +8,10 @@
 # See docs/reference/architecture.md "## State model" for the two stores side by side.
 #
 # This helper gives drafts a lifecycle so the directory stops being a graveyard:
-# a draft is "drafted" while its work is live, and is ARCHIVED (moved, never
-# deleted) to .claude/goals/done/ once its target_spec ships. The render commands
+# a draft is "drafted" while it sits at the top level, and is ARCHIVED (moved, never
+# deleted) to .claude/goals/done/ once its target_spec ships. The directory IS the state:
+# no frontmatter status line is written or rewritten (an old draft that carries one is
+# read as usual and left as is). The render commands
 # (/kit:start, /kit:next) enumerate top-level *.md only, so a moved draft drops
 # out of "what's active" with no filter code. The archive trigger is /kit:ship.
 #
@@ -22,10 +24,10 @@
 #
 # Subcommands:
 #   archive [--dry-run]   move every draft whose target_spec is a SHIPPED spec
-#                         into done/ (status: shipped). Idempotent; specless or
+#                         into done/. Idempotent; specless or
 #                         unresolvable drafts are left in place.
 #   list                  print active drafts (top-level, excludes done/) as
-#                         "slug -> target_spec (status)"
+#                         "slug -> target_spec (drafted)"
 #   dir                   print the resolved drafts root
 
 set -euo pipefail
@@ -122,14 +124,6 @@ drafts_archive() {
       continue
     fi
     mkdir -p "$done_dir"
-    # Flip status -> shipped in the frontmatter, then move (atomic write + mv, no rm of content).
-    local tmp="$f.tmp.$$"
-    awk '
-      NR==1 && /^---[[:space:]]*$/ {infm=1; print; next}
-      infm && /^---[[:space:]]*$/ {infm=0; print; next}
-      infm && /^status:[[:space:]]*/ && !d {print "status: shipped"; d=1; next}
-      {print}
-    ' "$f" > "$tmp" && mv "$tmp" "$f"
     mv "$f" "$done_dir/$slug.md"
     echo "archived $slug ($id SHIPPED) -> done/"
     moved=$((moved + 1))
@@ -147,12 +141,11 @@ drafts_list() {
     echo "(no goal drafts)"
     return 0
   fi
-  local f slug target st
+  local f slug target
   for f in "${files[@]}"; do
     slug="$(basename "$f" .md)"
     target="$(draft_get "$f" target_spec)"
-    st="$(draft_get "$f" status)"
-    printf '%s -> %s (%s)\n' "$slug" "${target:-(none)}" "${st:-?}"
+    printf '%s -> %s (drafted)\n' "$slug" "${target:-(none)}"
   done
 }
 

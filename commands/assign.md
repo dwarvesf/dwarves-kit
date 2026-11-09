@@ -67,7 +67,6 @@ Create `.claude/goals/<slug>.md` with pinned frontmatter and the goal body:
 slug: <kebab-derived-from-title>
 id: ID-NNN
 target_spec: <SPEC-NNN, or "(none)">
-status: drafted
 created: <YYYY-MM-DD>
 ---
 <the six-section operating directive from Step 3 (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if), ready to paste into an activator>

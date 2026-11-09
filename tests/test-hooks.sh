@@ -1938,9 +1938,15 @@ ATT=$(cat "$GOAL_REGISTRY_DIR/goal-a.attempts" 2>/dev/null)
 assert_output_contains "registry: attempt log holds the line" "tried approach X" "$ATT"
 
 bash "$REG" status goal-a blocked >/dev/null 2>&1
-assert_exit "registry: status goal-a -> blocked" 0 "$?"
-REG_LIST2=$(bash "$REG" list 2>/dev/null)
-assert_output_contains "registry: list reflects the new status" "blocked" "$REG_LIST2"
+assert_exit "registry: the dead status subcommand is gone -> usage error" 64 "$?"
+[ -f "$GOAL_REGISTRY_DIR/goal-a.goal" ] && grep -q '^status=' "$GOAL_REGISTRY_DIR/goal-a.goal"
+assert_exit "registry: claim writes no status= field" 1 "$?"
+# An old record that still carries status= keeps listing without error.
+printf 'slug=goal-old\nlane=normal\nstatus=blocked\nbranch=x\nstarted=2026-01-01T00:00:00Z\n' > "$GOAL_REGISTRY_DIR/goal-old.goal"
+REG_LIST2=$(bash "$REG" list 2>&1); REG_RC=$?
+assert_exit "registry: list over an old status= record -> ok" 0 "$REG_RC"
+assert_output_contains "registry: list still shows the old record" "goal-old" "$REG_LIST2"
+rm -f "$GOAL_REGISTRY_DIR/goal-old.goal"
 
 bash "$REG" release goal-a >/dev/null 2>&1
 assert_exit "registry: release goal-a -> ok" 0 "$?"
@@ -1966,7 +1972,7 @@ printf -- '---\nStatus: SHIPPED (v1.0.0)\n---\n' > "$GOAL_SPECS_DIR/SPEC-027-mid
 printf -- 'Status: DRAFT\n'                       > "$GOAL_SPECS_DIR/SPEC-099-live-thing.md"
 # Seed drafts: shipped-target, draft-target, specless.
 printf -- '---\nslug: shipped-one\ntarget_spec: SPEC-027\nstatus: drafted\n---\nbody\n' > "$GOAL_DRAFTS_DIR/shipped-one.md"
-printf -- '---\nslug: live-one\ntarget_spec: SPEC-099\nstatus: drafted\n---\nbody\n'     > "$GOAL_DRAFTS_DIR/live-one.md"
+printf -- '---\nslug: live-one\ntarget_spec: SPEC-099\n---\nbody\n'                      > "$GOAL_DRAFTS_DIR/live-one.md"
 printf -- '---\nslug: specless\ntarget_spec: (none yet)\nstatus: drafted\n---\nbody\n'    > "$GOAL_DRAFTS_DIR/specless.md"
 
 DRF_DRY=$(bash "$DRF" archive --dry-run 2>/dev/null)
@@ -1986,10 +1992,14 @@ assert_exit "drafts: shipped-target draft gone from top level (moved, not copied
 assert_exit "drafts: live-target draft stays" 0 "$?"
 [ -f "$GOAL_DRAFTS_DIR/specless.md" ]
 assert_exit "drafts: specless draft stays" 0 "$?"
-assert_output_contains "drafts: archived draft status flipped to shipped" "status: shipped" "$(cat "$GOAL_DRAFTS_DIR/done/shipped-one.md")"
+assert_output_contains "drafts: archive leaves the draft body untouched (location is the state)" "status: drafted" "$(cat "$GOAL_DRAFTS_DIR/done/shipped-one.md")"
 
 DRF_LIST=$(bash "$DRF" list 2>/dev/null)
 assert_output_contains "drafts: list shows the live draft" "live-one" "$DRF_LIST"
+assert_output_contains "drafts: list derives drafted from location, no status line needed" "live-one -> SPEC-099 (drafted)" "$DRF_LIST"
+assert_output_contains "drafts: list still reads an old draft that carries status:" "specless -> (none yet) (drafted)" "$DRF_LIST"
+grep -q '^status:' "$KIT_DIR/commands/assign.md"
+assert_exit "drafts: /kit:assign no longer writes a status: line" 1 "$?"
 assert_output_not_contains "drafts: list omits the archived draft" "shipped-one" "$DRF_LIST"
 
 DRF_AGAIN=$(bash "$DRF" archive 2>/dev/null)
