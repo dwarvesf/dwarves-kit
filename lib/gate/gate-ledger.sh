@@ -59,7 +59,7 @@
 #   lane     <rid> [--spec <path>] [--default]
 #                                       the run's effective lane: last START-AMEND, else first START, else the
 #                                       spec Lane: header, else (--default) the classifier default;
-#                                       prints "<lane>\t<source>\t<spec header>", exit 1 when none answers
+#                                       prints "<ledger lane>\t<source>\t<spec header or ->\t<check lane>", exit 1 when none answers
 #   plan     <lane>                    the lane's ordered phase checklist
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
 #   rid                                the canonical run id for the cwd: branch slug
@@ -194,7 +194,7 @@ _effective_lane() {
   { lane_effective "$f" 2>/dev/null || true; } | cut -f1
 }
 
-# lane <rid> [--spec <path>] [--default]: print "<lane>\t<source>\t<spec header>" for the run (see
+# lane <rid> [--spec <path>] [--default]: print "<ledger lane>\t<source>\t<spec header or ->\t<check lane>" for the run (see
 # lane_effective); exit 1 with no output when no source answers. ship-gate reads the lane through this verb.
 lane_of_run() {
   local rid="${1:-}" spec="" opt=""

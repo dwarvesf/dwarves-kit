@@ -676,13 +676,16 @@ if [ -f "$PGATE" ] && grep -qE '^## Test plan[[:space:]]*$' "$SPEC" 2>/dev/null;
   esac
 fi
 
-# The lane comes from the one resolver (lane-data.sh lane_effective, through `gate-ledger.sh lane`): the
-# last START-AMEND, else the first START, else the spec `Lane:` header. The header grammar lives in
-# lane_spec_header. Trust: gate-ledger.sh has no operator/agent split on `start`, so any ledger writer can
-# amend; the diff floor (_floor_check) still applies full-lane gates to hard paths whatever the lane says.
+# The ship check lane comes from the one resolver (lane-data.sh lane_effective, through `gate-ledger.sh
+# lane`): the STRICTER of the spec `Lane:` header and the ledger lane (last START-AMEND, else first START),
+# so a plain START cannot shed the header's gates; an amend written with `--lower --reason` may go below it.
+# Trust: gate-ledger.sh has no operator/agent split on `start`, so any ledger writer can amend or forge the
+# lane-lower line; the diff floor (_floor_check) still applies full-lane gates to hard paths whatever the
+# lane says.
 LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
-LANE=""; LANE_SRC=""; SPEC_LANE=""
-[ -f "$LEDGER" ] && IFS=$'\t' read -r LANE LANE_SRC SPEC_LANE < <(bash "$LEDGER" lane "$SLUG" --spec "$SPEC" 2>/dev/null)
+LANE=""; LEDGER_LANE=""; LANE_SRC=""; SPEC_LANE=""
+[ -f "$LEDGER" ] && IFS=$'\t' read -r LEDGER_LANE LANE_SRC SPEC_LANE LANE < <(bash "$LEDGER" lane "$SLUG" --spec "$SPEC" 2>/dev/null)
+[ "$SPEC_LANE" != "-" ] || SPEC_LANE=""
 if [ -z "$LANE" ]; then
   # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
   # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).
@@ -705,11 +708,17 @@ fi
 
 [ -f "$LEDGER" ] || exit 0
 
-# A ledger lane that differs from the spec header is announced: the run keeps owing the lane it recorded.
-case "$LANE_SRC" in
-  amend) [ -n "$SPEC_LANE" ] && [ "$SPEC_LANE" != "$LANE" ] && echo "[advisory] run '$SLUG': ledger START-AMEND lane=$LANE overrides the spec's Lane: $SPEC_LANE" >&2 ;;
-  start) [ -n "$SPEC_LANE" ] && [ "$SPEC_LANE" != "$LANE" ] && echo "[advisory] run '$SLUG': ledger START lane=$LANE overrides the spec's Lane: $SPEC_LANE" >&2 ;;
-esac
+# A ledger lane that differs from the spec header is announced either way.
+if [ -n "$SPEC_LANE" ] && [ -n "$LEDGER_LANE" ] && [ "$LEDGER_LANE" != "$SPEC_LANE" ]; then
+  case "$LANE_SRC" in
+    amend|start)
+      if [ "$LANE" = "$LEDGER_LANE" ]; then
+        echo "[advisory] run '$SLUG': ledger $([ "$LANE_SRC" = amend ] && echo START-AMEND || echo START) lane=$LEDGER_LANE overrides the spec's Lane: $SPEC_LANE" >&2
+      else
+        echo "[advisory] run '$SLUG': ledger lane=$LEDGER_LANE is lighter than the spec's Lane: $SPEC_LANE; the stricter lane applies (lower a run on purpose with: start --amend --lower --reason)" >&2
+      fi ;;
+  esac
+fi
 
 # Bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
 # the live invocation path for the additive OUTCOME marker. It is BEST-EFFORT and writes ONLY

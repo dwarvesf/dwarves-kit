@@ -80,6 +80,32 @@ check "--default never outranks a real source" '[ "$(rl r-first --default | cut 
 check "an unknown spec header comes back raw so check() can fail closed" 'printf "# Spec\nLane: fullish\n" > "$SPECN"; [ "$(rl r-none --spec "$SPECN" | cut -f1)" = fullish ]'
 printf '# Spec: x\nStatus: DRAFT\n' > "$SPECN"
 
+echo "the check lane is the stricter of header and ledger lane"
+legacy c-hf-sn  "$(st normal)"
+legacy c-hn-sf  "$(st full)"
+legacy c-hf-lo  "$(st full)"
+gl start --amend --lower --reason "test lowering" c-hf-lo normal full feature feature r >/dev/null 2>&1
+legacy c-hf-am  "$(st normal)" "$(am normal)"
+legacy c-hb-sn  "$(st normal)"
+legacy c-tie    "$(st bug)" "$(am normal)"
+legacy c-ov     "$(st study)"
+legacy c-forged "$(st full)" "2026-01-01T00:00:30Z | GATE | lane-lower | override | full -> tiny: x | via=lane-lower" "$(am normal)"
+ck() { gl lane "$1" --spec "$2" | cut -f4; }
+SPECN2="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '# Spec\nLane: normal\n' > "$SPECN2"
+SPECB="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '# Spec\nLane: bug\n' > "$SPECB"
+check "header full + plain START normal resolves full" '[ "$(ck c-hf-sn "$SPECF")" = full ]'
+check "...while the ledger lane (descent, display) stays normal" '[ "$(rl c-hf-sn --spec "$SPECF" | cut -f1)" = normal ]'
+check "header full + START-AMEND --lower normal resolves normal" '[ "$(ck c-hf-lo "$SPECF")" = normal ]'
+check "header normal + START full resolves full" '[ "$(ck c-hn-sf "$SPECN2")" = full ]'
+check "header full + a hand-written bare amend normal resolves full" '[ "$(ck c-hf-am "$SPECF")" = full ]'
+check "a lane-lower line aimed at another lane does not sanction the amend" '[ "$(ck c-forged "$SPECF")" = full ]'
+check "tie in rank, plain START: the header answers (bug over normal)" '[ "$(ck c-hb-sn "$SPECB")" = bug ]'
+check "tie in rank, amend: the ledger lane answers" '[ "$(ck c-tie "$SPECB")" = normal ]'
+check "an overlay ledger lane never lowers a kit-lane header" '[ "$(DWARVES_KIT_LANES_D="$LD" ck c-ov "$SPECF")" = full ]'
+check "an overlay ledger lane with no header stays itself" '[ "$(DWARVES_KIT_LANES_D="$LD" ck c-ov "$SPECN")" = study ]'
+check "no header: the check lane is the ledger lane" '[ "$(ck c-hf-sn "$SPECN")" = normal ]'
+check "an empty header column prints a dash" '[ "$(gl lane c-hf-sn --spec "$SPECN" | cut -f3)" = - ]'
+
 echo "the amend guard reads the same resolver"
 legacy g-stray "$(st fix)"
 gl start --amend g-stray tiny normal feature feature r >/dev/null 2>&1; RC=$?
@@ -109,8 +135,22 @@ sg_case() { # slug, header lane, ledger lines (START lanes) -> prints gate exit;
   gl record "$slug" validate ran test >/dev/null 2>&1
   gate
 }
-check "header full, first START normal, normal gates -> pass (START beats the header)" '[ "$(sg_case sga full normal normal)" = 0 ]'
-check "the override is announced" 'grep -q "ledger START lane=normal overrides the spec" "$GTERR"'
+sg_lower_case() { # header full, START full, then a sanctioned --lower amend to normal, normal gates
+  local slug="$1" g
+  git -C "$GT" switch -qc "feat/$slug"
+  printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$GT/docs/specs/SPEC-001-$slug.md"
+  printf '# Notes\nNo deviations; matches the spec verbatim\n' > "$GT/docs/implementation-notes/$slug.md"
+  git -C "$GT" add -A; git -C "$GT" commit -qm spec
+  gl start "$slug" full full feature feature r >/dev/null 2>&1
+  gl start --amend --lower --reason "test lowering" "$slug" normal full feature feature r >/dev/null 2>&1
+  while read -r g; do gl record "$slug" "$g" ran test >/dev/null 2>&1; done < <(gl required normal)
+  gl record "$slug" validate ran test >/dev/null 2>&1
+  gate
+}
+check "header full, first START normal, normal gates -> blocked (the stricter header wins)" '[ "$(sg_case sga full normal normal)" = 2 ]'
+check "the lighter ledger lane is announced" 'grep -q "lighter than the spec" "$GTERR"'
+check "header full, first START normal, full gates -> pass" '[ "$(sg_case sgf full normal full)" = 0 ]'
+check "header full, START full + amend --lower normal, normal gates -> pass (a reasoned lowering)" '[ "$(sg_lower_case sgl)" = 0 ]'
 check "header normal, first START full, normal gates -> blocked (START raises)" '[ "$(sg_case sgb normal full normal)" = 2 ]'
 check "header full, stray START fix, full gates -> pass (stray START is absent)" '[ "$(sg_case sgc full fix full)" = 0 ]'
 check "header full, stray START fix, normal gates -> blocked (the header answers)" '[ "$(sg_case sgd full fix normal)" = 2 ]'

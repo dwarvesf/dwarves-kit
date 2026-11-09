@@ -96,30 +96,50 @@ lane_spec_header() {
 }
 
 # lane_effective [--default] <ledger-file> [<spec>]: the ONE answer to "which lane does this run owe".
-# Order: the last START-AMEND, else the first START, else the spec `Lane:` header, else (only with
-# --default) the classifier default. A START or START-AMEND whose lane is not a declared lane (old
-# ledgers carry stray `fix`, `light`, `standard`) reads as absent, so the next source answers; ledgers
-# are never rewritten. Prints "<lane>\t<source>\t<spec header>", source = amend|start|spec|default.
-# Prints nothing and exits 1 when no source answers. The header column is the raw header, for callers
-# that announce an override of it.
+# Ledger lane (display and descent): the last START-AMEND, else the first START, else the spec `Lane:`
+# header, else (only with --default) the classifier default. A START or START-AMEND whose lane is not a
+# declared lane (old ledgers carry stray `fix`, `light`, `standard`) reads as absent, so the next source
+# answers; ledgers are never rewritten.
+# Check lane (the ship check): the STRICTER of the spec header and the ledger lane, by lane_rank_of, so a
+# plain START cannot shed the header's gates. Two exceptions: an amend written through `--lower --reason`
+# (it is preceded by its `lane-lower` override line) may go below the header, and a tie in rank keeps the
+# older winner (amend: the ledger lane; start: the header). A lane with no rank (a lanes.d overlay lane, or
+# an unknown header) never lowers a ranked one: an unranked ledger lane yields to a kit-lane header, and an
+# unranked header under a plain START still wins, as before, so check() fails closed on it.
+# Prints "<ledger lane>\t<source>\t<spec header or ->\t<check lane>", source = amend|start|spec|default.
+# Prints nothing and exits 1 when no source answers.
 lane_effective() {
-  local want_default=0 f spec hdr lane src
+  local want_default=0 f spec hdr lane="" src="" lowered=0 chk rh rl
   if [ "${1:-}" = "--default" ]; then want_default=1; shift; fi
   f="${1:-}"; spec="${2:-}"
   hdr="$(lane_spec_header "$spec")"
-  lane=""; src=""
   if [ -r "$f" ]; then
-    IFS=$'\t' read -r lane src < <(awk -F' [|] ' -v names=" $(lane_declared_names) " '
+    IFS=$'\t' read -r lane src lowered < <(awk -F' [|] ' -v names=" $(lane_declared_names) " '
       function lane_of(s) { if (match(s, /lane=[^ ]+/)) return substr(s, RSTART + 5, RLENGTH - 5); return "" }
       function ok(l) { return l != "" && index(names, " " l " ") > 0 }
-      $2 == "START-AMEND" { l = lane_of($3); if (ok(l)) a = l }
+      $2 == "GATE" && $3 == "lane-lower" && $4 == "override" { n = split($5, p, " -> "); t = p[n]; sub(/:.*$/, "", t); pend = t; next }
+      $2 == "START-AMEND" { l = lane_of($3); if (ok(l)) { a = l; low = (pend == l) } pend = ""; next }
       $2 == "START" && !seen { seen = 1; l = lane_of($3); if (ok(l)) first = l }
-      END { if (a != "") print a "\tamend"; else if (first != "") print first "\tstart" }' "$f") || true
+      END { if (a != "") print a "\tamend\t" (low ? 1 : 0); else if (first != "") print first "\tstart\t0" }' "$f") || true
   fi
   if [ -z "$lane" ] && [ -n "$hdr" ]; then lane="$hdr"; src=spec; fi
   if [ -z "$lane" ] && [ "$want_default" = 1 ]; then lane="$(lane_default)"; src=default; fi
   [ -n "$lane" ] || return 1
-  printf '%s\t%s\t%s\n' "$lane" "$src" "$hdr"
+  chk="$lane"
+  if [ -n "$hdr" ] && [ "$lowered" != 1 ] && { [ "$src" = amend ] || [ "$src" = start ]; }; then
+    rh="$(lane_rank_of "$hdr")" || rh=""
+    rl="$(lane_rank_of "$lane")" || rl=""
+    if [ -z "$rh" ]; then
+      [ "$src" = start ] && chk="$hdr"
+    elif [ -z "$rl" ]; then
+      chk="$hdr"
+    elif [ "$rh" -gt "$rl" ]; then
+      chk="$hdr"
+    elif [ "$rh" -eq "$rl" ] && [ "$src" = start ]; then
+      chk="$hdr"
+    fi
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$lane" "$src" "${hdr:--}" "$chk"
 }
 
 # lane_project_applies: 0 when the project .kit.toml is tracked and unmodified.

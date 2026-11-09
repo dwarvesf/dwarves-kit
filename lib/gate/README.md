@@ -148,7 +148,9 @@ at the merge base (an opt-out must already sit on the default branch). Proof:
 A run owes one lane, resolved in one place (`lane_effective` in `lane-data.sh`, printed by
 `gate ledger lane <rid> [--spec <path>] [--default]`): the LAST `START-AMEND`, else the FIRST
 `START`, else the spec's `Lane:` header, else (only with `--default`) the classifier default.
-ship-gate reads the lane through that verb. A `START` whose lane is not one of the five lane names
+ship-gate reads the lane through that verb. The lane the push is checked against is the STRICTER of
+that ledger lane and the spec header (by lane rank), so a plain `START` cannot shed the header's
+gates; only an amend written with `--lower --reason` may go below it. A `START` whose lane is not one of the five lane names
 (old ledgers carry `fix`, `light`, `standard`) reads as absent, so the next source answers; no
 ledger is rewritten. A plain `start` with an unknown lane exits 64 and lists the valid names.
 
