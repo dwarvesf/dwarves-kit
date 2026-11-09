@@ -169,14 +169,36 @@ _resolve_code_root() {
   _default_repo_root
 }
 
-# _sub_branch <megagoals-root> <slug> <sub-slug> -- reads the sub-goal's own goal file's
-# `**Branch:** <name>` line. Empty output = no goal file / no Branch line (honest absence, not
-# an error): the sub-goal then has no git-truth signal beyond its PR check.
+# _goal_file <megagoals-root> <slug> <sub-slug> -- the sub-goal's goal file, or empty. An NN-slug id
+# names its file (`goals/<id>.md`). An SG-NN id has no slug, so the file is `goals/NN-<slug>.md`, the
+# scaffold name commands/mega.md writes and orchestrate.sh `_goalfile` resolves (first match).
+_goal_file() {
+  local mroot="$1" slug="$2" sub="$3" f
+  case "$sub" in
+    SG-*) for f in "$mroot/$slug/goals/${sub#SG-}-"*.md; do [ -f "$f" ] && { printf '%s\n' "$f"; return 0; }; done ;;
+    *) [ -f "$mroot/$slug/goals/$sub.md" ] && printf '%s\n' "$mroot/$slug/goals/$sub.md" ;;
+  esac
+  return 0
+}
+
+# _sub_branch <megagoals-root> <slug> <sub-slug> <code-root> -- the sub-goal's own goal file's
+# `**Branch:** <name>` line. An SG-NN sub-goal with no such line falls back to `wave/sg-nn`, the
+# branch orchestrate.sh `_sg_branch` names, but only when that branch exists in <code-root> (a name
+# nobody created would print a branch that is not there). Empty output = no signal (honest absence,
+# not an error): the sub-goal then has no git-truth signal beyond its PR check.
 _sub_branch() {
-  local mroot="$1" slug="$2" sub="$3" gf
-  gf="$mroot/$slug/goals/$sub.md"
-  [ -f "$gf" ] || return 0
-  grep -m1 -E '^\*\*Branch:\*\* ' "$gf" 2>/dev/null | sed -E 's/^\*\*Branch:\*\* *//'
+  local mroot="$1" slug="$2" sub="$3" croot="${4:-}" gf br wave
+  gf="$(_goal_file "$mroot" "$slug" "$sub")"
+  [ -n "$gf" ] && br="$(grep -m1 -E '^\*\*Branch:\*\* ' "$gf" 2>/dev/null | sed -E 's/^\*\*Branch:\*\* *//')"
+  if [ -n "${br:-}" ]; then printf '%s\n' "$br"; return 0; fi
+  case "$sub" in
+    SG-*)
+      wave="wave/$(printf '%s' "$sub" | tr '[:upper:]' '[:lower:]')"
+      if [ -n "$croot" ] && "$GIT_BIN" -C "$croot" rev-parse --verify --quiet "refs/heads/$wave" >/dev/null 2>&1; then printf '%s\n' "$wave"
+      elif [ -n "$croot" ] && "$GIT_BIN" -C "$croot" rev-parse --verify --quiet "refs/remotes/origin/$wave" >/dev/null 2>&1; then printf '%s\n' "$wave"
+      fi ;;
+  esac
+  return 0
 }
 
 # _pr_state <pr-number> -- MERGED/OPEN/CLOSED, or empty if unresolvable (missing/deleted PR,
@@ -302,7 +324,7 @@ cmd_status() {
     fi
 
     local branch commits="" openpr="" prstate=""
-    branch="$(_sub_branch "$mroot" "$slug" "$sub")"
+    branch="$(_sub_branch "$mroot" "$slug" "$sub" "$croot")"
     [ -n "$prnum" ] && prstate="$(_pr_state "$prnum")"
     if [ -n "$branch" ]; then
       commits="$(_commit_count "$croot" "$base" "$branch")"

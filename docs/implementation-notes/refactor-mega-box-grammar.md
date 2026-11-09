@@ -36,3 +36,9 @@ The old rule was the substring `held` anywhere in the ROADMAP, which also matche
 
 - Should `mega.sh _sub_branch` learn the `goals/NN-*.md` lookup? It would give SG roadmaps real git truth.
 - Should a parked-only mega show in `megagoals list` with a "parked" marker instead of hiding?
+
+## Follow-up: SG-NN branch signal and parked marker
+
+- `_sub_branch` resolves an SG-NN goal file as `goals/NN-*.md` (first match, as `orchestrate.sh _goalfile` does). With no `**Branch:**` line it falls back to `wave/sg-nn` only when that ref exists in the code root, so a branch nobody created is never printed.
+- `megagoals list` shows a mega whose only unfinished boxes are parked, ending the line with ` (parked)`. A fully done mega stays hidden without `--all`. The marker is last so fields 1 to 4 keep their positions.
+- Offline measure (local git, `gh` stubbed): 3 of 7 SG roadmaps gain `branch=` text, none change label, because the named branches are not in those repos' local refs. `mega review` reads the same status lines.

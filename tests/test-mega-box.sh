@@ -101,8 +101,12 @@ REPO="$TMP/repo"; mkdir -p "$REPO/_meta/megagoals/fixture"; cp "$RM/ROADMAP.md" 
 ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | head -1 | awk '{print $2}')"
 eq "megagoals counts done 3 of total 8 (parked is not done)" "$ml" "3/8"
 mkdir -p "$REPO/_meta/megagoals/donepark"; printf '## Sub-goals\n- [x] SG-01 a , auto , PR #1\n- [~] SG-02 b , auto\n' > "$REPO/_meta/megagoals/donepark/ROADMAP.md"
-ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | grep -c '^donepark ')"
-eq "megagoals hides a mega whose only open work is parked" "$ml" "0"
+ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | grep '^donepark ' | sed -E 's/ +/ /g')"
+eq "megagoals shows a mega whose only open work is parked, with a (parked) marker" "$ml" "donepark 1/2 HANDOFF:no POINTER:- (parked)"
+eq "megagoals gives a mega with an open box no marker" "$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | grep -c '^fixture .*(parked)')" "0"
+mkdir -p "$REPO/_meta/megagoals/alldone"; printf '## Sub-goals\n- [x] SG-01 a , auto , PR #1\n' > "$REPO/_meta/megagoals/alldone/ROADMAP.md"
+eq "megagoals still hides a fully done mega" "$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | grep -c '^alldone ')" "0"
+eq "megagoals counts the parked-only mega in its total line" "$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | tail -1)" "2 mega-goals"
 ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" --all 2>&1 | grep '^donepark ' | awk '{print $2}')"
 eq "megagoals --all shows it as 1/2" "$ml" "1/2"
 
@@ -179,6 +183,24 @@ if out="$(bash "$TMP/kit/lib/mega/mega.sh" status alias --megagoals-root "$TMP/m
 else
   case "$out" in *FATAL*box.tsv*) pass "missing box.tsv is fatal" ;; *) fail "missing table, wrong error: $out" ;; esac
 fi
+
+# ---- 13b. SG-NN rows get the branch signal: goals/NN-*.md, then the wave/sg-NN branch ----
+CODE="$TMP/code"; mkdir -p "$CODE"; git -C "$CODE" init -q -b main 2>/dev/null
+G=(git -C "$CODE" -c user.email=t@t -c user.name=t)
+"${G[@]}" commit -q --allow-empty -m base
+for b in feat/sg-one wave/sg-02; do
+  "${G[@]}" checkout -q -b "$b" main 2>/dev/null; "${G[@]}" commit -q --allow-empty -m "work on $b"
+done
+"${G[@]}" checkout -q main
+mkdir -p "$TMP/m/sgb/goals"
+printf -- '- [ ] SG-01 has a goal file , auto\n- [ ] SG-02 only a wave branch , auto\n- [ ] SG-03 nothing at all , auto\n- [ ] 04-legacy-slug (repo), prose\n' > "$TMP/m/sgb/ROADMAP.md"
+printf '# goal\n\n**Branch:** feat/sg-one\n' > "$TMP/m/sgb/goals/01-first-thing.md"
+printf '# goal\n\n**Branch:** feat/legacy\n' > "$TMP/m/sgb/goals/04-legacy-slug.md"
+sgst="$(GH_BIN="$GH" bash "$KIT_DIR/lib/mega/mega.sh" status sgb --megagoals-root "$TMP/m" --code-root "$CODE" --base main 2>&1 | sed -E 's/ +/ /g')"
+case "$sgst" in *"SG-01 WIP branch=feat/sg-one commits=1"*) pass "SG-NN resolves goals/NN-*.md and its Branch line" ;; *) fail "SG-01 branch signal: $sgst" ;; esac
+case "$sgst" in *"SG-02 WIP branch=wave/sg-02 commits=1"*) pass "SG-NN falls back to an existing wave/sg-NN branch" ;; *) fail "SG-02 wave fallback: $sgst" ;; esac
+case "$sgst" in *"SG-03 PENDING"*) pass "SG-NN with no goal file and no wave branch stays PENDING with no branch" ;; *) fail "SG-03 should stay PENDING: $sgst" ;; esac
+case "$sgst" in *"04-legacy-slug PENDING"*) pass "NN-slug rows still read goals/<id>.md only (unchanged)" ;; *) fail "NN-slug row changed: $sgst" ;; esac
 
 # ---- 14. no reader spells the grammar again ----
 # A copy is code that writes the checkbox bullet, a box character set, or the id forms itself. Comments, docs,
