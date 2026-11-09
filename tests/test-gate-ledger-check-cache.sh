@@ -229,6 +229,37 @@ chk full c1; chk full c1; same; ok "C9 a good cache is written again after the f
 [ "$(cache_lines)" -ge 1 ]; ok "C9 the cache holds an entry again" $?
 no_tmp; ok "C10 no temp file is left behind in the log dir" $?
 
+# ---------------------------------------------------------------------------
+# L: check decides on each required phase's LATEST GATE row, not on any earlier ran|override.
+# ---------------------------------------------------------------------------
+# L1: ran, then a later skipped row (the old NEEDS-REVISION shape): warm pass flips to fail
+mk l1 full all-ran; settle
+chk full l1; chk full l1; B="$RC"
+printf '2026-01-01T00:00:09Z | GATE | validate | skipped | NEEDS-REVISION: 2 critical\n' >> "$LOGD/runs/l1.log"; ageit "$LOGD/runs/l1.log"
+chk full l1
+{ [ "$B" -eq 0 ] && [ "$RC" -eq 1 ] && [ "$OUT" = "MISSING-GATE: validate (required for lane 'full'; no ran/override entry in the ledger)" ]; }; ok "L1 ran then skipped: latest state wins, validate is missing" $?
+chk full l1; [ "$RC" -eq 1 ]; ok "L1 the cached fail replays the same verdict" $?
+
+# L2: ran, then rejected
+mk l2 full all-ran
+printf '2026-01-01T00:00:09Z | GATE | validate | rejected | NEEDS-REVISION: 1 critical\n' >> "$LOGD/runs/l2.log"; ageit "$LOGD/runs/l2.log"
+chk full l2
+{ [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q '^MISSING-GATE: validate '; }; ok "L2 ran then rejected: validate is missing" $?
+
+# L3: a re-validate after the rejection satisfies the gate again
+printf '2026-01-01T00:00:10Z | GATE | validate | ran | APPROVED critical=0\n' >> "$LOGD/runs/l2.log"; ageit "$LOGD/runs/l2.log"
+chk full l2; { [ "$RC" -eq 0 ] && [ -z "$OUT" ]; }; ok "L3 rejected then ran: the later ran satisfies the gate" $?
+
+# L4: skipped first, then ran passes; ran then override passes; override then skipped fails
+mk l4 full all-skipped
+for ph in $(req full); do printf '2026-01-01T00:00:09Z | GATE | %s | ran | late\n' "$ph" >> "$LOGD/runs/l4.log"; done; ageit "$LOGD/runs/l4.log"
+chk full l4; [ "$RC" -eq 0 ]; ok "L4 skipped then ran for every phase passes" $?
+mk l5 full all-ran
+printf '2026-01-01T00:00:09Z | GATE | review | override | operator call\n' >> "$LOGD/runs/l5.log"; ageit "$LOGD/runs/l5.log"
+chk full l5; [ "$RC" -eq 0 ]; ok "L5 ran then override passes" $?
+printf '2026-01-01T00:00:10Z | GATE | review | skipped | changed my mind\n' >> "$LOGD/runs/l5.log"; ageit "$LOGD/runs/l5.log"
+chk full l5; { [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q '^MISSING-GATE: review '; }; ok "L5 override then skipped fails" $?
+
 echo ""
 echo "Passed: $PASS / $((PASS+FAIL))"
 [ "$FAIL" -eq 0 ] && echo "All gate-ledger check cache tests passed." || { echo "FAILED: $FAIL"; exit 1; }

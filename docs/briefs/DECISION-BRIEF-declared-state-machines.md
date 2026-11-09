@@ -155,5 +155,5 @@ A cleanup pass followed phase 1. Each PR removed a duplicate spelling or a secon
 - The debt verdict `wave` rename needs a ledger migration.
 - NEEDS-REVISION is stored as `skipped`.
 - The override share is 34% against the 15% alert.
-- Gate `check()` can count a stale `ran`.
+- Gate `check()` decides on each phase's latest GATE row (fixed); a later `skipped` undoes an earlier `ran`.
 - No writer sets SHIPPED on specs.

@@ -51,7 +51,7 @@
 #                                       write one override line per spec-level gate (think..test-plan)
 #                                       whose LAST state in the parent ledger is ran; refuses and
 #                                       writes nothing otherwise; never build/review/docs/ship/reflect
-#   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate has a ran|override entry; else 1
+#   check    <lane> <rid> [--kit-lanes]  exit 0 if every required gate's latest row is ran|override; else 1
 #                                       (--kit-lanes reads the kit root lane data only)
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist
@@ -623,7 +623,8 @@ _check_cache_put() {  # <prefix> <fp> <ctime> <result>
   return 0
 }
 
-# exit 0 if every required (measure-twice) gate has a ran|override entry; else 1 + list gaps.
+# exit 0 if every required (measure-twice) gate's LATEST GATE row is ran|override; else 1 + list gaps.
+# A later skipped row undoes an earlier ran (a NEEDS-REVISION after an approval).
 check() {
   local kl=""; if [ "${3:-}" = "--kit-lanes" ]; then kl=1; fi
   local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid> [--kit-lanes]" >&2; return 64; }
@@ -669,7 +670,7 @@ check() {
   local missing=0 phase missing_phases=""
   while IFS= read -r phase; do
     [ -n "$phase" ] || continue
-    if [ ! -f "$f" ] || ! awk -F' [|] ' -v p="$phase" '$2=="GATE" && $3==p && ($4=="ran"||$4=="override"){f=1} END{exit !f}' "$f"; then
+    if [ ! -f "$f" ] || ! awk -F' [|] ' -v p="$phase" '$2=="GATE" && $3==p {s=$4} END{exit !(s=="ran"||s=="override")}' "$f"; then
       echo "MISSING-GATE: $phase (required for lane '$lane'; no ran/override entry in the ledger)" >&2
       missing=1; missing_phases="$missing_phases${missing_phases:+,}$phase"
     fi
