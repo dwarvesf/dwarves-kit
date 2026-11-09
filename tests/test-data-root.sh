@@ -108,6 +108,18 @@ eq "once the new path exists it wins" "$(r -- path state harvest)" "$H/.local/st
 eq "...and says default" "$(r -- source state harvest)" default
 eq "resolving creates nothing" "$([ -e "$H/.local/state/dwarves-kit/intel" ] && echo yes || echo no)" no
 
+# A legacy symlink to an unmounted disk still counts as data: the cursor is not reset.
+H5="$H"; H="$T/home5b"; mkdir -p "$H/.claude/dwarves-kit/state"
+ln -s "$T/not-mounted" "$H/.claude/dwarves-kit/state/harvest"
+eq "a dangling legacy symlink still resolves to legacy" "$(r -- source state harvest)" legacy
+rm -rf "$H"; H="$H5"
+# board.json always lived in ~/.config/dwarves-kit: a host whose XDG_CONFIG_HOME points elsewhere keeps reading it.
+H5="$H"; H="$T/home5c"; mkdir -p "$H/.config/dwarves-kit"; : > "$H/.config/dwarves-kit/board.json"
+eq "board.json: the old ~/.config home wins when the XDG one is empty" "$(r KIT_CONFIG_OPERATOR= XDG_CONFIG_HOME="$T/xc" -- path config board.json)" "$H/.config/dwarves-kit/board.json"
+mkdir -p "$T/xc/dwarves-kit"; : > "$T/xc/dwarves-kit/board.json"
+eq "...and the XDG one wins once it holds the file" "$(r KIT_CONFIG_OPERATOR= XDG_CONFIG_HOME="$T/xc" -- path config board.json)" "$T/xc/dwarves-kit/board.json"
+rm -rf "$H" "$T/xc"; H="$H5"
+
 echo "== 6 config data where =="
 W="$(d -- where)"
 echo "$W" | grep -E '^state +harvest +new ' >/dev/null && ok "where: harvest new (default path exists)" || bad "where harvest row: $W"
@@ -115,6 +127,8 @@ echo "$W" | grep -E '^state +intel +legacy +yes ' >/dev/null && ok "where: intel
 echo "$W" | grep -F 'old data still at' | grep -F "$H/.claude/dwarves-kit/state/harvest" >/dev/null && ok "where: warns about old data left behind" || bad "where note: $W"
 echo "$W" | grep -E '^root: ' >/dev/null && ok "where: names the root" || bad "where root line"
 eq "config data path prints one path" "$(d -- path state intel)" "$H/.claude/intel"
+W2="$(d KIT_DATA_ROOT="$T/rt3" -- where)"
+echo "$W2" | grep -F 'WARNING: old data at' | grep -F "$H/.claude/dwarves-kit/state/harvest" >/dev/null && ok "where: an explicit root with old data left behind is a WARNING" || bad "where warning: $W2"
 
 echo "== 7 config data move =="
 rm -rf "$H" ; mkdir -p "$H"
@@ -157,6 +171,28 @@ rm -rf "$H/.claude/skill-proposals"; mkdir -p "$T/real"; ln -s "$T/real" "$H/.cl
 OUT="$(d -- move --apply)"
 echo "$OUT" | grep -F 'is a symlink' >/dev/null && ok "a symlinked legacy path is skipped" || bad "symlink output: $OUT"
 eq "a bad flag is refused" "$(d -- move --now >/dev/null 2>&1; echo "rc=$?")" "rc=64"
+# XDG dirs in this shell are not what a hook or launchd job sees: apply stops, a dry run warns.
+mkdir -p "$H/.claude/skill-proposals.x"; rm -rf "$H/.claude/skill-proposals.x"
+rm -f "$H/.claude/skill-proposals"; mkdir -p "$H/.claude/skill-curator"; echo c > "$H/.claude/skill-curator/ledger"
+OUT="$(d XDG_STATE_HOME="$T/xs7" -- move --apply 2>&1)"; RC=$?
+eq "apply stops when XDG_STATE_HOME is set and no root is pinned" "$RC" 1
+echo "$OUT" | grep -F 'stop: XDG_STATE_HOME is set' >/dev/null && ok "...and says why" || bad "xdg stop output: $OUT"
+eq "...and moved nothing" "$([ -e "$H/.claude/skill-curator/ledger" ] && [ ! -e "$T/xs7" ] && echo kept)" kept
+OUT="$(d XDG_STATE_HOME="$T/xs7" -- move 2>&1)"; RC=$?
+eq "a dry run warns and still exits 0" "$RC" 0
+echo "$OUT" | grep -F 'warning: XDG_STATE_HOME is set' >/dev/null && ok "...with the warning" || bad "xdg warn output: $OUT"
+OUT="$(d XDG_STATE_HOME="$T/xs7" KIT_DATA_ROOT="$T/pinroot" -- move --apply 2>&1)"; RC=$?
+eq "with a root pinned, XDG dirs do not matter" "$RC" 0
+eq "...and the move lands under the root" "$(cat "$T/pinroot/state/skill-curator/ledger" 2>/dev/null)" c
+# A leftover .part from an interrupted move is never mistaken for data, and never overwritten.
+mkdir -p "$H/.claude/intel" "$H/.local/state/dwarves-kit/intel.part"
+rm -rf "$H/.local/state/dwarves-kit/intel"
+OUT="$(d -- move --apply 2>&1)"
+echo "$OUT" | grep -F 'intel.part is left from an earlier move' >/dev/null && ok "a leftover .part is skipped, not clobbered" || bad "part output: $OUT"
+rm -rf "$H/.local/state/dwarves-kit/intel.part"
+echo i2 > "$H/.claude/intel/a"
+OUT="$(d -- move --apply 2>&1)"
+echo "$OUT" | grep -F 're-run: bash deploy/macos/install' >/dev/null && ok "moving intel tells the operator to re-run the kit-weekly install" || bad "intel hint: $OUT"
 # KIT_DATA_ROOT redirects the move target
 rm -rf "$H"; mkdir -p "$H/.claude/intel"; echo i > "$H/.claude/intel/a"
 d KIT_DATA_ROOT="$T/rt2" -- move --apply >/dev/null

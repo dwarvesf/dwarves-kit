@@ -15,9 +15,12 @@
 # rides an env var because the python program itself arrives on stdin.
 set -euo pipefail
 
-# shellcheck source=../lib/config/data-path.sh
-. "${BASH_SOURCE[0]%/*}/../lib/config/data-path.sh" 2>/dev/null || exit 0
-POLICY="${KIT_TOOL_POLICY:-$(kit_data_path config tool-policy.json)}"
+POLICY="${KIT_TOOL_POLICY:-}"
+if [ -z "$POLICY" ]; then
+  # shellcheck source=../lib/config/data-path.sh
+  . "${BASH_SOURCE[0]%/*}/../lib/config/data-path.sh" 2>/dev/null || exit 0
+  POLICY="$(kit_data_path config tool-policy.json)"
+fi
 [ -f "$POLICY" ] || exit 0
 
 HOOK_PAYLOAD="$(cat || true)"

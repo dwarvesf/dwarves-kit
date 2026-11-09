@@ -566,6 +566,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | Key |
 |---|
 | adopt.single_source |
+| data.root |
 | debug.confirm_fix |
 | decide.backend |
 | decide.points |

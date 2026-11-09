@@ -51,6 +51,9 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'command rm -rf "$WORK"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 export HOME="$WORK/home"; mkdir -p "$HOME"
+# The data-path resolver honors these; a real host sets them, so pin them to the temp HOME.
+unset XDG_STATE_HOME XDG_CACHE_HOME XDG_CONFIG_HOME KIT_DATA_ROOT
+export KIT_CONFIG_OPERATOR="$HOME/.config/dwarves-kit"
 unset DWARVES_BOARD_CONFIG
 NOW=1790000000
 # local calendar day of an epoch: BSD `date -r <epoch>` first, GNU `date -d @<epoch>` second

@@ -164,7 +164,7 @@ add throttle-interval-padded "$(E '"INTAKE_SWEEP_MIN_INTERVAL":" 60 "')" "$(S $C
 add throttle-interval-small-old-stamp "$(E '"INTAKE_SWEEP_MIN_INTERVAL":"60"')" "$(S $CFG "$JS" $LINKS "$L3" home/is/last-run '')" '["cwd/_meta/backlog-staging.md"]' '[]' '{"home/is/last-run":1700000000}'
 add throttle-stamp-is-directory "$(E)" "$(S $CFG "$JS" $LINKS "$L3" home/is/last-run/x 'y')" '["cwd/_meta/backlog-staging.md","home/is/swept-keys.txt"]'
 add throttle-no-sources-leaves-no-stamp "$(E)" "$(S $CFG '{"sources":[]}')" '["home/is/last-run"]'
-add state-dir-default '{"REPO_ROOT":"@CWD@"}' "$(S $CFG "$JS" $LINKS "$L3")" '["cwd/_meta/backlog-staging.md","home/.claude/dwarves-kit/state/intake-sweep/swept-keys.txt","home/.claude/dwarves-kit/state/intake-sweep/last-run"]'
+add state-dir-default '{"REPO_ROOT":"@CWD@"}' "$(S $CFG "$JS" $LINKS "$L3")" '["cwd/_meta/backlog-staging.md","home/.local/state/dwarves-kit/intake-sweep/swept-keys.txt","home/.local/state/dwarves-kit/intake-sweep/last-run"]'
 add state-dir-empty '{"REPO_ROOT":"@CWD@","INTAKE_SWEEP_STATE_DIR":""}' "$(S $CFG "$JS" $LINKS "$L3")" '["cwd/_meta/backlog-staging.md","cwd/swept-keys.txt","cwd/last-run"]'
 add state-dir-is-a-file "$(E '"INTAKE_SWEEP_STATE_DIR":"@HOME@/f/is"')" "$(S $CFG "$JS" $LINKS "$L3" home/f 'x')" '["cwd/_meta/backlog-staging.md"]'
 add swept-keys-appended "$(E)" "$(S $CFG "$JS" $LINKS "$L3" home/is/swept-keys.txt $'earlier key\n')" '["cwd/_meta/backlog-staging.md","home/is/swept-keys.txt"]'

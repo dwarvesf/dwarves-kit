@@ -43,13 +43,17 @@ _KIT_DATA_PATH_SOURCED=1
 _KIT_DATA_SELF="${BASH_SOURCE[0]%/*}"
 case "$_KIT_DATA_SELF" in /*) ;; *) _KIT_DATA_SELF="$PWD/$_KIT_DATA_SELF" ;; esac
 
+# Helpers hand results back in globals (_KD_*), never through $(...): a hook pays a fork for each.
 # ~ falls back to the password database when HOME is unset (launchd, env -i), as money-gate needs.
-_kit_data_home() { local h="${HOME:-}"; [ -n "$h" ] || h=~; printf '%s' "$h"; }
+_kit_data_sethome() { _KD_HOME="${HOME:-}"; [ -n "$_KD_HOME" ] || _KD_HOME=~; }
 
 # _kit_data_lookup <kind> <name> -- sets _KD_LEGACY _KD_ENV _KD_NOTE; returns 1 when unknown.
-# The table: add an entry HERE and in kit_data_entries, nowhere else.
+# The table: add an entry HERE and in kit_data_entries, nowhere else. board.json and
+# hermes-links.json always lived in ~/.config/dwarves-kit; that stays their legacy path for a host
+# whose XDG_CONFIG_HOME or operator config dir points somewhere else.
 _kit_data_lookup() {
-  local h; h="$(_kit_data_home)"
+  _kit_data_sethome
+  local h="$_KD_HOME"
   _KD_LEGACY=""; _KD_ENV=""; _KD_NOTE=""
   case "$1:$2" in
     state:harvest)
@@ -113,22 +117,26 @@ kit_data_legacy() { _kit_data_lookup "$1" "$2" || return 1; printf '%s' "$_KD_LE
 kit_data_env()    { _kit_data_lookup "$1" "$2" || return 1; printf '%s' "$_KD_ENV"; }
 kit_data_note()   { _kit_data_lookup "$1" "$2" || return 1; printf '%s' "$_KD_NOTE"; }
 
-# A leading ~/ means the home dir, so a kit.toml value reads like a shell path.
+# _kit_data_expand <value> -- sets _KD_X. A leading ~/ means the home dir, so a kit.toml value reads
+# like a shell path. Needs _KD_HOME (set by _kit_data_lookup).
 _kit_data_expand() {
   case "$1" in
-    "~") _kit_data_home ;;
-    "~/"*) printf '%s/%s' "$(_kit_data_home)" "${1#"~/"}" ;;
-    *) printf '%s' "$1" ;;
+    "~") _KD_X="$_KD_HOME" ;;
+    "~/"*) _KD_X="$_KD_HOME/${1#"~/"}" ;;
+    *) _KD_X="$1" ;;
   esac
 }
 
 # _kit_data_root_override -- sets _KD_ROOT and _KD_ROOT_SRC (root-env | root-key), or leaves them empty.
 _kit_data_root_override() {
   _KD_ROOT=""; _KD_ROOT_SRC=""
+  _kit_data_sethome
   if [ -n "${KIT_DATA_ROOT:-}" ]; then
-    _KD_ROOT="$(_kit_data_expand "$KIT_DATA_ROOT")"; _KD_ROOT_SRC=root-env; return 0
+    _kit_data_expand "$KIT_DATA_ROOT"; _KD_ROOT="$_KD_X"; _KD_ROOT_SRC=root-env; return 0
   fi
-  local op="${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$(_kit_data_home)/.config}/dwarves-kit}/kit.toml"
+  # kit-config.sh reads $HOME; with HOME unset (a bare env) the key is not consulted.
+  [ -n "${HOME:-}" ] || return 0
+  local op="${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$_KD_HOME/.config}/dwarves-kit}/kit.toml"
   [ -f "$op" ] || return 0
   # A hook pays for this on every run: skip the TOML reader unless the file has a [data] section.
   local txt=""
@@ -138,16 +146,16 @@ _kit_data_root_override() {
   . "$_KIT_DATA_SELF/kit-config.sh" 2>/dev/null || return 0
   local v; v="$(kit_config_get_root data.root "")"
   [ -n "$v" ] || return 0
-  _KD_ROOT="$(_kit_data_expand "$v")"; _KD_ROOT_SRC=root-key
+  _kit_data_expand "$v"; _KD_ROOT="$_KD_X"; _KD_ROOT_SRC=root-key
 }
 
-# _kit_data_default <kind> <name> -- the path a user with no legacy data gets.
+# _kit_data_default <kind> <name> -- sets _KD_DEF, the path a user with no legacy data gets.
 _kit_data_default() {
-  local h; h="$(_kit_data_home)"
+  _kit_data_sethome
   case "$1" in
-    state) printf '%s' "${XDG_STATE_HOME:-$h/.local/state}/dwarves-kit/$2" ;;
-    cache) printf '%s' "${XDG_CACHE_HOME:-$h/.cache}/dwarves-kit/$2" ;;
-    config) printf '%s' "${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$h/.config}/dwarves-kit}/$2" ;;
+    state) _KD_DEF="${XDG_STATE_HOME:-$_KD_HOME/.local/state}/dwarves-kit/$2" ;;
+    cache) _KD_DEF="${XDG_CACHE_HOME:-$_KD_HOME/.cache}/dwarves-kit/$2" ;;
+    config) _KD_DEF="${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$_KD_HOME/.config}/dwarves-kit}/$2" ;;
   esac
 }
 
@@ -158,14 +166,16 @@ _kit_data_resolve() {
   _KD_PATH=""; _KD_SRC=""
   if [ -n "$_KD_ENV" ]; then
     ev="${!_KD_ENV:-}"
-    if [ -n "$ev" ]; then _KD_PATH="$(_kit_data_expand "$ev")"; _KD_SRC=env; return 0; fi
+    if [ -n "$ev" ]; then _kit_data_expand "$ev"; _KD_PATH="$_KD_X"; _KD_SRC=env; return 0; fi
   fi
   if [ "$kind" != config ]; then
     _kit_data_root_override
     if [ -n "$_KD_ROOT" ]; then _KD_PATH="$_KD_ROOT/$kind/$name"; _KD_SRC="$_KD_ROOT_SRC"; return 0; fi
   fi
-  local def; def="$(_kit_data_default "$kind" "$name")"
-  if [ "$_KD_LEGACY" != "$def" ] && [ -e "$_KD_LEGACY" ] && [ ! -e "$def" ]; then
+  _kit_data_default "$kind" "$name"
+  local def="$_KD_DEF"
+  # -L as well as -e: a legacy symlink to an unmounted disk still counts as data (it is not reset).
+  if [ "$_KD_LEGACY" != "$def" ] && { [ -e "$_KD_LEGACY" ] || [ -L "$_KD_LEGACY" ]; } && [ ! -e "$def" ] && [ ! -L "$def" ]; then
     _KD_PATH="$_KD_LEGACY"; _KD_SRC=legacy; return 0
   fi
   _KD_PATH="$def"; _KD_SRC=default

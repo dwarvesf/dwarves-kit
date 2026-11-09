@@ -55,8 +55,8 @@ add crash-now-garbage "$(env_at abc)" '{"prompt":"hi","session_id":"s1"}' "$(see
 add now-padded-spaces "$(env_at ' 1100 ')" '{"prompt":"hi","session_id":"s1"}' "$(seed_state s1 "$(state 1000 1000)")" "$(read_state s1)"
 
 # --- the state file ---
-add state-default-dir '{"CONTEXT_HINTS_NOW":"1100"}' '{"prompt":"hi","session_id":"s1"}' '{"home/.claude/dwarves-kit/state/context-hints/s1.json":"{\"start\": 1000.0, \"last\": 1000.0}"}' '["home/.claude/dwarves-kit/state/context-hints/s1.json"]'
-add state-default-dir-first '{"CONTEXT_HINTS_NOW":"1100"}' '{"prompt":"hi","session_id":"s1"}' '{}' '["home/.claude/dwarves-kit/state/context-hints/s1.json"]'
+add state-default-dir '{"CONTEXT_HINTS_NOW":"1100"}' '{"prompt":"hi","session_id":"s1"}' '{"home/.cache/dwarves-kit/context-hints/s1.json":"{\"start\": 1000.0, \"last\": 1000.0}"}' '["home/.cache/dwarves-kit/context-hints/s1.json"]'
+add state-default-dir-first '{"CONTEXT_HINTS_NOW":"1100"}' '{"prompt":"hi","session_id":"s1"}' '{}' '["home/.cache/dwarves-kit/context-hints/s1.json"]'
 add state-corrupt "$(env_at 1100)" '{"prompt":"hi","session_id":"s1"}' "$(seed_state s1 'garbage')" "$(read_state s1)"
 add state-empty-file "$(env_at 1100)" '{"prompt":"hi","session_id":"s1"}' "$(seed_state s1 '')" "$(read_state s1)"
 add state-trailing-garbage "$(env_at 1100)" '{"prompt":"hi","session_id":"s1"}' "$(seed_state s1 '{"start":1000,"last":1000} x')" "$(read_state s1)"

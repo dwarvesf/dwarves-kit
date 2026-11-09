@@ -32,10 +32,10 @@
 #
 # DATA: a runtime data path (a legacy default under ~/.claude, ~/.cache or ~/.config, listed in
 # data_re) is spelled in ONE file, lib/config/data-path.sh. Anywhere else in executable code it
-# is a hardcoded default that bypasses the resolver (SPEC-418), so a user cannot answer "where is
-# my data" and `config data move` cannot carry it. Scope: lib/, hooks/, bin/, deploy/, install.sh,
-# plus the agent-facing prose in commands/ and skills/ (a path printed there gets copied into a
-# command). Skipped: the resolver itself, tests/, docs/, fixtures/ and examples/ dirs, other
+# is a hardcoded default that bypasses the resolver, so a user cannot answer "where is
+# my data" and `config data move` cannot carry it. A path split into pieces (".claude", "intel")
+# counts. Scope: lib/, hooks/, bin/, deploy/, install.sh, plus the agent-facing prose in commands/,
+# skills/, agents/, integrations/ and templates/ (a path printed there gets copied into a command). Skipped: the resolver itself, tests/, docs/, fixtures/ and examples/ dirs, other
 # markdown, comment lines, Python docstrings. A line that must keep one carries `data-path-ok:
 # <reason>`.
 #
@@ -153,19 +153,26 @@ else
 fi
 
 # DATA check. Same shape as the deny scan: captured, so a crashed scan fails the lint.
-data_re='\.claude/(dwarves-kit/state|dwarves-kit/tool-policy|intel|skill-proposals|skill-curator|logs/money-gate)|\.cache/(backlog-sync|claude-context-budget)|\.config/harvest-sweep'  # data-path-ok: the lint's own pattern
 data_scan() {
   command -v python3 >/dev/null 2>&1 || { echo "needs python3 on PATH"; return 1; }
-  python3 - "$ROOT" "$data_re" <<'PY'
+  python3 - "$ROOT" <<'PY'
 import ast, os, re, sys
 
-root, pattern = sys.argv[1], sys.argv[2]
-pat = re.compile(pattern)
+root = sys.argv[1]
+# Every spelling of a legacy data path: one string ("~/.claude/intel"), path pieces
+# (".claude", "intel" / Path.home() / ".cache" / "backlog-sync"), and the shell var forms.
+# SEP is whatever sits between two path pieces: a slash, a quote, a comma, a space.
+SEP = r"""[\s"'/,\\)]+"""
+pat = re.compile(
+    r"\.claude" + SEP + r"(dwarves-kit" + SEP + r"(state|tool-policy)|intel|skill-proposals|skill-curator|logs" + SEP + r"money-gate)"
+    r"|\.cache" + SEP + r"(backlog-sync|claude-context-budget)"
+    r"|\.config" + SEP + r"(harvest-sweep|dwarves-kit" + SEP + r"(board\.json|hermes-links\.json))"
+)  # data-path-ok: the lint's own pattern
 skip_dirs = {".git", ".claude", "node_modules", ".venv", "__pycache__", "docs", "tests", "fixtures", "examples"}
 skip_ext = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg", ".pdf",
             ".woff", ".woff2", ".gz", ".zip", ".tar", ".tgz"}
 resolver = os.path.join(root, "lib", "config", "data-path.sh")
-scan_dirs = [os.path.join(root, d) for d in ("lib", "hooks", "bin", "deploy", "commands", "skills")]
+scan_dirs = [os.path.join(root, d) for d in ("lib", "hooks", "bin", "deploy", "commands", "skills", "integrations", "agents", "templates")]
 scan_files = [os.path.join(root, "install.sh")]
 
 
@@ -203,7 +210,7 @@ for path in candidates():
     prose = ext == ".md"
     if path == resolver or os.path.islink(path) or ext in skip_ext:
         continue
-    if prose and not rel.startswith(("commands" + os.sep, "skills" + os.sep)):
+    if prose and not rel.startswith(("commands" + os.sep, "skills" + os.sep, "integrations" + os.sep, "agents" + os.sep, "templates" + os.sep)):
         continue
     try:
         with open(path, "rb") as fh:

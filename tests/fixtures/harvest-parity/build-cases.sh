@@ -131,7 +131,7 @@ add debounce-interval-invalid "$(e "$EJ" '"HARVEST_MIN_INTERVAL":"abc"')" "$P" "
 add debounce-interval-negative "$(e "$EJ" '"HARVEST_MIN_INTERVAL":"-5"')" "$P" "$(S cwd/t.jsonl "$T1" home/hv/last-ledger 1)"
 add debounce-before-payload-read "$(e "$EJ" '"HARVEST_MIN_INTERVAL":"3600"')" 'RAW:' '{}' '["home/hv/last-ledger"]'
 add debounce-state-dir-is-a-file "$(e "$EJ" '"HARVEST_MIN_INTERVAL":"3600","HARVEST_STATE_DIR":"@HOME@/f/hv"')" "$P" "$(S cwd/t.jsonl "$T1" home/f x)"
-add state-dir-default "$(e "$EJ" '"HARVEST_MIN_INTERVAL":"3600"' | jq -c 'del(.HARVEST_STATE_DIR)')" "$P" "$(S cwd/t.jsonl "$T1")" '["cwd/_meta/learned-ledger.md","home/.claude/dwarves-kit/state/harvest/last-ledger"]'
+add state-dir-default "$(e "$EJ" '"HARVEST_MIN_INTERVAL":"3600"' | jq -c 'del(.HARVEST_STATE_DIR)')" "$P" "$(S cwd/t.jsonl "$T1")" '["cwd/_meta/learned-ledger.md","home/.local/state/dwarves-kit/harvest/last-ledger"]'
 
 # --- sync knob and the detached child ---
 add sync-padded-upper "$(e "$EJ" '"HARVEST_SYNC":" TRUE "')" "$P" "$(S cwd/t.jsonl "$T1")"

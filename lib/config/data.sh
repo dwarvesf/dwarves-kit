@@ -38,8 +38,12 @@ cmd_where() {
     present=no; [ -e "$path" ] && present=yes
     printf '%-7s %-20s %-7s %-7s %s\n' "$kind" "$name" "$how" "$present" "$path"
     left="$(kit_data_legacy "$kind" "$name")"
-    if [ "$src" != legacy ] && [ "$left" != "$path" ] && [ -e "$left" ]; then
-      printf '        note: old data still at %s (run: config data move)\n' "$left"
+    if [ "$src" != legacy ] && [ "$left" != "$path" ] && { [ -e "$left" ] || [ -L "$left" ]; }; then
+      case "$src" in
+        root-env|root-key)
+          printf '        WARNING: old data at %s is IGNORED while the data root is set; this entry starts empty. Run: config data move --apply\n' "$left" ;;
+        *) printf '        note: old data still at %s (run: config data move)\n' "$left" ;;
+      esac
     fi
   done < <(kit_data_entries)
   if command -v kit_resolve_log_dir >/dev/null 2>&1; then
@@ -69,17 +73,29 @@ _target() {
     _kit_data_root_override
     if [ -n "$_KD_ROOT" ]; then printf '%s' "$_KD_ROOT/$kind/$name"; return 0; fi
   fi
-  _kit_data_default "$kind" "$name"
+  _kit_data_default "$kind" "$name"; printf '%s' "$_KD_DEF"
 }
 
 cmd_move() {
-  local apply=0 kind name legacy target envname moved=0 waiting=0
+  local apply=0 kind name legacy target envname moved=0 waiting=0 xdg=""
   case "${1:-}" in
     "") ;;
     --apply) apply=1 ;;
     *) echo "usage: config data move [--apply]" >&2; return 64 ;;
   esac
   [ "$apply" = 1 ] || echo "dry run: nothing moves without --apply"
+  # The target comes from THIS shell's XDG dirs. A hook or a launchd job without them would look
+  # elsewhere, find an empty dir, and reset its cursor. Pin the root first.
+  _kit_data_root_override
+  if [ -z "$_KD_ROOT" ]; then
+    [ -z "${XDG_STATE_HOME:-}" ] || xdg="XDG_STATE_HOME"
+    [ -z "${XDG_CACHE_HOME:-}" ] || xdg="${xdg:+$xdg and }XDG_CACHE_HOME"
+  fi
+  if [ -n "$xdg" ]; then
+    echo "$([ "$apply" = 1 ] && echo stop || echo warning): $xdg is set in this shell, so the target is not the one a hook or a launchd job would find." >&2
+    echo "      Set [data] root = \"<dir>\" in your operator kit.toml (or KIT_DATA_ROOT), then run this again." >&2
+    [ "$apply" = 0 ] || return 1
+  fi
   while read -r kind name; do
     legacy="$(kit_data_legacy "$kind" "$name")"
     target="$(_target "$kind" "$name")"
@@ -95,13 +111,18 @@ cmd_move() {
     if [ -e "$target" ]; then
       echo "skip   $kind/$name: both $legacy and $target exist, merge by hand"; continue
     fi
+    if [ -e "$target.part" ]; then
+      echo "skip   $kind/$name: $target.part is left from an earlier move, check it and remove it by hand"; continue
+    fi
     if [ "$apply" = 0 ]; then
       echo "would move $kind/$name: $legacy -> $target"; waiting=$((waiting + 1)); continue
     fi
     mkdir -p "$(dirname "$target")"
-    mv -n "$legacy" "$target"
-    if [ -e "$target" ] && [ ! -e "$legacy" ]; then
+    # Into a .part name first, then one rename: an interrupted copy across disks never looks like data.
+    mv -n "$legacy" "$target.part"
+    if [ -e "$target.part" ] && [ ! -e "$legacy" ] && mv -n "$target.part" "$target" && [ -e "$target" ]; then
       echo "moved  $kind/$name: $legacy -> $target"; moved=$((moved + 1))
+      [ "$name" != intel ] || echo "       the kit-weekly LaunchAgent logs into the old intel dir; re-run: bash deploy/macos/install"
     else
       echo "FAILED $kind/$name: $legacy -> $target" >&2; return 1
     fi

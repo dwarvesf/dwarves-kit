@@ -118,6 +118,24 @@ for lit in '.claude/dwarves-kit/state/x' '.claude/intel' '.claude/skill-proposal
   assert "planted $lit names the file and the resolver" "$(printf '%s' "$OUT" | grep -q 'data path hardcoded.*hooks/new-hook.sh:1' && echo 0 || echo 1)" "$OUT"
   rm -rf "$FX"
 done
+# The same paths spelled in pieces, which is how the Python tools wrote them.
+n=0
+for line in 'p = Path.home() / ".cache" / "backlog-sync"' 'p = os.path.join(h, ".claude", "intel")' \
+            'p = "$HOME/.config/dwarves-kit/board.json"' 'p = os.path.expanduser("~/.config/dwarves-kit/hermes-links.json")'; do
+  n=$((n+1))
+  FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+  mkdir -p "$FX/lib/x"
+  printf '%s\n' "$line" > "$FX/lib/x/split$n.py"
+  OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+  assert "planted split-path shape $n is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q "lib/x/split$n.py:1" && echo 0 || echo 1)" "$OUT"
+  rm -rf "$FX"
+done
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/integrations/h/skills/k"
+printf 'Flags come from ~/.config/dwarves-kit/board.json.\n' > "$FX/integrations/h/skills/k/SKILL.md"
+OUT="$(bash "$LINT" "$FX" 2>&1)"; RC=$?
+assert "planted path in integrations/ prose is caught" "$([ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'integrations/h/skills/k/SKILL.md:1' && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
 FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 mkdir -p "$FX/lib/x" "$FX/skills/y" "$FX/lib/config" "$FX/lib/x/tests" "$FX/docs"
 printf 'p = "~/.claude/intel"\n' > "$FX/lib/x/tool.py"

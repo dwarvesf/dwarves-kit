@@ -20,6 +20,11 @@ _tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-context-budget-tests.XXXXXX")" ||
 trap 'rm -rf "$_tmp"' EXIT
 export HOME="$_tmp"
 unset KIT_CTX_WARN_PCT KIT_CTX_STRONG_PCT KIT_CTX_WINDOW
+# The state dir comes from the kit's data-path resolver: pin every input so a real host's XDG dirs
+# or operator kit.toml are never read or written.
+unset XDG_STATE_HOME XDG_CACHE_HOME XDG_CONFIG_HOME KIT_DATA_ROOT
+export KIT_CONFIG_OPERATOR="$HOME/.config/dwarves-kit"
+BUDGET_DIR="$(bash "$KIT_DIR/lib/config/data-path.sh" path cache context-budget)"
 mkdir -p "$HOME/.claude/projects/p"
 
 PASS=0
@@ -134,12 +139,12 @@ step "7.7 usage past 200k proves a bigger window: 250k is 25% of 1M, silent" sil
 # The live bug: opus-5-5 on a 1M window logs a bare id, 167k read as 83%.
 T7h="$HOME/.claude/projects/p/s7h.jsonl"
 transcript "$T7h" 167000 "claude-opus-5-5"
-mkdir -p "$HOME/.cache/claude-context-budget"
-echo 1000000 > "$HOME/.cache/claude-context-budget/s7h.window"
+mkdir -p "$BUDGET_DIR"
+echo 1000000 > "$BUDGET_DIR/s7h.window"
 step "7.8 statusline window file 1M, bare id: 167k is 16%, silent" silent s7h "$T7h"
 T7i="$HOME/.claude/projects/p/s7i.jsonl"
 transcript "$T7i" 167000 "claude-opus-5-5"
-echo junk > "$HOME/.cache/claude-context-budget/s7i.window"
+echo junk > "$BUDGET_DIR/s7i.window"
 step "7.9 junk window file ignored: falls back to 200k, 83% speaks" speak s7i "$T7i"
 
 echo "== Case 8: threshold 0 (warn) is advisory, threshold 1 (strong) is a directive =="
