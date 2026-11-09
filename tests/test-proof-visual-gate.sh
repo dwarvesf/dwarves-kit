@@ -131,6 +131,14 @@ blocks "case 5: queued entry whose fetch fails" "$D"
 msg_has "case 5: the block names 'fetch failed: <url>'" "$D" "fetch failed: $URL"
 msg_has "case 5: the block says to run 'bin/proof-asset flush'" "$D" 'bin/proof-asset flush'
 
+echo "=== case 5b: a manifest status 'pending' is not a queue: no flush hint without a .pending file ==="
+D="$(new_repo c5b)"; visual_on "$D"; ui_diff "$D"
+manifest "$D" pending "$URL" "$SHA"
+printf '![shot](%s)\n' "$URL" | proof_ok "$D"
+blocks "case 5b: pending-status entry whose fetch fails" "$D"
+OUT="$(gate "$D")"
+case "$OUT" in *'bin/proof-asset flush'*) fail "case 5b: flush hint shown for a status-only pending entry: $OUT" ;; *) pass "case 5b: no flush hint without a .pending queue file" ;; esac
+
 echo "=== case 6: assets=local from a tracked, clean .kit.toml + cached file -> passes ==="
 D="$(new_repo c6)"
 local_on "$D"; git -C "$D" add .kit.toml; git -C "$D" commit -qm "config: opt in"
