@@ -5,7 +5,7 @@ State and merge helpers around the `/goal` loop: goal drafts, the cross-session 
 **Entry points**
 - `bin/goal` forwards to `lib/goal/goal.sh`, which hands each verb to the script that owns it.
 - `goal.sh draft <archive|list|dir>` (`goal-drafts.sh`): list design-time drafts in `.claude/goals/` and move drafts whose spec shipped into `done/`.
-- `goal.sh registry <claim|list|log|status|release|dir>` (`goal-registry.sh`): the cross-session lock. `claim` refuses when a new goal's file globs overlap a running goal.
+- `goal.sh registry <claim|list|log|release|dir>` (`goal-registry.sh`): the cross-session lock. `claim` refuses when a new goal's file globs overlap a running goal.
 - `goal.sh merge <gate|merge|mark>` (`mega-merge.sh`): `gate` checks the lane gate, `merge` refuses on a failing gate and dry-runs unless given `--execute`, and `mark` holds a PR with a draft flag and label.
 - `goal.sh stack-merge <next|chain>` (`stack-merge.sh`): squash-merge a stacked PR chain bottom-up.
 - `goal.sh handoff` (`handoff-gen`, `handoff/handoff_gen.py`): the two-tier handoff document generator.

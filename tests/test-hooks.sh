@@ -1938,9 +1938,15 @@ ATT=$(cat "$GOAL_REGISTRY_DIR/goal-a.attempts" 2>/dev/null)
 assert_output_contains "registry: attempt log holds the line" "tried approach X" "$ATT"
 
 bash "$REG" status goal-a blocked >/dev/null 2>&1
-assert_exit "registry: status goal-a -> blocked" 0 "$?"
-REG_LIST2=$(bash "$REG" list 2>/dev/null)
-assert_output_contains "registry: list reflects the new status" "blocked" "$REG_LIST2"
+assert_exit "registry: the dead status subcommand is gone -> usage error" 64 "$?"
+[ -f "$GOAL_REGISTRY_DIR/goal-a.goal" ] && grep -q '^status=' "$GOAL_REGISTRY_DIR/goal-a.goal"
+assert_exit "registry: claim writes no status= field" 1 "$?"
+# An old record that still carries status= keeps listing without error.
+printf 'slug=goal-old\nlane=normal\nstatus=blocked\nbranch=x\nstarted=2026-01-01T00:00:00Z\n' > "$GOAL_REGISTRY_DIR/goal-old.goal"
+REG_LIST2=$(bash "$REG" list 2>&1); REG_RC=$?
+assert_exit "registry: list over an old status= record -> ok" 0 "$REG_RC"
+assert_output_contains "registry: list still shows the old record" "goal-old" "$REG_LIST2"
+rm -f "$GOAL_REGISTRY_DIR/goal-old.goal"
 
 bash "$REG" release goal-a >/dev/null 2>&1
 assert_exit "registry: release goal-a -> ok" 0 "$?"

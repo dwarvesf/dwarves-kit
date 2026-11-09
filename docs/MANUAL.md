@@ -204,9 +204,9 @@ keeps the sessions from colliding. It is a `lib/` helper, not a slash command.
   the kit-level companion to the native agent view, which sees only one session's workers.
 - `bash lib/goal/goal-registry.sh log <slug> "..."` -- append to the goal's attempt log
   (`<slug>.attempts`), the running, human-legible "what it tried" trail.
-- `bash lib/goal/goal-registry.sh status <slug> <state>` / `release <slug>` -- update status /
-  drop the entry on completion. A stale `running` entry from a crashed session shows in
-  `list` and is cleared with `release` (no GC daemon, by design).
+- `bash lib/goal/goal-registry.sh release <slug>` -- drop the entry on completion. A stale
+  entry from a crashed session shows in `list` as `running` and is cleared with `release`
+  (no GC daemon, by design).
 
 **Common gotcha:** the slug is the bare spec/goal slug (no `goal/` prefix, no slashes).
 What stays L5 (Nimbalyst / GSD v2): coordination across machines, by 3+ live human
