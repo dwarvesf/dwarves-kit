@@ -6,6 +6,8 @@
 # Run: bash tests/test-gate-ledger-amend.sh   (exit 0 = all green)
 
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 export DWARVES_KIT_LOG_DIR; DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1

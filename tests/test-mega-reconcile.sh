@@ -8,6 +8,8 @@
 #
 # Run: bash tests/test-mega-reconcile.sh   (exit 0 = all AC green)
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MEGA_MD="$KIT_DIR/commands/mega.md"
 MM="$KIT_DIR/lib/goal/mega-merge.sh"

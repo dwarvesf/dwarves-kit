@@ -8,6 +8,8 @@
 # and the SHARED-ROOT NC (gate-ledger writes under KIT_LEDGER_DIR, the substrate reads the
 # same root -- the two planes meet on one root).
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"

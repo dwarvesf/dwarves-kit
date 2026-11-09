@@ -10,6 +10,8 @@
 # Each case builds a throwaway kit dir (tests/run-all.sh plus fixture suites) and runs the
 # REAL script against it, so nothing here touches the repo's own tests/.
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RA="$DIR/tests/run-all.sh"
 # The macOS CI job exports a floor; every case here sets its own ceilings, so a leaked one would mask them.

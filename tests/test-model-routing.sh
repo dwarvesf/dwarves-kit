@@ -21,6 +21,8 @@
 # Run: bash tests/test-model-routing.sh   (exit 0 = pass, 1 = fail)
 
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The kit-root config layer is $HOME/.claude/dwarves-kit by default, which CI does not have and
 # a dev machine has as an installed copy of THIS checkout. Pin it to the checkout so the

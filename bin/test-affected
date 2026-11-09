@@ -74,6 +74,9 @@ if [ "${1:-}" = "--run-one" ]; then
   out="$2"; suite="$3"; limit="$4"; key="${5:-}"
   name="$(suite_id "$suite")"
   t0="$(date +%s)"; rc=0
+  # The host operator kit.toml never reaches a suite (tests/test-operator-pin.sh). A suite that needs
+  # its own operator file sets the variable itself.
+  export KIT_CONFIG_OPERATOR="$out/no-operator-config"
   _timeout "$limit" bash "$suite" >"$out/$name.log" 2>&1 || rc=$?
   echo "$(( $(date +%s) - t0 ))" >"$out/$name.secs"
   if [ "$rc" -eq 0 ] && [ -n "${TA_CDIR:-}" ] && [ -n "$key" ]; then

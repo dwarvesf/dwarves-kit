@@ -32,6 +32,8 @@
 # Run: bash tests/test-command-emit-sweep.sh   (exit 0 = all AC green)
 
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 COMMANDS_DIR="$KIT_DIR/commands"
 WORKFLOW="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub

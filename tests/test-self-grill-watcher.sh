@@ -20,6 +20,8 @@
 # Run: bash tests/test-self-grill-watcher.sh   (exit 0 = all checks green)
 
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WATCH="$KIT_DIR/lib/queue/watch-board.sh"
 

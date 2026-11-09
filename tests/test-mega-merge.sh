@@ -11,6 +11,8 @@
 # Run: bash tests/test-mega-merge.sh   (exit 0 = all green)
 
 set -uo pipefail
+# Fence off the host operator kit.toml: a real operator file must not change what this suite asserts.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MM="$KIT_DIR/lib/goal/mega-merge.sh"
 US=$'\037'
