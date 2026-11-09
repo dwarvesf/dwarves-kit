@@ -371,7 +371,85 @@ _land_open_by_head() {
     '[.[] | select(((.author.login // "") | ascii_downcase) == ($me | ascii_downcase))]' 2>/dev/null
 }
 
-# cmd_land <worktree> [--title T] [--body-file F] [--no-pull] [--with-ci] [--verify C] [--draft] -- the landing loop for ONE committed
+# cmd_land <worktree> [<worktree>...] [flags] -- one worktree runs _land_one untouched (no extra
+# output). Two or more land strictly one at a time, in argument order, each through _land_one
+# (a second land would race the merge of the first). Before every land after the first, a branch
+# that was never pushed is rebased with `cmd_rebase`: _land_run only merges origin/<default> in
+# after the push and the checks wait, when the PR already reads CONFLICTING, so a rebase first
+# saves that wasted round. A pushed branch is never rebased (its history is published). The run
+# stops at the first non-zero land, names it, lists the worktrees not run, and exits with that
+# land's code. It ends on a summary table, so `| tail` reads the outcome. --title and --body-file
+# name one PR, and --draft never merges, so each refuses (64) with more than one worktree.
+cmd_land() {
+  local -a wts=() flags=()
+  local arg want="" only_one=""
+  for arg in "$@"; do
+    if [ -n "$want" ]; then flags+=("$arg"); want=""; continue; fi
+    case "$arg" in
+      --title|--body-file|--verify) want=1; flags+=("$arg") ;;
+      -*) flags+=("$arg") ;;
+      *) wts+=("$arg") ;;
+    esac
+    case "$arg" in
+      --title|--title=*|--body-file|--body-file=*|--draft) [ -n "$only_one" ] || only_one="${arg%%=*}" ;;
+    esac
+  done
+  if [ "${#wts[@]}" -le 1 ]; then _land_one "$@"; return $?; fi
+
+  local i n="${#wts[@]}" wt rc=0 res tmp stop=-1
+  local -a results=()
+  if [ -n "$only_one" ]; then
+    echo "wrap.sh land: ${only_one} cannot combine with more than one worktree" >&2
+    echo "LAND: refused (preflight, exit 64)"; return 64
+  fi
+  for wt in "${wts[@]}"; do
+    _reject_packed land "$wt" || { echo "LAND: refused (preflight, exit 64)"; return 64; }
+    _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; echo "LAND: refused (preflight, exit 64)"; return 64; }
+  done
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { echo "wrap.sh land: mktemp failed" >&2; echo "LAND: refused (preflight, exit 1)"; return 1; }
+
+  for (( i = 0; i < n; i++ )); do
+    wt="${wts[$i]}"
+    echo "== land $(( i + 1 ))/${n}: ${wt}"
+    if [ "$i" -gt 0 ]; then
+      _land_many_rebase "$wt"; rc=$?
+      if [ "$rc" -ne 0 ]; then results+=("LAND: refused (rebase, exit ${rc})"); stop=$i; break; fi
+    fi
+    : > "$tmp"
+    _land_one "$wt" ${flags[@]+"${flags[@]}"} | tee "$tmp"; rc="${PIPESTATUS[0]}"
+    res="$(grep '^LAND: ' "$tmp" | tail -1)"
+    results+=("${res:-LAND: refused (unknown, exit ${rc})}")
+    if [ "$rc" -ne 0 ]; then stop=$i; break; fi
+  done
+  rm -f "$tmp"
+
+  if [ "$stop" -ge 0 ]; then
+    echo "STOPPED at ${wts[$stop]} ($(( stop + 1 ))/${n}): ${results[$stop]}"
+    if [ "$(( stop + 1 ))" -lt "$n" ]; then
+      echo "not run: ${wts[*]:$(( stop + 1 ))}"
+    fi
+  fi
+  echo "== land summary"
+  for (( i = 0; i < n; i++ )); do
+    printf '%s  %s\n' "${wts[$i]}" "${results[$i]:-LAND: not run}"
+  done
+  return "$rc"
+}
+
+# _land_many_rebase <worktree> -- rebase a never-pushed branch onto origin/<default> through the
+# rebase verb; a branch already on origin is left alone. ls-remote exits 2 for "no such ref".
+_land_many_rebase() {
+  local wt="$1" branch lrc
+  branch="$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)"
+  [ -n "$branch" ] || return 0
+  git -C "$wt" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; lrc=$?
+  if [ "$lrc" -ne 2 ]; then
+    echo "rebase skipped: ${branch} is already on origin or origin is unreadable"; return 0
+  fi
+  cmd_rebase "$wt"
+}
+
+# _land_one <worktree> [--title T] [--body-file F] [--no-pull] [--with-ci] [--verify C] [--draft] -- the landing loop for ONE committed
 # branch in a hand-made worktree: push, open the PR, squash-merge, verify the tree, fast
 # forward the main checkout, remove the worktree, delete the branch. Each step prints one
 # line with its sha or its refusal. With no --body-file the PR body is the branch's proof of
@@ -393,7 +471,7 @@ _land_open_by_head() {
 # outcome with `| tail -1`: `merged #<n> (<sha7>) pull=<ok|blocked|skipped> worktree=<removed|kept>`,
 # `already landed (<proof>) pull=.. worktree=..`, `draft #<n> opened`, or `refused (<step>, exit <rc>)`.
 # The refusal text itself stays on stderr where it was printed; the exit code is unchanged.
-cmd_land() {
+_land_one() {
   _LAND_STEP=preflight _LAND_KIND="" _LAND_REF="" _LAND_PULL=skipped _LAND_WT=kept
   local rc
   _land_run "$@"; rc=$?
