@@ -122,11 +122,11 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `codex-hook-adapter.sh` | `[E]` | - | Normalize Codex hook input before invoking shared dwarves-kit policies. | SPEC-288, SPEC-334, SPEC-340 +1 | test-codex-hooks.sh |
 | `commit-format.sh` | `[E]` | PreToolUse | PreToolUse hook that blocks git commit subjects lacking a Conventional Commits type, over 72 chars, or carrying spec markers. | SPEC-014, SPEC-032, SPEC-064 +7 | test-codex-hooks.sh, test-gate-opt-in.sh, test-gate-opt-out.sh +4 |
 | `context-budget.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook that warns once per threshold once live context passes a percentage of the model's window. | SPEC-255, SPEC-334, SPEC-400 +1 | test-context-budget.sh, test-install-modules.sh |
-| `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook that injects temporal and keyword skill hints into the prompt context. | SPEC-255, SPEC-334, SPEC-355 +3 | test-adopt.sh, test-context-hints-parity.sh, test-data-root.sh +2 |
+| `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook that injects temporal and keyword skill hints into the prompt context. | SPEC-255, SPEC-334, SPEC-355 +3 | test-adopt.sh, test-clean-room.sh, test-context-hints-parity.sh +3 |
 | `context-readiness.sh` | `[E]` | SessionStart | SessionStart hook that checks project readiness and injects spec, board state and the next step into context. | SPEC-003, SPEC-005, SPEC-010 +11 | test-adopt.sh, test-anchor-module-gate.sh, test-hooks.sh +4 |
-| `harvest.sh` | `[E]` | PreCompact+SessionEnd | hook that stages session learnings on PreCompact (no flag) and a LAB_LOG draft on SessionEnd (--lab-log); always exits 0. | SPEC-194, SPEC-196, SPEC-245 +15 | test-data-root.sh, test-egress-visible.sh, test-harvest-parity.sh +6 |
+| `harvest.sh` | `[E]` | PreCompact+SessionEnd | hook that stages session learnings on PreCompact (no flag) and a LAB_LOG draft on SessionEnd (--lab-log); always exits 0. | SPEC-194, SPEC-196, SPEC-245 +15 | test-clean-room.sh, test-data-root.sh, test-egress-visible.sh +7 |
 | `intake-sweep.sh` | `[E]` | - | sweeps a consumer's declared "review later" sources into the backlog staging file; config-gated no-op. | SPEC-200, SPEC-285, SPEC-334 +6 | test-board-promote.sh, test-data-root.sh, test-intake-sweep-parity.sh +4 |
-| `kit-update-notice.sh` | `[E]` | SessionStart | SessionStart (startup only) hook: tell the user when a newer kit release exists. | - | test-update-check-notice.sh |
+| `kit-update-notice.sh` | `[E]` | SessionStart | SessionStart (startup only) hook: tell the user when a newer kit release exists. | SPEC-418 | test-update-check-notice.sh |
 | `money-gate.sh` | `[E]` | PreToolUse | PreToolUse hook that logs edits touching money or auth terms in MONEY_GATE_REPOS and asks for confirmation only when MONEY_GATE_STRICT is s… | SPEC-232, SPEC-334, SPEC-355 +3 | test-adopt.sh, test-anchor-module-gate.sh, test-data-root.sh +6 |
 | `notification.sh` | `[E]` | Notification | Notification hook that sends an async desktop notification when Claude finishes or needs input. | SPEC-032, SPEC-084, SPEC-196 +4 | test-hooks.sh, test-install-modules.sh, test_recall.py |
 | `output-offload.sh` | `[E]` | PostToolUse | PostToolUse hook that writes oversized tool output to a file and injects a terse pointer into context. | SPEC-334 | test-hooks.sh, test-install-modules.sh |
@@ -140,7 +140,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `slop-cleaner.sh` | `[E]` | Stop | Stop hook that nudges, never blocks, on bloat signals in recently modified source files after long sessions. | SPEC-013, SPEC-014, SPEC-084 +4 | test-anchor-module-gate.sh, test-egress-visible.sh, test-hook-anchor.sh +2 |
 | `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook that warns, never blocks, when a newly written file is not referenced by the active spec. | SPEC-003, SPEC-005, SPEC-006 +6 | test-hooks.sh, test-install-modules.sh, test-meta-hard-claims.sh +1 |
 | `statusline.sh` | `[E]` | StatusLine | StatusLine script that renders model, git branch, context usage percent, session cost and thinking mode. | SPEC-025, SPEC-084, SPEC-219 +2 | test-context-budget.sh, test-hooks.sh, test-install-modules.sh +2 |
-| `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212, SPEC-334 | test-install-modules.sh, test-meta-hard-claims.sh, test-tool-policy-guard.sh |
+| `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212, SPEC-334, SPEC-418 | test-install-modules.sh, test-meta-hard-claims.sh, test-tool-policy-guard.sh |
 
 ## Verbs
 

@@ -309,7 +309,7 @@ Hermes skills sit on top: `docs/reference/hermes-layering.md`.
 `$HERMES_HOME`, `hermes config path`, `~/hermes-*/home`, `~/.hermes`), picks the profile that speaks for
 the operator, installs `integrations/hermes/skills/*` into that profile's skills dir with a stamp file
 (`.dwarves-kit-skills.json`: a digest of the skill files, the kit version and sha), records the link in
-the file `config data path config hermes-links.json` prints (with the cluster's rail, hub, and boards read from the kit flag
+the file `config data path state hermes-links.json` prints (with the cluster's rail, hub, and boards read from the kit flag
 file), and verifies with one real agent turn: the agent must run `board health run --dry-run --force` and
 answer a nonce, then the command prints `linked`. It previews the plan and asks on a terminal; without
 one it writes only with `--yes`. A profile in another account's home uses `--sudo-user`. No Hermes found

@@ -29,8 +29,12 @@ _how() {
   esac
 }
 
+# _dev <path> -- the device number of a path, or nothing.
+_dev() { stat -c %d "$1" 2>/dev/null || stat -f %d "$1" 2>/dev/null; }
+
 cmd_where() {
   local kind name path src how present left note root_line=""
+  _kit_data_root_override
   printf '%-7s %-20s %-7s %-7s %s\n' KIND NAME HOW DATA PATH
   while read -r kind name; do
     path="$(kit_data_path "$kind" "$name")"; src="$(kit_data_source "$kind" "$name")"
@@ -40,10 +44,13 @@ cmd_where() {
     left="$(kit_data_legacy "$kind" "$name")"
     if [ "$src" != legacy ] && [ "$left" != "$path" ] && { [ -e "$left" ] || [ -L "$left" ]; }; then
       case "$src" in
-        root-env|root-key)
-          printf '        WARNING: old data at %s is IGNORED while the data root is set; this entry starts empty. Run: config data move --apply\n' "$left" ;;
-        *) printf '        note: old data still at %s (run: config data move)\n' "$left" ;;
+        root-env)
+          printf '        WARNING: old data at %s is IGNORED while KIT_DATA_ROOT is set; this entry starts empty. Run: config data move --apply\n' "$left" ;;
+        env) printf '        note: old data at %s is not used, %s pins this entry\n' "$left" "$(kit_data_env "$kind" "$name")" ;;
+        *) printf '        WARNING: old data at %s and data at %s both exist; the new one is used, merge by hand\n' "$left" "$path" ;;
       esac
+    elif [ "$src" = legacy ] && [ -n "$_KD_ROOT" ] && [ "$kind" != config ]; then
+      printf '        note: data root is set but this entry has not moved yet (run: config data move)\n'
     fi
   done < <(kit_data_entries)
   if command -v kit_resolve_log_dir >/dev/null 2>&1; then
@@ -52,13 +59,13 @@ cmd_where() {
     printf '%-7s %-20s %-7s %-7s %s\n' state logs new "$present" "$path"
     printf '        note: the run logs have their own knob (KIT_LEDGER_DIR or [ledger] location)\n'
   fi
-  _kit_data_root_override
   if [ -n "$_KD_ROOT" ]; then
     root_line="$_KD_ROOT ($_KD_ROOT_SRC)"
   else
-    root_line="default (XDG state and cache dirs); set KIT_DATA_ROOT or [data] root in your kit.toml to change it"
+    root_line="default (XDG state and cache dirs); set [data] root in your operator kit.toml to change it"
   fi
   printf '\nroot: %s\n' "$root_line"
+  [ -z "$_KD_ROOT_BAD" ] || printf 'ignored: %s is not an absolute path\n' "$_KD_ROOT_BAD"
 }
 
 cmd_path() {
@@ -118,9 +125,14 @@ cmd_move() {
       echo "would move $kind/$name: $legacy -> $target"; waiting=$((waiting + 1)); continue
     fi
     mkdir -p "$(dirname "$target")"
-    # Into a .part name first, then one rename: an interrupted copy across disks never looks like data.
-    mv -n "$legacy" "$target.part"
-    if [ -e "$target.part" ] && [ ! -e "$legacy" ] && mv -n "$target.part" "$target" && [ -e "$target" ]; then
+    # On one disk the move is a single rename: no moment when neither path holds the data. Across
+    # disks it copies, so it goes into a .part name first and an interrupted copy never looks like data.
+    if [ "$(_dev "$legacy")" = "$(_dev "$(dirname "$target")")" ] && [ -n "$(_dev "$legacy")" ]; then
+      mv -n "$legacy" "$target"
+    else
+      mv -n "$legacy" "$target.part" && [ ! -e "$legacy" ] && mv -n "$target.part" "$target"
+    fi
+    if [ -e "$target" ] && [ ! -L "$legacy" ] && [ ! -e "$legacy" ]; then
       echo "moved  $kind/$name: $legacy -> $target"; moved=$((moved + 1))
       [ "$name" != intel ] || echo "       the kit-weekly LaunchAgent logs into the old intel dir; re-run: bash deploy/macos/install"
     else

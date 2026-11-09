@@ -755,7 +755,7 @@ If `tests/test-hooks.sh` or `tests/test-meta.sh` start failing after a revert, t
 
 `bin/config data` prints every place the kit writes at run time (harvest state, intake cursor, board sync state, weekly digests, skill drafts, hook throttles, the money-gate log, the tool-policy and board config) and how each one resolved: `new` (the default or your root), `legacy` (an old path kept because it holds data and the new one does not) or `pinned` (the feature's own env var). `bin/config data path <kind> <name>` prints one path for a script.
 
-Nothing moves on its own. A host that already has data at the old paths keeps using them, so no poller cursor resets. To move to the new layout, stop the jobs that write there (the harvest sweep LaunchAgent, a running board sync), then run `bin/config data move` (a dry run) and `bin/config data move --apply`. To put state and cache under one root of your choosing, set `KIT_DATA_ROOT` or `[data] root` in your operator `kit.toml`; an explicit root wins over old data, so move the data first.
+Nothing moves on its own. A host that already has data at the old paths keeps using them, so no poller cursor resets. To move to the new layout, stop the jobs that write there (the harvest sweep LaunchAgent, a running board sync), then run `bin/config data move` (a dry run) and `bin/config data move --apply`. To put state and cache under one root of your choosing, set `KIT_DATA_ROOT` or `[data] root` in your operator `kit.toml`; the key never hides old data (move it when you are ready), while the `KIT_DATA_ROOT` env var does (it is for a single run or a test).
 
 ### When to escalate
 

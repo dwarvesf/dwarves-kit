@@ -76,6 +76,8 @@ eq "state under the root" "$(r KIT_DATA_ROOT="$T/rt" -- path state intake-sweep)
 eq "cache under the root" "$(r KIT_DATA_ROOT="$T/rt" -- path cache backlog-stage)" "$T/rt/cache/backlog-stage"
 eq "config stays in the config dir" "$(r KIT_DATA_ROOT="$T/rt" -- path config board.json)" "$OP/board.json"
 eq "source says root-env" "$(r KIT_DATA_ROOT="$T/rt" -- source state intake-sweep)" root-env
+eq "a relative KIT_DATA_ROOT is ignored" "$(r KIT_DATA_ROOT=rel/dir -- path state intake-sweep)" "$H/.local/state/dwarves-kit/intake-sweep"
+echo "$(d KIT_DATA_ROOT=rel/dir -- where)" | grep -F 'ignored: KIT_DATA_ROOT=rel/dir is not an absolute path' >/dev/null && ok "...and where says why" || bad "relative root note"
 eq "an empty KIT_DATA_ROOT is ignored" "$(r KIT_DATA_ROOT= -- path state intake-sweep)" "$H/.local/state/dwarves-kit/intake-sweep"
 mkdir -p "$H/.claude/dwarves-kit/state/intake-sweep"
 eq "the root beats legacy data (an explicit choice)" "$(r KIT_DATA_ROOT="$T/rt" -- path state intake-sweep)" "$T/rt/state/intake-sweep"
@@ -87,7 +89,17 @@ eq "the key beats XDG" "$(r -- path state harvest)" "$T/keyroot/state/harvest"
 eq "...and says root-key" "$(r -- source state harvest)" root-key
 eq "KIT_DATA_ROOT beats the key" "$(r KIT_DATA_ROOT="$T/envroot" -- path state harvest)" "$T/envroot/state/harvest"
 mkdir -p "$H/.claude/dwarves-kit/state/harvest"
-eq "the key beats legacy data" "$(r -- path state harvest)" "$T/keyroot/state/harvest"
+# The key sits BELOW old data: writing it ahead of the move must not reset a cursor.
+eq "the key does not hide old data until it is moved" "$(r -- path state harvest)" "$H/.claude/dwarves-kit/state/harvest"
+eq "...the source says legacy" "$(r -- source state harvest)" legacy
+mkdir -p "$T/keyroot/state/harvest"
+eq "...an empty dir at the key's root does not hide it either" "$(r -- source state harvest)" legacy
+echo x > "$T/keyroot/state/harvest/cursor"
+eq "once the key's root holds data, it wins" "$(r -- path state harvest)" "$T/keyroot/state/harvest"
+eq "...the source says root-key" "$(r -- source state harvest)" root-key
+rm -rf "$T/keyroot"
+W3="$(d -- where)"
+echo "$W3" | grep -F 'data root is set but this entry has not moved yet' >/dev/null && ok "where: a key set ahead of the move says so" || bad "where key note: $W3"
 printf '[data]\nroot = "~/mydata"\n' > "$OP/kit.toml"
 eq "~ expands to HOME" "$(r -- path cache update-notice)" "$H/mydata/cache/update-notice"
 printf '[other]\nroot = "%s"\n' "$T/wrong" > "$OP/kit.toml"
@@ -104,7 +116,9 @@ eq "backlog-sync (a ~/.cache path) -> legacy" "$(r -- path state backlog-sync)" 
 eq "a file entry -> legacy" "$(r -- path state money-gate.log)" "$H/.claude/logs/money-gate.log"
 eq "an entry with no legacy data -> default" "$(r -- path state skill-proposals)" "$H/.local/state/dwarves-kit/skill-proposals"
 mkdir -p "$H/.local/state/dwarves-kit/harvest"
-eq "once the new path exists it wins" "$(r -- path state harvest)" "$H/.local/state/dwarves-kit/harvest"
+eq "an empty dir at the new path does not hide old data" "$(r -- source state harvest)" legacy
+echo x > "$H/.local/state/dwarves-kit/harvest/cursor"
+eq "once the new path holds data it wins" "$(r -- path state harvest)" "$H/.local/state/dwarves-kit/harvest"
 eq "...and says default" "$(r -- source state harvest)" default
 eq "resolving creates nothing" "$([ -e "$H/.local/state/dwarves-kit/intel" ] && echo yes || echo no)" no
 
@@ -124,7 +138,7 @@ echo "== 6 config data where =="
 W="$(d -- where)"
 echo "$W" | grep -E '^state +harvest +new ' >/dev/null && ok "where: harvest new (default path exists)" || bad "where harvest row: $W"
 echo "$W" | grep -E '^state +intel +legacy +yes ' >/dev/null && ok "where: intel legacy" || bad "where intel row: $W"
-echo "$W" | grep -F 'old data still at' | grep -F "$H/.claude/dwarves-kit/state/harvest" >/dev/null && ok "where: warns about old data left behind" || bad "where note: $W"
+echo "$W" | grep -F 'WARNING: old data at' | grep -F 'both exist' | grep -F "$H/.claude/dwarves-kit/state/harvest" >/dev/null && ok "where: both paths holding data is a WARNING" || bad "where warning: $W"
 echo "$W" | grep -E '^root: ' >/dev/null && ok "where: names the root" || bad "where root line"
 eq "config data path prints one path" "$(d -- path state intel)" "$H/.claude/intel"
 W2="$(d KIT_DATA_ROOT="$T/rt3" -- where)"

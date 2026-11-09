@@ -13,17 +13,20 @@
 #
 # Resolution for one entry, first hit wins:
 #   1. the entry's own env var (HARVEST_STATE_DIR, MONEY_GATE_LOG, ...), when non-empty
-#   2. state and cache only: $KIT_DATA_ROOT, then the operator kit.toml key [data] root
-#        -> <root>/state/<name> or <root>/cache/<name>
-#   3. the LEGACY path, when it exists and the path from step 4 does not. A live host keeps its
-#      cursors and link state exactly where they are; nothing moves until the operator runs
-#      `config data move --apply`.
-#   4. the default: ${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/<name> (state),
+#   2. state and cache only: $KIT_DATA_ROOT -> <root>/state/<name> or <root>/cache/<name>. An
+#      explicit per-process root beats old data on purpose: a test that pins it must never reach a
+#      real host's state. `config data where` warns about old data it hides.
+#   3. the LEGACY path, when it exists (a dangling symlink counts) and the path from step 4 or 5
+#      holds nothing (missing, or an empty dir). A live host keeps its cursors and link state exactly where
+#      they are; nothing moves until the operator runs `config data move --apply`.
+#   4. state and cache only: the operator kit.toml key [data] root -> the same <root>/... path.
+#      The key is read from the operator file only, and only when it has a [data] section. It sits
+#      BELOW step 3: writing the key ahead of the move must not hide a cursor and reset it.
+#   5. the default: ${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/<name> (state),
 #      ${XDG_CACHE_HOME:-~/.cache}/dwarves-kit/<name> (cache),
 #      <operator config dir>/<name> (config; the dir is KIT_CONFIG_OPERATOR or ~/.config/dwarves-kit)
-# An explicit root (step 2) beats the legacy path on purpose: it is the operator's own opt-in, and
-# a test that pins KIT_DATA_ROOT must never reach a real host's state. `config data where` flags
-# legacy data left behind.
+# Config entries skip steps 2 and 4: a root moves state and cache, never the files you edit. A root
+# must be an absolute path (a leading ~/ is expanded); a relative one is ignored.
 #
 # Contract (no output on load, safe under set -euo pipefail):
 #   kit_data_path <kind> <name>     -> the path (a dir, or a file for the *.log and *.json entries)
@@ -95,7 +98,7 @@ _kit_data_lookup() {
     config:board.json)
       _KD_LEGACY="$h/.config/dwarves-kit/board.json"; _KD_ENV=DWARVES_BOARD_CONFIG
       _KD_NOTE="board: flags the sweep and health commands read first" ;;
-    config:hermes-links.json)
+    state:hermes-links.json)
       _KD_LEGACY="$h/.config/dwarves-kit/hermes-links.json"; _KD_ENV=DWARVES_HERMES_LINKS
       _KD_NOTE="board hermes: the link record per cluster" ;;
     config:harvest-sweep)
@@ -107,10 +110,10 @@ _kit_data_lookup() {
 
 kit_data_entries() {
   printf '%s\n' \
-    "state harvest" "state intake-sweep" "state backlog-sync" "state intel" \
+    "state harvest" "state intake-sweep" "state backlog-sync" "state intel" "state hermes-links.json" \
     "state skill-proposals" "state skill-curator" "state money-gate.log" \
     "cache backlog-stage" "cache context-hints" "cache update-notice" "cache context-budget" \
-    "config tool-policy.json" "config board.json" "config hermes-links.json" "config harvest-sweep"
+    "config tool-policy.json" "config board.json" "config harvest-sweep"
 }
 
 kit_data_legacy() { _kit_data_lookup "$1" "$2" || return 1; printf '%s' "$_KD_LEGACY"; }
@@ -127,13 +130,19 @@ _kit_data_expand() {
   esac
 }
 
-# _kit_data_root_override -- sets _KD_ROOT and _KD_ROOT_SRC (root-env | root-key), or leaves them empty.
-_kit_data_root_override() {
-  _KD_ROOT=""; _KD_ROOT_SRC=""
+# _kit_data_root_env -- sets _KD_ROOT from KIT_DATA_ROOT, or leaves it empty.
+_kit_data_root_env() {
+  _KD_ROOT=""; _KD_ROOT_BAD=""
+  [ -n "${KIT_DATA_ROOT:-}" ] || return 0
   _kit_data_sethome
-  if [ -n "${KIT_DATA_ROOT:-}" ]; then
-    _kit_data_expand "$KIT_DATA_ROOT"; _KD_ROOT="$_KD_X"; _KD_ROOT_SRC=root-env; return 0
-  fi
+  _kit_data_expand "$KIT_DATA_ROOT"
+  case "$_KD_X" in /*) _KD_ROOT="$_KD_X" ;; *) _KD_ROOT_BAD="KIT_DATA_ROOT=$KIT_DATA_ROOT" ;; esac
+}
+
+# _kit_data_root_key -- sets _KD_ROOT from the operator kit.toml [data] root, or leaves it empty.
+_kit_data_root_key() {
+  _KD_ROOT=""; _KD_ROOT_BAD=""
+  _kit_data_sethome
   # kit-config.sh reads $HOME; with HOME unset (a bare env) the key is not consulted.
   [ -n "${HOME:-}" ] || return 0
   local op="${KIT_CONFIG_OPERATOR:-${XDG_CONFIG_HOME:-$_KD_HOME/.config}/dwarves-kit}/kit.toml"
@@ -146,7 +155,33 @@ _kit_data_root_override() {
   . "$_KIT_DATA_SELF/kit-config.sh" 2>/dev/null || return 0
   local v; v="$(kit_config_get_root data.root "")"
   [ -n "$v" ] || return 0
-  _kit_data_expand "$v"; _KD_ROOT="$_KD_X"; _KD_ROOT_SRC=root-key
+  _kit_data_expand "$v"
+  case "$_KD_X" in /*) _KD_ROOT="$_KD_X" ;; *) _KD_ROOT_BAD="[data] root = $v" ;; esac
+}
+
+# _kit_data_root_override -- sets _KD_ROOT and _KD_ROOT_SRC (root-env | root-key), the env root first.
+# For callers that want "the root, if any" (config data where and move).
+_kit_data_root_override() {
+  _KD_ROOT_SRC=""
+  _kit_data_root_env
+  if [ -n "$_KD_ROOT" ]; then _KD_ROOT_SRC=root-env; return 0; fi
+  local bad="$_KD_ROOT_BAD"
+  _kit_data_root_key
+  [ -z "$_KD_ROOT" ] || _KD_ROOT_SRC=root-key
+  [ -n "$_KD_ROOT_BAD" ] || _KD_ROOT_BAD="$bad"
+}
+
+# _kit_data_holds <path> -- true when the path exists and is not an empty directory (a dangling
+# symlink counts). An empty target dir someone made by accident must not hide an older path.
+_kit_data_holds() {
+  [ -L "$1" ] && return 0
+  [ -e "$1" ] || return 1
+  [ -d "$1" ] || return 0
+  local f
+  for f in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    if [ -e "$f" ] || [ -L "$f" ]; then return 0; fi
+  done
+  return 1
 }
 
 # _kit_data_default <kind> <name> -- sets _KD_DEF, the path a user with no legacy data gets.
@@ -168,17 +203,19 @@ _kit_data_resolve() {
     ev="${!_KD_ENV:-}"
     if [ -n "$ev" ]; then _kit_data_expand "$ev"; _KD_PATH="$_KD_X"; _KD_SRC=env; return 0; fi
   fi
+  local target="" tsrc=default
   if [ "$kind" != config ]; then
-    _kit_data_root_override
-    if [ -n "$_KD_ROOT" ]; then _KD_PATH="$_KD_ROOT/$kind/$name"; _KD_SRC="$_KD_ROOT_SRC"; return 0; fi
+    _kit_data_root_env
+    if [ -n "$_KD_ROOT" ]; then _KD_PATH="$_KD_ROOT/$kind/$name"; _KD_SRC=root-env; return 0; fi
+    _kit_data_root_key
+    if [ -n "$_KD_ROOT" ]; then target="$_KD_ROOT/$kind/$name"; tsrc=root-key; fi
   fi
-  _kit_data_default "$kind" "$name"
-  local def="$_KD_DEF"
-  # -L as well as -e: a legacy symlink to an unmounted disk still counts as data (it is not reset).
-  if [ "$_KD_LEGACY" != "$def" ] && { [ -e "$_KD_LEGACY" ] || [ -L "$_KD_LEGACY" ]; } && [ ! -e "$def" ] && [ ! -L "$def" ]; then
+  if [ -z "$target" ]; then _kit_data_default "$kind" "$name"; target="$_KD_DEF"; fi
+  # The old path wins while it holds data and the target does not (a dangling symlink counts).
+  if [ "$_KD_LEGACY" != "$target" ] && { [ -e "$_KD_LEGACY" ] || [ -L "$_KD_LEGACY" ]; } && ! _kit_data_holds "$target"; then
     _KD_PATH="$_KD_LEGACY"; _KD_SRC=legacy; return 0
   fi
-  _KD_PATH="$def"; _KD_SRC=default
+  _KD_PATH="$target"; _KD_SRC="$tsrc"
 }
 
 kit_data_path()   { _kit_data_resolve "$1" "$2" || return 1; printf '%s' "$_KD_PATH"; }

@@ -61,9 +61,9 @@ delivery_real_floor = 40        # [impl] KIT_DELIVERY_REAL_FLOOR
 
 [data]                          # where the kit keeps its runtime state and cache (config data where shows every path)
 # root = ""                     # [impl] one root for state and cache: <root>/state/<name>, <root>/cache/<name>.
-                                #        Read from the OPERATOR kit.toml only. KIT_DATA_ROOT beats it; an entry's own env var
-                                #        beats both. Unset: XDG dirs, and any old path that still holds data keeps being used
-                                #        until you run `config data move`.
+                                #        An absolute path, read from the OPERATOR kit.toml only. KIT_DATA_ROOT beats it; an entry's
+                                #        own env var beats both. Old data keeps being used until you run `config data move`, so
+                                #        writing this ahead of the move resets nothing. Unset: the XDG dirs.
 
 [mega]                          # read when /kit:mega + orchestrate scaffold/run
 wave_cap           = 2          # [impl] WAVE_CAP

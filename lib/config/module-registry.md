@@ -80,7 +80,7 @@ real reader consumes it today (all rows below are, except where noted).
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| KIT_DATA_ROOT | data.root | (none; XDG state and cache dirs) | [impl] | config | `lib/config/data-path.sh`: one root for the kit's runtime state and cache (`<root>/state/<name>`, `<root>/cache/<name>`). Config files stay in the operator config dir. Beats the operator key; an entry's own env var beats both. An explicit root beats legacy data on purpose; `config data move` carries old data over. |
+| KIT_DATA_ROOT | data.root | (none; XDG state and cache dirs) | [impl] | config | `lib/config/data-path.sh`: one root for the kit's runtime state and cache (`<root>/state/<name>`, `<root>/cache/<name>`). Config files stay in the operator config dir. Beats the operator key; an entry's own env var beats both. `KIT_DATA_ROOT` beats old data on purpose (an env var is per process); the `[data] root` key does not, so old data keeps being used until `config data move` carries it over. |
 | KIT_LEDGER_DIR | ledger.location | (none; canonical) | [impl] | ledger | The durable run-telemetry/ledger root override; wins over `DWARVES_KIT_LOG_DIR` and the toml key. Set-but-empty is a FATAL error, never silent fall-through. Two-env special case (see `DWARVES_KIT_LOG_DIR` below); the authoritative precedence lives in `lib/telemetry/kit-log-dir.sh::kit_resolve_log_dir` , this row resolves independently under the generic 4-level model, it does not replay that function's exact tie-break. |
 | DWARVES_KIT_LOG_DIR | ledger.location | (none; alias) | [impl] | ledger | Back-compat alias, precedence #2 under `KIT_LEDGER_DIR`, over the toml key. Pre-SPEC-182 name for the same root; kept for every existing test pin + the live corpus. |
 | - | ledger.location | `"shared"` | [impl] | ledger | The toml-level default consulted only when neither env var above is set: `"shared"` -> XDG (`${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs`); `"isolated"` -> `$PWD/.kit/logs`; any other value = an explicit path. |
@@ -199,7 +199,7 @@ real reader consumes it today (all rows below are, except where noted).
 | BACKLOG_ID_RE | env-only | `[A-Z]+-[0-9]+` | [impl] | board | Regex for what counts as a backlog item ID. |
 | KIT_BOARDS_REGISTRY | env-only | `<repo-root>/_meta/boards.txt` | [impl] | board | Override the boards registry every reader uses: `board all|queue|mirror|status|writeback`, `board-mirror-cleanup.py`, `lib/mega/runs-dashboard.py`, `lib/reflect/propose.py` (its `LEARN_PROPOSE_COCKPIT` still wins). Beats the repo-root default, loses to `--registry`. |
 | DWARVES_BOARD_CONFIG | env-only | `config data path config board.json` (read only when the file exists) | [impl] | board | `lib/sync/sweep/board-health` and `board-hermes`: JSON file that supplies `board health run` and `board brief run` flags. `--config FILE` beats it; command-line flags come after and win. A bad file is a usage error. |
-| DWARVES_HERMES_LINKS | env-only | `config data path config hermes-links.json` | [impl] | board | `lib/sync/sweep/board-hermes`: path of the file `board hermes link` records each Hermes profile link in (profile, cluster rail, hub, boards, skills digest). |
+| DWARVES_HERMES_LINKS | env-only | `config data path state hermes-links.json` | [impl] | board | `lib/sync/sweep/board-hermes`: path of the file `board hermes link` records each Hermes profile link in (profile, cluster rail, hub, boards, skills digest). |
 
 ### sync (two-way spoke mirror, `board sync` -> `lib/sync/backlog_sync.py`)
 
