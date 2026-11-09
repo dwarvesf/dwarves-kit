@@ -204,11 +204,11 @@ requires you to carry, then keep going. Do not stall waiting for a human who is 
 
 ```
 bash lib/gate/gate-ledger.sh debt <rid> \
-  significance=high worthiness=high verdict=wave \
+  significance=high worthiness=high verdict=log \
   reason="self-answer: <the question> | chose: <the answer> | why: <one line>"
 ```
 
-`verdict=wave` is the disposition `lib/reflect/weekend-batch.sh` collects, so
+`verdict=log` is the disposition `lib/reflect/weekend-batch.sh` collects, so
 `bash bin/reflect debt collect` surfaces the run at the weekend paydown like any other conscious
 debt. Write one row per self-answered question. A `reason` cannot carry `=` (the writer neuters
 it to `:`) and must stay on one line; use ` | ` as the separator. The collect digest reads the

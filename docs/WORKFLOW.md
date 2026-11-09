@@ -677,26 +677,27 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   high), prints the ★-tap nudge: a one-line "worth understanding: <why>" plus a 5-question quiz
   grounded in the diff+tests, routed through the same `understand.teach` seam.
 - **The conscious debt-budget model (ADR-0031 Refinement).** The goal is CONSCIOUS debt, not zero
-  debt: two signals (significance x worthiness) resolve to a verdict (`tap` / `wave` /
+  debt: two signals (significance x worthiness) resolve to a verdict (`tap` / `log` /
   `not-significant`); a `tap` offers three responses -- **engage** now (pull the quiz),
-  **defer** (to the weekend batch), **wave** (accept the debt knowingly) -- and all three write to
+  **defer** (to the weekend batch), **accept** (take the debt knowingly) -- and all three write to
   one ledger (`gate-ledger.sh debt-response`, an additive `| DEBT |` line). Every response still
-  merges the PR; the only real failure is UNTRACKED debt, not deferred or waved debt.
+  merges the PR; the only real failure is UNTRACKED debt, not deferred or accepted debt.
 - **Weekend batch (ADR-0031 §3, SPEC-126).** Han-invoked only, no scheduled job:
   `bin/reflect debt collect` (this repo; engine `lib/reflect/weekend-batch.sh`, renamed from `learn` by ADR-0036, `bin/learn` kept one release as a deprecation forwarder) reads the `| DEBT |` ledger and surfaces the week's
-  WAVED/DEFERRED items; the ops-toolkit `weekend-debt-paydown` skill orchestrates the collected
-  items into the operator's existing learning skills (`learning-day-process`, `learning-ledger`,
-  `deep-understand`, `knowledge-capture`) rather than reinventing a second batching engine;
+  LOGGED/ACCEPTED/DEFERRED items (the old `waved` disposition is split in two; legacy `wave` rows
+  read the same). The digest is the hand-off. The `weekend-debt-paydown` skill that would take it
+  is not shipped; the operator's own learning skills (`learning-day-process`, `learning-ledger`,
+  `deep-understand`, `knowledge-capture`) are the intended consumers, so the kit does not reinvent a second batching engine;
   `bin/reflect debt mark-paid <rid>` closes an item so it is never re-collected.
 - **`significance-classify.sh record` wired at Ship.** The verb that PERSISTS a raw
   `significance=`/`worthiness=`/`verdict=` `| DEBT |` marker independent of the quiz nudge --
   previously an honestly-documented gap with no invoking command -- is now called by
   `/kit:ship` Step 8, immediately before `quiz-gate.sh tap`, using the same files/description
   (advisory, guarded so a `record` failure never blocks the ship). Practical effect: EVERY
-  gate/gated-final ship now logs its classifier verdict, including the SILENT-WAVE case
-  (significant-but-low-worthiness, `verdict=wave`, no human response ever follows) -- the exact
+  gate/gated-final ship now logs its classifier verdict, including the SILENT-LOG case
+  (significant-but-low-worthiness, `verdict=log`, no human response ever follows) -- the exact
   gap ADR-0031 Refinement §2/§4 names as needing to be tracked, not silently dropped. A later
-  human `debt-response` (engage/defer/wave) forward-carries this recorded marker automatically
+  human `debt-response` (engage/defer/accept) forward-carries this recorded marker automatically
   (the TIER-4-close seam fix, `history/2026-10-27:docs/verification/debt-ledger-response-seam.md`). Remaining,
   honestly-scoped limit: `record` fires only on `gate`/gated-final PRs (the same scope
   `quiz-gate.sh tap` has always had, per ADR-0031 §2); a non-gate ship still writes no debt-ledger

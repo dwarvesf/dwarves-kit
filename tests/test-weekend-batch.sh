@@ -98,7 +98,7 @@ MARKPAID_RC=$?
 echo "=== AC1: collects the week's deferred+waved items + impl-notes + explainers ==="
 COLLECT_OUT="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
 assert "AC1a collect mentions ug-10-waved-item (waved)" \
-  "$({ trap '' PIPE; printf '%s\n' "$COLLECT_OUT" 2>/dev/null || :; } | grep -qE '^## ug-10-waved-item$' && { trap '' PIPE; printf '%s\n' "$COLLECT_OUT" 2>/dev/null || :; } | grep -q 'disposition: waved' && echo 0 || echo 1)"
+  "$({ trap '' PIPE; printf '%s\n' "$COLLECT_OUT" 2>/dev/null || :; } | grep -qE '^## ug-10-waved-item$' && { trap '' PIPE; printf '%s\n' "$COLLECT_OUT" 2>/dev/null || :; } | grep -q 'disposition: logged' && echo 0 || echo 1)"
 assert "AC1b collect mentions ug-11-deferred-item (deferred)" \
   "$({ trap '' PIPE; printf '%s\n' "$COLLECT_OUT" 2>/dev/null || :; } | grep -qE '^## ug-11-deferred-item$' && echo 0 || echo 1)"
 assert "AC1c ug-10's impl-notes resolved as FOUND (rid-named file)" \
@@ -224,8 +224,8 @@ printf '%s | START | lane=normal classified=normal type=bug repo=fixture-repo\n'
 printf '%s | DEBT | significance=high worthiness=low verdict=wave reason=silent wave; smuggled control token response=engage\n' "$NOW" >> "$RAW_LOG"
 LIST_RAW="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
 DISP_RAW="$(printf '%s\n' "$LIST_RAW" | grep -F "$RID_RAW" | cut -f2)"
-assert "security [reader]: a silent-wave line (no real response= field) with 'response=engage' smuggled in reason= still reads disposition=waved, NOT paid (struct-prefix cut)" \
-  "$([ "$DISP_RAW" = waved ] && echo 0 || echo 1)"
+assert "security [reader]: a silent-wave line (no real response= field) with 'response=engage' smuggled in reason= still reads disposition=logged, NOT paid (struct-prefix cut)" \
+  "$([ "$DISP_RAW" = logged ] && echo 0 || echo 1)"
 
 echo ""
 echo "=== AC5 (SPEC-136): the payoff loop -- REAL record -> forward-carry -> collect -> mark-paid ==="
@@ -282,21 +282,59 @@ RID_WAVE="ug-31-record-wave-$$"
 ( cd "$KIT_DIR" && bash "$GL" start "$RID_WAVE" normal normal bug "" fixture-repo ) >/dev/null
 WAVE_DESC="add a mechanical, reversible, fully test-covered guard clause"
 WAVE_VERDICT="$(cd "$KIT_DIR" && bash "$SC" record "$RID_WAVE" --files "lib/queue/orchestrate.sh lib/foo.sh" "$WAVE_DESC")"
-assert "AC6a record's own stdout prints the verdict (wave: significant full-lane change, no worthiness trigger)" \
-  "$([ "$WAVE_VERDICT" = "wave" ] && echo 0 || echo 1)"
+assert "AC6a record's own stdout prints the verdict (log: significant full-lane change, no worthiness trigger)" \
+  "$([ "$WAVE_VERDICT" = "log" ] && echo 0 || echo 1)"
 WAVE_LOG="$RUNS/$RID_WAVE.log"
-assert "AC6b record wrote a FAT | DEBT | line (significance=high worthiness=low verdict=wave)" \
-  "$(grep '| DEBT |' "$WAVE_LOG" | tail -n1 | grep -q 'significance=high worthiness=low verdict=wave' && echo 0 || echo 1)"
+assert "AC6b record wrote a FAT | DEBT | line (significance=high worthiness=low verdict=log)" \
+  "$(grep '| DEBT |' "$WAVE_LOG" | tail -n1 | grep -q 'significance=high worthiness=low verdict=log' && echo 0 || echo 1)"
 
 # No human response EVER follows for this rid -- this is the point of the test.
 LIST_WAVE="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
 DISP_WAVE="$(printf '%s\n' "$LIST_WAVE" | grep -F "$RID_WAVE" | cut -f2)"
-assert "AC6c [logged-wave path, live] $RID_WAVE IS collected with disposition=waved, with no human response ever recorded" \
-  "$([ "$DISP_WAVE" = waved ] && echo 0 || echo 1)"
+assert "AC6c [logged-wave path, live] $RID_WAVE IS collected with disposition=logged, with no human response ever recorded" \
+  "$([ "$DISP_WAVE" = logged ] && echo 0 || echo 1)"
 
 COLLECT_WAVE="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
 assert "AC6d the collect digest shows $RID_WAVE's real significance/worthiness (high / low), grounded in the actual files/desc" \
   "$(printf '%s\n' "$COLLECT_WAVE" | grep -A2 "^## ${RID_WAVE}\$" | grep -q 'significance: high / worthiness: low' && echo 0 || echo 1)"
+
+echo ""
+echo "=== AC7: debt verdict log / response accept; legacy wave rows read the same ==="
+# Ledgers are append-only on several machines: rows written before the rename carry the old words
+# (verdict=wave, response=wave). Every reader must give them the same disposition the new words get.
+# The old shared disposition `waved` is split: a silent classifier verdict is `logged`, a human
+# response is `accepted`.
+seed "ug-40-new-log" "$NOW" "fixture-repo" "significance=high worthiness=low verdict=log reason=sig:x"
+seed "ug-41-new-accept" "$NOW" "fixture-repo" "significance=high worthiness=high verdict=tap response=accept reason=ok"
+seed "ug-42-legacy-accept" "$NOW" "fixture-repo" "significance=high worthiness=high verdict=tap response=wave reason=ok"
+seed "ug-43-legacy-thin-accept" "$NOW" "fixture-repo" "response=wave reason=thin"
+LIST_AC7="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
+disp_of() { printf '%s\n' "$LIST_AC7" | grep -F "$1" | cut -f2; }
+assert "AC7a new verdict=log reads logged"                    "$([ "$(disp_of ug-40-new-log)" = logged ] && echo 0 || echo 1)"
+assert "AC7b legacy verdict=wave (ug-10) reads logged, same as log" "$([ "$(disp_of ug-10-waved-item)" = logged ] && echo 0 || echo 1)"
+assert "AC7c new response=accept reads accepted"              "$([ "$(disp_of ug-41-new-accept)" = accepted ] && echo 0 || echo 1)"
+assert "AC7d legacy response=wave reads accepted, same as accept" "$([ "$(disp_of ug-42-legacy-accept)" = accepted ] && echo 0 || echo 1)"
+assert "AC7e legacy thin response=wave line reads accepted"   "$([ "$(disp_of ug-43-legacy-thin-accept)" = accepted ] && echo 0 || echo 1)"
+assert "AC7f no row reads the retired disposition 'waved'"    "$(printf '%s\n' "$LIST_AC7" | cut -f2 | grep -qx waved && echo 1 || echo 0)"
+# The ledger verbs still ACCEPT the old words but WRITE the new ones (new rows never carry wave).
+RID_LW="ug-44-ledger-legacy-words-$$"
+( cd "$KIT_DIR" && bash "$GL" debt "$RID_LW" significance=high worthiness=low verdict=wave response=wave reason=legacy-caller ) >/dev/null 2>&1
+LW_RC=$?
+assert "AC7h gate-ledger debt still accepts verdict=wave response=wave (rc 0)" "$LW_RC"
+assert "AC7i ...and writes verdict=log response=accept, never the old words" \
+  "$({ grep '| DEBT |' "$RUNS/$RID_LW.log" | tail -n1 | grep -q 'verdict=log response=accept'; } && ! grep -q '=wave' "$RUNS/$RID_LW.log" && echo 0 || echo 1)"
+RID_LR="ug-45-ledger-legacy-carry-$$"
+seed "$RID_LR" "$NOW" "fixture-repo" "significance=high worthiness=high verdict=wave reason=old-stored-row"
+( cd "$KIT_DIR" && bash "$GL" debt-response "$RID_LR" wave "legacy" ) >/dev/null 2>&1
+assert "AC7j debt-response wave forward-carries a stored verdict=wave as log and writes response=accept" \
+  "$(grep '| DEBT |' "$RUNS/$RID_LR.log" | tail -n1 | grep -q 'verdict=log response=accept' && echo 0 || echo 1)"
+assert "AC7k the stored legacy row is untouched (ledger is append-only)" \
+  "$(grep -c 'verdict=wave reason=old-stored-row' "$RUNS/$RID_LR.log" | grep -qx 1 && echo 0 || echo 1)"
+( cd "$KIT_DIR" && bash "$GL" debt "ug-46-bad-$$" significance=high worthiness=low verdict=bogus ) >/dev/null 2>&1
+assert "AC7l an unknown verdict is still rejected (exit 64)" "$([ $? -eq 64 ] && echo 0 || echo 1)"
+COLLECT_AC7="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
+assert "AC7g collect header counts accepted, logged and deferred separately" \
+  "$(printf '%s\n' "$COLLECT_AC7" | grep -qE '^Items: [0-9]+ \([0-9]+ accepted, [0-9]+ logged, [0-9]+ deferred\)$' && echo 0 || echo 1)"
 
 # Capture the fixture-A collect digest as a scratch sample (the old committed sample lives at
 # tag history/2026-10-27). The digest's timestamps are all derived from $NOW (captured at script

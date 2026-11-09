@@ -4,7 +4,7 @@
 # The AFTER gate's SPEED REGULATOR (Litt): when a change is significant AND understanding-worthy
 # (the classifier's `tap` verdict) on a gate/gated-final PR, the human is NUDGED -- offered a 5-question
 # quiz built from the ACTUAL change -- before they click-to-merge. It gates the human's ATTENTION,
-# never the merge: it is a NUDGE, never must-pass (Refinement point 3). A waved change
+# never the merge: it is a NUDGE, never must-pass (Refinement point 3). An accepted change
 # still merges; nothing here ever blocks a correct build.
 #
 # THE HARD CONSTRAINT (Litt's plausible-but-wrong caveat, the whole reason this exists):
@@ -25,9 +25,10 @@
 #       -> the WIRING decision. Prints the one-line nudge + the 3 responses ONLY when
 #          significance-classify's verdict is `tap` AND the PR is gate/gated-final. Otherwise prints
 #          nothing and exits 0 (the anti-fatigue guard, keyed on the verdict).
-#   quiz-gate.sh respond <rid> <engage|defer|wave> [--ref R]
+#   quiz-gate.sh respond <rid> <engage|defer|accept> [--ref R]
 #       -> logs the human choice to the debt ledger (gate-ledger.sh debt-response). For `engage`
 #          (with --ref) also emits the routing directive through the seam. Always exits 0 (advisory).
+#          `wave` is the legacy name of `accept`: it still works and is logged as `accept`.
 #   quiz-gate.sh route <ref>
 #       -> the seam's dispatch payload: whatever `understand.teach` names (or "skipped: no teacher"
 #          when empty) + the 5 diff-grounded questions + a pointer to the explainer material.
@@ -173,7 +174,7 @@ cmd_tap() {
   [ -n "$impl" ] && clf_args+=(--impl-notes "$impl")
   verdict="$(bash "$SIG_CLASSIFY" classify "${clf_args[@]}" "$desc" 2>/dev/null)"
 
-  # Anti-fatigue guard #2 (the load-bearing one): tap ONLY on high×high (`tap`). `wave` (significant
+  # Anti-fatigue guard #2 (the load-bearing one): tap ONLY on high×high (`tap`). `log` (significant
   # but low-worthiness) and `not-significant` print nothing -- the human is never nudged on them.
   [ "$verdict" = tap ] || return 0
 
@@ -183,14 +184,18 @@ cmd_tap() {
   echo "  (all three are logged to the debt ledger; the quiz never blocks the merge):"
   echo "    engage  -- pull the 5-question quiz now (the configured teacher's mastery gate)"
   echo "    defer   -- send it to the weekend batch"
-  echo "    wave    -- accept the debt knowingly (the change still merges)"
-  echo "  Respond: bash lib/gate/quiz-gate.sh respond ${rid} <engage|defer|wave> [--ref <ref>]"
+  echo "    accept  -- accept the debt knowingly (the change still merges)"
+  echo "  Respond: bash lib/gate/quiz-gate.sh respond ${rid} <engage|defer|accept> [--ref <ref>]"
 }
 
 # respond: log the human's choice; for engage, also emit the seam's routing directive.
 cmd_respond() {
-  local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: quiz-gate.sh respond <rid> <engage|defer|wave> [--ref R]" >&2; return 64; }
-  case "$response" in engage|defer|wave) ;; *) echo "quiz-gate.sh respond: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
+  local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: quiz-gate.sh respond <rid> <engage|defer|accept> [--ref R]" >&2; return 64; }
+  if [ "$response" = wave ]; then
+    echo "note: 'wave' is the old name; 'accept' is the new name (logged as accept)."
+    response=accept
+  fi
+  case "$response" in engage|defer|accept) ;; *) echo "quiz-gate.sh respond: response must be engage|defer|accept (got '$response')" >&2; return 64;; esac
   local ref="" a skip=""
   for a in "$@"; do
     if [ -n "$skip" ]; then ref="$a"; skip=""; continue; fi
@@ -210,7 +215,7 @@ cmd_respond() {
       fi
       ;;
     defer) echo "recorded: defer (rid=${rid}) -- queued for the weekend batch. The change still merges." ;;
-    wave)  echo "recorded: wave (rid=${rid}) -- debt accepted knowingly. The change still merges." ;;
+    accept) echo "recorded: accept (rid=${rid}) -- debt accepted knowingly. The change still merges." ;;
   esac
   return 0
 }
@@ -220,7 +225,7 @@ cmd_respond() {
 # instead of as prose repeated four times. Prints the resolved name, or nothing when empty.
 cmd_teacher() { _teacher; }
 
-usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local sub="${1:-}"; shift 2>/dev/null || true

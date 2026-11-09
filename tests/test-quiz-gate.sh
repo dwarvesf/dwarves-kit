@@ -4,7 +4,7 @@
 # wired at the merge boundary keyed on the SPEC-123 verdict, three logged responses, routed
 # through the understand.teach seam, and NEVER must-pass.
 #   AC1  a high×high change generates exactly 5 quiz questions FROM the actual diff + test results
-#   AC2  the three responses (engage/defer/wave) each land in the debt ledger
+#   AC2  the three responses (engage/defer/accept) each land in the debt ledger
 #   AC3  engage routes through the understand.teach seam (dispatch, not a reimplementation); an
 #        empty seam prints skipped: no teacher and hands the payload over directly
 #   AC4  GROUNDED NC: a narrative that contradicts the diff -> the quiz is built from the DIFF
@@ -69,13 +69,25 @@ echo "=== AC2: three responses each land in the debt ledger ==="
 RID="ac2-rid-$$"
 bash "$QG" respond "$RID" engage --ref "$REFA" >/dev/null 2>&1
 bash "$QG" respond "$RID" defer  >/dev/null 2>&1
-bash "$QG" respond "$RID" wave   >/dev/null 2>&1
+bash "$QG" respond "$RID" accept >/dev/null 2>&1
 LF="$LOGDIR/runs/$(printf '%s' "$RID" | tr '/ ' '--').log"
 NRESP=$( [ -f "$LF" ] && grep -c '| DEBT | response=' "$LF" || echo 0 )
 assert "AC2 three | DEBT | response= lines written, got $NRESP" "$([ "$NRESP" -eq 3 ] && echo 0 || echo 1)"
 assert "AC2 engage logged"  "$(grep -q '| DEBT | response=engage' "$LF" && echo 0 || echo 1)"
 assert "AC2 defer logged"   "$(grep -q '| DEBT | response=defer'  "$LF" && echo 0 || echo 1)"
-assert "AC2 wave logged"    "$(grep -q '| DEBT | response=wave'   "$LF" && echo 0 || echo 1)"
+assert "AC2 accept logged"  "$(grep -q '| DEBT | response=accept' "$LF" && echo 0 || echo 1)"
+# `wave` is the legacy name of `accept`: it still works, writes the NEW word, and says so once.
+LEGACY_RID="legacy-wave-rid-$$"
+LEGACY_OUT="$(bash "$QG" respond "$LEGACY_RID" wave 2>&1)"; LEGACY_RC=$?
+LEGACY_LF="$LOGDIR/runs/$LEGACY_RID.log"
+assert "AC2 legacy 'respond wave' exits 0" "$LEGACY_RC"
+assert "AC2 legacy 'respond wave' writes response=accept, never response=wave" \
+  "$({ grep -q '| DEBT | response=accept' "$LEGACY_LF" && ! grep -q 'response=wave' "$LEGACY_LF"; } && echo 0 || echo 1)"
+assert "AC2 legacy 'respond wave' prints one line saying accept is the new name" \
+  "$([ "$(printf '%s\n' "$LEGACY_OUT" | grep -c 'accept.*new name')" -eq 1 ] && echo 0 || echo 1)"
+ACCEPT_OUT="$(bash "$QG" respond "accept-rid-$$" accept 2>&1)"
+assert "AC2 'respond accept' prints no rename note" \
+  "$(printf '%s\n' "$ACCEPT_OUT" | grep -q 'new name' && echo 1 || echo 0)"
 # BEHAVIORAL additive-marker guard: a ledger of ONLY debt-response lines must NOT satisfy any required
 # gate. Run the real gate-ledger check() against a lane with required gates; it must still report the
 # gates MISSING (the DEBT lines did not fake a `| GATE | ran`). This exercises check()'s reader, not the
@@ -109,9 +121,9 @@ assert "AC3 engage output names the CONFIGURED teacher (fixture-teacher), not a 
 ROUT_EMPTY="$( cd "$DA" && KIT_CONFIG_OPERATOR="$OPDIR/none" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "engage-rid2-$$" engage --ref "$REFA" )"
 assert "AC3 empty seam: engage prints 'skipped: no teacher' and still hands over the questions" \
   "$({ trap '' PIPE; printf '%s' "$ROUT_EMPTY" 2>/dev/null || :; } | grep -q 'skipped: no teacher' && { trap '' PIPE; printf '%s' "$ROUT_EMPTY" 2>/dev/null || :; } | grep -q '^Q1\.' && echo 0 || echo 1)"
-# defer / wave do NOT route through the seam at all (only engage does)
-DWAVE="$( KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "wave-rid-$$" wave )"
-assert "AC3 wave does NOT route through the seam (no teacher name, no ROUTE: line)" \
+# defer / accept do NOT route through the seam at all (only engage does)
+DWAVE="$( KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "accept-rid-$$" accept )"
+assert "AC3 accept does NOT route through the seam (no teacher name, no ROUTE: line)" \
   "$({ trap '' PIPE; printf '%s' "$DWAVE" 2>/dev/null || :; } | grep -q 'fixture-teacher\|ROUTE:' && echo 1 || echo 0)"
 # the kit does NOT reimplement a quiz scorer: quiz-gate.sh has no answer-key / grading logic
 assert "AC3 quiz-gate.sh reimplements no scorer (no answer-key/grade/score logic)" \
@@ -174,20 +186,20 @@ T_NONGATE="$( bash "$QG" tap wr-ng --pr-kind normal --files "lib/x.sh" "$TAP_DES
 V_TAP="$(  bash "$KIT_DIR/lib/classify/significance-classify.sh" classify --files "lib/x.sh" "$TAP_DESC" )"
 V_WAVE="$( bash "$KIT_DIR/lib/classify/significance-classify.sh" classify --files "lib/queue/orchestrate.sh lib/foo.sh" "$WAVE_DESC" )"
 V_NS="$(   bash "$KIT_DIR/lib/classify/significance-classify.sh" classify "$NS_DESC" )"
-assert "AC5 classifier sanity: tap/$V_TAP wave/$V_WAVE ns/$V_NS" \
-  "$([ "$V_TAP" = tap ] && [ "$V_WAVE" = wave ] && [ "$V_NS" = not-significant ] && echo 0 || echo 1)"
+assert "AC5 classifier sanity: tap/$V_TAP log/$V_WAVE ns/$V_NS" \
+  "$([ "$V_TAP" = tap ] && [ "$V_WAVE" = log ] && [ "$V_NS" = not-significant ] && echo 0 || echo 1)"
 assert "AC5 tap FIRES on a tap-verdict gate PR (nudge printed)" \
   "$({ trap '' PIPE; printf '%s' "$T_TAP" 2>/dev/null || :; } | grep -q '★ worth understanding' && echo 0 || echo 1)"
-assert "AC5 tap ABSENT on a wave-verdict change (anti-fatigue)" \
+assert "AC5 tap ABSENT on a log-verdict change (anti-fatigue)" \
   "$([ -z "$T_WAVE" ] && echo 0 || echo 1)"
 assert "AC5 tap ABSENT on a not-significant change" \
   "$([ -z "$T_NS" ] && echo 0 || echo 1)"
 assert "AC5 tap ABSENT on a non-gate PR even when the verdict is tap" \
   "$([ -z "$T_NONGATE" ] && echo 0 || echo 1)"
 
-echo "=== AC6: NEVER must-pass (a waved change still merges; nothing blocks) ==="
-bash "$QG" respond "ac6-rid-$$" wave >/dev/null 2>&1; RC_WAVE=$?
-assert "AC6 respond wave exits 0 (advisory, not a block)" "$RC_WAVE"
+echo "=== AC6: NEVER must-pass (an accepted change still merges; nothing blocks) ==="
+bash "$QG" respond "ac6-rid-$$" accept >/dev/null 2>&1; RC_WAVE=$?
+assert "AC6 respond accept exits 0 (advisory, not a block)" "$RC_WAVE"
 bash "$QG" tap "ac6-tap-$$" --files "lib/x.sh" "$TAP_DESC" >/dev/null 2>&1; RC_TAP=$?
 assert "AC6 tap exits 0 (never blocks the merge)" "$RC_TAP"
 # no hook blocks a merge/push on the quiz: quiz-gate is referenced by NO hook as a gate

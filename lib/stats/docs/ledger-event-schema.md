@@ -45,7 +45,7 @@ them are `k=v`; this table states plainly which are and which aren't:
 | `GATE` | `<phase> \| <ran\|skipped\|override> \| <reason>` | **no**, 3 more pipe-delimited positional fields, not k=v | `gate-ledger.sh record` / `override` |
 | `ACTION` | freeform oneline text | **no**, opaque text | `gate-ledger.sh action` |
 | `TOKENS` | `in=<N> out=<N> cache_read=<N> cache_create=<N> [cost=<N>] [phase=<P>]` | yes, space-separated | `gate-ledger.sh tokens` |
-| `DEBT` | `significance=<low\|high> worthiness=<low\|high> verdict=<tap\|wave\|not-significant> [response=<engage\|defer\|wave>] [reason=<text>]` | yes, space-separated (see Edge Cases) | `gate-ledger.sh debt` / `debt-response` |
+| `DEBT` | `significance=<low\|high> worthiness=<low\|high> verdict=<tap\|log\|not-significant> [response=<engage\|defer\|accept>] [reason=<text>]` | yes, space-separated (see Edge Cases) | `gate-ledger.sh debt` / `debt-response` |
 
 **Parse rule:** split each line on ` | ` for the first two delimiters
 (`timestamp`, `verb`); everything after the second delimiter is the payload, parsed per

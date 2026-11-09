@@ -76,7 +76,7 @@ teacher` (the one resolver every seam-adjacent site cites; never read `understan
 Save whatever came back (the enriched explainer, or the grounded skeleton when there was no teacher)
 under `docs/verification/explain-command/` (or alongside the change's proof). Tell the user it is ready
 and that the quiz built on it runs through `/kit:quiz-gate`'s own seam. Do NOT merge, do NOT gate the
-merge; the explainer is advisory (engage / defer / wave, never must-pass).
+merge; the explainer is advisory (engage / defer / accept, never must-pass).
 
 Record the run for lane telemetry, one line (`explain` carries no matrix row of its
 own, same as `verify` -- RUN_REPORT observability, never a new required gate):

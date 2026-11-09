@@ -1,5 +1,5 @@
 ---
-description: "The ★-tap NUDGE before merging a significant+worthy gate PR: a 5-question quiz built from the ACTUAL diff+tests, handed to the operator's configured teacher seam. Three logged responses (engage/defer/wave); advisory, never must-pass. Gates the human's attention, not the merge."
+description: "The ★-tap NUDGE before merging a significant+worthy gate PR: a 5-question quiz built from the ACTUAL diff+tests, handed to the operator's configured teacher seam. Three logged responses (engage/defer/accept); advisory, never must-pass. Gates the human's attention, not the merge."
 ---
 
 You are the understanding-gate NUDGE (the AFTER gate's speed regulator). At the merge
@@ -7,7 +7,7 @@ boundary of a `gate`/gated-final PR, when a change is BOTH significant AND under
 the human a 5-question quiz built from the actual change BEFORE they click-to-merge. `$ARGUMENTS` is the
 change under merge (a commit / PR / spec ref) and its run id (`<rid>`).
 
-This gates the human's ATTENTION, never the merge. It is a NUDGE: a waved
+This gates the human's ATTENTION, never the merge. It is a NUDGE: an accepted
 change still merges; you never hard-block a correct build. The only real failure is UNTRACKED debt, so all
 three responses are recorded.
 
@@ -27,7 +27,7 @@ three responses are recorded.
 ### Step 1: Decide whether to tap (keyed on the significance-classify verdict)
 
 Only a `tap` verdict (significant AND understanding-worthy) on a `gate`/gated-final PR is ever nudged , the
-anti-fatigue guard. A significant-but-low-worthiness change (`wave`) or a `not-significant` change is NEVER
+anti-fatigue guard. A significant-but-low-worthiness change (`log`) or a `not-significant` change is NEVER
 quizzed (it is already logged silently by `significance-classify record`, wired into `/kit:ship`
 Step 8, immediately before this tap).
 
@@ -46,7 +46,7 @@ the human made:
 ```bash
 bash lib/gate/quiz-gate.sh respond <rid> engage --ref <ref>   # pull the quiz now
 bash lib/gate/quiz-gate.sh respond <rid> defer                # send to the weekend batch
-bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt knowingly
+bash lib/gate/quiz-gate.sh respond <rid> accept               # accept the debt knowingly
 ```
 
 - **engage** , `respond ... engage --ref <ref>` emits the dispatch payload (the 5 diff-grounded questions +
@@ -57,7 +57,7 @@ bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt 
   understanding. You do NOT score or grade , the seam's skill owns the pedagogy, and this command names
   none itself.
 - **defer** , recorded; the change is queued for the weekend batch. The merge proceeds.
-- **wave** , recorded; the debt is accepted knowingly. The merge proceeds.
+- **accept** , recorded; the debt is accepted knowingly. The merge proceeds. (`wave` is the old name of `accept`; `respond <rid> wave` still works and logs `accept`.)
 
 ### Step 3: The merge proceeds either way
 
@@ -67,10 +67,10 @@ gate. The correctness gates (the ship-gate and the proof-of-done gate) remain th
 ## Rules
 
 - Ground every question in the diff + recorded tests. The diff wins over the commit message and over memory.
-- Tap ONLY on a `tap` verdict + a gate/gated-final PR (anti-fatigue). Never quiz a `wave` or `not-significant`
+- Tap ONLY on a `tap` verdict + a gate/gated-final PR (anti-fatigue). Never quiz a `log` or `not-significant`
   change , that IS the fatigue failure mode.
 - Route engage through the `understand.teach` seam; never name a skill directly, never reimplement a quiz/scoring engine in the kit.
-- All three responses are logged; waving is a first-class, RECORDED choice, not a failure.
+- All three responses are logged; accepting is a first-class, RECORDED choice, not a failure.
 - Advisory only: this never blocks a correct build. It gates attention, not the merge.
 - Do not write the explainer (`/kit:explain`), the significance heuristic, or the batch flow; those are their own commands' seams.
 

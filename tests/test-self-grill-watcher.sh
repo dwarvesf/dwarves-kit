@@ -207,7 +207,7 @@ for probe in \
   "Self-answer mode" \
   "#auto" \
   "gate-ledger.sh debt" \
-  "verdict=wave" \
+  "verdict=log" \
   "never answers its own questions" \
   "AUTONOMOUS" \
   "reflect debt collect"

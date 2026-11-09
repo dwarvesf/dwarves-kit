@@ -2,7 +2,7 @@
 # weekend-batch.sh -- the debt-paydown reader/closer (understanding-gate).
 #
 # Flow B (the weekend batch): reads the EXISTING debt ledger (`| DEBT |` markers, the
-# `gate-ledger.sh debt`) and surfaces the week's WAVED + DEFERRED items -- the conscious debt ADR-
+# `gate-ledger.sh debt`) and surfaces the week's LOGGED + ACCEPTED + DEFERRED items -- the conscious debt ADR-
 # 0031's Refinement says is fine to postpone, as long as it eventually gets paid down. This is a
 # READER + a single CLOSER, never a second ledger: it never writes anything except the same
 # `gate-ledger.sh debt` marker other callers already write, with the additive `response=engage` key.
@@ -12,11 +12,15 @@
 #
 #   verdict=not-significant                  -> never debt, never collected
 #   response=engage (any verdict)            -> PAID, never re-collected
-#   verdict=wave,   no response              -> WAVED  (the classifier's silent anti-fatigue path)  COLLECT
-#   response=wave                            -> WAVED  (an explicit human wave)     COLLECT
+#   verdict=log,    no response              -> LOGGED   (the classifier's silent anti-fatigue path)  COLLECT
+#   response=accept                          -> ACCEPTED (an explicit human accept)  COLLECT
 #   response=defer                           -> DEFERRED                                    COLLECT
 #   verdict=tap,    no response              -> PENDING (an open (unresolved) tap; still Flow A's
 #                                                to resolve -- the batch does not race it)  skip
+#
+# Legacy words: ledger rows written before the rename carry verdict=wave (now `log`) and
+# response=wave (now `accept`). Readers accept both and give them the same disposition. The old
+# disposition `waved` covered both meanings; it is split so each word has one meaning.
 #
 # The kit does not reinvent pedagogy or a second dedup/batching engine here (see its
 # Alternatives section): this lib is the dwarves-kit-generic collection half. What a consumer does with
@@ -138,7 +142,7 @@ _last_fat_debt_line() {
 # keys BEFORE `reason=` and now also neuters any `=` inside the reason value itself (belt-and-
 # suspenders) -- so cutting the line at the first ` reason=` and parsing control keys from that
 # prefix ONLY is both correct (real control fields never appear after `reason=`) and sufficient.
-# `|| true`: a key that is not present (e.g. `response=` on a silent wave) is an expected
+# `|| true`: a key that is not present (e.g. `response=` on a silent log) is an expected
 # empty result, never a script-aborting failure.
 _kv() {
   local line="$1" key="$2" struct
@@ -146,7 +150,7 @@ _kv() {
   printf '%s' "$struct" | grep -oE "$key=[^ ]+" | head -n1 | cut -d= -f2- || true
 }
 
-# _disposition <debt-line> -- prints "waved"|"deferred"|"pending"|"paid"|"not-significant" for the
+# _disposition <debt-line> -- prints "logged"|"accepted"|"deferred"|"pending"|"paid"|"not-significant" for the
 # LAST debt line of a run (the exact matrix documented in the header + 's Design table).
 _disposition() {
   local line="$1" verdict response
@@ -155,17 +159,17 @@ _disposition() {
   if [ "$verdict" = "not-significant" ]; then printf 'not-significant\n'; return; fi
   case "$response" in
     engage) printf 'paid\n'; return ;;
-    wave)   printf 'waved\n'; return ;;
+    accept|wave) printf 'accepted\n'; return ;;
     defer)  printf 'deferred\n'; return ;;
   esac
   case "$verdict" in
-    wave) printf 'waved\n' ;;
+    log|wave) printf 'logged\n' ;;
     tap)  printf 'pending\n' ;;
     *)    printf 'unknown\n' ;;
   esac
 }
 
-# _collectible_files -- ledger files (one per rid) whose LAST debt line is waved/deferred, within
+# _collectible_files -- ledger files (one per rid) whose LAST debt line is logged/accepted/deferred, within
 # the [SINCE, now] window, and passing the repo filter. Prints "<file>\t<disposition>" per match.
 _collectible_files() {
   local f rid ts repo disp last
@@ -175,7 +179,7 @@ _collectible_files() {
     last="$(_last_debt_line "$f")"
     [ -n "$last" ] || continue
     disp="$(_disposition "$last")"
-    case "$disp" in waved|deferred) ;; *) continue ;; esac
+    case "$disp" in logged|accepted|deferred) ;; *) continue ;; esac
     ts="$(printf '%s' "$last" | awk -F' [|] ' '{print $1}')"
     [ -n "$ts" ] && [ "$ts" '>' "$SINCE" -o "$ts" = "$SINCE" ] || continue
     if [ "$ALL_REPOS" -eq 0 ] && [ -n "$REPO_FILTER" ]; then
@@ -239,12 +243,13 @@ cmd_collect() {
   _parse_common "$@" || return $?
   local rows f disp rid last sig wor reason ts notes_slug notes_path explainer_path fat
   rows="$(_collectible_files)"
-  local n_waved=0 n_deferred=0 n=0
+  local n_logged=0 n_accepted=0 n_deferred=0 n=0
   local body=""
   while IFS=$'\t' read -r f disp; do
     [ -n "$f" ] || continue
     n=$((n+1))
-    [ "$disp" = waved ] && n_waved=$((n_waved+1))
+    [ "$disp" = logged ] && n_logged=$((n_logged+1))
+    [ "$disp" = accepted ] && n_accepted=$((n_accepted+1))
     [ "$disp" = deferred ] && n_deferred=$((n_deferred+1))
     rid="$(basename "$f" .log)"
     last="$(_last_debt_line "$f")"
@@ -286,7 +291,7 @@ cmd_collect() {
   echo "# Weekend batch: debt paydown"
   echo
   echo "Window: since ${SINCE}$( [ "$ALL_REPOS" -eq 1 ] && echo " (all repos)" || echo " (repo: ${REPO_FILTER:-unknown})" )"
-  echo "Items: ${n} (${n_waved} waved, ${n_deferred} deferred)"
+  echo "Items: ${n} (${n_accepted} accepted, ${n_logged} logged, ${n_deferred} deferred)"
   printf '%s\n' "$body"
 }
 
@@ -320,7 +325,7 @@ cmd_mark_paid() {
   bash "$GATE_LEDGER" debt-response "$rid" engage "$reason"
 }
 
-usage() { sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local sub="${1:-}"; shift || true
