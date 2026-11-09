@@ -87,7 +87,7 @@ _checks_secs_for() {
   KIT_WRAP_CARRY_CHECKS_SECS="$v"
 }
 _autoland_carry() {
-  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip open cnt n title created out rc waited=0 pending
+  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip verdict open cnt n title created out rc waited=0 pending
   ghs="$(_gh_state)"
   if [ "$ghs" != "ok" ]; then
     echo "     SKIP land ${branch}: $(_gh_note "$ghs")"
@@ -98,7 +98,8 @@ _autoland_carry() {
   [ -n "$tip" ] || { echo "     SKIP land ${branch}: not on origin"; return 1; }
   [ "$tip" = "$want" ] || { echo "     SKIP land ${branch}: origin moved to $(_short "$tip"), not the checked $(_short "$want")"; return 1; }
   # A squash-fallback replacement on <branch>-squash that merged landed this branch too.
-  if [ "$(_squash_verdict "$(_squash_json "$url" "$branch")" "$tip" "$def")" = "OK" ] \
+  verdict="$(_squash_verdict "$(_squash_json "$url" "$branch")" "$tip" "$def")"
+  if [ "${verdict%% *}" = SAFE ] \
      || [ "$(_squash_json "$url" "${branch}-squash" | jq -r --arg d "$def" \
            '[.[] | select(.mergedAt != null and .baseRefName == $d)] | length' 2>/dev/null)" -gt 0 ] 2>/dev/null; then
     echo "     origin/${branch} already merged"; return 0

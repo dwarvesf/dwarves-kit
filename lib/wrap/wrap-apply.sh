@@ -3,28 +3,6 @@
 
 _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 
-# _merge_proof <repo> <default branch> <gh state> <branch> -- prints the proof that the branch
-# already reached the default branch and exits 0; exit 1 when no proof exists. The three proofs
-# are the same three `_apply_branches` deletes a branch under: a plain ancestor, absorbed content,
-# or the gh squash proof.
-_merge_proof() {
-  local repo="$1" def="$2" ghs="$3" b="$4" tip json
-  # Full refs only: a bare name resolves a same-named tag first, and a tag or local branch
-  # called origin/<def> beats the remote-tracking ref. Either once proved an unlanded worktree
-  # branch "merged".
-  if git -C "$repo" merge-base --is-ancestor "refs/heads/${b}" "refs/remotes/origin/${def}" 2>/dev/null; then
-    printf 'ancestor of origin/%s\n' "$def"; return 0
-  fi
-  if _absorbed "$repo" "$def" "refs/heads/${b}"; then
-    printf 'content already on origin/%s\n' "$def"; return 0
-  fi
-  [ "$ghs" = "ok" ] || return 1
-  tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
-  json="$(_squash_json "$(_origin_url "$repo")" "$b")"
-  [ "$(_squash_verdict "$json" "$tip" "$def")" = "OK" ] || return 1
-  printf 'squash-merged per gh\n'
-}
-
 # _absorbed <repo> <default branch> <commit> -- 0 when every path the commit changed since its
 # merge base with origin/<def> is byte-identical (same blob and mode, or absent on both) at the
 # commit and on origin/<def>. It covers a subagent branch whose lead re-committed the work under
@@ -183,8 +161,8 @@ _wt_busy() {
 # A worktree path may carry a newline, so the record stream is NUL-delimited: `--porcelain -z`
 # terminates every attribute with NUL, which keeps the path whole.
 _apply_worktrees() {
-  local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
-  local main_wt rec wt wt_c wtb proof lock verdict tip scanned
+  local repo="$1" def="$2" cur="$3" fetch_succeeded="$4" ghs="$5"
+  local main_wt rec wt wt_c wtb lcode proof lock verdict tip scanned
   echo "-- worktrees:"
   [ -n "$OWN_SET" ] && echo "     scope --own: only the named worktrees are candidates"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
@@ -227,12 +205,13 @@ _apply_worktrees() {
     if [ "$wtb" = "$cur" ]; then
       echo "     SKIP ${wt}: ${wtb} is the main checkout's branch"; continue
     fi
-    if [ "$fetch_ok" != 1 ]; then
+    if [ "$fetch_succeeded" != 1 ]; then
       echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
     fi
-    proof="$(_merge_proof "$repo" "$def" "$ghs" "$wtb")" || {
+    read -r lcode _ proof <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$wtb")"
+    if [ "$lcode" != SAFE ]; then
       echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
-    }
+    fi
     # The proof above can cost a network round trip, so both destructive inputs are re-read right
     # before the force: `-f -f` overrides a worktree that went dirty, and `-D` discards a commit
     # made since the run's own tip snapshot.
@@ -287,16 +266,16 @@ _apply_worktrees() {
 }
 
 _apply_branches() {
-  local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
+  local repo="$1" def="$2" cur="$3" fetch_succeeded="$4" ghs="$5"
   echo "-- branches:"
-  local b tip scanned json verdict
+  local b tip scanned lcode lreason ldetail
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) echo "     SKIP ${b}: default or protected branch name"; continue ;; esac
     if [ "$b" = "$cur" ]; then echo "     SKIP ${b}: currently checked out"; continue; fi
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
       echo "     SKIP ${b}: held by a worktree"; continue
     fi
-    if [ "$fetch_ok" != 1 ]; then
+    if [ "$fetch_succeeded" != 1 ]; then
       echo "     SKIP ${b}: fetch failed, stale ancestor data"; continue
     fi
     tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
@@ -304,31 +283,23 @@ _apply_branches() {
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
       echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
     fi
-    # -D, not -d: the proof above is wrap's own, against origin/<def>. `branch -d` judges
-    # against the branch's OWN upstream (or HEAD when it has none), so it refused a branch
-    # that tracks another ref or nothing even though origin/<def> already holds its tip.
-    # The sha and the full remote ref, never bare names: see _merge_proof.
-    if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
-      run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -D "$b"
-      continue
-    fi
-    if _absorbed "$repo" "$def" "$tip"; then
-      run "$repo" "delete ${b} (content already on origin/${def})" git -C "$repo" branch -D "$b"
-      continue
-    fi
-    if [ "$ghs" != "ok" ]; then
-      echo "     SKIP ${b}: $(_gh_note "$ghs"), no squash proof available"; continue
-    fi
-    json="$(_squash_json "$(_origin_url "$repo")" "$b")"
-    verdict="$(_squash_verdict "$json" "$tip" "$def")"
-    case "$verdict" in
-      OK)
+    # -D, not -d: the proof is wrap's own, against origin/<def>. `branch -d` judges against the
+    # branch's OWN upstream (or HEAD when it has none), so it refused a branch that tracks
+    # another ref or nothing even though origin/<def> already holds its tip. The proof judges the
+    # sha read above, see _merge_ladder.
+    read -r lcode lreason ldetail <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$b" "$tip")"
+    case "${lcode} ${lreason}" in
+      "SAFE ancestor"|"SAFE absorbed")
+        run "$repo" "delete ${b} (${ldetail})" git -C "$repo" branch -D "$b" ;;
+      "SAFE squash")
         run "$repo" "delete ${b} (squash-merged into ${def}, tip matches the PR head)" \
           git -C "$repo" branch -D "$b" ;;
-      TIP\ *)
-        echo "     SKIP ${b}: tip $(_short "$tip") != merged PR head $(_short "${verdict#TIP }") (unpushed commits, leave it)" ;;
-      BASE\ *)
-        echo "     SKIP ${b}: merged into ${verdict#BASE }, not the default branch" ;;
+      "LEAVE nogh")
+        echo "     SKIP ${b}: ${ldetail}, no squash proof available" ;;
+      "LEAVE tip")
+        echo "     SKIP ${b}: tip $(_short "$tip") != merged PR head $(_short "$ldetail") (unpushed commits, leave it)" ;;
+      "LEAVE base")
+        echo "     SKIP ${b}: merged into ${ldetail}, not the default branch" ;;
       *)
         echo "     SKIP ${b}: no merged PR found for this head" ;;
     esac
@@ -342,7 +313,7 @@ _archive_slug() {
   printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//'
 }
 
-# _apply_archive_unmerged <repo> <default branch> <current branch> <fetch_ok> -- opt-in
+# _apply_archive_unmerged <repo> <default branch> <current branch> <fetch_succeeded> -- opt-in
 # (--archive-unmerged, never under --own) sweep: every local branch that is not the current
 # or default branch, is not held by a worktree, and carries at least one commit patch
 # origin/<default> lacks (`git cherry origin/<default> <branch>` shows a `+`) gets pushed to
@@ -352,7 +323,7 @@ _archive_slug() {
 # `_apply_branches` above (an ancestor or a squash-merged proof) or is simply reported here
 # and never deleted under this flag.
 _apply_archive_unmerged() {
-  local repo="$1" def="$2" cur="$3" fetch_ok="$4"
+  local repo="$1" def="$2" cur="$3" fetch_succeeded="$4"
   echo "-- archive unmerged:"
   if [ -n "$OWN_SET" ]; then
     echo "     SKIP archive sweep: --own scopes cleanup to the named worktrees"; return 0
@@ -360,11 +331,11 @@ _apply_archive_unmerged() {
   if [ -z "$(_origin_url "$repo")" ]; then
     echo "     SKIP archive sweep: no origin remote"; return 0
   fi
-  if [ "$fetch_ok" != 1 ]; then
+  if [ "$fetch_succeeded" != 1 ]; then
     echo "     SKIP archive sweep: fetch failed, stale data"; return 0
   fi
   local b tip pushed cherry n slug ref err first rl
-  # Full refs throughout, as in _merge_proof: a tag named like the branch once made the push
+  # Full refs throughout, as in _merge_ladder: a tag named like the branch once made the push
   # source ambiguous, and a bare origin/<def> can resolve a tag or local branch.
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
@@ -636,7 +607,7 @@ _wt_new_secret() {
   return "$rc"
 }
 
-# _apply_archive_worktrees <repo> <default branch> <current branch> <fetch_ok> <gh state> --
+# _apply_archive_worktrees <repo> <default branch> <current branch> <fetch_succeeded> <gh state> --
 # opt-in (--archive-worktrees) sweep over registered worktrees whose work origin/<default>
 # lacks: a branch-held one with an unmerged patch, a detached one with a commit origin lacks,
 # or any dirty one. Each must be stale (wrap.archive_worktree_min_age_hours, root-only, default
@@ -648,7 +619,7 @@ _wt_new_secret() {
 # before the push. A secret-shaped uncommitted path is never pushed. The operator names the
 # flag knowing origin receives every uncommitted, non-ignored byte of an archived worktree.
 _apply_archive_worktrees() {
-  local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
+  local repo="$1" def="$2" cur="$3" fetch_succeeded="$4" ghs="$5"
   echo "-- archive worktrees:"
   if [ -n "$OWN_SET" ]; then
     echo "     SKIP archive worktrees: --own scopes cleanup to the named worktrees"; return 0
@@ -659,7 +630,7 @@ _apply_archive_worktrees() {
   if [ -z "$(_origin_url "$repo")" ]; then
     echo "     SKIP archive worktrees: no origin remote"; return 0
   fi
-  if [ "$fetch_ok" != 1 ]; then
+  if [ "$fetch_succeeded" != 1 ]; then
     echo "     SKIP archive worktrees: fetch failed, stale data"; return 0
   fi
   local min
@@ -708,7 +679,7 @@ _apply_archive_worktrees() {
 # _archive_worktree_one -- one record of _apply_archive_worktrees (reads its locals: repo def
 # cur ghs min main_wt repo_c pwd_c wt wtb prunable). Every guard runs before any write.
 _archive_worktree_one() {
-  local wt_s wt_c gd head cherry n proof idle h lv rec mode p first nb blockers slug ref label
+  local wt_s wt_c gd head cherry n lcode proof idle h lv rec mode p first nb blockers slug ref label
   wt_s="$(_san "$wt")"
   if [ -n "$prunable" ]; then echo "     SKIP ${wt_s}: prunable ($(_san "$prunable"))"; return; fi
   wt_c="$(cd "$wt" 2>/dev/null && pwd -P)"
@@ -751,8 +722,11 @@ _archive_worktree_one() {
   n="$(printf '%s\n' "$cherry" | grep -c '^+')"
   if [ "$WT_ST_DIRTY" = 0 ]; then
     if [ "$n" -eq 0 ]; then echo "     ${wt_s}: nothing unique, left alone"; return; fi
-    if [ -n "$wtb" ] && proof="$(_merge_proof "$repo" "$def" "$ghs" "$wtb")"; then
-      echo "     SKIP ${wt_s}: $(_san "$wtb") proven merged (${proof}), left for --worktrees"; return
+    if [ -n "$wtb" ]; then
+      read -r lcode _ proof <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$wtb")"
+      if [ "$lcode" = SAFE ]; then
+        echo "     SKIP ${wt_s}: $(_san "$wtb") proven merged (${proof}), left for --worktrees"; return
+      fi
     fi
   fi
   idle="$(_wt_idle_secs "$wt" "$gd")"; h=$(( idle / 3600 ))
@@ -977,9 +951,9 @@ _apply_repo() {
   local repo="$1" ghs="$2"
   _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
   echo "== ${repo}"
-  local fetch_ok=1
+  local fetch_succeeded=1
   if ! git -C "$repo" fetch --prune -q 2>/dev/null; then
-    fetch_ok=0
+    fetch_succeeded=0
     if [ "$PULL_ONLY" = 1 ]; then
       echo "     (fetch failed; the pull below will likely fail too)"
     else
@@ -1017,7 +991,7 @@ _apply_repo() {
       echo "-- worktrees:"
       echo "     SKIP worktree sweep: --no-pull needs --own (the session's own worktrees only)"
     else
-      _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+      _apply_worktrees "$repo" "$def" "$cur" "$fetch_succeeded" "$ghs"
     fi
     if [ "$NO_PULL" = 1 ] && [ -z "$OWN_SET" ]; then
       echo "-- branches:"
@@ -1028,13 +1002,13 @@ _apply_repo() {
       echo "-- branches:"
       echo "     SKIP branch sweep: --own scopes cleanup to the named worktrees"
     else
-      _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+      _apply_branches "$repo" "$def" "$cur" "$fetch_succeeded" "$ghs"
     fi
     # Opt-in and never under --own (see the function's own comment); a flag-off run prints
     # no new section, so the report is byte-identical to before this flag existed.
-    [ "$ARCHIVE_UNMERGED" = 1 ] && _apply_archive_unmerged "$repo" "$def" "$cur" "$fetch_ok"
+    [ "$ARCHIVE_UNMERGED" = 1 ] && _apply_archive_unmerged "$repo" "$def" "$cur" "$fetch_succeeded"
     # Opt-in, same contract: no default flow passes it, and a flag-off report is unchanged.
-    [ "$ARCHIVE_WORKTREES" = 1 ] && _apply_archive_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+    [ "$ARCHIVE_WORKTREES" = 1 ] && _apply_archive_worktrees "$repo" "$def" "$cur" "$fetch_succeeded" "$ghs"
     # Under --own it considers only the branches the named worktrees held: a wrap's default
     # cleanup is the current session, and other sessions' merged heads wait for a plain
     # apply or --worktrees run. The same proof applies (merged PR at the exact tip, no open PR).
@@ -1042,7 +1016,7 @@ _apply_repo() {
 
     # Any checked-out branch: the incident state is a shared main checkout sitting on a
     # feature branch while a session writes the board there.
-    if [ "$fetch_ok" = 1 ]; then
+    if [ "$fetch_succeeded" = 1 ]; then
       _carry_stray "$repo" "$def"
     else
       echo "-- stray lines:"
@@ -1052,7 +1026,7 @@ _apply_repo() {
     if [ "$NO_PULL" = 1 ]; then
       echo "-- stray commits:"
       echo "     SKIP stray commits: --no-pull"
-    elif [ "$fetch_ok" != 1 ]; then
+    elif [ "$fetch_succeeded" != 1 ]; then
       echo "-- stray commits:"
       echo "     SKIP stray commits: fetch failed, origin/${def} may be stale"
     elif [ "$cur" = "$def" ]; then
@@ -1068,7 +1042,7 @@ _apply_repo() {
   elif [ "$cur" = "$def" ]; then
     # --pull-only skips the stray-commits carry, so name what it leaves behind rather than
     # letting unpushed commits on the default branch go silent run after run.
-    if [ "$PULL_ONLY" = 1 ] && [ "$fetch_ok" = 1 ]; then
+    if [ "$PULL_ONLY" = 1 ] && [ "$fetch_succeeded" = 1 ]; then
       local ahead; ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
       [ "${ahead:-0}" -gt 0 ] 2>/dev/null && \
         echo "     NOTE: ${def} is ${ahead} commits ahead of origin/${def}; --pull-only never carries them, plain apply --apply does"

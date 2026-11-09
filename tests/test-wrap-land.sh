@@ -1966,12 +1966,12 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$LWT_TA3" 
 chk_no "TA3: a shadowing tag never reads as no commits ahead" "$out" "has no commits ahead"
 chk_has "TA3: the branch is pushed" "$out" "pushed feat/land"
 
-echo "--- TA2: an ancestor-shaped proof is treated as no proof at this call site"
+echo "--- TA2: an ancestor proof is treated as no proof at this call site"
 build_land taanc
 LWT_TA2="$(cd "$TMPD/ld-repo-taanc/wt" && pwd -P)"
 out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$LWT_TA2" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-taanc" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main bash -c \
-  'f="$1"; w="$2"; set --; source "$f"; _merge_proof() { printf "ancestor of origin/main\n"; }; cmd_land "$w"' \
+  'f="$1"; w="$2"; set --; source "$f"; _merge_ladder() { printf "SAFE ancestor ancestor of origin/main\n"; }; cmd_land "$w"' \
   _ "$KIT_DIR/lib/wrap/wrap.sh" "$LWT_TA2" 2>&1)"; rc=$?
 chk_no "TA2: an ancestor proof never prints already landed" "$out" "already landed"
 chk_has "TA2: land takes the unchanged path and opens the PR" "$out" "opened PR #44"
