@@ -70,6 +70,28 @@ out_on="$(SKILL_CURATOR_AUTO_PROMOTE=true "$CLI" auto 2>&1)"
 if [[ -f "$SKILL_CURATOR_SKILLS_DIR/deploy-via-wrangler/references/extra.md" && ! -d "$SKILL_CURATOR_SKILLS_DIR/newskill" && -d "$SKILL_CURATOR_PROPOSALS_DIR/newskill" ]]; then
   ok "auto on -> references-add promoted, new skill left staged"; else no "auto-promote eligibility wrong: $out_on"; fi
 
+echo "[10] --force with a failing backup aborts; no nested skills/<slug>/<slug>"
+rm -rf "$SKILL_CURATOR_PROPOSALS_DIR" "$SKILL_CURATOR_SKILLS_DIR"
+mkdir -p "$SKILL_CURATOR_PROPOSALS_DIR" "$SKILL_CURATOR_SKILLS_DIR/forced"
+printf 'LIVE-KEEP\n' > "$SKILL_CURATOR_SKILLS_DIR/forced/SKILL.md"
+: > "$SKILL_CURATOR_PROPOSALS_DIR/_replaced"      # a file where the backup dir must go: mkdir/mv fail
+mkdraft forced "$GOOD"
+"$CLI" promote forced --force >/dev/null 2>&1; rc=$?
+if [[ $rc -ne 0 && ! -e "$SKILL_CURATOR_SKILLS_DIR/forced/forced" ]] \
+   && grep -q LIVE-KEEP "$SKILL_CURATOR_SKILLS_DIR/forced/SKILL.md" && [[ -f "$SKILL_CURATOR_PROPOSALS_DIR/forced/SKILL.md" ]]; then
+  ok "failed backup aborted (rc=$rc), live skill intact, draft still staged"; else no "failed backup did not abort cleanly (rc=$rc)"; fi
+
+echo "[11] reject refuses reserved names and slugs with a path separator"
+rm -rf "$SKILL_CURATOR_PROPOSALS_DIR"
+mkdir -p "$SKILL_CURATOR_PROPOSALS_DIR/_replaced/keep" "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/old"
+bad_ok=1
+for bad in _replaced _rejected _archive ../x a/b ..; do
+  "$CLI" reject "$bad" >/dev/null 2>&1; rc=$?
+  [[ $rc -eq 2 ]] || { bad_ok=0; echo "    reject '$bad' rc=$rc" >&2; }
+done
+if [[ $bad_ok -eq 1 && -d "$SKILL_CURATOR_PROPOSALS_DIR/_replaced/keep" && -d "$SKILL_CURATOR_PROPOSALS_DIR/_rejected/old" ]]; then
+  ok "invalid slugs refused (rc=2), reserved dirs untouched"; else no "reject accepted an invalid slug"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "test-promote: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-promote: all $pass passed"

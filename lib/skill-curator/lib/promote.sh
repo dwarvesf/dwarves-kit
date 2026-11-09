@@ -17,6 +17,13 @@ HERE_PROMOTE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Reserved proposal subdirs that are not drafts.
 _is_reserved() { case "$1" in _rejected|_replaced|_archive) return 0;; *) return 1;; esac; }
 
+# A slug names exactly one draft dir: not empty, not reserved, no path separator, not . or ..
+_valid_slug() {
+  case "$1" in ""|.|..|*/*) return 1;; esac
+  _is_reserved "$1" && return 1
+  return 0
+}
+
 _desc_of() {  # read `description:` from a SKILL.md frontmatter, else ""
   local f="$1"; [ -f "$f" ] || { printf ''; return; }
   sed -n 's/^description:[[:space:]]*//p' "$f" | head -1
@@ -38,6 +45,7 @@ promote_list() {
 promote_one() {
   local slug="${1:-}" force=0; [ "${2:-}" = "--force" ] && force=1
   [ -n "$slug" ] || { echo "promote: need a slug" >&2; return 2; }
+  _valid_slug "$slug" || { echo "promote: invalid slug '$slug'" >&2; return 2; }
   local src="$SKILL_CURATOR_PROPOSALS_DIR/$slug" dest="$SKILL_CURATOR_SKILLS_DIR/$slug"
   [ -d "$src" ] && [ -f "$src/SKILL.md" ] || { echo "promote: no draft '$slug'" >&2; return 2; }
 
@@ -53,8 +61,12 @@ promote_one() {
   if [ -e "$dest" ] && [ "$force" = 1 ]; then   # back up the live skill before replacing (never rm)
     local bak
     bak="$SKILL_CURATOR_PROPOSALS_DIR/_replaced/${slug}-$(date +%Y%m%d-%H%M%S)"
-    mkdir -p "$(dirname "$bak")" 2>/dev/null || true
-    mv "$dest" "$bak" 2>/dev/null && si_log "promote --force: backed up live skill -> $bak"
+    # No backup, no replace: a failed mv would leave dest in place and nest the draft inside it.
+    if ! { mkdir -p "$(dirname "$bak")" 2>/dev/null && mv "$dest" "$bak" 2>/dev/null; }; then
+      echo "promote: backup of live '$slug' failed; aborting, nothing replaced" >&2
+      si_log "promote --force aborted (backup failed): $slug"; return 5
+    fi
+    si_log "promote --force: backed up live skill -> $bak"
   fi
   mv "$src" "$dest" 2>/dev/null || { echo "promote: move failed" >&2; return 5; }
   echo "promote: '$slug' -> $dest"
@@ -63,6 +75,7 @@ promote_one() {
 
 promote_reject() {
   local slug="${1:-}"; [ -n "$slug" ] || { echo "reject: need a slug" >&2; return 2; }
+  _valid_slug "$slug" || { echo "reject: invalid slug '$slug'" >&2; return 2; }
   local src="$SKILL_CURATOR_PROPOSALS_DIR/$slug"
   [ -d "$src" ] || { echo "reject: no draft '$slug'" >&2; return 2; }
   local dest="$SKILL_CURATOR_PROPOSALS_DIR/_rejected/$slug"
