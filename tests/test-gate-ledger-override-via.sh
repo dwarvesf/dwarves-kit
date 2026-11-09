@@ -10,6 +10,8 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 CONFORM="$KIT_DIR/lib/stats/tests/lib/conform.sh"
+# Pin the operator config layer so a real ~/.config/dwarves-kit never reaches the resolver.
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 export DWARVES_KIT_LOG_DIR; DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 trap 'rm -rf "$DWARVES_KIT_LOG_DIR" 2>/dev/null' EXIT
 PASS=0; FAIL=0
