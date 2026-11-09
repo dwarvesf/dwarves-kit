@@ -24,6 +24,7 @@ for args in "" "no-such-verb"; do
   check "$label: start signature" 'printf "%s\n" "$ERR" | grep -qF "start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type>"'
   check "$label: record signature" 'printf "%s\n" "$ERR" | grep -qF "record <rid> <phase> <ran|skipped|rejected> [reason]"'
   check "$label: override signature" 'printf "%s\n" "$ERR" | grep -qF "override <rid> <phase> <reason>"'
+  check "$label: actions signature" 'printf "%s\n" "$ERR" | grep -qF "actions <rid> <prefix> [--count]"'
   check "$label: debt signature" 'printf "%s\n" "$ERR" | grep -qF "debt <rid> significance=<low|high> worthiness=<low|high> verdict="'
 done
 

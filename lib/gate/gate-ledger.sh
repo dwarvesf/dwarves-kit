@@ -21,6 +21,9 @@
 #                                       `rejected` is the validate-round NEEDS-REVISION verdict: a fail
 #                                       state like `skipped`, never satisfying check()
 #   action   <rid> <text>              append an action-log line
+#   actions  <rid> <prefix> [--count]  read back this run's ACTION texts that equal <prefix> or start
+#                                       with "<prefix> " (a loop resumes from its own lines); --count
+#                                       prints the number. No ledger: nothing / 0.
 #   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [reason=...]
 #                                       append an understanding-debt verdict;
 #                                       additive marker, ignored by check()/override()/descent()
@@ -330,6 +333,24 @@ action() {
   local rid="${1:-}"; shift 2>/dev/null || { echo "usage: action <rid> <text>" >&2; return 64; }
   mkdir -p "$RUNS_DIR"
   append_run_line "$rid" "$(printf '%s | ACTION | %s' "$(now)" "$(oneline "$@")")"
+}
+
+# actions <rid> <prefix> [--count]: the read side of `action`. Matches the ACTION text on a
+# whole-word prefix, so `sha=abc` never matches `sha=abc123`.
+actions() {
+  local rid="${1:-}" prefix="${2:-}" count="${3:-}"
+  { [ -n "$rid" ] && [ -n "$prefix" ] && { [ -z "$count" ] || [ "$count" = "--count" ]; }; } \
+    || { echo "usage: actions <rid> <prefix> [--count]" >&2; return 64; }
+  local f; f="$(ledger_file "$rid")" || return 64
+  local out=""
+  [ -f "$f" ] && out="$(awk -F' [|] ' -v p="$prefix" '
+    $2=="ACTION" { t=$3; for (i=4; i<=NF; i++) t=t " | " $i
+                   if (t==p || index(t, p " ")==1) print t }' "$f")"
+  if [ "$count" = "--count" ]; then
+    if [ -n "$out" ]; then printf '%s\n' "$out" | wc -l | tr -d ' '; else echo 0; fi
+  elif [ -n "$out" ]; then
+    printf '%s\n' "$out"
+  fi
 }
 
 # tokens: record a run's token usage as an ADDITIVE marker. Emits a `| TOKENS |` line
@@ -1849,12 +1870,13 @@ _vr_dispatch() {
 # sessions reach for most. The other verbs print their own `usage:` line when called bare.
 usage() {
   cat <<'EOF'
-usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round|lane} ...
+usage: gate-ledger.sh {required|start|record|action|actions|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|record-batch|inherit|check|show|review-verdict|plan|progress|rid|descent|history|report|validate-round|lane} ...
 
   start [--amend] <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]
   start --amend --lower --reason "<text>" <rid> <lighter-lane> ...   lowering needs both flags
   record <rid> <phase> <ran|skipped|rejected> [reason]
   override <rid> <phase> <reason>
+  actions <rid> <prefix> [--count]     read back ACTION lines whose text starts with <prefix>
   record-batch <rid> <lane> [--evidence-default "<text>"] <phase>=<ran|skipped|override>:<evidence> ...
   debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|log|not-significant> [response=<engage|defer|accept>] [reason=...]
   check <lane> <rid> [--kit-lanes]
@@ -1872,6 +1894,7 @@ case "$cmd" in
   start)    start "$@" ;;
   record)   record "$@" ;;
   action)   action "$@" ;;
+  actions)  actions "$@" ;;
   tokens)   tokens "$@" ;;
   debt)     debt "$@" ;;
   debt-response) debt_response "$@" ;;
