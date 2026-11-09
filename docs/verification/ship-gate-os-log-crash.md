@@ -103,6 +103,14 @@ repin: all pins fresh in hooks/codex-hooks.json
 ```
 Verdict: PASS (the content-hash pin of the edited hook is rewritten; `repin.sh check` exited 1 before)
 
+Command: `bash tests/run-all.sh --changed`
+Exit: 0
+Output:
+```
+run-all: all 32 suites passed, 0 skipped for missing tooling
+```
+Verdict: PASS
+
 ## Negative control
 
 Command: `bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-command-words.sh" "git show origin/master:hooks/ship-gate.sh >| hooks/ship-gate.sh"`
