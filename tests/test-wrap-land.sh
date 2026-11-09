@@ -2685,6 +2685,39 @@ ig_land ig4e
 chk "4e: an in-tree symlink exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "4e: an in-tree symlink names the path" "$out" "tools/x/out"
 
+echo "--- 4f: an EMPTY ignored directory passes (a clean checkout misses nothing)"
+_ig_build ig4f 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data"
+chk_has "4f: fixture check: git lists the empty ignored dir" \
+  "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! tools/x/data/"
+ig_land ig4f
+chk "4f: exits 0" "$rc"
+chk_no "4f: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 4g: nested empty directories pass"
+_ig_build ig4g 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data/a/b" "$IG_WT/tools/x/data/c"
+ig_land ig4g
+chk "4g: exits 0" "$rc"
+chk_no "4g: no refusal" "$out" "LAND REFUSED"
+
+echo "--- 4h: an ignored dir holding a file still refuses, at any depth"
+_ig_build ig4h 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data"; echo x > "$IG_WT/tools/x/data/a.json"
+ig_land ig4h
+chk "4h: a file in the dir exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4h: names the dir" "$out" "tools/x/data"
+ig_nopush "4h" ig4h
+_ig_build ig4i 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data/a/b"; echo x > "$IG_WT/tools/x/data/a/b/deep.json"
+ig_land ig4i
+chk "4i: a file in a nested subdir exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4i: names the dir" "$out" "tools/x/data"
+_ig_build ig4j 'data/\n' ""
+mkdir -p "$IG_WT/tools/x/data/a"; ln -s "$IG_WT/base.txt" "$IG_WT/tools/x/data/a/link"
+ig_land ig4j
+chk "4j: a symlink in a nested subdir counts as content and exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+
 echo "--- 5: a nested .gitignore match refuses with its full path"
 _ig_build ig5 "" 'mkdir -p tools/x && echo t > tools/x/test_x.sh && echo notes.txt > tools/x/.gitignore'
 echo n > "$IG_WT/tools/x/notes.txt"
