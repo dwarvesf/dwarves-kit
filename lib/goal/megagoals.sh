@@ -37,11 +37,12 @@
 #                  cwd, else cwd itself)
 #     --limit N    max mega-goal lines to print before collapsing the rest
 #                  to "+N more" (default: 5; 0 means unlimited)
-#     --all        also print mega-goals with no open box left (all done, or only parked),
+#     --all        also print fully-done mega-goals (no open and no parked box),
 #                  which are hidden by default
 #
 #   One line per mega-goal, sorted by path:
-#     <slug>  <done>/<total>  HANDOFF:<yes|no>  POINTER:<path or ->
+#     <slug>  <done>/<total>  HANDOFF:<yes|no>  POINTER:<path or ->[ (parked)]
+#   "(parked)" ends the line when no open box is left and at least one parked box is.
 #   <slug> is the mega-goal directory's basename. <path> (when a
 #   POINTER_PROMPT.md exists) is repo-relative. Last line is
 #   "<n> mega-goals", or "no mega-goals" when the scan found none (after the
@@ -76,10 +77,11 @@ find_roadmaps() { # <repo>
     \) -print 2>/dev/null | sort
 }
 
-# done/total/active sub-goals, counted from the "## Sub-goals" and "## Status" sections only.
-# Prints "<done> <total> <active>" on one line. The boxes come from lib/mega/box.tsv: total counts
+# done/total/active/parked sub-goals, counted from the "## Sub-goals" and "## Status" sections only.
+# Prints "<done> <total> <active> <parked>" on one line. The boxes come from lib/mega/box.tsv: total counts
 # every box, done counts the done class, active counts the open class. A parked box is in the total
-# (it is not done) and never in active (it is not work a runner would pick up).
+# (it is not done) and never in active (it is not work a runner would pick up). A mega whose only
+# unfinished boxes are parked is still listed, marked "(parked)", so it is not forgotten.
 count_subgoals() { # <roadmap-file>
   local dre ore pre
   dre="$(box_re done)"; ore="$(box_re open)"; pre="$(box_re parked)"
@@ -90,8 +92,8 @@ count_subgoals() { # <roadmap-file>
     insec && /^## / { insec=0 }
     insec && $0 ~ dre { done++; total++; next }
     insec && $0 ~ ore { active++; total++; next }
-    insec && $0 ~ pre { total++; next }
-    END { printf "%d %d %d\n", done+0, total+0, active+0 }
+    insec && $0 ~ pre { parked++; total++; next }
+    END { printf "%d %d %d %d\n", done+0, total+0, active+0, parked+0 }
   ' "$1"
 }
 
@@ -117,19 +119,21 @@ cmd_list() {
     [ -n "$f" ] && files+=("$f")
   done < <(find_roadmaps "$repo")
 
-  local rows=() dir slug dn tot act handoff pointer
+  local rows=() dir slug dn tot act par marker handoff pointer
   for f in "${files[@]}"; do
     dir="$(dirname "$f")"
     slug="$(basename "$dir")"
-    read -r dn tot act < <(count_subgoals "$f")
+    read -r dn tot act par < <(count_subgoals "$f")
+    marker=""
     if [ "$tot" -eq 0 ]; then
       [ "$all" -eq 1 ] || continue
-    elif [ "$all" -eq 0 ] && [ "$act" -eq 0 ]; then
-      continue   # no open box left (done, or only parked), hidden unless --all
+    elif [ "$act" -eq 0 ]; then
+      [ "$par" -gt 0 ] && marker=" (parked)"
+      [ "$par" -gt 0 ] || [ "$all" -eq 1 ] || continue   # fully done, hidden unless --all
     fi
     handoff="no"; [ -f "$dir/HANDOFF.md" ] && handoff="yes"
     pointer="-"; [ -f "$dir/POINTER_PROMPT.md" ] && pointer="${dir#"$repo"/}/POINTER_PROMPT.md"
-    rows+=("$(printf '%s  %d/%d  HANDOFF:%s  POINTER:%s' "$slug" "$dn" "$tot" "$handoff" "$pointer")")
+    rows+=("$(printf '%s  %d/%d  HANDOFF:%s  POINTER:%s%s' "$slug" "$dn" "$tot" "$handoff" "$pointer" "$marker")")
   done
 
   if [ "${#rows[@]}" -eq 0 ]; then
