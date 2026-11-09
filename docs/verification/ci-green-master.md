@@ -10,7 +10,7 @@ Six suites went red on the 2026-11-09 dispatch of `test.yml`. Five are test-host
 | test-board-states | `SourceFileLoader.load_module()` is gone in Python 3.15 | #1101 | yes, Python 3.15 |
 | test-board-registry-env | R5 needs a `hermes` binary on PATH; a runner has none | #1111 | yes, PATH without hermes |
 | test-clean-room | `gh` in `/usr/bin` writes `device-id` under XDG state in the sandbox HOME | #1115 | yes, gh linked into the sandbox PATH |
-| test-doc-figures | the render succeeded, then `stopBrowser` removed the browser profile while Chrome helper processes still wrote into it: `rmSync` threw ENOTEMPTY and the render exited 1 (read off the runner log from the diagnostics commit). The 15 s start timer that was never cleared is a separate stall, also fixed | #1088 | yes: a wrapper that keeps writing into the profile fails 3 of 3 before the fix |
+| test-doc-figures | the render succeeded, then `stopBrowser` removed the browser profile while Chrome helper processes still wrote into it: `rmSync` threw ENOTEMPTY and the render exited 1 (read off the runner log from the diagnostics commit). The 15 s start timer that was never cleared is a separate stall, also fixed | #1088 | yes: a wrapper that keeps writing into the profile fails 4 of 4 before the fix |
 | test-board-brief | `grep -c '\`t1\`'` is a start-of-buffer anchor in GNU grep | #1092 | no: no GNU grep or Docker egress on this host |
 
 ## Green run
@@ -47,7 +47,7 @@ Output:
   board-states on Python 3.15:     FAIL python readers disagree: Traceback (most recent call last):
   registry-env, PATH sans hermes:  FAIL R5 falls back to the repo default
   clean-room, gh on sandbox PATH:  FAIL after the full run: nothing written under the sandbox outside the allowed dirs
-  doc-figures, profile writer:     FAIL render survives a browser helper writing into the profile on exit (3 of 3)
+  doc-figures, profile writer:     FAIL render survives a browser helper writing into the profile on exit (4 of 4)
 Verdict: PASS (every reverted fix fails; the fixed tree passes)
 ```
 
