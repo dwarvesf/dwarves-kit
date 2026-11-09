@@ -97,7 +97,7 @@ normal
 | Your one-line change got the full lane | You assigned it after a suggestion, or the diff floor caught a hard path. One line in a migration is full lane at push. |
 | You want tiny and the kit says no | Say so in the ask. The kit records it as your call. The floor check still refuses an unsafe downgrade. |
 | Your finished task is missing from the board | Shipped rows leave the board. `CHANGELOG.md` is the shipped record. `/kit:start --full` adds the open queue, goal drafts and the last five commits. |
-| `/kit:start` says the spec is ambiguous | More than one spec is live. Name the one you mean, or set it to SHIPPED or PARKED. |
+| `/kit:start` says the spec is ambiguous | More than one spec is live. Name the one you mean, or close the stale one: `bash lib/spec/spec-status.sh set docs/specs/SPEC-NNN-<slug>.md SHIPPED` (or `PARKED`). |
 | You are not sure where you are | Run `/kit:start` again. State lives on disk, so it always answers. |
 
 ## Related

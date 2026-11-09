@@ -240,5 +240,99 @@ printf "grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' \"\$F\"\n" > "$plant"
 printf '# one state alone is fine: SHIPPED\n' > "$plant"
 [ -z "$(scan "$plant")" ] && pass "copy detector ignores a line with a single state" || fail "copy detector flagged a single state"
 
+# ---- 9. set: the one writer of the header ----
+# wf <name> <content>: write a fixture with a trailing newline, print its path
+wf() { local p="$TMP/$1.md"; printf '%s\n' "$2" > "$p"; printf '%s' "$p"; }
+set_rc() {  # set_rc <file> <STATE>: run set, capture stderr in $ERR, rc in $RC
+  ERR="$(bash "$SS" set "$1" "$2" 2>&1 >/dev/null)"; RC=$?
+}
+want_file() {  # want_file <label> <file> <expected content>
+  local got; got="$(cat "$2")"
+  [ "$got" = "$3" ] && pass "set: $1" || fail "set: $1 (want [$3], got [$got])"
+}
+
+f="$(wf w-plain $'# T\n\nStatus: VALIDATED\n\nbody\nStatus: DRAFT')"
+set_rc "$f" SHIPPED
+[ "$RC" = 0 ] && [ -z "$ERR" ] && pass "set: plain header exits 0 and stays quiet" || fail "set: plain rc=$RC err=$ERR"
+want_file "plain header flips, a later Status line is untouched" "$f" $'# T\n\nStatus: SHIPPED\n\nbody\nStatus: DRAFT'
+[ "$(bash "$SS" get "$f")" = SHIPPED ] && pass "set: get reads back SHIPPED" || fail "set: get after set"
+
+f="$(wf w-bold $'# T\n**Status:** VALIDATED')"
+set_rc "$f" SHIPPED
+want_file "bold label stays bold" "$f" $'# T\n**Status:** SHIPPED'
+f="$(wf w-boldwrap $'# T\n**Status: VALIDATED**')"
+set_rc "$f" SHIPPED
+want_file "a bold-wrapped line keeps its closing stars" "$f" $'# T\n**Status: SHIPPED**'
+f="$(wf w-lower $'# T\nstatus: validated')"
+set_rc "$f" SHIPPED
+want_file "a lower-case label keeps its case" "$f" $'# T\nstatus: SHIPPED'
+
+f="$(wf w-deco $'# T\nStatus: VALIDATED (round 4, 2026-09-01)')"
+set_rc "$f" SHIPPED
+want_file "stale decoration after the word is dropped" "$f" $'# T\nStatus: SHIPPED'
+f="$(wf w-deco2 $'# T\nStatus: Draft · 2026-07-31 · Owner: Han')"
+set_rc "$f" SHIPPED
+want_file "a dotted decoration is dropped" "$f" $'# T\nStatus: SHIPPED'
+f="$(wf w-alias-hdr $'# T\nStatus: BUILT')"
+set_rc "$f" SHIPPED
+want_file "a legacy alias in the header is replaced by the state" "$f" $'# T\nStatus: SHIPPED'
+f="$(wf w-empty $'# T\nStatus:')"
+set_rc "$f" DRAFT
+want_file "an empty value gets the state" "$f" $'# T\nStatus: DRAFT'
+f="$(wf w-unknown $'# T\nStatus: Final')"
+set_rc "$f" SHIPPED
+want_file "an unknown word is replaced" "$f" $'# T\nStatus: SHIPPED'
+f="$(wf w-case $'# T\nStatus: VALIDATED')"
+set_rc "$f" shipped
+want_file "the state argument is case-insensitive" "$f" $'# T\nStatus: SHIPPED'
+
+f="$TMP/w-crlf.md"; printf '# T\r\nStatus: VALIDATED\r\nbody\r\n' > "$f"
+set_rc "$f" SHIPPED
+[ "$(od -c "$f" | tr -s ' ' | tr -d '\n')" = "$(printf '# T\r\nStatus: SHIPPED\r\nbody\r\n' | od -c | tr -s ' ' | tr -d '\n')" ] \
+  && pass "set: CRLF line endings survive" || fail "set: CRLF mangled"
+
+f="$(wf w-nohdr $'# T\n\nno header here')"
+before="$(cat "$f")"
+set_rc "$f" SHIPPED
+if [ "$RC" = 1 ] && [ -n "$ERR" ] && [ "$(cat "$f")" = "$before" ]; then pass "set: a spec with no header exits 1, says so, adds nothing"; else fail "set: no header rc=$RC err=$ERR"; fi
+
+set_rc "$TMP/does-not-exist.md" SHIPPED
+[ "$RC" = 1 ] && [ -n "$ERR" ] && pass "set: a missing file exits 1" || fail "set: missing file rc=$RC"
+
+f="$(wf w-refuse $'# T\nStatus: VALIDATED')"
+for bad in BUILT SHIPPED-PENDING SUPERSEDED READY NONE UNKNOWN Bogus ""; do
+  set_rc "$f" "$bad"
+  [ "$RC" = 64 ] && [ "$(cat "$f")" = $'# T\nStatus: VALIDATED' ] && pass "set: refuses '$bad' with exit 64" || fail "set: '$bad' rc=$RC"
+done
+bash "$SS" set "$f" >/dev/null 2>&1; rc=$?
+[ "$rc" = 64 ] && pass "set: missing state exits 64" || fail "set: missing state rc=$rc"
+bash "$SS" set "$f" SHIPPED extra >/dev/null 2>&1; rc=$?
+[ "$rc" = 64 ] && pass "set: an extra argument exits 64" || fail "set: extra argument rc=$rc"
+
+f="$(wf w-same $'# T\nStatus: VALIDATED (round 4)')"
+cp -p "$f" "$TMP/w-same.before"; touch -t 200001010000 "$f"; stamp="$(ls -l "$f")"
+set_rc "$f" VALIDATED
+if [ "$RC" = 0 ] && [ -z "$ERR" ] && [ "$(ls -l "$f")" = "$stamp" ] && cmp -s "$f" "$TMP/w-same.before"; then pass "set: the same state is a no-op, decoration kept"; else fail "set: same-state rc=$RC err=$ERR"; fi
+f="$(wf w-same-alias $'# T\nStatus: BUILT')"
+set_rc "$f" VALIDATED
+want_file "set: an alias of the target state counts as the same state" "$f" $'# T\nStatus: BUILT'
+
+f="$(wf w-reopen $'# T\nStatus: SHIPPED (v1.2)')"
+set_rc "$f" DRAFT
+if [ "$RC" = 0 ] && printf '%s' "$ERR" | grep -q "reopens from terminal 'SHIPPED' to 'DRAFT'"; then pass "set: leaving a terminal state prints the reopen notice"; else fail "set: reopen rc=$RC err=$ERR"; fi
+want_file "set: the reopen still writes" "$f" $'# T\nStatus: DRAFT'
+f="$(wf w-reopen2 $'# T\nStatus: PARKED')"
+set_rc "$f" VALIDATED
+printf '%s' "$ERR" | grep -q "reopens from terminal 'PARKED'" && pass "set: PARKED is terminal too" || fail "set: parked reopen err=$ERR"
+f="$(wf w-forward $'# T\nStatus: VALIDATED')"
+set_rc "$f" SHIPPED
+[ -z "$ERR" ] && pass "set: a forward move prints no notice" || fail "set: forward notice err=$ERR"
+
+f="$(wf w-mode $'# T\nStatus: VALIDATED')"; chmod 640 "$f"
+set_rc "$f" SHIPPED
+mode="$(ls -l "$f" | cut -c1-10)"
+leftover="$(ls "$TMP" | grep -c 'w-mode.md\.' || true)"
+[ "$mode" = "-rw-r-----" ] && [ "$leftover" = 0 ] && pass "set: mode kept, no temp file left" || fail "set: mode=$mode leftover=$leftover"
+
 [ "$FAILED" -eq 0 ] && { echo "All spec-states tests passed."; exit 0; }
 echo "$FAILED spec-states test(s) failed."; exit 1

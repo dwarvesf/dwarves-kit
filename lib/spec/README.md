@@ -7,6 +7,7 @@ Spec registry tools: find spec files, show them in one table, reserve the next f
 - `spec index [list]`: the spec table, grouped by namespace (`spec-index.sh`).
 - `spec next next|check <NNN>|reserve`: the next free number, a taken check, or an atomic claim (`spec-next.sh`).
 - `spec task-done <spec> <TASK-ID> --commit <sha>`: check a task off and log its run. It never commits (`spec-task-done.sh`).
+- `lib/spec/spec-status.sh get|set|live|states|machine`: the one reader and writer of the `Status:` header, declared in `states.tsv`. `set <spec> <STATE>` is how a spec becomes SHIPPED; `/kit:ship` calls it so the flip rides the feature PR. It takes a canonical state only, keeps the header's plain or bold form, and drops stale decoration.
 - `spec depth level|wants|check|size`: read and check the header `Depth:` line (`spec-depth.sh`).
 
 **Layout**
