@@ -23,8 +23,8 @@ never rewrites a historical record; it reports discrepancies for the operator.
 |---|---|
 | Item set | `git ls-files 'docs/verification/gauntlet/*/ROUNDS.md' 'docs/verification/gauntlet/*/*-ROUNDS.md' 'docs/verification/gauntlet/*/AB-ROUNDS.md'` (committed records only; a room copy's own ROUNDS is untracked and never enters the set) |
 | Contract | every CLAIM in the record is backed by its committed EVIDENCE: markers well-formed; recorded verdict == committed `checker-output.txt`; findings count reconciles with the rows; scrub clean (no resolved credential VALUE in committed evidence; a bare `op://` pointer is allowed, not a leak); run-dir grammar conforms; a quoted finding string is present in the cited transcript |
-| Evidence class | Tier 1: the committed record files themselves via grep/wc/diff. Tier 2: `kit:audit-scanner` reads a quoted finding against the transcript. Evidence gitignored as a room artifact (transcript pruned) = UNTESTABLE → UNSURE. Transcripts are not in git: unpack the corpus per `docs/verification/gauntlet/CORPUS.md` before Tier 2 |
-| Apply mechanics | REPORT-first: a genuine discrepancy is FLAGGED with a dated correction note appended to the record (never a silent rewrite of the historical claim); UNSURE/DANGER listed in the PR body; REMOVE is disallowed (a record is evidence, not deleted) |
+| Evidence class | Tier 1: the committed record files themselves via grep/wc/diff. Tier 2: `kit:audit-scanner` reads a quoted finding against the transcript. Evidence gitignored as a room artifact (transcript pruned) = `UNSURE (untestable: ...)`. Transcripts are not in git: unpack the corpus per `docs/verification/gauntlet/CORPUS.md` before Tier 2 |
+| Apply mechanics | REPORT-first: a genuine discrepancy is reported as FIX, and a DANGER one also gets a dated correction note appended to the record (never a silent rewrite of the historical claim); UNSURE/DANGER listed in the PR body; REMOVE is disallowed (a record is evidence, not deleted) |
 
 ## Process
 
@@ -59,8 +59,8 @@ never rewrites a historical record; it reports discrepancies for the operator.
      record dated 2026-09 or later (pre-2026-09 dirs are grandfathered per `commands/gauntlet.md`,
      never flagged for the old shape alone).
    A Tier 1 failure is a finding with both sides quoted (the claim, the evidence). A record with
-   no committed `checker-output.txt` for a round it claims a verdict on is UNTESTABLE on that
-   axis, not OK and not a fabrication either: downgrade that axis to UNSURE, evidence quoted as
+   no committed `checker-output.txt` for a round it claims a verdict on is `UNSURE (untestable)` on that
+   axis, not OK and not a fabrication either: evidence quoted as
    "no checker-output.txt committed for round-N".
 
 4. **Tier 2, judgment pass, model-read, only where it earns its cost.** Dispatch `kit:audit-scanner`
@@ -72,15 +72,15 @@ never rewrites a historical record; it reports discrepancies for the operator.
    cannot be fetched, the quote axis is UNSURE with evidence "corpus not unpacked", never OK. Skip Tier 2 for every record Tier 1
    cleared with no quote-matching need; most records never need it.
 
-5. **Verdict each record** with the audit-loop grammar: OK / FLAG / UNSURE / DANGER. **REMOVE is
+5. **Verdict each record** with the audit-loop grammar: OK / FIX / UNSURE / DANGER. **REMOVE is
    never used**: a run record is evidence of what happened, not a doc that can go stale and get
    deleted. A verdict with no checkable evidence downgrades to UNSURE (a pruned/gitignored
    transcript, a room artifact never committed). DANGER is reserved for a record that actively
    misrepresents its own evidence (a claimed GREEN whose checker-output.txt says RED) where an
    operator reading ROUNDS.md at face value would be misled about the artifact's real state; a
-   plain reference leak or an untestable axis is FLAG or UNSURE, not DANGER.
+   plain reference leak is FIX and an untestable axis is `UNSURE (untestable)`, not DANGER.
 
-6. **Apply.** Report-first: every FLAG and UNSURE is listed in the PR body with its quoted
+6. **Apply.** Report-first: every FIX and UNSURE is listed in the PR body with its quoted
    evidence, for the operator to read. Only a DANGER verdict gets a correction note, appended to
    the record (never a rewrite of the original claim): a dated `## Audit correction (YYYY-MM-DD)`
    block naming the discrepancy and citing the contradicting evidence file. The original round
@@ -91,7 +91,7 @@ never rewrites a historical record; it reports discrepancies for the operator.
    it parses as prose (no marker collision with `QL-VERDICT`/`AB-VERDICT`, `lib/gauntlet/stats.sh`
    must still run clean). Run `bash tests/test-meta.sh`: green, or the run is not done.
 
-8. **Ship.** Commit, push, open a PR whose body lists every FLAG/DANGER with its evidence and
+8. **Ship.** Commit, push, open a PR whose body lists every FIX/DANGER with its evidence and
    every UNSURE for the operator. If every record verdicts OK, create no branch and report CLEAN
    with the enumeration list.
 

@@ -54,8 +54,8 @@ assert "row 7: two-direction files-vs-index diff required" $?
 echo ""
 echo "=== AC-4: four-slot verdict grammar with evidence ==="
 
-grep -qE '^[[:space:]]*\| KEEP \|' "$S" && grep -qE '^[[:space:]]*\| MERGE' "$S" && grep -qE '^[[:space:]]*\| STALE \|' "$S" && grep -qE '^[[:space:]]*\| UNSURE \|' "$S"
-assert "row 8: KEEP/MERGE/STALE/UNSURE all present as verdict table cells" $?
+grep -qE '^[[:space:]]*\| OK \(keep\) \|' "$S" && grep -qE '^[[:space:]]*\| REMOVE \(merged into' "$S" && grep -qE '^[[:space:]]*\| REMOVE \(stale\) \|' "$S" && grep -qE '^[[:space:]]*\| UNSURE \|' "$S"
+assert "row 8: OK (keep)/REMOVE (merged into)/REMOVE (stale)/UNSURE all present as verdict table cells" $?
 
 grep -qF 'distinct fact, referents spot-checked alive' "$S"
 assert "row 9: KEEP evidence rule pinned" $?

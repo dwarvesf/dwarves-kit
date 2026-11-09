@@ -148,8 +148,8 @@ means, and it is still the operator who deletes. This instance never issues a de
 
 DANGER never comes from Tier 1. No detector reads a file's content for a policy claim, so
 "this record tells the operator to do something now wrong" is a judgment only the lead can
-make after reading the file, and it must quote the contradiction. UNTESTABLE does not arise
-either: every detector runs against a local checkout the scanner can read, so evidence it
+make after reading the file, and it must quote the contradiction. `UNSURE (untestable)` does not
+arise either: every detector runs against a local checkout the scanner can read, so evidence it
 cannot gather is a scan that failed, not a vantage problem.
 
 ## Process

@@ -43,7 +43,7 @@ Tier 1 is the tool. Its hard fails and warnings map to the audit-loop grammar:
 | hard fail | FIX | the tool's own message carries the "say how"; add the recipe from the reference table below |
 | warning with one obvious fix (missing canonical, missing OG tag, og:image is an SVG, no Organization block, no llms.txt guidance section) | FIX | |
 | warning whose fix depends on intent (meta description length, h1 count, internal-link count, unversioned API base) | UNSURE | someone decided that on purpose or did not; you cannot tell from outside |
-| site unreachable, network error, groundwork fetch that did not answer | UNTESTABLE | the evidence exists but not from where you ran: a WAF block, a transient 503, a DNS hiccup. Re-run from another vantage or at the next cadence. Never REMOVE, never FIX, and NOT UNSURE, which means only the operator can answer and would escalate every flaky 503 to a human forever. |
+| site unreachable, network error, groundwork fetch that did not answer | UNSURE (untestable) | the evidence exists but not from where you ran: a WAF block, a transient 503, a DNS hiccup. Re-run from another vantage or at the next cadence. Never REMOVE, never FIX. Report it in its own group, apart from the UNSURE rows only the operator can answer, so a flaky 503 is not escalated to a human as a question. |
 | tier reports not applicable | not a finding | it drops out of the denominator, the way the rubric excludes a check rather than failing a site it cannot apply to |
 | a declared site is permanently gone (NXDOMAIN or a settled 410) and a successor is named | REMOVE | this removes the entry from the consumer's `WEB_DRIFT_SITES`, never the site. Name the successor; "obviously dead" is not a verdict. |
 | the site actively instructs something now wrong (llms.txt pointing agents at a dead surface, a developer page describing a flow that does not exist) | DANGER | quote the contradiction; an agent will follow it |
@@ -93,7 +93,7 @@ evidence is the saved output, never a memory of it.
    confirm what the response body already says.
 
 5. **Verdict each `(site, check)` pair** with the audit-loop grammar. A verdict with no
-   checkable evidence downgrades to UNSURE. A site that did not answer is UNTESTABLE across
+   checkable evidence downgrades to UNSURE. A site that did not answer is `UNSURE (untestable)` across
    every one of its checks, and the run continues to the next site.
 
 6. **Check the evidence is not stale** before filing anything. Compare when you scanned against
@@ -117,9 +117,9 @@ evidence is the saved output, never a memory of it.
    Once the target repo passes the guard, file one row per FIX, say which repo and why in the
    row's Notes column. Never edit a site from here.
 
-8. **Report.** One table: site, check, verdict, evidence, target repo. List every UNSURE and
-   every UNTESTABLE separately for the operator, plus the state of each row carried in from the
-   last run. If every check came back clean, file no rows and report CLEAN with the enumeration
+8. **Report.** One table: site, check, verdict, evidence, target repo. List every UNSURE for the
+   operator, with the untestable ones in their own group, plus the state of each row carried in
+   from the last run. If every check came back clean, file no rows and report CLEAN with the enumeration
    list.
 
 ## Fix recipes (reference)
@@ -156,7 +156,7 @@ enumeration list.
 
 ## Red flags
 
-- Reporting a finding for a site that did not answer: that is UNTESTABLE, always.
+- Reporting a finding for a site that did not answer: that is `UNSURE (untestable)`, always.
 - Filing rows and never re-auditing them: a loop with no closing evidence cannot fail.
 - Filing a row against the repo that owns the domain when a different repo owns the site's source.
 - Falling back to a local ledger when the target repo has no board. Refuse the run instead: a second, skill-owned source of truth is the same drift class the closing-evidence rule exists to prevent.

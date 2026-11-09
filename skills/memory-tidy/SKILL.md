@@ -26,11 +26,12 @@ This is the judgment half of the kit's memory plane. The mechanical half is `sta
 
    | Verdict | Required evidence |
    |---|---|
-   | KEEP | distinct fact, referents spot-checked alive |
-   | MERGE into `<sibling>` | quote the overlapping claim from both notes |
-   | STALE | concrete reason: referenced path tested and gone, superseded by a NAMED doc/ADR/newer note, the event concluded (PR merged, tool graduated), or the rule now codified verbatim in an always-loaded file (CLAUDE.md) |
+   | OK (keep) | distinct fact, referents spot-checked alive |
+   | REMOVE (merged into `<sibling>`) | quote the overlapping claim from both notes |
+   | REMOVE (stale) | concrete reason: referenced path tested and gone, superseded by a NAMED doc/ADR/newer note, the event concluded (PR merged, tool graduated), or the rule now codified verbatim in an always-loaded file (CLAUDE.md) |
    | UNSURE | what only the operator can answer |
 
+   The verdict is one of the base five in `docs/patterns/audit-loop.md`; the parenthesis is its reason.
    A verdict with no checkable evidence is not actionable: re-check it or downgrade to UNSURE. UNSURE notes are never deleted; list them in the report.
 
 4. **Danger check.** A note whose recommended fix contradicts current policy is worse than stale, someone may follow it. Fold its still-true diagnostics into the policy-carrying note, then delete it, and say so in the PR body.
