@@ -52,6 +52,7 @@ Stdlib only (no external deps) so it runs from a launchd job with no venv.
 from __future__ import annotations
 
 import argparse
+import functools
 import gzip
 import hashlib
 import hmac
@@ -91,6 +92,7 @@ def kit_root_get(dotkey: str, default: str = "") -> str:
     return r.stdout.strip() if r.returncode == 0 else default
 
 
+@functools.lru_cache(maxsize=1)
 def host_id() -> str:
     """[session_report] host_id, else the local short hostname. The worker registers the id
     it expects, so an operator who reports to a worker sets the key."""
@@ -115,9 +117,13 @@ def secret(env_name: str, cmd_key: str) -> str | None:
         argv = shlex.split(cmd)
         argv[0] = os.path.expanduser(argv[0])
         r = subprocess.run(argv, capture_output=True, text=True, timeout=30)
-    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError) as e:
+        print(f"session-report: {cmd_key} could not run: {e.__class__.__name__}", file=sys.stderr)
         return None
-    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+    if r.returncode != 0:
+        print(f"session-report: {cmd_key} exited {r.returncode}", file=sys.stderr)
+        return None
+    return r.stdout.strip() or None
 
 
 # ----------------------------------------------------------------- distill

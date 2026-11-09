@@ -78,7 +78,7 @@ done < <(grep -nE "$name_re" "${name_files[@]}" 2>/dev/null || true)
 # DENY check. The pattern is assembled from halves so this file is not its own hit.
 deny_re="h""an-ws|tie""ubao|ops-""toolkit|op://""Toolkit"
 deny_scan() {
-  command -v python3 >/dev/null 2>&1 || { flag "deny check needs python3"; return; }
+  command -v python3 >/dev/null 2>&1 || { echo "needs python3 on PATH"; return 1; }
   python3 - "$ROOT" "$SELF/boundary-lint.sh" "$deny_re" <<'PY'
 import ast, os, re, sys
 
@@ -132,10 +132,16 @@ for dirpath, dirs, files in os.walk(root):
                 print(f"{os.path.relpath(path, root)}:{n}: {line.strip()[:160]}")
 PY
 }
-while IFS= read -r hit; do
-  [ -n "$hit" ] || continue
-  flag "operator identity in code: $hit"
-done < <(deny_scan)
+# Captured, not piped through process substitution: a failed scan (no python3, a crash) must
+# fail the lint, and a substitution's exit status is lost.
+if deny_out="$(deny_scan)"; then
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    flag "operator identity in code: $hit"
+  done <<< "$deny_out"
+else
+  flag "deny check could not run: $deny_out"
+fi
 
 [ "$fail" = 0 ] && echo "boundary-lint: PASS"
 exit "$fail"

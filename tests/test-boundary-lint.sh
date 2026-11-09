@@ -97,5 +97,15 @@ assert "code after a docstring is still scanned" "$([ "$RC" -ne 0 ] && printf '%
 rm -rf "$FX"
 
 echo ""
+echo "=== AC6: a deny scan that cannot run fails the lint (review finding: it once printed PASS) ==="
+FX="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$FX/lib" "$FX/bin"
+for t in dirname grep find; do ln -s "$(command -v $t)" "$FX/bin/$t"; done
+OUT="$(PATH="$FX/bin" "$BASH" "$LINT" "$FX" 2>&1)"; RC=$?
+assert "no python3 on PATH exits non-zero (rc=$RC)" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)" "$OUT"
+assert "no python3 on PATH says the check could not run" "$(printf '%s' "$OUT" | grep -q 'deny check could not run' && echo 0 || echo 1)" "$OUT"
+rm -rf "$FX"
+
+echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]

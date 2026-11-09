@@ -163,6 +163,12 @@ got="$(printf '%s' '{"files":1}' | OPDIR="$T/op" sr "$BIN" --dry-run 2>/dev/null
 got="$(printf '%s' '{"files":1}' | OPDIR="$T/none" sr "$BIN" --dry-run 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['X-Host-Id'])")"
 [[ "$got" == "$(hostname -s)" ]] && ok "host_id defaults to the short hostname" || no "default host_id: $got"
 
+echo "[11] a failing token command reports itself and degrades, no crash"
+printf '#!/bin/sh\nexit 3\n' > "$T/badtok"; chmod +x "$T/badtok"
+printf '[session_report]\nurl = "http://127.0.0.1:1"\nhb_token_cmd = "%s"\n' "$T/badtok" > "$T/op/kit.toml"
+out="$(OPDIR="$T/op" sr "$BIN" 2>&1 </dev/null)" && rc=0 || rc=$?
+[[ $rc -eq 2 ]] && grep -q 'hb_token_cmd exited 3' <<<"$out" && ok "failing command named, exit 2" || no "rc=$rc out=$out"
+
 echo
 if [[ $fail -gt 0 ]]; then echo "vps-report: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "vps-report: all $pass passed"
