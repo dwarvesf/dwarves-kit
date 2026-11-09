@@ -121,7 +121,7 @@ orca_plan() {  # dir
       [ "$checked" = 0 ] || continue
       [ -n "$(_orca_map_task "$dir" "$sg" work)" ] && continue
       line=$(_sg_line "$roadmap" "$sg")
-      deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+      deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true)
       depjson=""; sep=""; local missing=0
       for d in $deps; do
         [ "$(_subgoals "$roadmap" | awk -F'\t' -v i="$d" '$1==i{print $3}')" = 1 ] && continue
@@ -311,7 +311,7 @@ _orca_dispatch() {  # dir rows
       [ "$ok" = 1 ] || continue
     fi
     line=$(_sg_line "$roadmap" "$sg")
-    deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+    deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true)
     base=""
     for dep in $deps; do base=$(_sg_branch "$(_goalfile "$dir" "$dep")" "$dep"); done
     branch=$(_sg_branch "$gf" "$sg")
@@ -488,7 +488,7 @@ _orca_preflight_files() {  # dir
     [ "$h" = claude ] || { echo "orchestrate: Harness: '$h' in $gf is not supported under --backend orca (claude only)" >&2; return 64; }
     _route "$gf" >/dev/null || return 64
     line=$(_sg_line "$roadmap" "$sg")
-    n=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' | wc -l | tr -d ' ')
+    n=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" | wc -l | tr -d ' ')
     [ "$n" -le 1 ] || { echo "orchestrate: $sg has $n SG dependencies; --backend orca supports one (no merge step without PRs)" >&2; return 64; }
   done < <(_subgoals "$roadmap")
   return 0
@@ -518,7 +518,7 @@ orca_run() {  # dir dry
     while IFS=$'\t' read -r sg policy checked; do
       [ "$checked" = 0 ] || continue
       line=$(_sg_line "$dir/ROADMAP.md" "$sg")
-      _say "  task $sg ($policy) deps: $(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' | tr '\n' ' ')"
+      _say "  task $sg ($policy) deps: $(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" | tr '\n' ' ')"
       case "$policy" in gate|'gate!') _say "  task $sg:accept (never dispatched)" ;; esac
     done < <(_subgoals "$dir/ROADMAP.md")
     return 0

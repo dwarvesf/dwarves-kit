@@ -21,9 +21,23 @@ none -> an honest all-"-" row (never a guess). --rid-map "SG=rid,SG=rid" overrid
 """
 
 import argparse
+import importlib.util
 import os
 import re
 import sys
+
+_SELF_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load_box():
+    """Import lib/mega/box.py: the box and id grammar is declared once, in lib/mega/box.tsv."""
+    spec = importlib.util.spec_from_file_location("mega_box", os.path.join(_SELF_DIR, "box.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+_BOX = _load_box()
 
 # Column order mirrors the WORKFLOW lane x phase matrix; "validate" is the ledger's
 # short name for spec-validate (both appear in live corpora, fold them together).
@@ -47,20 +61,40 @@ LEGEND = ("gr grill · th think · de design · dc design-critique · sp spec ·
           "sv spec-validate · dr design-record · tp test-plan · bu build · "
           "re review · do docs · sh ship · rf reflect")
 
-SUBGOAL_RE = re.compile(r"^- \[(x| )\] (\d+[A-Za-z]?)-([a-z0-9-]+)")
+# Open and done boxes only: a parked sub-goal never ran, so it has no row in the telemetry matrix.
+SUBGOAL_RE = re.compile("^" + _BOX.box_re("open", "done", group=True) + " (" + _BOX.id_re() + ")")
+SG_RE = re.compile(r"SG-(\d+)$")
 PR_RE = re.compile(r"PR #(\d+)")
 SHA_RE = re.compile(r"merged ([0-9a-f]{7,40})")
 SPEC_RE = re.compile(r"SPEC-(\d+)")
 TOKENS_RE = re.compile(r"in=(\d+) out=(\d+)")
 
 
+def split_id(sub_id, line, mega_dir):
+    """(num, name) of a sub-goal id. `NN-slug` splits on the first dash. `SG-NN` has no slug, so the name is its goal
+    file's slug (goals/NN-<slug>.md), else the first words of the title, else `sg`; never empty."""
+    m = SG_RE.match(sub_id)
+    if not m:
+        num, name = sub_id.split("-", 1)
+        return num, name
+    num = m.group(1)
+    import glob as _g
+    for gf in sorted(_g.glob(os.path.join(mega_dir, "goals", num + "-*.md"))):
+        return num, os.path.basename(gf)[len(num) + 1:-len(".md")]
+    title = line.split(sub_id, 1)[1].split(" , ")[0]
+    words = re.findall(r"[a-z0-9]+", title.lower())[:4]
+    return num, "-".join(words) or "sg"
+
+
 def parse_roadmap(path):
     subgoals = []
+    mega_dir = os.path.dirname(os.path.abspath(path))
     for line in open(path, encoding="utf-8"):
         m = SUBGOAL_RE.match(line)
         if not m:
             continue
-        checked, num, name = m.group(1) == "x", m.group(2), m.group(3)
+        checked = _BOX.name_of(m.group(1)) == "done"
+        num, name = split_id(m.group(2), line, mega_dir)
         pr = PR_RE.search(line)
         sha = SHA_RE.search(line)
         subgoals.append({

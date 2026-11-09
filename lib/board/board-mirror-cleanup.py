@@ -65,14 +65,38 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-ACTIVE_TARGET = {
-    "queued": "triage",
-    "claimed": "ready",
-    "speccing": "ready",
-    "validated": "ready",
-    "executing": "ready",
-    "parked": "blocked",
-}
+# The row-state -> card-state map is declared once, in lib/board/native-map.tsv; board-mirror.sh reads the
+# same file (`_target_native`). A state with no line there is not mirrored.
+NATIVE_MAP_FILE = Path(__file__).resolve().parent / "native-map.tsv"
+
+
+def load_native_map(path=NATIVE_MAP_FILE):
+    """state -> native card state, in file order."""
+    out = {}
+    for line in Path(path).read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        state, native = line.split("\t")[:2]
+        out[state] = native
+    if not out:
+        raise SystemExit(f"FATAL: {path} has no rows")
+    return out
+
+
+ACTIVE_TARGET = load_native_map()
+
+
+def _load_box():
+    """Import lib/mega/box.py: the ROADMAP box grammar is declared once, in lib/mega/box.tsv."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("mega_box", Path(__file__).resolve().parent.parent / "mega" / "box.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# A mega is active while it has an open box; a parked box is not work anyone will pick up.
+OPEN_BOX_RE = re.compile("^" + _load_box().box_re("open"), re.M)
 ID_RE = re.compile(r"^\|\s*([A-Z]+-[0-9]+)\s*\|")
 ORIGIN_RE = re.compile(r"^origin:\s*(\S+)", re.M)
 
@@ -165,7 +189,7 @@ def load_sources(registry, source):
                 rf = d / "ROADMAP.md"
                 if rf.is_file():
                     t = rf.read_text()
-                    megas[d.name] = len(re.findall(r"^- \[ \]", t, re.M)) > 0
+                    megas[d.name] = OPEN_BOX_RE.search(t) is not None
         repos[name] = {
             "rows": parse_rows(text),
             "archive": parse_rows(archive.read_text()) if archive.is_file() else {},

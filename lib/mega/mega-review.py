@@ -66,9 +66,20 @@ def _load_proof_table_gen():
 
 _PTG = _load_proof_table_gen()
 
-_SUBGOAL_LINE_RE = re.compile(r"^- \[(.)\] ([0-9]+-[A-Za-z0-9_-]+)(.*)$")
+
+def _load_box():
+    """Import lib/mega/box.py: the box and id grammar is declared once, in lib/mega/box.tsv."""
+    spec = importlib.util.spec_from_file_location("mega_box", os.path.join(_SELF_DIR, "box.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+_BOX = _load_box()
+
+_SUBGOAL_LINE_RE = re.compile("^" + _BOX.box_re(group=True) + " (" + _BOX.id_re() + ")(.*)$")
 _STATUS_LINE_RE = re.compile(
-    r"^\s*\S\s+(?P<sub>[0-9]+-[A-Za-z0-9_-]+)\s+"
+    r"^\s*\S\s+(?P<sub>" + _BOX.id_re() + r")\s+"
     r"(?P<label>OK|CLAIM-UNVERIFIED|MERGED-UNCHECKED|STALLED|WIP|PENDING|INFO)(?P<extra>.*)$"
 )
 
@@ -476,7 +487,7 @@ def render_html(slug, roadmap_rows, truth_map, kit_log_dir, code_root, footer):
         body.append(
             '<div class="banner">No sub-goal lines found in this mega\'s ROADMAP.md. '
             "Nothing to compose -- this is not an error, the mega may not exist yet or its "
-            "ROADMAP grammar does not match the documented `- [ ] NN-slug ...` shape.</div>"
+            "ROADMAP grammar does not match the sub-goal line shape declared in lib/mega/box.tsv.</div>"
         )
     else:
         for box, sub_slug, prose in roadmap_rows:

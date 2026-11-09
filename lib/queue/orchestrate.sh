@@ -127,6 +127,12 @@ ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$ORCH_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 BACKLOG_LIB="${BACKLOG_LIB:-$LIB_ROOT/board/backlog.sh}"
 
+# The ROADMAP box and id grammar is declared once, in lib/mega/box.tsv. The driver walks open and done
+# boxes of SG-NN sub-goals only: a parked box is not done and is never auto-picked, so it is never listed.
+# shellcheck source=../mega/box.sh
+. "$LIB_ROOT/mega/box.sh" || exit 1
+_SG_BOX_RE="$(box_re open done)"
+
 # Multi-vendor dispatch adapter: vendor -> headless argv + prompt-delivery mode.
 # SOURCED, unlike dispatch-gate.sh which must be a subprocess because its `set -euo` would leak `-e`
 # into this driver's deliberate `set -uo` posture. harness.sh is `set -uo` too, so it composes
@@ -363,14 +369,12 @@ _unlock() {  # lockdir
 # under `set -o pipefail`.
 _subgoals() {
   local roadmap="$1"
-  grep -E '^- \[[ xX]\] SG-[0-9]+' "$roadmap" 2>/dev/null | while IFS= read -r line; do
+  grep -E "^${_SG_BOX_RE} ${BOX_SG_RE}" "$roadmap" 2>/dev/null | while IFS= read -r line; do
     local id policy checked=0
-    id=$(printf '%s' "$line" | grep -oE 'SG-[0-9]+' | head -1)
+    id=$(printf '%s' "$line" | grep -oE "$BOX_SG_RE" | head -1)
     [ -n "$id" ] || continue
     policy=$(printf '%s' "$line" | awk -F',' '{for(i=1;i<=NF;i++){f=$i; gsub(/^[ \t]+|[ \t]+$/,"",f); lf=tolower(f); if(lf=="auto"||lf=="gate"||lf=="gate!"){print lf; exit}}}')
-    case "$line" in
-      '- ['[xX]']'*) checked=1 ;;
-    esac
+    box_line_is done "$line" && checked=1
     printf '%s\t%s\t%s\n' "$id" "${policy:-gate}" "$checked"
   done || true
 }
@@ -486,18 +490,18 @@ _event_status() {  # dir id
 }
 
 # Raw ROADMAP line for a sub-goal id (or empty).
-_sg_line() { grep -E "^- \[[ xX]\] $2 " "$1" 2>/dev/null | head -1; }
+_sg_line() { grep -E "^${_SG_BOX_RE} $2 " "$1" 2>/dev/null | head -1; }
 
 # Human title from a ROADMAP line: text after "SG-NN " up to the first " , " policy separator.
 _sg_title() {  # raw-line id
-  printf '%s' "$1" | sed -E "s/^- \[[ xX]\] $2 //; s/ , .*$//" | cut -c1-60
+  printf '%s' "$1" | sed -E "s/^${_SG_BOX_RE} $2 //; s/ , .*$//" | cut -c1-60
 }
 
 # Blocking deps: SG-NN tokens in the line's `depends ...` tail that are NOT yet checked (space-
 # separated, empty if none). Non-SG deps (e.g. #81 = a prerequisite PR) are out of board scope.
 _sg_deps_blocked() {  # roadmap raw-line
   local roadmap="$1" line="$2" deps d blockers=""
-  deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+  deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true)
   for d in $deps; do
     _subgoals "$roadmap" | awk -F'\t' -v i="$d" '$1==i && $3==1{f=1} END{exit !f}' || blockers="$blockers $d"
   done
@@ -514,7 +518,7 @@ _sg_dependents() {  # roadmap id
   while IFS=$'\t' read -r other _p _c; do
     [ "$other" = "$id" ] && continue
     line=$(_sg_line "$roadmap" "$other")
-    deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+    deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true)
     for d in $deps; do
       [ "$d" = "$id" ] && return 0
     done
@@ -881,7 +885,7 @@ _build_prompt() {
   # root that only wrote plain still feeds forward). A sub-goal with NO deps takes the ORIGINAL
   # plain path below UNCHANGED (byte-identical) -- do not fold the two together.
   local roadmap="$dir/ROADMAP.md" mydeps=""
-  [ -f "$roadmap" ] && mydeps=$(printf '%s' "$(_sg_line "$roadmap" "$id")" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+  [ -f "$roadmap" ] && mydeps=$(printf '%s' "$(_sg_line "$roadmap" "$id")" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true)
   if [ -n "$mydeps" ]; then
     local mm hp lines
     printf '\nHOT HANDOFF from dep-parent(s) (verify before trusting):\n'
@@ -948,13 +952,13 @@ cmd_flip() {  # megadir id
   # Re-read the line UNDER the lock: a sibling flip may have checked it since the pre-lock probe.
   local line rc=0
   line=$(_sg_line "$roadmap" "$id")
-  case "$line" in
-    '- ['[xX]']'*) _unlock "$lockdir"; return 0 ;;   # already checked -> idempotent no-op
-  esac
+  box_line_is done "$line" && { _unlock "$lockdir"; return 0; }   # already checked -> idempotent no-op
 
   local tmp
   tmp=$(mktemp "$megadir/.roadmap.flip.XXXXXX" 2>/dev/null) || { _unlock "$lockdir"; echo "flip: mktemp failed" >&2; return 1; }
-  if awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$roadmap" > "$tmp" && mv -f "$tmp" "$roadmap"; then
+  if awk -v id="$id" -v otok="$(box_token open)" -v dtok="$(box_token done)" \
+       '{ pre = "- " otok " "; if (index($0, pre id " ") == 1) $0 = "- " dtok " " substr($0, length(pre) + 1); print }' \
+       "$roadmap" > "$tmp" && mv -f "$tmp" "$roadmap"; then
     _emit_event "$megadir" "$id" flip "box checked"
   else
     rc=1
@@ -2803,19 +2807,16 @@ cmd_run() {
       rview=$(_roadmap_remote_view "$dir" "$roadmap")
       if [ -n "$rview" ]; then
         rline=$(_sg_line "$rview" "$id")
-        case "$rline" in
-          '- ['[xX]']'*)
-            if printf '%s' "$rline" | grep -qE 'PR #[0-9]+'; then
-              checked=1
-              _say "[orchestrate] [reconcile] $id box is checked on origin with $(printf '%s' "$rline" | grep -oE 'PR #[0-9]+' | head -1); accepting the merged-PR flip."
-              # Mirror the merged flip into the LOCAL ROADMAP when the fast-forward could not run
-              # (dirty tree). Without it `_next` re-picks this same sub-goal every cycle and the loop
-              # spins forever. This writes the ONE box line the remote already carries, through the
-              # same locked idempotent flip the loop uses -- it is a reconcile, never a claim, and it
-              # never force-pulls anything else out of the operator's working tree.
-              [ "$rview" = "$roadmap" ] || cmd_flip "$dir" "$id" >/dev/null 2>&1 || true
-            fi ;;
-        esac
+        if box_line_is done "$rline" && printf '%s' "$rline" | grep -qE 'PR #[0-9]+'; then
+          checked=1
+          _say "[orchestrate] [reconcile] $id box is checked on origin with $(printf '%s' "$rline" | grep -oE 'PR #[0-9]+' | head -1); accepting the merged-PR flip."
+          # Mirror the merged flip into the LOCAL ROADMAP when the fast-forward could not run
+          # (dirty tree). Without it `_next` re-picks this same sub-goal every cycle and the loop
+          # spins forever. This writes the ONE box line the remote already carries, through the
+          # same locked idempotent flip the loop uses -- it is a reconcile, never a claim, and it
+          # never force-pulls anything else out of the operator's working tree.
+          [ "$rview" = "$roadmap" ] || cmd_flip "$dir" "$id" >/dev/null 2>&1 || true
+        fi
         [ "$rview" = "$roadmap" ] || rm -f "$rview"
       fi
     fi

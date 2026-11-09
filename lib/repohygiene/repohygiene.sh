@@ -53,6 +53,10 @@ usage() { sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'; }
 
 die() { echo "repohygiene: $*" >&2; exit 2; }
 
+# The ROADMAP box sets (open, parked, done) are declared once, in lib/mega/box.tsv.
+# shellcheck source=../mega/box.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../mega/box.sh" || exit 2
+
 # stat(1) is not portable: BSD wants -f %m, GNU wants -c %Y. Probe ONCE and remember which.
 # Chaining the two forms with || is wrong, not merely ugly: GNU `stat -f` means
 # --file-system, so it prints a seven-line filesystem report to stdout AND exits 1, and the
@@ -379,7 +383,8 @@ mg_state() {
 }
 
 # Every checkbox anywhere in a mega-goal folder, one `<file>:<line>` per line. `unchecked`
-# counts `- [ ]` and the `- [~]` in-progress form the estate writes; `checked` counts `- [x]`.
+# counts the open and parked boxes (`- [ ]`, and the `- [~]` in-progress form the estate writes); `checked`
+# counts the done boxes. Both sets come from lib/mega/box.tsv.
 #
 # A box counts only where a checklist actually puts one: at the start of a line, of a
 # blockquote, or of a table cell, on a bullet OR a number. That anchor is what keeps PROSE
@@ -450,9 +455,9 @@ detect_misplaced_record() {
           continue
         fi
 
-        unchecked=$(mg_boxes "$slug" '[:space:]~-')
+        unchecked=$(mg_boxes "$slug" "$(box_chars open parked)")
         n_un=$(printf '%s' "$unchecked" | grep -c .)
-        n_ok=$(mg_boxes "$slug" 'xX' | grep -c .)
+        n_ok=$(mg_boxes "$slug" "$(box_chars done)" | grep -c .)
         first_un=$(printf '%s\n' "$unchecked" | head -1)
 
         if [ "$n_un" -gt 0 ]; then

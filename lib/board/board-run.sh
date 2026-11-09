@@ -58,6 +58,10 @@ ORCHESTRATE_SH="${ORCHESTRATE_SH:-$RUN_DIR/../queue/orchestrate.sh}"
 
 usage() { sed -n '2,60p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
+# The ROADMAP box and id grammar is declared once, in lib/mega/box.tsv.
+# shellcheck source=../mega/box.sh
+. "$RUN_DIR/../mega/box.sh" || exit 1
+
 # _repo_root_for <path-to-backlog-md> -- git top-level containing the file, else
 # the board's parent when it is a _meta/ dir, else the board's own dir.
 _repo_root_for() {
@@ -187,7 +191,7 @@ main() {
 
 ## Sub-goals
 
-- [ ] SG-01 $sg_title , auto
+- $(box_token open) SG-01 $sg_title , auto
 EOF
   _write_once "$dir/POINTER_PROMPT.md" <<EOF
 Objective: $item

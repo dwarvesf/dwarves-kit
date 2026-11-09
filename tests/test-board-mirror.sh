@@ -93,7 +93,7 @@ cat > "$FIXR/_meta/megagoals/mymega/ROADMAP.md" <<'ROADMAP_ACTIVE'
 # Mega-goal: My Test Mega
 
 - [x] 01-thing done, merged
-- [ ] 02-thing pending, PR held awaiting review
+- [ ] 02-thing pending, `gate`, PR #12 awaiting review
 ROADMAP_ACTIVE
 
 REGISTRY="$TMPDIR_T/boards.txt"
@@ -159,11 +159,11 @@ assert "extract-rows emits exactly the 6 bridgeable rows (001-006), not 8" \
   "$([ "$(printf '%s\n' "$ROWS" | grep -c . )" -eq 6 ] && echo 0 || echo 1)"
 
 echo ""
-echo "=== AC3: extract-megas -- active detection, progress, held flag, inactive-skip ==="
+echo "=== AC3: extract-megas -- active detection, progress, structured held flag, inactive-skip ==="
 MEGAS="$(bash "$BOARD_MIRROR" extract-megas "$FIXR" fixR)"
 assert "the active mega (1 unchecked box) is emitted" "$({ trap '' PIPE; printf '%s\n' "$MEGAS" 2>/dev/null || :; } | grep -q 'megagoals:fixR/mymega' && echo 0 || echo 1)"
 assert "progress reads 1/2 (one checked, one unchecked)" "$({ trap '' PIPE; printf '%s\n' "$MEGAS" 2>/dev/null || :; } | grep -q 'progress 1/2' && echo 0 || echo 1)"
-assert "the held-PR text signal is surfaced" "$({ trap '' PIPE; printf '%s\n' "$MEGAS" 2>/dev/null || :; } | grep -qi 'held-PR flag set' && echo 0 || echo 1)"
+assert "an open gate sub-goal that names its PR is flagged held" "$({ trap '' PIPE; printf '%s\n' "$MEGAS" 2>/dev/null || :; } | grep -qi 'held-PR flag set' && echo 0 || echo 1)"
 assert "mega target_native is ready" "$(printf '%s\n' "$MEGAS" | awk -F'\t' '{print $7}' | grep -qx ready && echo 0 || echo 1)"
 # A fully-checked (inactive) roadmap in a second mega dir must NOT be emitted.
 mkdir -p "$FIXR/_meta/megagoals/donemega"
@@ -176,6 +176,26 @@ ROADMAP_DONE
 MEGAS2="$(bash "$BOARD_MIRROR" extract-megas "$FIXR" fixR)"
 assert "a fully-checked (inactive) mega is NOT emitted" "$({ trap '' PIPE; printf '%s\n' "$MEGAS2" 2>/dev/null || :; } | grep -q 'donemega' && echo 1 || echo 0)"
 rm -rf "$FIXR/_meta/megagoals/donemega"
+
+# The flag reads what the writers record, never prose: "withheld" and "held" in free text must not trip it.
+held_for() { # <slug> <roadmap-body> [events-body]
+  mkdir -p "$FIXR/_meta/megagoals/$1/.orchestrate"
+  printf '# Mega-goal: Held Probe\n\n%s\n' "$2" > "$FIXR/_meta/megagoals/$1/ROADMAP.md"
+  [ -n "${3:-}" ] && printf '%s\n' "$3" > "$FIXR/_meta/megagoals/$1/.orchestrate/events.log"
+  bash "$BOARD_MIRROR" extract-megas "$FIXR" fixR | awk -F'\t' -v o="megagoals:fixR/$1" '$1 == o' | grep -c 'held-PR flag set' || true
+  rm -rf "$FIXR/_meta/megagoals/$1"
+}
+assert "prose containing 'withheld' is not flagged" "$([ "$(held_for hp1 '- [ ] 01-a, auto, the payload was withheld pending review')" = 0 ] && echo 0 || echo 1)"
+assert "prose containing 'held' on an auto line with a PR is not flagged" "$([ "$(held_for hp2 '- [ ] 01-a, `auto`, PR #4 held by a reviewer note')" = 0 ] && echo 0 || echo 1)"
+assert "an open gate line with no PR is not flagged" "$([ "$(held_for hp3 '- [ ] 01-a, gate, not run yet')" = 0 ] && echo 0 || echo 1)"
+assert "a done gate line with a PR is not flagged" "$([ "$(held_for hp4 "$(printf -- '- [x] 01-a, gate, PR #4\n- [ ] 02-b, auto')")" = 0 ] && echo 0 || echo 1)"
+assert "gate! with a PR is flagged" "$([ "$(held_for hp5 '- [ ] SG-01 a , gate! , PR #4')" = 1 ] && echo 0 || echo 1)"
+EV_HELD="$(printf '2026-11-09T10:00:00Z\tclose\theld\tfinal gate')"
+assert "a close held event from the orchestrator is flagged" "$([ "$(held_for hp6 '- [ ] SG-01 a , auto' "$EV_HELD")" = 1 ] && echo 0 || echo 1)"
+EV_WAIT="$(printf '2026-11-09T10:00:00Z\tSG-01\tblocked\tgate: awaiting human merge (https://x/pull/4)')"
+assert "a gate hold awaiting human merge is flagged" "$([ "$(held_for hp7 '- [ ] SG-01 a , gate' "$EV_WAIT")" = 1 ] && echo 0 || echo 1)"
+EV_DONE="$(printf '%s\n%s' "$EV_WAIT" "$(printf '2026-11-09T11:00:00Z\tSG-01\tshipped\tbox checked')")"
+assert "a later shipped event clears the hold flag" "$([ "$(held_for hp8 '- [ ] SG-01 a , gate' "$EV_DONE")" = 0 ] && echo 0 || echo 1)"
 
 echo ""
 echo "=== AC4: first-ever mirror run (empty prior snapshot) plans one CREATE per opted-in row ==="
