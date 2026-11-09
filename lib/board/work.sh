@@ -5,8 +5,8 @@
 # Joins five sources at call time and stores nothing: the board rows (parse-board.sh), the
 # mega sub-goal files, git (branches and worktrees), `orca worktree ps` (terminal state) and
 # the run ledger (rung reached). Read-only: no ledger write, no board flip, no orca verb other
-# than `worktree ps`, no network. It sources only lib/telemetry/kit-log-dir.sh (pure on load)
-# and re-implements the one-line `runid`, because gate-ledger.sh and ledger.sh copy files on
+# than `worktree ps`, no network. It sources only lib/telemetry/kit-log-dir.sh and lib/mega/box.sh
+# (both pure on load) and re-implements the one-line `runid`, because gate-ledger.sh and ledger.sh copy files on
 # load (kit_migrate_log_dir); tests/test-board-work.sh pins the copy against the real one.
 #
 # Usage: work.sh [--json] [--idle-min N] [--since DAYS] [--code-root D] [--megagoals-root D] [--now EPOCH]
@@ -32,6 +32,8 @@ GIT_BIN="${GIT_BIN:-git}"
 
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "board work: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/mega/box.sh
+source "$LIB_ROOT/mega/box.sh" || { echo "board work: lib/mega/box.sh missing or unreadable" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "board work: jq is required" >&2; exit 1; }
 
 # Same rule as gate-ledger.sh runid(); runid_lines is the same chain over a stream of lines.
@@ -125,8 +127,8 @@ src_drafts() {
   paste "$T/drafts.raw" "$T/drafts.norm" | jq -Rn '[inputs | split("\t") | {id: .[0], slug: .[1], norm: .[2]}]' > "$T/drafts.json"
 }
 
-# src_mega: one JSON line per unchecked roadmap sub-goal, with its goal file's first Branch token.
-# A legacy NN-slug id must start its slug with a letter, so a date-led line is not a sub-goal.
+# src_mega: one JSON line per open roadmap sub-goal (lib/mega/box.tsv: both id forms), with its goal file's first
+# Branch token. A legacy NN-slug id must start its slug with a letter, so a date-led line is not a sub-goal.
 # A mega branch that is also a board row's branch lists twice (once per origin); both rows are true.
 src_mega() {
   local rm mslug id gf f branch
@@ -144,7 +146,7 @@ src_mega() {
       branch=""
       [ -n "$gf" ] && branch="$(grep -m1 -E '^\*\*Branch:\*\* ' "$gf" 2>/dev/null | sed -E 's/^\*\*Branch:\*\* *//' | awk '{print $1}')"
       jq -cn --arg item "$mslug/$id" --arg b "$branch" '{item: $item, branch: (if $b == "" then null else $b end)}' >> "$T/mega.json"
-    done < <(awk 'match($0, /^- \[ \] (SG-[0-9]+|[0-9]+-[A-Za-z][A-Za-z0-9_-]*)/) { print substr($0, 7, RLENGTH - 6) }' "$rm")
+    done < <(SUBGOAL_RE="^$(box_re open) $BOX_ID_RE" awk 'match($0, ENVIRON["SUBGOAL_RE"]) { print substr($0, 7, RLENGTH - 6) }' "$rm")
   done
 }
 

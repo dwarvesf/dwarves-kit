@@ -120,5 +120,46 @@ got="$(bash "$BL" states extra-arg | paste -sd ' ' -)"; rc=$?
 bash "$BL" states --class bogus >/dev/null 2>&1; rc=$?
 [ "$rc" = 64 ] && pass "states --class bogus exits 64" || fail "states --class bogus rc=$rc"
 
+# ---- 8. the row-to-card map is declared once (native-map.tsv); the mirror and the cleanup derive from it ----
+NM="$KIT_DIR/lib/board/native-map.tsv"
+nm_rows() { awk -F'\t' '!/^#/ && NF' "$NM"; }
+known_states=" $want_all "
+bad="$(nm_rows | awk -F'\t' -v known="$known_states" '
+  NF != 2 { print $0 ": " NF " fields"; next }
+  index(known, " " $1 " ") == 0 { print $1 ": not a state in states.tsv" }
+  $2 !~ /^(triage|ready|blocked)$/ { print $1 ": native " $2 " is not CLI-reachable" }
+  seen[$1]++ { print $1 ": declared twice" }')"
+[ -z "$bad" ] && pass "native-map.tsv rows are well-formed and name declared states" || fail "native-map.tsv malformed: $bad"
+
+mirror_map="$(for s in $want_all bogus; do printf '%s=%s\n' "$s" "$(bash -c 'source "$1"; _target_native "$2"' _ "$KIT_DIR/lib/board/board-mirror.sh" "$s")"; done)"
+want_map="$(for s in $want_all bogus; do printf '%s=%s\n' "$s" "$(nm_rows | awk -F'\t' -v s="$s" '$1 == s { print $2 }')"; done)"
+[ "$mirror_map" = "$want_map" ] && pass "board-mirror _target_native = native-map.tsv" || fail "mirror map differs:
+$mirror_map"
+
+cl="$(python3 - "$KIT_DIR" <<'PY'
+import importlib.util, sys
+s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/board/board-mirror-cleanup.py")
+m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+print("\n".join(f"{k}={v}" for k, v in m.ACTIVE_TARGET.items()))
+PY
+)"
+[ "$cl" = "$(nm_rows | awk -F'\t' '{ print $1 "=" $2 }')" ] && pass "board-mirror-cleanup ACTIVE_TARGET = native-map.tsv" || fail "cleanup map differs: $cl"
+
+mkdir -p "$TMP/kit2/lib"; cp -R "$KIT_DIR/lib/board" "$KIT_DIR/lib/mega" "$TMP/kit2/lib/"
+printf 'reviewing\tready\n' >> "$TMP/kit2/lib/board/native-map.tsv"
+got="$(bash -c 'source "$1"; _target_native reviewing' _ "$TMP/kit2/lib/board/board-mirror.sh")"
+gotpy="$(python3 -c '
+import importlib.util, sys
+s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/board/board-mirror-cleanup.py")
+m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+print(m.ACTIVE_TARGET.get("reviewing"))' "$TMP/kit2")"
+[ "$got" = ready ] && [ "$gotpy" = ready ] && pass "an added map row reaches bash and python with no other edit" || fail "added map row not derived: bash=$got py=$gotpy"
+
+nm_copies="$(cd "$KIT_DIR" && grep -rnIE 'queued.*triage' lib hooks bin 2>/dev/null | grep -v '\.md:' | grep -v '/tests/' | grep -v '\.tsv:' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(#|//)')"
+[ -z "$nm_copies" ] && pass "no code file hardcodes the row-to-card map" || fail "hardcoded map, derive it from native-map.tsv instead:
+$nm_copies"
+printf 'M = {"queued": "triage"}\n' > "$TMP/plant.py"
+[ -n "$(grep -E 'queued.*triage' "$TMP/plant.py")" ] && pass "map copy detector catches a planted copy" || fail "map copy detector missed a planted copy"
+
 [ "$FAILED" -eq 0 ] && { echo "All board-states tests passed."; exit 0; }
 echo "$FAILED board-states test(s) failed."; exit 1

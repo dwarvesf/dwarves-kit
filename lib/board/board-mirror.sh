@@ -116,6 +116,10 @@ set -euo pipefail
 
 BM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARSE_BOARD_SH="$BM_DIR/parse-board.sh"
+NATIVE_MAP="$BM_DIR/native-map.tsv"
+[ -r "$NATIVE_MAP" ] || { echo "FATAL: $NATIVE_MAP missing or unreadable" >&2; exit 1; }
+# shellcheck source=../mega/box.sh
+. "$BM_DIR/../mega/box.sh" || exit 1
 [ -f "$PARSE_BOARD_SH" ] || { echo "board-mirror: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$PARSE_BOARD_SH"
@@ -190,18 +194,12 @@ _row_hash() {
   printf '%s\x1f%s\x1f%s\x1f%s\x1f%s' "$1" "$2" "$3" "$4" "$5" | _sha256_hex
 }
 
-# _target_native <git-status-lead-keyword> -- the STATE MAPPING (see spec Design block for the
-# full rationale table). Empty output = "not extracted at all" (shipped/dropped/unrecognized).
+# _target_native <git-status-lead-keyword> -- the STATE MAPPING, read from lib/board/native-map.tsv
+# (see spec Design block for the full rationale table). Empty output = "not extracted at all"
+# (shipped/dropped/unrecognized: no line in the table). claimed, speccing and executing map to
+# `ready`: the would-be `todo`/`running` are unreachable synthetically, see header.
 _target_native() {
-  case "$1" in
-    queued)    printf 'triage\n' ;;
-    claimed)   printf 'ready\n' ;;   # would-be "todo"; unreachable synthetically, see header
-    speccing)  printf 'ready\n' ;;   # would-be "running"; unreachable synthetically, see header
-    validated) printf 'ready\n' ;;
-    executing) printf 'ready\n' ;;   # would-be "running"; unreachable synthetically, see header
-    parked)    printf 'blocked\n' ;;
-    *)         printf '\n' ;;        # shipped, dropped, or an unrecognized status: excluded
-  esac
+  awk -F'\t' -v s="$1" '!/^#/ && NF >= 2 && $1 == s { print $2; found = 1; exit } END { if (!found) print "" }' "$NATIVE_MAP"
 }
 
 # ---------------------------------------------------------------------------
@@ -256,22 +254,46 @@ extract_rows() {
 # <repo-root>/_meta/megagoals/*/ROADMAP.md. Convention (no fixed schema exists for this file, so
 # this is a documented judgment call, not a parsed spec):
 #   title      = the text after the first "# Mega-goal: " line; falls back to the slug.
-#   active     = the roadmap has at least one "- [ ]" (unchecked) sub-goal checkbox. A roadmap
-#                with zero checkboxes (unrecognized shape) or 100% checked (fully shipped) is
-#                NOT active and is skipped here -- a fully-shipped mega heals through the same
+#   active     = the roadmap has at least one open box ("- [ ]") sub-goal. A roadmap with zero boxes
+#                (unrecognized shape), only done boxes (fully shipped), or only parked boxes is NOT
+#                active and is skipped here -- a fully-shipped mega heals through the same
 #                DISAPPEARED-row -> done+origin-removed path as any other vanished row, so no
 #                special-case completion logic is needed for "the mega just finished".
-#   progress   = "<checked>/<total>" sub-goal checkboxes ("- [x]" vs "- [ ]"), per the sub-goal
-#                contract's "flipped-checkbox count".
-#   held flag  = a case-insensitive "held" substring anywhere in the file (best-effort text
-#                signal for a PR sitting blocked on human review; ROADMAP.md has no structured
-#                field for this, so this is a note, not a parsed status).
+#                The boxes come from lib/mega/box.tsv (read through lib/mega/box.sh).
+#   progress   = "<done>/<total>" boxes per the sub-goal contract's "flipped-checkbox count"; the
+#                total counts every box, parked included (a parked box is not done).
+#   held flag  = a PR sits blocked on a human, read from what the writers record, never from prose
+#                (a bare "held" substring also matched "withheld"): the orchestrator's
+#                .orchestrate/events.log (a `held` event, or a `blocked` event "awaiting human merge"
+#                that no later event for the same id superseded), or an open `gate`/`gate!`
+#                sub-goal line that names its `PR #<n>` (lib/queue/orchestrate.sh holds a gate
+#                sub-goal on exactly that: box open, PR opened, human merges).
 #   status/target_native = "active" / "ready" always (the same running->ready fallback used for
 #                git's speccing/executing; there is no live Hermes worker actually executing a
 #                mega, so "ready" is the honest nearest reachable state).
 # ---------------------------------------------------------------------------
+# _mega_held <roadmap-file> -- exit 0 when the mega has a PR waiting on a human (see "held flag" above).
+_mega_held() {
+  local rf="$1" ev
+  ev="$(dirname "$rf")/.orchestrate/events.log"
+  if [ -f "$ev" ] && awk -F'\t' '
+      { s[$2] = $3; n[$2] = $4 }
+      END { for (id in s) if (s[id] == "held" || (s[id] == "blocked" && n[id] ~ /awaiting human merge/)) found = 1; exit !found }
+    ' "$ev"; then
+    return 0
+  fi
+  ORE="$(box_re open)" awk '
+    BEGIN { ore = ENVIRON["ORE"] }
+    $0 ~ ("^" ore) && /PR #[0-9]+/ {
+      k = split($0, f, ",")
+      for (i = 1; i <= k; i++) { p = f[i]; gsub(/^[ \t`]+|[ \t`]+$/, "", p); p = tolower(p); if (p == "gate" || p == "gate!") found = 1 }
+    }
+    END { exit !found }
+  ' "$rf"
+}
+
 extract_megas() {
-  local root="$1" repo="$2" mg_root dir slug rf title checked unchecked total held notes origin hash
+  local root="$1" repo="$2" mg_root dir slug rf title checked unchecked parked total held notes origin hash
   mg_root="$root/_meta/megagoals"
   [ -d "$mg_root" ] || return 0
   for dir in "$mg_root"/*/; do
@@ -281,13 +303,14 @@ extract_megas() {
     [ -f "$rf" ] || continue
     title="$(grep -m1 '^# Mega-goal:' "$rf" 2>/dev/null | sed -E 's/^# Mega-goal:[ \t]*//')" || true
     [ -n "$title" ] || title="$slug"
-    checked="$(grep -cE '^- \[[xX]\]' "$rf" 2>/dev/null)" || checked=0
-    unchecked="$(grep -cE '^- \[ \]' "$rf" 2>/dev/null)" || unchecked=0
-    total=$((checked + unchecked))
+    checked="$(grep -cE "^$(box_re done)" "$rf" 2>/dev/null)" || checked=0
+    unchecked="$(grep -cE "^$(box_re open)" "$rf" 2>/dev/null)" || unchecked=0
+    parked="$(grep -cE "^$(box_re parked)" "$rf" 2>/dev/null)" || parked=0
+    total=$((checked + unchecked + parked))
     [ "$total" -gt 0 ] || continue
     [ "$unchecked" -gt 0 ] || continue
     held="false"
-    grep -qi 'held' "$rf" 2>/dev/null && held="true"
+    _mega_held "$rf" && held="true"
     notes="progress ${checked}/${total}"
     [ "$held" = "true" ] && notes="${notes} | held-PR flag set"
     # CONTENT TRUST: the title comes from a contributor-editable ROADMAP.md `# Mega-goal:` line --

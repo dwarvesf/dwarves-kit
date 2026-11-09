@@ -29,16 +29,15 @@
 # names which side is stale. NOT a live-process monitor (whether a `claude` session is running
 # RIGHT NOW is the runner's own journal/RUNNER_DONE job); this only ever points at git + gh.
 #
-# ROADMAP sub-goal line grammar parsed (documented convention, no fixed schema -- same judgment
-# call `lib/board/board-mirror.sh`'s `extract_megas` already documents for this same file).
-# BOTH id forms are accepted: `SG-NN` is what `/kit:mega` scaffolds today (commands/mega.md),
-# `NN-slug` is the older form every archived roadmap still carries.
+# ROADMAP sub-goal line grammar parsed: the boxes and both id forms are declared once in
+# lib/mega/box.tsv (read through lib/mega/box.sh). `SG-NN` is what `/kit:mega` scaffolds today
+# (commands/mega.md), `NN-slug` is the older form every archived roadmap still carries.
 #   - [x] SG-NN Collapse the module , auto , PR #190 merged cb64f15
 #   - [x] 01-module-collapse (dwarves-kit), <prose>, PR #190 merged cb64f15 (<prose>)
 #   - [ ] 04-install-wire (dwarves-kit), <prose>, PR #
 #   - [~] 09-rehomed (dwarves-kit), rehomed into <other mega> (informational, never flagged)
-# `[x]`/`[X]` = checked, `[ ]` = unchecked, `[~]` = rehomed/superseded (informational only, per
-# DECISIONS.md's own outcome notes -- these are never drift-flagged even when git truth
+# done = checked, open = unchecked, parked (`[~]`, alias `[-]`) = rehomed/superseded (informational
+# only, per DECISIONS.md's own outcome notes -- these are never drift-flagged even when git truth
 # disagrees, because the roadmap is explicitly saying "this box means something else now").
 #
 # Git truth per sub-goal (gathered against --code-root, the repo the sub-goal's OWN branches/
@@ -128,6 +127,9 @@
 
 set -uo pipefail
 
+# shellcheck source=./box.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/box.sh" || exit 1
+
 GH_BIN="${GH_BIN:-gh}"
 GIT_BIN="${GIT_BIN:-git}"
 
@@ -206,17 +208,17 @@ _open_pr_for() {
   printf '%s' "$out" | jq -r --arg b "$branch" '.[] | select(.headRefName == $b) | .number' 2>/dev/null | head -n1
 }
 
-# _classify <box> <prnum> <prstate> <commit-count> <open-pr> -- one of:
+# _classify <box-name: open|done|parked> <prnum> <prstate> <commit-count> <open-pr> -- one of:
 #   ok | claim-unverified | merged-unchecked | stalled | wip | pending | info
 _classify() {
   local box="$1" prnum="$2" prstate="$3" commits="$4" openpr="$5"
   case "$box" in
-    x|X)
+    done)
       if [ -n "$prnum" ] && [ "$prstate" = "MERGED" ]; then echo "ok"
       else echo "claim-unverified"
       fi
       ;;
-    '~')
+    parked)
       echo "info"
       ;;
     *)
@@ -278,17 +280,17 @@ cmd_status() {
   local roadmap="$mroot/$slug/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "mega status: no ROADMAP.md at $roadmap" >&2; return 1; }
 
-  local total=0 ok_count=0 drift_count=0
+  local total=0 ok_count=0 drift_count=0 box_any
+  box_any="$(box_re)"
   local -a detail_lines=()
 
   while IFS= read -r line; do
-    # Two grammars are live. The current one `/kit:mega` scaffolds is `SG-NN <title>`
-    # (commands/mega.md, and orchestrate.sh's own `_subgoals`); the older `NN-slug` form
-    # is still in every archived roadmap. Matching only the old one made this auditor
-    # silently find ZERO rows in a current roadmap and report nothing wrong, which is the
+    # Both id forms are live (SG-NN, NN-slug; lib/mega/box.tsv). Matching only the old one made this
+    # auditor silently find ZERO rows in a current roadmap and report nothing wrong, which is the
     # worst failure available to a reconciler: a checker that cannot see its input passes.
-    [[ "$line" =~ ^-\ \[(.)\]\ (SG-[0-9]+|[0-9]+-[A-Za-z0-9_-]+) ]] || continue
-    local box="${BASH_REMATCH[1]}" sub="${BASH_REMATCH[2]}"
+    [[ "$line" =~ ^${box_any}\ ${BOX_ID_RE} ]] || continue
+    local sub="${BASH_REMATCH[1]}" boxname
+    boxname="$(box_name "${line:3:1}")"
     total=$((total + 1))
 
     local prnum="" sha=""
@@ -307,7 +309,7 @@ cmd_status() {
       openpr="$(_open_pr_for "$branch")"
     fi
 
-    local cls; cls="$(_classify "$box" "$prnum" "$prstate" "$commits" "$openpr")"
+    local cls; cls="$(_classify "$boxname" "$prnum" "$prstate" "$commits" "$openpr")"
     case "$cls" in
       ok) ok_count=$((ok_count + 1)) ;;
       claim-unverified|merged-unchecked|stalled) drift_count=$((drift_count + 1)) ;;
@@ -319,7 +321,7 @@ cmd_status() {
     [ -n "$commits" ] && extra="${extra} commits=${commits}"
     [ -n "$openpr" ] && extra="${extra} open-PR#${openpr}"
     detail_lines+=("$(printf '  %s %-28s %s%s' "$(_symbol "$cls")" "$sub" "$(_label "$cls")" "$extra")")
-  done < <(grep -E '^- \[.\] ' "$roadmap")
+  done < <(cat "$roadmap")
 
   [ "$total" -gt 0 ] || { echo "mega status: no sub-goal lines found in $roadmap" >&2; return 1; }
 
@@ -398,7 +400,7 @@ cmd_runs() {
   python3 "$self_dir/runs-dashboard.py" "$@"
 }
 
-usage() { sed -n '2,119p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,118p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"

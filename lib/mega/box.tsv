@@ -1,0 +1,21 @@
+# Mega ROADMAP sub-goal line: the one declaration of the box and id grammar (same shape as lib/board/states.tsv).
+# A sub-goal line is `- <box> <id> ...`, for example `- [ ] SG-03 Title , auto , depends SG-02` or `- [x] 03-slug (repo), prose, PR #9`.
+# Every reader derives from this file: bash through lib/mega/box.sh, Python through lib/mega/box.py.
+# tests/test-mega-box.sh fails when a reader hardcodes the grammar again.
+#
+# Columns are TAB-separated: kind, name, token, class, aliases.
+#   kind box  a checkbox. `token` is the canonical form a writer stamps; `aliases` are legacy forms every reader also accepts
+#             (space-separated, `-` for none). Stored ROADMAPs keep their alias forms; a writer only ever writes the token.
+#   kind id   a sub-goal id as an ERE. A reader that accepts "any sub-goal" ORs every id row; a reader tied to one id form
+#             (the orchestrator drives SG-NN only: its goal file, branch and `depends` tokens are SG-based) names the row.
+#   class     active    open work a runner may pick up
+#             hold      parked on purpose: counts as not done, is never auto-picked, never makes a mega "active"
+#             terminal  done
+#   id rows carry `-` for class and aliases.
+# A box token is exactly `[` + one character + `]`; the character must not be one of `] ^ \`.
+# Order matters: it is the order of `box.sh machine`.
+box	open	[ ]	active	-
+box	done	[x]	terminal	[X]
+box	parked	[~]	hold	[-]
+id	sg	SG-[0-9]+	-	-
+id	slug	[0-9]+[A-Za-z]?-[A-Za-z][A-Za-z0-9_-]*	-	-

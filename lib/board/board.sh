@@ -266,6 +266,8 @@ BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
 BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
+# shellcheck source=../mega/box.sh
+. "$(dirname "$MEGA_SH")/box.sh" || exit 1
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
 [ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
@@ -311,7 +313,7 @@ _parse_flags() {
 }
 
 # _mega_rollups <repo-root> <code-root> -- one `mega status <slug> --rollup-only` line per
-# ACTIVE mega under <repo-root>/_meta/megagoals/*/ROADMAP.md (>=1 unchecked sub-goal box, same
+# ACTIVE mega under <repo-root>/_meta/megagoals/*/ROADMAP.md (>=1 open sub-goal box, same
 # activeness convention lib/board/board-mirror.sh's own extract_megas already uses). Silent no-op
 # (empty output) when there is no megagoals dir, no mega.sh, or a mega's status call errors --
 # this is an OPT-IN surfacing feature (--with-mega), never a hard requirement of board render.
@@ -325,7 +327,7 @@ _mega_rollups() {  # <repo-root> <code-root>
     slug="$(basename "$dir")"
     rf="$dir/ROADMAP.md"
     [ -f "$rf" ] || continue
-    grep -qE '^- \[ \]' "$rf" 2>/dev/null || continue   # skip fully-shipped / non-checkbox megas
+    grep -qE "^$(box_re open)" "$rf" 2>/dev/null || continue   # skip fully-shipped / parked-only / non-checkbox megas
     out="$(bash "$MEGA_SH" status "$slug" --megagoals-root "$mg_root" --code-root "$code_root" --rollup-only 2>/dev/null)" || true
     [ -n "$out" ] && printf '  %s\n' "$out"
   done

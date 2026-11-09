@@ -12,12 +12,12 @@
 #   tools/*/docs/megagoals/*/ docs/megagoals/*/
 #
 # Sub-goal progress is counted from the "## Sub-goals" and "## Status"
-# sections only: every line carrying a `- [ ]` or `- [x]` token counts,
-# whether it is a top-level checklist bullet or embedded inside a markdown
-# table's Status cell (both real-world ROADMAP shapes use the same checkbox
-# literal, so one grep handles both without a table parser). A `- [x]`
-# outside those two sections (e.g. an "## Imported history" bullet) is not
-# counted.
+# sections only: every line carrying a box token (open, done or parked, as
+# declared in lib/mega/box.tsv) counts, whether it is a top-level checklist
+# bullet or embedded inside a markdown table's Status cell (both real-world
+# ROADMAP shapes use the same checkbox literal, so one pattern handles both
+# without a table parser). A box outside those two sections (e.g. an
+# "## Imported history" bullet) is not counted.
 #
 # Why both sections: some real ROADMAPs (e.g. ops-toolkit's
 # herdr-quicklook/megagoals/*) track completion under a
@@ -37,7 +37,7 @@
 #                  cwd, else cwd itself)
 #     --limit N    max mega-goal lines to print before collapsing the rest
 #                  to "+N more" (default: 5; 0 means unlimited)
-#     --all        also print fully-done mega-goals (done == total > 0),
+#     --all        also print mega-goals with no open box left (all done, or only parked),
 #                  which are hidden by default
 #
 #   One line per mega-goal, sorted by path:
@@ -48,6 +48,9 @@
 #   done-filter, unless --all).
 set -uo pipefail
 shopt -s nullglob
+
+# shellcheck source=../mega/box.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../mega/box.sh" || exit 1
 
 usage() { sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
@@ -73,16 +76,22 @@ find_roadmaps() { # <repo>
     \) -print 2>/dev/null | sort
 }
 
-# done/total sub-goals, counted from the "## Sub-goals" section only.
-# Prints "<done> <total>" on one line.
+# done/total/active sub-goals, counted from the "## Sub-goals" and "## Status" sections only.
+# Prints "<done> <total> <active>" on one line. The boxes come from lib/mega/box.tsv: total counts
+# every box, done counts the done class, active counts the open class. A parked box is in the total
+# (it is not done) and never in active (it is not work a runner would pick up).
 count_subgoals() { # <roadmap-file>
-  awk '
+  local dre ore pre
+  dre="$(box_re done)"; ore="$(box_re open)"; pre="$(box_re parked)"
+  DRE="$dre" ORE="$ore" PRE="$pre" awk '
+    BEGIN { dre = ENVIRON["DRE"]; ore = ENVIRON["ORE"]; pre = ENVIRON["PRE"] }
     /^## Sub-goals/ { insec=1; next }
     /^## Status/    { insec=1; next }
     insec && /^## / { insec=0 }
-    insec && /- \[x\]/ { done++; total++; next }
-    insec && /- \[ \]/ { total++; next }
-    END { printf "%d %d\n", done+0, total+0 }
+    insec && $0 ~ dre { done++; total++; next }
+    insec && $0 ~ ore { active++; total++; next }
+    insec && $0 ~ pre { total++; next }
+    END { printf "%d %d %d\n", done+0, total+0, active+0 }
   ' "$1"
 }
 
@@ -108,15 +117,15 @@ cmd_list() {
     [ -n "$f" ] && files+=("$f")
   done < <(find_roadmaps "$repo")
 
-  local rows=() dir slug dn tot handoff pointer
+  local rows=() dir slug dn tot act handoff pointer
   for f in "${files[@]}"; do
     dir="$(dirname "$f")"
     slug="$(basename "$dir")"
-    read -r dn tot < <(count_subgoals "$f")
+    read -r dn tot act < <(count_subgoals "$f")
     if [ "$tot" -eq 0 ]; then
       [ "$all" -eq 1 ] || continue
-    elif [ "$all" -eq 0 ] && [ "$dn" -eq "$tot" ]; then
-      continue   # fully done, hidden unless --all
+    elif [ "$all" -eq 0 ] && [ "$act" -eq 0 ]; then
+      continue   # no open box left (done, or only parked), hidden unless --all
     fi
     handoff="no"; [ -f "$dir/HANDOFF.md" ] && handoff="yes"
     pointer="-"; [ -f "$dir/POINTER_PROMPT.md" ] && pointer="${dir#"$repo"/}/POINTER_PROMPT.md"
