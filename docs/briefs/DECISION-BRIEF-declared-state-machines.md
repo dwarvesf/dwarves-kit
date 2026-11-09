@@ -124,8 +124,8 @@ Every row was found by four read-only scouts and spot-checked in code. "Enforced
 |---|---|---|
 | 1 (SPEC-417) | board row | the hub: 7 writers, 6 copies, both languages |
 | 2 | spec `Status:` | 5 readers disagree on "live"; no writer script exists. Shipped in #1106 |
-| 3 | gate phase + lane | `check()` on stale `ran`; three lane sources |
-| 4 | queue verdict + mega box | two readers, two terminal sets; six box parsers |
+| 3 | gate phase + lane | `check()` on stale `ran`; three lane sources. Shipped in #1114, #1116, #1124 |
+| 4 | queue verdict + mega box | two readers, two terminal sets; six box parsers. Shipped in #1105, #1122, #1125 |
 
 Each later phase reuses the phase 1 shape: a `states.tsv` beside the writer, a `machine` verb, a copy-detector test. The second and third instances decide whether a shared loader earns its place.
 
@@ -151,9 +151,23 @@ A cleanup pass followed phase 1. Each PR removed a duplicate spelling or a secon
 - Staging headers
 - The mutation marker that `break-it` reads
 
-**Open for the operator.**
-- The debt verdict `wave` rename needs a ledger migration.
-- NEEDS-REVISION is stored as `rejected` from the latest-state change on; older ledgers keep `skipped`.
-- The override share is 34% against the 15% alert.
-- Gate `check()` decides on each phase's latest GATE row (fixed); a later `skipped` or `rejected` undoes an earlier `ran`.
-- No writer sets SHIPPED on specs.
+## Second pass
+
+The operator settled the open items, and a second batch removed the next layer of duplicates and real bugs.
+
+| PR | What shipped |
+|---|---|
+| #1112 | `spec-status.sh set`; `/kit:ship` writes `Status: SHIPPED` in the feature PR |
+| #1113 | Debt verdict `wave` becomes `log`, response `wave` becomes `accept`; mega keeps `wave`; readers accept both |
+| #1114 | `check()` decides on each phase's latest GATE row; NEEDS-REVISION writes `rejected` |
+| #1116 | Override rows carry `via=hand\|plan\|batch\|inherit\|lane-lower`; the alert counts hand overrides on required phases only |
+| #1121 | `release` dry-run keeps edits and checks the tag first; `promote --force` aborts on a failed backup; rejected drafts never re-stage; prose `PASS` no longer greens a proof |
+| #1122 | ROADMAP box grammar declared once in `lib/mega/box.tsv` for every reader; `mega review` sees SG-NN roadmaps; "held" reads recorded markers only |
+| #1123 | One wrap merge-proof ladder; callers branch on its code |
+| #1124 | One effective-lane resolver; the ship check takes the stricter of spec header and ledger lane; plain `start` validates the lane |
+| #1125 | SG-NN rows get a branch signal; a parked-only mega lists as `(parked)` |
+
+**Still open, each needs its own design.**
+- Prose-held counters (gauntlet rounds, greenlight retries, the onboard step) live only in agent context.
+- `stalled` and `blocked` carry several meanings across queue and mega.
+- The validate round machine is correct but hand-coded; a declared table would cost more than it saves today.
