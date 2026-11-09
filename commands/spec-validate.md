@@ -147,17 +147,17 @@ Spec: [spec name]
 ## Passed
 - [things that look solid]
 
-## Verdict: APPROVED / NEEDS REVISION
+## Verdict: APPROVED / NEEDS-REVISION
 ```
 
-If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made. Fold the criticals only: the warnings go to `docs/implementation-notes/<slug>.md` for the builder, so the spec grows by no more than a critical requires.
+If NEEDS-REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made. Fold the criticals only: the warnings go to `docs/implementation-notes/<slug>.md` for the builder, so the spec grows by no more than a critical requires.
 
-If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of the advisory reviewers' outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
+If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS-REVISION regardless of the advisory reviewers' outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
 
 After the verdict, record it for lane telemetry, one line. On APPROVED only:
 `bash lib/gate/gate-ledger.sh record <rid> Validate ran "APPROVED critical=0 warnings=<K>"`.
-On NEEDS REVISION: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS REVISION: <criticals>"`, which the full lane's ship-gate refuses and `/kit:execute`'s preflight does not count. A direct run's note carries no `fresh agent=`; that marker is the lead's, for a fresh-context validator, so an audit can tell the two apart.
-Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS REVISION, else false>`.
+On NEEDS-REVISION: `bash lib/gate/gate-ledger.sh record <rid> Validate skipped "NEEDS-REVISION: <criticals>"`, which the full lane's ship-gate refuses and `/kit:execute`'s preflight does not count. A direct run's note carries no `fresh agent=`; that marker is the lead's, for a fresh-context validator, so an audit can tell the two apart.
+Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS-REVISION, else false>`.
 
 Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point
 for that row, per WORKFLOW.md "## The understanding axis"), so record it by its own name too:

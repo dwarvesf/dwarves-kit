@@ -1403,8 +1403,10 @@ _vr_load() {
 
 # Normalize a ledger line for plan comparison: drop the field-1 timestamp and
 # mask the volatile at=/dur_s= fields, so only the semantic content compares.
+# A GATE line written before the hyphen spelling reads `NEEDS REVISION:`; fold it
+# so a half-written round from an older kit still resumes.
 _vr_norm() {
-  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g'
+  printf '%s' "$1" | sed -E 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z \| //; s/at=[0-9]+/at=E/g; s/dur_s=[0-9]+/dur_s=D/g; s/\| NEEDS REVISION: /| NEEDS-REVISION: /'
 }
 
 # Print one foreign ledger line to stderr with a `  foreign: ` prefix, control
@@ -1531,14 +1533,14 @@ _vr_close_records() {
     )
   elif [ "$r6crit" = 1 ]; then
     planned=(
-      "GATE | validate | skipped | NEEDS REVISION: $summary"
+      "GATE | validate | skipped | NEEDS-REVISION: $summary"
       "OUTCOME | validate | end | at=E caught=true dur_s=D"
       "GATE | design-record | skipped | $r6rest"
       "OUTCOME | design-record | end | at=E caught=true dur_s=D"
     )
   else
     planned=(
-      "GATE | validate | skipped | NEEDS REVISION: $summary"
+      "GATE | validate | skipped | NEEDS-REVISION: $summary"
       "OUTCOME | validate | end | at=E caught=true dur_s=D"
       "GATE | design-record | ran | $r6"
       "OUTCOME | design-record | end | at=E caught=false dur_s=D"
@@ -1551,7 +1553,7 @@ _vr_close_records() {
     _vr_w "$f" "$clnr" GATE design-record ran     record "$rid" design-record ran "$r6"
     _vr_w "$f" "$clnr" OUTCOME design-record end  outcome "$rid" design-record end caught="$caught_dr"
   else
-    _vr_w "$f" "$clnr" GATE validate skipped      record "$rid" Validate skipped "NEEDS REVISION: $summary"
+    _vr_w "$f" "$clnr" GATE validate skipped      record "$rid" Validate skipped "NEEDS-REVISION: $summary"
     _vr_w "$f" "$clnr" OUTCOME validate end       outcome "$rid" Validate end caught=true
     if [ "$r6crit" = 1 ]; then
       _vr_w "$f" "$clnr" GATE design-record skipped  record "$rid" design-record skipped "$r6rest"
