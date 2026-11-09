@@ -106,6 +106,7 @@ is_exempt() {  # is_exempt <path> <line-text> <id>
     lib/board/board-run.sh)
       case "$text" in
         *'- [ ] SG-01 '*', auto'*) return 0 ;;
+        *'- $(box_token open) SG-01 '*', auto'*) return 0 ;;
         *'SG-01 box in ROADMAP.md flipped'*) return 0 ;;
       esac
       ;;
