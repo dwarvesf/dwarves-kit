@@ -36,6 +36,9 @@ cat > "$LOGS/runs/feat-01-alpha-widget.log" <<'EOF'
 2026-07-12T01:02:00Z | GATE | build | ran | fixture
 2026-07-12T01:03:00Z | GATE | grill | skipped | home-turf
 2026-07-12T01:04:00Z | GATE | mystery-gate | ran | not-in-vocabulary
+2026-07-12T01:04:10Z | GATE | validate | rejected | NEEDS-REVISION: 1 critical
+2026-07-12T01:04:20Z | GATE | review | rejected | NEEDS-REVISION
+2026-07-12T01:04:30Z | GATE | review | ran | second pass
 2026-07-12T01:05:00Z | TOKENS | in=100 out=200
 EOF
 LEDGER_BEFORE="$(shasum "$LOGS/runs/feat-01-alpha-widget.log")"
@@ -48,6 +51,10 @@ assert_grep "header counts 1/2 built · 1 merged" "(1/2 built · 1 merged)" "$OU
 ROW01="$(grep '^01 ' <<<"$OUT")"
 assert_grep "ran gates render ●" "●" "$ROW01"
 assert_grep "skipped gate renders ○" "○" "$ROW01"
+assert_grep "a rejected gate renders ✗, not the n/a dash" "✗" "$ROW01"
+assert_grep "a rejected gate that was re-recorded ran renders by its latest row" "●" "$ROW01"
+[ "$(grep -o '✗' <<<"$ROW01" | wc -l | tr -d ' ')" = 1 ] && ok "only the still-rejected validate gate is ✗" || bad "✗ count in: $ROW01"
+assert_grep "the legend names ✗ rejected" "✗ rejected" "$OUT"
 assert_grep "auto/gate tag column present" "auto" "$ROW01"
 assert_grep "SPEC comes from the Proof line" "123" "$ROW01"
 assert_nogrep "NC: a body SPEC cross-ref is NOT attributed" "999" "$ROW01"

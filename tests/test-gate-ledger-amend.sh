@@ -57,7 +57,7 @@ gl start --amend --lower --reason "   " lo1 tiny full feature feature r >/dev/nu
 check "--lower with a blank reason: exit 64" '[ "$RC" -eq 64 ] && [ "$(eff lo1)" = full ]'
 gl start --amend --lower --reason "spike turned out docs only" lo1 tiny full feature feature r >/dev/null 2>&1; RC=$?
 check "full -> tiny with --lower --reason: accepted" '[ "$RC" -eq 0 ] && [ "$(eff lo1)" = tiny ]'
-check "an override-style line records from, to and the reason" 'log lo1 | grep -qE "\| GATE \| lane-lower \| override \| full -> tiny: spike turned out docs only$"'
+check "an override-style line records from, to and the reason" 'log lo1 | grep -qE "\| GATE \| lane-lower \| override \| full -> tiny: spike turned out docs only [|] via=lane-lower$"'
 check "the START-AMEND follows the override line (ship-gate keeps reading the last START-AMEND)" '[ "$(log lo1 | tail -1 | cut -d"|" -f2 | tr -d " ")" = START-AMEND ]'
 gl start --amend --reason "why not" --lower lo2 tiny normal feature feature r >/dev/null 2>&1; RC=$?
 check "flags in either order" '[ "$RC" -eq 0 ] && [ "$(eff lo2)" = tiny ]'

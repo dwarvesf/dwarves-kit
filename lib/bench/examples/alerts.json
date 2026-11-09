@@ -1,6 +1,6 @@
 [
-  {"id": "override-rate", "metric": "override_rate", "op": ">", "threshold": 0.15,
-   "severity": "warn", "note": "gates being overridden too often; check reasons in the stream"},
+  {"id": "override-rate", "metric": "hand_override_rate", "op": ">", "threshold": 0.15,
+   "severity": "warn", "note": "required gates being overridden by hand too often; plan, batch, inherit and lane-lower overrides do not count; check reasons in the stream"},
   {"id": "misfire-rate", "metric": "misfire_rate", "op": ">", "threshold": 0.2,
    "severity": "warn", "note": "lane chosen disagrees with classifier too often (feed for keyword fixes)"},
   {"id": "skip-rate", "metric": "skip_rate", "op": ">", "threshold": 0.5,

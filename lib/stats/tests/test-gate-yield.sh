@@ -119,6 +119,25 @@ has "G-yield ui-design: ran=0 skipped=2 caught=0" '"gate": "ui-design",
     "skipped": 2,
     "caught": 0,' "$YIELD"
 
+echo "== G-rejected: a rejected gate has its own column and counts as a catch =="
+REJ="$FIX/rej-logs"; mkdir -p "$REJ/runs"
+{
+  echo "2026-10-01T00:00:00Z | START | lane=full classified=full type=feat repo=rejfix"
+  echo "2026-10-01T00:00:01Z | GATE | validate | rejected | NEEDS-REVISION: 1 critical"
+  echo "2026-10-01T00:00:02Z | GATE | validate | ran | second pass"
+  echo "2026-10-01T00:00:03Z | GATE | docs | ran | written"
+} > "$REJ/runs/rej-one.log"
+REJYIELD="$(DWARVES_KIT_LOG_DIR="$REJ" STATS_DB_REMOVED="$FIX/rej.duckdb" bash -c 'uv run stats rebuild >/dev/null 2>&1; uv run stats gate-yield --json 2>&1')"
+REJ_VAL="$(printf '%s' "$REJYIELD" | python3 -c '
+import json, sys
+for r in json.load(sys.stdin):
+    if r["gate"] == "validate":
+        print(r["ran"], r["rejected"], r["caught"], r["total"]); break
+else:
+    print("MISSING")
+')"
+if [ "$REJ_VAL" = "1 1 1 2" ]; then ok "G-rejected validate: ran=1 rejected=1 caught=1 total=2"; else bad "G-rejected validate -> want '1 1 1 2', got '$REJ_VAL'"; fi
+
 echo "== F-nc: FALSE-POSITIVE negative control (load-bearing) =="
 # ui-design has ZERO caught signal anywhere in the fixture (no OUTCOME bracket for it at all)
 # AND is legitimately skipped both times it was recorded. It must be REPORTED with its 2 skips,

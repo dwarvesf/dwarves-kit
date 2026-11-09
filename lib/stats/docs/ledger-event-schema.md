@@ -42,7 +42,7 @@ them are `k=v`; this table states plainly which are and which aren't:
 |---|---|---|---|
 | `START` | `lane=<L> classified=<L> type=<T> [ctype=<T>] repo=<R>` | yes, space-separated | `gate-ledger.sh start` |
 | `START-AMEND` | same as `START` | yes | `gate-ledger.sh start --amend` (a lowering also writes a `GATE`/`lane-lower`/`override` line) |
-| `GATE` | `<phase> \| <ran\|skipped\|override> \| <reason>` | **no**, 3 more pipe-delimited positional fields, not k=v | `gate-ledger.sh record` / `override` |
+| `GATE` | `<phase> \| <ran\|skipped\|rejected\|override> \| <reason> [\| via=<source>]` | **no**, positional pipe-delimited fields; the optional last field is one k=v token (see below) | `gate-ledger.sh record` / `override` |
 | `ACTION` | freeform oneline text | **no**, opaque text | `gate-ledger.sh action` |
 | `TOKENS` | `in=<N> out=<N> cache_read=<N> cache_create=<N> [cost=<N>] [phase=<P>]` | yes, space-separated | `gate-ledger.sh tokens` |
 | `DEBT` | `significance=<low\|high> worthiness=<low\|high> verdict=<tap\|log\|not-significant> [response=<engage\|defer\|accept>] [reason=<text>]` | yes, space-separated (see Edge Cases) | `gate-ledger.sh debt` / `debt-response` |
@@ -76,6 +76,14 @@ $ DWARVES_KIT_LOG_DIR=$(mktemp -d) bash lib/gate-ledger.sh tokens sample-rid in=
 $ DWARVES_KIT_LOG_DIR=$(mktemp -d) bash lib/gate-ledger.sh debt sample-rid significance=high worthiness=high verdict=tap response=defer reason="weekend batch"
 2026-07-03T18:54:29Z | DEBT | significance=high worthiness=high verdict=tap response=defer reason=weekend batch
 ```
+
+**`GATE` writer tag.** An `override` row ends in an optional ` | via=<source>` field naming its
+writer: `hand` (the `override` verb), `plan` (`plan-record`), `batch` (`record-batch`), `inherit`
+(`inherit`), `lane-lower` (`start --amend --lower`). `ran`, `skipped` and `rejected` rows carry none.
+A row written before the field existed has none and reads as `hand`. The reason is field 5 and the
+tag is field 6, so a parser that takes only field 5 never sees it; a parser that joins fields 5 to
+the end (the reason may hold ` | `) strips a trailing ` | via=<[a-z-]+>`. The producer drops a
+`| via=` the caller typed at the end of a reason, so the tag is always the verb's own.
 
 ## Planned markers conform on arrival
 

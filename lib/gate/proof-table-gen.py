@@ -89,6 +89,8 @@ def parse_ledger(ledger_path):
             phase = parts[2]
             state = parts[3]
             reason = " | ".join(parts[4:]) if len(parts) > 4 else ""
+            # An override row ends in a ` | via=<source>` writer tag; it is not part of the reason.
+            reason = re.sub(r" \| via=[a-z-]+$", "", reason)
             gate_rows.append({"ts": ts, "phase": phase, "state": state, "reason": reason})
 
         elif marker == "OUTCOME" and len(parts) >= 4:
@@ -179,7 +181,10 @@ def acceptance_status(kit_root, lane, rid):
 def render(rid, ledger_path, kit_root, lane, gate_rows, outcomes):
     has_outcomes = len(outcomes) > 0
 
-    covered = sorted({r["phase"] for r in gate_rows if r["state"] in ("ran", "override")})
+    # Each phase counts by its LATEST row, the way gate-ledger.sh check() decides: a later
+    # rejected or skipped row uncovers a phase an earlier ran row covered.
+    latest = {r["phase"]: r["state"] for r in gate_rows}
+    covered = sorted(p for p, state in latest.items() if state in ("ran", "override"))
     lane_line = lane if lane else "n/a (no START line for this rid; lane unknown)"
     uncovered = None
     if lane:

@@ -238,15 +238,17 @@ def _detect_ceremony(th: dict) -> Anomaly | None:
     sql = f"""
     WITH gate_agg AS (
         SELECT gate,
-               count(*) FILTER (WHERE outcome IN ('ran', 'override')) AS ran,
-               count(*) FILTER (WHERE outcome IN ('ran', 'override') AND caught) AS caught_true,
-               count(*) FILTER (WHERE outcome IN ('ran', 'override') AND caught IS NOT NULL)
+               count(*) FILTER (WHERE outcome IN ('ran', 'override', 'rejected')) AS ran,
+               count(*) FILTER (WHERE outcome = 'rejected'
+                                OR (outcome IN ('ran', 'override') AND caught)) AS caught_true,
+               count(*) FILTER (WHERE outcome = 'rejected'
+                                OR (outcome IN ('ran', 'override') AND caught IS NOT NULL))
                    AS caught_known
         FROM kit_gates
         GROUP BY gate
     ),
     candidates AS (
-        SELECT DISTINCT gate, rid FROM kit_gates WHERE outcome IN ('ran', 'override')
+        SELECT DISTINCT gate, rid FROM kit_gates WHERE outcome IN ('ran', 'override', 'rejected')
     ),
     mentions AS (
         SELECT DISTINCT c.gate, c.rid, g.sha, g.ts, g.files

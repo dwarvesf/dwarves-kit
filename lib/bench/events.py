@@ -11,6 +11,7 @@ adapter here; nothing downstream changes.
 
 import datetime
 import json
+import re
 import time
 from pathlib import Path
 
@@ -178,6 +179,17 @@ def _merge_order(observed, expected_names):
     return merged
 
 
+_VIA_TAIL = re.compile(r" \| via=([a-z-]+)$")
+
+
+def split_via(reason):
+    """(reason, via) from a GATE row's text after the state. An override row ends in a
+    ` | via=<source>` field naming its writer (hand, plan, batch, inherit, lane-lower); an
+    older row has none. via is None when the row carries no tag."""
+    m = _VIA_TAIL.search(reason)
+    return (reason[:m.start()], m.group(1)) if m else (reason, None)
+
+
 # Ledger GATE state -> viewer status. An unmapped state stays visible as "unknown".
 GATE_STATE = {"ran": "pass", "skipped": "skip", "rejected": "fail", "override": "override"}
 
@@ -226,7 +238,7 @@ def ledger_to_events(path, rid=None, expected=None):
                 timeline.append((_ledger_dt(prev, ts), phase))
                 prev = ts
             last[phase] = status
-            reasons[phase] = reason.strip()
+            reasons[phase] = split_via(reason.strip())[0]
         elif kind == "OUTCOME" and len(parts) == 4 and parts[3].startswith("end"):
             toks = dict(t.partition("=")[::2] for t in parts[3].split() if "=" in t)
             caught = toks.get("caught") == "true"

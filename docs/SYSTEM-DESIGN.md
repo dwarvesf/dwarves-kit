@@ -651,7 +651,7 @@ tables:
     cols: [[ts], [kind, "START | START-AMEND"], [lane], [classified], [type], [ctype, NULL], [repo]]
   - name: GATE line
     at: [1, 0]
-    cols: [[ts], [phase], [status, "ran | skipped | rejected | override"], [reason]]
+    cols: [[ts], [phase], [status, "ran | skipped | rejected | override"], [reason], [via, NULL]]
   - name: OUTCOME line
     at: [2, 0]
     cols: [[ts], [phase], [at, "start | end"], [caught, NULL], [dur_s, NULL], [policy, NULL]]
