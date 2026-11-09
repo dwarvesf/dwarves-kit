@@ -16,4 +16,4 @@ Prose or probes that still say `wave` for the debt meaning: `commands/ship.md`, 
 
 ## Open
 
-The `weekend-debt-paydown` skill in another repo may read the string `disposition: waved` from `collect`. Check it before the lead lands this.
+An outside consumer may read the string `disposition: waved` from `collect` (the `weekend-debt-paydown` skill is named in `lib/reflect`, but I found no copy to check). The lead should confirm before landing.
