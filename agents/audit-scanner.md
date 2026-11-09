@@ -36,7 +36,7 @@ Per item: read the item, test its claims against the evidence class, and verdict
 `OK` / `FIX <how>` / `REMOVE <why, named successor>` / `UNSURE` / `DANGER`, per `docs/patterns/audit-loop.md`. Hard rules:
 
 - A verdict with no checkable evidence downgrades to UNSURE.
-- Evidence you cannot test from where you run (another host, another tenant, missing usage data) is **UNTESTABLE, never REMOVE**.
+- Evidence you cannot test from where you run (another host, another tenant, missing usage data) is `UNSURE (untestable)`, never REMOVE.
 - REMOVE requires a NAMED superseding artifact or a concluded event; "obviously stale" is not a verdict.
 - DANGER quotes the contradiction with current policy verbatim.
 - UNSURE is the operator's; never resolve it yourself.
@@ -55,10 +55,10 @@ Instance: [dispatching skill] | Items judged: [N]/[N]
 
 | Item | Verdict | Severity | Evidence |
 |---|---|---|---|
-| [item] | OK/FIX/REMOVE/UNSURE/DANGER/UNTESTABLE | - or CRITICAL..LOW | [quoted claim vs quoted counter-evidence, file:line] |
+| [item] | OK/FIX/REMOVE/UNSURE/DANGER | - or CRITICAL..LOW | [quoted claim vs quoted counter-evidence, file:line] |
 
 FIX detail: [per FIX item, the how]
-UNSURE/UNTESTABLE: [per item, what only the operator or another vantage can answer]
+UNSURE: [per item, with its reason, e.g. `untestable`: what only the operator or another vantage can answer]
 Out-of-scope notes: [0..n one-liners]
 ```
 

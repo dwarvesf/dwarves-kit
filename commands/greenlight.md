@@ -4,7 +4,7 @@ description: "Post-push CI-green lane: snapshots an open PR's checks via gh, cla
 
 You are driving an already-open PR toward a green, mergeable state. You do not open the PR (`/kit:ship` does that) and you do not do a pre-push code critique (`/kit:review` / `/kit:review-team` do that). You snapshot CI, fix what is really broken, retry what is probably flaky, and stop at an honest terminal state. The human merges.
 
-This is Phase A (the CI-green core). Bot-comment triage (FIX/DISAGREE/DEFER replies, `stop_waiting_review`) is Phase B and is not built by this command; a PR whose only blocker is a pending review or an unresolved comment thread is reported as such, not acted on.
+This is Phase A (the CI-green core). Bot-comment triage (FIX/DISAGREE/DEFER replies) is Phase B and is not built by this command; a PR whose only blocker is a pending review or an unresolved comment thread is reported as such, not acted on.
 
 
 Bracket the phase for timing before the first snapshot: `bash lib/gate/gate-ledger.sh outcome <rid> Greenlight start` (rid = the PR's branch slug).
@@ -94,7 +94,7 @@ Any `gh`/API failure or missing auth encountered anywhere in the loop -- not jus
 | `stop_exhausted_retries` | flaky budget or max-iterations hit, or kit:fix-agent reports it cannot fix a real failure | escalate to the human with the last failure |
 | `stop_error` | `gh`/API failure, missing auth, or an unrecoverable rejected push | surface the error; do not loop on a broken transport |
 
-`stop_waiting_review` (external bot re-review timeout) is Phase B (comment triage) and is not emitted by this command.
+These four are the only terminal states. Phase B adds its own when it is built.
 
 ### Step 9: Report
 

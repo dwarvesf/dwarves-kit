@@ -12,7 +12,7 @@
 #        Tier-2 scanner (general-purpose named as the fallback), and the agent body names
 #        both dispatching instances.
 #   AC3  the audit-loop grammar rules are pinned in the agent body: the verdict grammar,
-#        the no-evidence-downgrades-to-UNSURE rule, the UNTESTABLE-never-REMOVE rule, and
+#        the no-evidence-downgrades-to-UNSURE rule, the UNSURE (untestable)-never-REMOVE rule, and
 #        the never-fixes rule.
 #   NC   NEGATIVE CONTROL: a fixture agent with a write-capable roster (bare `- Bash` +
 #        `- Write`) run through the SAME AC1 extraction trips every roster check, proving
@@ -87,8 +87,10 @@ grep -qE 'OK.*/.*FIX.*/.*REMOVE.*/.*UNSURE.*/.*DANGER|`OK` / `FIX' "$AGENT"
 assert "verdict grammar (OK/FIX/REMOVE/UNSURE/DANGER) present" $?
 grep -q 'no checkable evidence downgrades to UNSURE' "$AGENT"
 assert "no-evidence downgrade rule present" $?
-grep -q 'UNTESTABLE, never REMOVE' "$AGENT"
-assert "UNTESTABLE-never-REMOVE rule present" $?
+grep -qF '`UNSURE (untestable)`, never REMOVE' "$AGENT"
+assert "UNSURE (untestable)-never-REMOVE rule present" $?
+! grep -qE '(/|\*\*)UNTESTABLE' "$AGENT"
+assert "agent output table offers no UNTESTABLE verdict" $?
 grep -q 'Never fix' "$AGENT"
 assert "never-fixes rule present" $?
 grep -q 'docs/patterns/audit-loop.md' "$AGENT"

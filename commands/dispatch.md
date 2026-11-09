@@ -111,9 +111,9 @@ STATUS: READY                 (all tasks verified, branch clean, no cross-task b
 STATUS: BLOCKED -- <one line> (a Pause-if blocker you committed WIP for)
 ```
 
-A worker that returns `STATUS: BLOCKED` is BLOCKED. A worker that ERRORS OUT with a reported failure is **FAILED**: never read silence as READY.
+A worker writes only `STATUS: READY` or `STATUS: BLOCKED`. A worker that returns `STATUS: BLOCKED` is BLOCKED. A worker that ERRORS OUT with a reported failure is **FAILED**: the lead's reading of that failure, never a line the worker writes. Never read silence as READY.
 
-**Silence is neither.** A worker that stops reporting, drops its stream, or exceeds its timeout without a `STATUS:` line is **DISCONNECTED**: an unknown outcome, not a failure. An API drop kills the stream, not the agent, and the agent usually still holds its branch. Treating that as FAILED and re-dispatching is how a resumed agent and its replacement both land on one branch: the incident the memory note `resume-a-dead-subagent-never-respawn-on-its-branch` records.
+**Silence is neither.** A worker that stops reporting, drops its stream, or exceeds its timeout without a `STATUS:` line is **DISCONNECTED**: an unknown outcome, not a failure. DISCONNECTED is only an attempt-state value (`lib/goal/attempt-state.sh`), never a `STATUS:` a worker writes. An API drop kills the stream, not the agent, and the agent usually still holds its branch. Treating that as FAILED and re-dispatching is how a resumed agent and its replacement both land on one branch: the incident the memory note `resume-a-dead-subagent-never-respawn-on-its-branch` records.
 
 Track it instead of guessing:
 
