@@ -1,0 +1,25 @@
+# Proof classes: the one declaration of the class names, their rank, and the stateful words BOTH classifiers share.
+# Readers: lib/gate/proof-classes.sh, sourced by proof-ledger.sh `classify` (reads the branch DIFF, ship time) and
+# proof-gate.sh `class` (reads the TASK TEXT, plan time). tests/test-proof-class-table.sh fails when either types these again.
+#
+# Columns are TAB-separated: kind, value, arg.
+#   class     value = class name; arg = rank (unique integers, low = lighter proof owed: inert < behavioral < stateful)
+#   stateful  value = an ERE that marks work as stateful in BOTH classifiers; arg = a sample task text it matches (the test feeds it to each)
+# Only words both classifiers already shared live here. Each classifier keeps its own input rules and its own extra words
+# (the ledger: /db/ and \bseed\b; the gate: release to, ship to prod, \bdb\b, backfill data, seed, stateful, drops, delete data, incident, triage).
+class	inert	0
+class	behavioral	1
+class	stateful	2
+stateful	deploy	deploy the service
+stateful	rollout	rollout the new flag
+stateful	production	production hotfix
+stateful	migrat	migrate the users store
+stateful	schema	change the schema
+stateful	data[ -]model	new data model
+stateful	database	database upgrade
+stateful	backup	nightly backup job
+stateful	restore	restore the snapshot
+stateful	persistent	persistent queue
+stateful	drop .*(table|column)	drop the old table
+stateful	alter table	alter table users
+stateful	data loss	guard against data loss
