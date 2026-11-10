@@ -4,7 +4,7 @@
 
 | Check | Command | Result |
 |---|---|---|
-| Cadence suite (25 cases, 12 new) | `bash tests/test-audit-cadence.sh` | 25 passed, 0 failed |
+| Cadence suite (29 cases, 16 new) | `bash tests/test-audit-cadence.sh` | 29 passed, 0 failed |
 | Forwarders | `bash tests/test-bin-forwarders.sh` | all 48 passed |
 | Gauntlet proof audit | `bash tests/test-gauntlet-proof-audit.sh` | 17/17 passed |
 | Scanner contract | `bash tests/test-audit-scanner-contract.sh` | 16 / 16 passed |
@@ -17,13 +17,15 @@
 Command: bash tests/test-audit-cadence.sh
 Exit: 0
 Output:
-== NC: start refuses an undeclared instance and writes nothing ==
-  ok: audit start refuses an undeclared instance
-  ok: no started line appended
+== NC: ran refuses the bare note 'started' (it would read as a start) ==
+  ok: ran with note 'started' exits 64
+  ok: message is one line naming bin/audit start
+  ok: no line appended
+  ok: a longer note that begins with started is still accepted
 == NC: an unknown verb refuses ==
   ok: audit sweep exits non-zero
 
-test-audit-cadence: 25 passed, 0 failed
+test-audit-cadence: 29 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -61,6 +63,8 @@ Verdict: PASS
 
 ## Negative control
 
+Reserved-note guard, test-first: with the new cases and no guard, the suite ran 26 passed, 3 failed (`ran doc-drift started` exited 0 and appended a line). With the guard, 29 passed, 0 failed.
+
 Test-first: before the change, the new section of `tests/test-audit-cadence.sh` ran 21 passed, 4 failed (`start` was an unknown verb, so no instance read `running` or `abandoned`).
 
 After the commit, two reintroductions of the old behavior, each restored with `git checkout -- lib/audit/audit.sh`:
@@ -89,4 +93,4 @@ Verdict: PASS (the control went red)
 
 ## Rollback
 
-The only stored change is new `started` lines in the append-only `audit-runs.log`. No existing line is rewritten. Reverting the commit leaves those lines in place; the old reader then counts them as a ran, so revert and delete the `started` lines together if a clean state is needed.
+`ran` now refuses the exact note `started` (exit 64). The only stored change is new `started` lines in the append-only `audit-runs.log`. No existing line is rewritten. Reverting the commit leaves those lines in place; the old reader then counts them as a ran, so revert and delete the `started` lines together if a clean state is needed.

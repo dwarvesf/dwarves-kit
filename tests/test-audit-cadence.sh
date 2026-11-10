@@ -127,6 +127,16 @@ after="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
 assert_true "audit start refuses an undeclared instance" "$([ "$rc" != "0" ]; echo $?)"
 assert_true "no started line appended" "$([ "$before" = "$after" ]; echo $?)"
 
+echo "== NC: ran refuses the bare note 'started' (it would read as a start) =="
+before="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
+msg="$(bash "$AUDIT" ran doc-drift started 2>&1 >/dev/null)"; rc=$?
+after="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
+assert_true "ran with note 'started' exits 64" "$([ "$rc" = "64" ]; echo $?)"
+assert_true "message is one line naming bin/audit start" "$([ "$(printf '%s\n' "$msg" | wc -l | tr -d ' ')" = "1" ] && echo "$msg" | grep -F 'bin/audit start' >/dev/null; echo $?)"
+assert_true "no line appended" "$([ "$before" = "$after" ]; echo $?)"
+bash "$AUDIT" ran doc-drift "started the pass, finished" >/dev/null 2>&1; rc=$?
+assert_true "a longer note that begins with started is still accepted" "$([ "$rc" = "0" ]; echo $?)"
+
 echo "== NC: an unknown verb refuses =="
 bash "$AUDIT" sweep >/dev/null 2>&1; rc=$?
 assert_true "audit sweep exits non-zero" "$([ "$rc" != "0" ]; echo $?)"

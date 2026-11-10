@@ -117,6 +117,8 @@ require_declared() { # <verb> <instance>
 cmd_ran() {
   local instance="${1:-}"; shift || true
   [ -n "$instance" ] || { echo "audit ran: usage: audit ran <instance> [note]" >&2; return 64; }
+  # A bare `started` note would read back as a start marker; the pass-begin write is `start`.
+  [ "${*:-}" != "started" ] || { echo "audit ran: note 'started' is reserved; use bin/audit start $instance" >&2; return 64; }
   require_declared ran "$instance" || return 1
   local now iso
   now="$(date +%s)"
