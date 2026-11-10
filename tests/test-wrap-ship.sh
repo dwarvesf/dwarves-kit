@@ -283,6 +283,23 @@ chk "ship_inherits_land_refusals: the commit is on the branch, not on main" \
   "$([ "$(git -C "$C14" rev-list --count origin/main..docs/ship-land)" = 1 ] && [ "$(git -C "$C14" rev-parse main)" = "$(git -C "$C14" rev-parse origin/main)" ]; echo $?)"
 
 # ===========================================================================
+echo "=== ship: land's final kind maps to one honest outcome ==="
+# ===========================================================================
+# ship never passes --draft (it rejects the flag), so land can never end in kind `draft`
+# through ship. The mapping is a function so each kind is checked without a full ship run.
+fin() { ( source "$KIT_DIR/lib/wrap/wrap-ship.sh"; _LAND_KIND="$1" _LAND_REF="#7" _LAND_PULL=ok _LAND_WT=removed _LAND_STEP=done _SHIP_FINAL=""
+          _ship_final; rc=$?; echo "rc=$rc final=${_SHIP_FINAL}" ) 2>&1; }
+out="$(fin merged)"
+chk_has "ship_final: merged maps to shipped" "$out" "rc=0 final=shipped #7 pull=ok worktree=removed"
+out="$(fin already)"
+chk_has "ship_final: already maps to already landed" "$out" "rc=0 final=already landed (#7)"
+out="$(fin draft)"
+chk_has "ship_final: draft is an explicit error naming the kind" "$out" "unexpected land outcome 'draft'"
+chk_has "ship_final: draft returns 1 with no final line" "$out" "rc=1 final="
+out="$(fin "")"
+chk_has "ship_final: an empty kind is an explicit error too" "$out" "unexpected land outcome ''"
+
+# ===========================================================================
 echo "=== ship: the verb is documented (AC-16) ==="
 # ===========================================================================
 out="$("$WRAP" --help 2>&1)"

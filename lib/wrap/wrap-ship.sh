@@ -229,10 +229,19 @@ _ship_run() {
     _ship_resume "$wt" "$title" "$body_file" "$nopull"
     return "$rc"
   fi
+  _ship_final
+}
+
+# _ship_final -- sets _SHIP_FINAL from the kind `land` ended in. `ship` never passes --draft
+# (it rejects the flag), so kind `draft` cannot arrive here; any kind but merged or already is
+# a bug, named on stderr instead of reported as an ordinary refusal.
+_ship_final() {
   case "$_LAND_KIND" in
     merged)  _SHIP_FINAL="shipped ${_LAND_REF} pull=${_LAND_PULL} worktree=${_LAND_WT}" ;;
     already) _SHIP_FINAL="already landed (${_LAND_REF}) pull=${_LAND_PULL} worktree=${_LAND_WT}" ;;
-    *)       _SHIP_STEP="land:${_LAND_STEP}"; return 1 ;;
+    *)       _SHIP_STEP="land:${_LAND_STEP}"
+             echo "wrap.sh ship: unexpected land outcome '${_LAND_KIND}' (ship never passes --draft); this is a bug" >&2
+             return 1 ;;
   esac
   return 0
 }
