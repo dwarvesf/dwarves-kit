@@ -119,7 +119,7 @@ Restored with `git checkout -- lib/gate/proof-gate.sh`; the suite is green again
 The loader validates the table at load: every row has exactly 3 tab fields, class ranks are unique integers, each stateful word and the joined pattern are valid EREs. Any fault is FATAL with exit 1. `proof-gate.sh` loads the table only in the verbs that classify (`class`, `requirement`, `contract`, `skeleton`, `classes`), so `coverage` still answers with the table missing.
 
 ```
-Command: git show 27f20795:lib/gate/proof-classes.sh >| lib/gate/proof-classes.sh && git show 27f20795:lib/gate/proof-gate.sh >| lib/gate/proof-gate.sh && bash tests/test-proof-class-table.sh
+Command: git show 1943a3ee:lib/gate/proof-classes.sh >| lib/gate/proof-classes.sh && git show 1943a3ee:lib/gate/proof-gate.sh >| lib/gate/proof-gate.sh && bash tests/test-proof-class-table.sh
 Exit: 10
 Output:
 FAIL malformed ERE row: ledger rc=0 out=grep: parentheses not balanced
