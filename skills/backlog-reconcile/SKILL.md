@@ -29,6 +29,8 @@ doc's own "Backlog reconcile" SDLC-instances row): every adopter repo gets this 
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start backlog-reconcile`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Refusal guard.** REFUSE if the target repo has no `lib/board/backlog.sh` or no
    `_meta/BACKLOG.md` (unadopted repo, nothing to reconcile); name what's missing and stop.
 

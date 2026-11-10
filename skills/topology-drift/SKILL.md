@@ -34,6 +34,8 @@ Audit the live feature estate (every command, agent, skill, hook) against the wo
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start topology-drift`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Freshness gate, REFUSE if stale.** Regenerate to a temp file and compare:
 
    ```

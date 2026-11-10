@@ -2,9 +2,9 @@
 # bin/audit -- STABLE consumer entrypoint for the audit subsystem.
 #
 # The cadence trigger for the audit-loop instances: `audit due` says which passes the
-# cadence has come around for. Read-only apart from `audit ran`, which records a marker.
+# cadence has come around for. Read-only apart from `audit start` / `audit ran`, which record markers.
 #
-# Usage: audit <due|cadences|ran> [args...]
+# Usage: audit <due|cadences|start|ran> [args...]
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "$SELF_DIR/../lib/audit/audit.sh" "$@"
