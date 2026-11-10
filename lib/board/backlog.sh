@@ -32,6 +32,9 @@
 #                                    Refuses (exit 1, writes nothing) when <ID-NNN> matches more
 #                                    than one row -- a union-merge duplicate would otherwise have
 #                                    both rows flipped silently. Run `dedupe` first.
+#                                    Never refuses on direction: a move out of a terminal state
+#                                    or back to an earlier active state (states.tsv order) still
+#                                    writes, with a one-line notice on stderr.
 #   backlog.sh dedupe <ID-NNN>     -> collapse duplicate rows sharing one id down to one: keeps
 #                                    the shipped/dropped/parked copy (in that order), else the
 #                                    last occurrence; a unique id is a no-op
