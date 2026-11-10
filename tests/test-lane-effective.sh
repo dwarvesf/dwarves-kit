@@ -25,8 +25,8 @@ S1='2026-01-01T00:00:00Z | START | lane=%s classified=normal type=feature repo=r
 A1='2026-01-01T00:01:00Z | START-AMEND | lane=%s classified=normal type=feature repo=r'
 st() { printf "$S1" "$1"; }
 am() { printf "$A1" "$1"; }
-SPECF="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$SPECF"
-SPECN="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '# Spec: x\nStatus: DRAFT\n' > "$SPECN"
+SPECF="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$SPECF"
+SPECN="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '# Spec: x\nStatus: DRAFT\n' > "$SPECN"
 
 echo "plain start validates the lane"
 for bad in fix light standard tiny2 mega; do
@@ -44,7 +44,7 @@ check "start --amend to an unknown lane: still exit 64" '[ "$RC" -eq 64 ] && pri
 check "gate-ledger.sh holds no literal copy of the lane list outside lane-data.sh" '! grep -n "tiny normal full bug backfill" "$KIT_DIR/lib/gate/gate-ledger.sh" | grep -v "^[0-9]*:[[:space:]]*#"'
 
 echo "an overlay lane in lanes.d is declared"
-LD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf ' 1. study  required\n' > "$LD/study.plan"
+LD="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf ' 1. study  required\n' > "$LD/study.plan"
 gl start ov-no study study lesson lesson r >/dev/null 2>&1; RC=$?
 check "start lane 'study' without a drop-in: exit 64" '[ "$RC" -eq 64 ]'
 DWARVES_KIT_LANES_D="$LD" gl start ov-yes study study lesson lesson r >/dev/null 2>&1; RC=$?
@@ -91,8 +91,8 @@ legacy c-tie    "$(st bug)" "$(am normal)"
 legacy c-ov     "$(st study)"
 legacy c-forged "$(st full)" "2026-01-01T00:00:30Z | GATE | lane-lower | override | full -> tiny: x | via=lane-lower" "$(am normal)"
 ck() { gl lane "$1" --spec "$2" | cut -f4; }
-SPECN2="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '# Spec\nLane: normal\n' > "$SPECN2"
-SPECB="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '# Spec\nLane: bug\n' > "$SPECB"
+SPECN2="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '# Spec\nLane: normal\n' > "$SPECN2"
+SPECB="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '# Spec\nLane: bug\n' > "$SPECB"
 check "header full + plain START normal resolves full" '[ "$(ck c-hf-sn "$SPECF")" = full ]'
 check "...while the ledger lane (descent, display) stays normal" '[ "$(rl c-hf-sn --spec "$SPECF" | cut -f1)" = normal ]'
 check "header full + START-AMEND --lower normal resolves normal" '[ "$(ck c-hf-lo "$SPECF")" = normal ]'
@@ -116,7 +116,7 @@ check "amend lowering full still needs --lower (exit 65)" '[ "$RC" -eq 65 ]'
 
 echo "ship-gate honours the resolver"
 GT="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
-GTERR="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
+GTERR="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
 git init -q -b master "$GT"; git -C "$GT" config user.email t@t; git -C "$GT" config user.name t
 mkdir -p "$GT/docs/specs" "$GT/docs/verification" "$GT/docs/implementation-notes"; echo marker > "$GT/docs/verification/README.md"
 git -C "$GT" add -A; git -C "$GT" commit -qm init
