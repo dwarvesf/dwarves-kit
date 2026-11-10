@@ -78,9 +78,22 @@ def _load_box():
 _BOX = _load_box()
 
 _SUBGOAL_LINE_RE = re.compile("^" + _BOX.box_re(group=True) + " (" + _BOX.id_re() + ")(.*)$")
+
+
+def _status_labels():
+    """The labels `mega.sh status` prints, from lib/mega/labels.tsv (the one declaration; mega.sh reads it too)."""
+    out = []
+    with open(os.path.join(_SELF_DIR, "labels.tsv")) as fh:
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            if not line.startswith("#") and len(f) >= 3 and f[2] == "status":
+                out.append(re.escape(f[1]))
+    return out
+
+
 _STATUS_LINE_RE = re.compile(
     r"^\s*\S\s+(?P<sub>" + _BOX.id_re() + r")\s+"
-    r"(?P<label>OK|CLAIM-UNVERIFIED|MERGED-UNCHECKED|STALLED|WIP|PENDING|INFO)(?P<extra>.*)$"
+    r"(?P<label>" + "|".join(_status_labels()) + r")(?P<extra>.*)$"
 )
 
 

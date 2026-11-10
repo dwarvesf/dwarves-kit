@@ -1,0 +1,17 @@
+# Mega reconcile labels: the one declaration of what `mega.sh status` prints per sub-goal row.
+# Readers: lib/mega/mega.sh (_label, the `labels` verb) and lib/mega/mega-review.py (the status-line parser).
+# tests/test-mega-labels.sh proves a row added here reaches both with no second edit.
+#
+# Columns are TAB-separated: class, label, kind.
+#   class  the name `_classify` returns (lower-case).
+#   label  the text printed in the status line.
+#   kind   status    a label the status line carries and `mega review` parses; order is the order printed by `mega.sh labels`.
+#          fallback  printed for an unknown class; never parsed.
+ok	OK	status
+claim-unverified	CLAIM-UNVERIFIED	status
+merged-unchecked	MERGED-UNCHECKED	status
+stalled	STALLED	status
+wip	WIP	status
+pending	PENDING	status
+info	INFO	status
+unknown	UNKNOWN	fallback

@@ -73,6 +73,7 @@
 #                     of what git truth shows.
 #
 # Usage:
+#   mega.sh labels   the status labels (declared in lib/mega/labels.tsv), one per line
 #   mega.sh status <slug> [--megagoals-root <path>] [--code-root <path>] [--base <branch>]
 #                          [--rollup-only]
 #     <slug>              the mega-goal's directory name under <megagoals-root>/
@@ -257,24 +258,21 @@ _classify() {
   esac
 }
 
+_LABELS_TSV="$BOX_DIR/labels.tsv"
+
+# _label <class> -- the printed label for a class, from lib/mega/labels.tsv; the fallback row for an unknown class.
 _label() {
-  # DOWNSTREAM COUPLING (review finding): `lib/mega/mega-review.py`'s `_STATUS_LINE_RE`
-  # regex parses `cmd_status`'s stdout by matching this exact label set literally (shelled out
-  # to, not reimplemented). A cosmetic rename here degrades `mega review`
-  # to a silent, non-fatal honest-empty read for the affected rows (never a crash, per the
-  # composer's own "never fatal" contract) rather than a loud break -- worth a grep for
-  # `_STATUS_LINE_RE` in `lib/mega/mega-review.py` before renaming any of these strings.
-  case "$1" in
-    ok)                echo "OK" ;;
-    claim-unverified)  echo "CLAIM-UNVERIFIED" ;;
-    merged-unchecked)  echo "MERGED-UNCHECKED" ;;
-    stalled)           echo "STALLED" ;;
-    wip)               echo "WIP" ;;
-    pending)           echo "PENDING" ;;
-    info)              echo "INFO" ;;
-    *)                 echo "UNKNOWN" ;;
-  esac
+  # DOWNSTREAM COUPLING: `lib/mega/mega-review.py` builds its status-line parser from the same table,
+  # so a label added or renamed there reaches both readers with no second edit.
+  awk -F'\t' -v c="$1" '
+    /^#/ || NF < 3 { next }
+    $1 == c { print $2; found = 1; exit }
+    $3 == "fallback" { fb = $2 }
+    END { if (!found) print fb }' "$_LABELS_TSV"
 }
+
+# cmd_labels -- the status labels, one per line, in table order.
+cmd_labels() { awk -F'\t' '!/^#/ && NF >= 3 && $3 == "status" { print $2 }' "$_LABELS_TSV"; }
 
 _symbol() {
   case "$1" in
@@ -431,6 +429,7 @@ main() {
     review) shift; cmd_review "$@" ;;
     report) shift; cmd_report "$@" ;;
     runs)   shift; cmd_runs "$@" ;;
+    labels) shift; cmd_labels ;;
     -h|--help|help|"") usage ;;
     *) echo "mega.sh: unknown subcommand '$first'" >&2; usage >&2; return 64 ;;
   esac
