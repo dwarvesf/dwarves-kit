@@ -42,7 +42,7 @@
 # worker therefore also takes one slot of a host-wide counting semaphore (tests/lib/host-slots.sh) for
 # the length of the suite, serial suites included. KIT_TEST_HOST_SLOTS=<n> sets the slot count (default
 # cores / 2, minimum 2; 0 turns the gate off); KIT_TEST_SLOT_DIR=<dir> moves the slots (default
-# ${TMPDIR:-/tmp}/dwarves-kit-test-slots). A worker that has to wait notes it in the suite's log; the
+# dwarves-kit-test-slots under the per-user temp dir, else ${TMPDIR:-/tmp}). A worker that has to wait notes it in the suite's log; the
 # suite's time limit starts once it runs.
 # Exit: 0 all green, 1 any FAIL or TIMEOUT, 2 usage or no base.
 set -euo pipefail

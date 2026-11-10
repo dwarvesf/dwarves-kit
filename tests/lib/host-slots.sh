@@ -13,7 +13,8 @@
 #
 # Env:   KIT_TEST_HOST_SLOTS=<n>     slots for the whole host. Default: cores / 2, minimum 2.
 #                                    0 disables the gate (acquire returns at once, nothing is created).
-#        KIT_TEST_SLOT_DIR=<dir>     where the slots live (default: ${TMPDIR:-/tmp}/dwarves-kit-test-slots).
+#        KIT_TEST_SLOT_DIR=<dir>     where the slots live (default: dwarves-kit-test-slots under the
+#                                    per-user temp dir, getconf DARWIN_USER_TEMP_DIR, else ${TMPDIR:-/tmp}).
 #                                    Runs share a gate only when they share this dir.
 #        KIT_TEST_HOST_SLOT_HELD     set (exported) by acquire. A suite that starts a nested runner
 #                                    inherits it, and that nested acquire returns at once: waiting for
@@ -87,14 +88,29 @@ _hs_reclaim() {
 
 HOST_SLOT_HELD=""
 
+# _hs_dir: print the slot dir, made if missing; nonzero when none can be made (no gate, never a stuck
+# run). Default is the per-user temp dir from getconf on macOS, because a sandboxed agent session can
+# point TMPDIR at a per-session dir and would then sit behind a gate of its own.
+_hs_dir() {
+  local d base
+  if [ -n "${KIT_TEST_SLOT_DIR:-}" ]; then
+    mkdir -p "$KIT_TEST_SLOT_DIR" 2>/dev/null && printf '%s\n' "$KIT_TEST_SLOT_DIR"
+    return
+  fi
+  for base in "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)" "${TMPDIR:-/tmp}"; do
+    [ -n "$base" ] || continue
+    d="${base%/}/dwarves-kit-test-slots"
+    mkdir -p "$d" 2>/dev/null && { printf '%s\n' "$d"; return 0; }
+  done
+  return 1
+}
+
 host_slot_acquire() {
   local logfile="${1:-}" n dir i noted=0
   [ -n "${KIT_TEST_HOST_SLOT_HELD:-}" ] && return 0
   n="$(host_slot_count)"
   [ "$n" -eq 0 ] && return 0
-  dir="${KIT_TEST_SLOT_DIR:-${TMPDIR:-/tmp}/dwarves-kit-test-slots}"
-  # A dir that cannot be made means no gate, never a stuck run.
-  mkdir -p "$dir" 2>/dev/null || return 0
+  dir="$(_hs_dir)" || return 0
   while :; do
     i=0
     while [ "$i" -lt "$n" ]; do

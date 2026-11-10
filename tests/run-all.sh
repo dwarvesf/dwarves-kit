@@ -40,7 +40,7 @@
 #        KIT_TEST_HOST_SLOTS=<n>  suites running at once across EVERY run on the host (tests/lib/host-slots.sh;
 #                                  each suite worker takes a slot, serial suites too). Default: cores / 2,
 #                                  minimum 2; 0 turns the gate off. RUN_ALL_JOBS only caps this one run.
-#        KIT_TEST_SLOT_DIR=<dir>  where the slots live (default ${TMPDIR:-/tmp}/dwarves-kit-test-slots)
+#        KIT_TEST_SLOT_DIR=<dir>  where the slots live (default dwarves-kit-test-slots under the per-user temp dir, else ${TMPDIR:-/tmp})
 #        DWARVES_KIT_LOG_DIR / KIT_LEDGER_DIR  the kit log root (lib/telemetry/kit-log-dir.sh); a failed
 #                                  suite's full output is kept under <root>/run-all/<stamp>/<suite>.out
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).

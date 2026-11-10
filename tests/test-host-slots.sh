@@ -95,6 +95,16 @@ D5="$T/slots5"
 OUT5="$(KIT_TEST_HOST_SLOTS=1 KIT_TEST_SLOT_DIR="$D5" bash -c '. "$1"; host_slot_acquire; host_slot_acquire; echo nested-ok; host_slot_release' _ "$LIB")"
 assert "second acquire in the same process tree returns at once" "$([ "$OUT5" = nested-ok ] && echo 0 || echo 1)"
 
+echo "=== a per-session TMPDIR does not split the gate on macOS ==="
+if [ -n "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)" ]; then
+  # Path only: _hs_dir is asked where the default lives, no slot is taken there.
+  D6A="$(TMPDIR="$T/sessA" bash -c '. "$1"; _hs_dir' _ "$LIB")"
+  D6B="$(TMPDIR="$T/sessB" bash -c '. "$1"; _hs_dir' _ "$LIB")"
+  assert "two sessions with different TMPDIR share one slot dir ($D6A)" "$([ -n "$D6A" ] && [ "$D6A" = "$D6B" ] && echo 0 || echo 1)"
+else
+  echo "  SKIP no DARWIN_USER_TEMP_DIR on this platform"
+fi
+
 echo ""
 echo "=== $PASS/$((PASS+FAIL)) passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
