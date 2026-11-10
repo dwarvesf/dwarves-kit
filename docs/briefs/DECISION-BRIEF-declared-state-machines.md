@@ -167,7 +167,24 @@ The operator settled the open items, and a second batch removed the next layer o
 | #1124 | One effective-lane resolver; the ship check takes the stricter of spec header and ledger lane; plain `start` validates the lane |
 | #1125 | SG-NN rows get a branch signal; a parked-only mega lists as `(parked)` |
 
-**Still open, each needs its own design.**
-- Prose-held counters (gauntlet rounds, greenlight retries, the onboard step) live only in agent context.
-- `stalled` and `blocked` carry several meanings across queue and mega.
-- The validate round machine is correct but hand-coded; a declared table would cost more than it saves today.
+| #1127 | Bounded loops resume from their own records: one QL-VERDICT parser, greenlight retries counted from the run ledger |
+
+**Kept as is.** The validate round machine is correct but hand-coded; a declared table would cost more than it saves today.
+
+## Open
+
+| # | Machine | Where | Gap | Kind |
+|---|---|---|---|---|
+| 1 | Queue verdict to board row | `lib/queue/queue.sh` | a `done` run leaves its row `queued` | bug |
+| 2 | `wrap land` kind to `wrap ship` | `lib/wrap/wrap-ship.sh` | a `draft` land result reads as a refusal | bug |
+| 3 | Hermes writeback | `lib/board/board-writeback.sh` | a card move writes a backward row move with no notice | bug |
+| 4 | Migration sentinel | `lib/telemetry/kit-migrate.sh` | a symlinked legacy dir gets the sentinel with no copy, never retried | bug |
+| 5 | Queue sidecars | `lib/queue/` | three writers; a dead beat never reaches `done` | duplicate logic |
+| 6 | Mega reconcile labels | `lib/mega/mega-review.py` | label strings re-declared from `mega.sh` | copy |
+| 7 | Proof class | `lib/gate/proof-ledger.sh`, `proof-gate.sh` | two classifiers, same names, different inputs | copy |
+| 8 | `wrap adopt` rows | `lib/wrap/wrap-adopt.sh` | rows matched by free text | fragile |
+| 9 | Handoff closed set | `lib/session/handoffs.sh` | closed status set re-declared | copy |
+| 10 | Multica status map | `lib/sync/sources/multica.py` | `claimed` and `speccing` both map to `todo` | lossy |
+| 11 | Audit pass | `lib/audit/audit.sh` | no in-flight or failed state | missing state |
+
+Cross-cutting: `stalled` and `blocked` carry several meanings across queue and mega.
