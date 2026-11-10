@@ -106,6 +106,40 @@ err="$(BACKLOG_FILE="$B" bash "$BL" set ID-002 dropped "still no" 2>&1 >/dev/nul
 c="$(awk -F'|' '/^\| *ID-002 *\|/ { c=$(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", c); print c }' "$B")"
 [ "$c" = "dropped [still no]" ] && pass "terminal note still supersedes (class-derived)" || fail "terminal note rule: $c"
 
+# ---- 6a. set: a backward move among active states prints a notice, still writes ----
+# Order comes from states.tsv, never a list in the script. The notice is stderr only; stdout and
+# exit code stay what they were (PHILOSOPHY: detect, don't dictate).
+BK="$TMP/bk.md"
+printf '| ID | T | Status |\n|---|---|---|\n| ID-011 | a | executing [n1] |\n| ID-012 | b | queued |\n| ID-013 | c | validated |\n| ID-014 | d | parked |\n' > "$BK"
+out="$(BACKLOG_FILE="$BK" bash "$BL" set ID-011 queued 2>"$TMP/bk.err")"; rc=$?
+err="$(cat "$TMP/bk.err")"
+[ "$err" = "board set: ID-011 moves back from 'executing' to 'queued'" ] && pass "active -> earlier active prints the backward notice (stderr, exact text)" || fail "backward notice: $err"
+[ "$rc" = 0 ] && [ "$out" = "ID-011 -> queued" ] && pass "backward move keeps stdout and exit 0" || fail "backward move rc=$rc out=$out"
+c="$(awk -F'|' '/^\| *ID-011 *\|/ { c=$(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", c); print c }' "$BK")"
+[ "$c" = "queued [n1]" ] && pass "backward move still writes the row" || fail "backward move wrote: $c"
+err="$(BACKLOG_FILE="$BK" bash "$BL" set ID-012 claimed 2>&1 >/dev/null)"
+[ -z "$err" ] && pass "forward active move is quiet" || fail "forward move printed: $err"
+err="$(BACKLOG_FILE="$BK" bash "$BL" set ID-012 claimed 2>&1 >/dev/null)"
+[ -z "$err" ] && pass "same-state set is quiet" || fail "same-state set printed: $err"
+err="$(BACKLOG_FILE="$BK" bash "$BL" set ID-013 parked 2>&1 >/dev/null)"
+[ -z "$err" ] && pass "active -> hold is quiet" || fail "active -> hold printed: $err"
+err="$(BACKLOG_FILE="$BK" bash "$BL" set ID-014 queued 2>&1 >/dev/null)"
+[ -z "$err" ] && pass "hold -> active is quiet" || fail "hold -> active printed: $err"
+err="$(BACKLOG_FILE="$BK" bash "$BL" set ID-013 shipped 2>&1 >/dev/null)"
+[ -z "$err" ] && pass "active -> terminal is quiet" || fail "active -> terminal printed: $err"
+
+# The order is read from the table: swap two rows in a copy and queued -> claimed becomes the backward move.
+mkdir -p "$TMP/kit3/lib"; cp -R "$KIT_DIR/lib/board" "$KIT_DIR/lib/gate" "$KIT_DIR/lib/sync" "$TMP/kit3/lib/"
+{ grep '^#' "$TMP/kit3/lib/board/states.tsv"
+  awk -F'\t' '!/^#/ && NF' "$TMP/kit3/lib/board/states.tsv" | awk -F'\t' '$1=="queued"{q=$0;next} $1=="claimed"{c=$0;print;print q;next} {print}'
+} > "$TMP/states.swapped" && mv -f "$TMP/states.swapped" "$TMP/kit3/lib/board/states.tsv"
+K3="$TMP/k3.md"
+printf '| ID | T | Status |\n|---|---|---|\n| ID-021 | a | queued |\n| ID-022 | b | claimed |\n' > "$K3"
+err="$(BACKLOG_FILE="$K3" bash "$TMP/kit3/lib/board/backlog.sh" set ID-022 queued 2>&1 >/dev/null)"
+[ -z "$err" ] || fail "swapped table: claimed -> queued should now be forward and quiet: $err"
+err="$(BACKLOG_FILE="$K3" bash "$TMP/kit3/lib/board/backlog.sh" set ID-021 claimed 2>&1 >/dev/null)"
+case "$err" in *"moves back from 'queued' to 'claimed'"*) pass "backward is decided by states.tsv order (swapped copy flips it)" ;; *) fail "swapped table notice: $err" ;; esac
+
 # ---- 6b. a large board: setting its FIRST row must not die on SIGPIPE (review finding) ----
 L="$TMP/large.md"
 { printf '| ID | T | Status |\n|---|---|---|\n'

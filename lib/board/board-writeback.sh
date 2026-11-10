@@ -470,8 +470,19 @@ _apply_group() {
     target="$(printf '%s' "$line" | jq -r '.target_status')"
     current="$(printf '%s' "$line" | jq -r '.current_status')"
     origin="$(printf '%s' "$line" | jq -r '.origin')"
-    BACKLOG_FILE="$wt/$rel" bash "$BACKLOG_SH" set "$id" "$target" >/dev/null
-    echo "origin: ${origin} -> ${target} (was ${current})" >> "$body"
+    # `set` speaks on stderr (a backward move, a reopen) and never refuses. Keep that text: show it
+    # in the run report and record it in the commit body, so the PR reviewer sees it too.
+    local set_rc=0 set_err="$wt.set-err"
+    BACKLOG_FILE="$wt/$rel" bash "$BACKLOG_SH" set "$id" "$target" >/dev/null 2>"$set_err" || set_rc=$?
+    if [ -s "$set_err" ]; then
+      sed 's/^/writeback: /' "$set_err" >&2
+      echo "origin: ${origin} -> ${target} (was ${current})" >> "$body"
+      sed 's/^/note: /' "$set_err" >> "$body"
+    else
+      echo "origin: ${origin} -> ${target} (was ${current})" >> "$body"
+    fi
+    rm -f "$set_err"
+    [ "$set_rc" -eq 0 ] || return "$set_rc"
     n=$((n + 1))
   done <<< "$rows"
 
