@@ -65,7 +65,7 @@
 #   "(local)" suffix when there is no origin remote:
 #     LIVE (n open: ID-a, ID-b)   -- at least one cited row is still open
 #     DEAD (all n cited rows closed, move it to archive/)  -- every cited
-#       row shipped/dropped/done/resolved
+#       row terminal in lib/board/states.tsv, or archived as done/resolved
 #     UNCITED (no row IDs; read it)  -- the file names no board row
 #   A row ID this repo's board cannot resolve counts as open (unproven, not
 #   confirmed closed). The board owns the work; the handoff owns only the
@@ -115,6 +115,7 @@ _origin_default_branch() { # <repo>
 _load_board() { # <repo>
   local repo="$1" branch
   BOARD_CONTENT="" BOARD_SOURCE="local"
+  _load_closed_states || return 1
   if git -C "$repo" remote get-url origin >/dev/null 2>&1; then
     git -C "$repo" fetch -q origin >/dev/null 2>&1 || true
     branch="$(_origin_default_branch "$repo" || true)"
@@ -141,11 +142,26 @@ _row_status() { # <id>
     }'
 }
 
+# Closed = the board's terminal states plus the archive words. The terminal states are
+# read from the declared machine (lib/board/states.tsv, class terminal, one awk as in
+# lib/board/board-writeback.sh); `done` and `resolved` are not board states, they are
+# the words an archived row may carry (the split lib/sync/sync_core.py calls
+# ARCHIVED_CLOSED). Read once per scan by _load_board into BOARD_CLOSED.
+HANDOFFS_ARCHIVE_WORDS="done resolved"
+
+_load_closed_states() {
+  local tsv terminal
+  tsv="$(cd "$(dirname "${BASH_SOURCE[0]}")/../board" 2>/dev/null && pwd)/states.tsv"
+  terminal="$(awk -F'\t' '!/^#/ && NF >= 2 && $2 == "terminal" { print $1 }' "$tsv" 2>/dev/null | paste -sd ' ' -)"
+  if [ -z "$terminal" ]; then
+    echo "handoffs: no terminal states read from $tsv (missing or empty)" >&2
+    return 1
+  fi
+  BOARD_CLOSED="$terminal $HANDOFFS_ARCHIVE_WORDS"
+}
+
 _status_is_closed() { # <status>
-  case "$1" in
-    shipped|dropped|done|resolved) return 0 ;;
-    *) return 1 ;;
-  esac
+  case " $BOARD_CLOSED " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
 
 # One-line liveness verdict for a handoff file, reading the already-loaded
