@@ -302,6 +302,15 @@ _pr_head_resync_body() {
   return 2
 }
 
+# _merge_ship_gate_sig <signal> -- the trap body of _merge_ship_gate: drop its scratch
+# worktree, reset the three handlers to the default, and re-raise the signal on this shell.
+_merge_ship_gate_sig() {
+  git -C "$_MSG_REPO" worktree remove --force "${_MSG_SCRATCH}/wt" >/dev/null 2>&1
+  rm -rf "$_MSG_SCRATCH"
+  trap - INT TERM HUP
+  kill -s "$1" $$
+}
+
 # _merge_ship_gate <repo> <n> <branch> <head-oid> -- run the ship-gate on PR <n>'s head before
 # it merges. The head is <head-oid> itself (the head the gates read, fetched by sha when the
 # checkout lacks it), checked out detached in a scratch worktree removed on every path; the
@@ -325,7 +334,16 @@ _merge_ship_gate() {
     echo "FAILED merge #${n}: MERGE REFUSED: could not check out the PR head for the ship-gate; left open" >&2
     return 2
   fi
+  # A signal while the gate runs removes the scratch worktree, puts the caller's handlers back
+  # and re-raises, so the caller's own handler (or the default death) still runs.
+  local ti tt th
+  ti="$(trap -p INT)"; tt="$(trap -p TERM)"; th="$(trap -p HUP)"
+  _MSG_REPO="$repo"; _MSG_SCRATCH="$scratch"
+  trap '_merge_ship_gate_sig INT' INT; trap '_merge_ship_gate_sig TERM' TERM; trap '_merge_ship_gate_sig HUP' HUP
   _ship_gate_check "${scratch}/wt" "$branch" "MERGE REFUSED #${n}"; rc=$?
+  if [ -n "$ti" ]; then eval "$ti"; else trap - INT; fi
+  if [ -n "$tt" ]; then eval "$tt"; else trap - TERM; fi
+  if [ -n "$th" ]; then eval "$th"; else trap - HUP; fi
   git -C "$repo" worktree remove --force "${scratch}/wt" >/dev/null 2>&1
   rm -rf "$scratch"
   [ "$rc" -eq 0 ] || echo "FAILED merge #${n}: left open" >&2

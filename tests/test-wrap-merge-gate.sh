@@ -73,7 +73,7 @@ chk_no "merge_gate_payload: no refusal" "$out" "REFUSED"
 chk "merge_gate_payload: the gate cwd HEAD is the PR head" "$([ "$(cat "$GATES/pass.head" 2>/dev/null)" = "$MG_TIP" ]; echo $?)"
 chk "merge_gate_payload: the gate cwd is not the main checkout" "$([ "$(jq -r '.cwd' "$GATES/pass.in" 2>/dev/null)" != "$MG" ]; echo $?)"
 chk "merge_gate_payload: the gate got the push command for the head branch" \
-  "$([ "$(jq -r '.tool_input.command' "$GATES/pass.in" 2>/dev/null)" = "git push origin feat/gate" ]; echo $?)"
+  "$([ "$(jq -r '.tool_input.command' "$GATES/pass.in" 2>/dev/null)" = "git push origin HEAD:refs/heads/feat/gate" ]; echo $?)"
 chk "merge_gate_payload: the PR was merged" "$(mg_merged)"
 chk "merge_gate_payload: the scratch worktree is gone" "$(mg_scratch_gone)"
 
@@ -110,6 +110,68 @@ echo "--- merge_codex_pin_escape: the documented escape lets the same head merge
 out="$(mg_merge 84 DWARVES_KIT_LOG_DIR="$TMPD/g4-log" DWARVES_KIT_SKIP_CODEX_PIN=1)"
 chk_no "merge_codex_pin_escape: the pin arm no longer blocks" "$out" "stale pin: hooks/demo-hook.sh"
 chk "merge_codex_pin_escape: the PR was merged" "$(mg_merged)"
+
+echo "--- merge_adopted_no_local_branch: in an adopted repo the gate reads HEAD, so a PR with no local branch of its name passes"
+# The gate's push parser resolves a bare branch name to the LOCAL branch of that name. The scratch
+# worktree is detached and the clone holds no such branch, so naming the branch refused every PR.
+mg_build_adopted() { # mg_build_adopted <name> [bad] -- adopted repo; with "bad" the PR head carries a fixture identity
+  local name="$1" bad="${2:-}" work="$TMPD/mg-work-$1"
+  mkdir -p "$work/docs/verification"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" config user.email dev@dwarves.foundation; git -C "$work" config user.name dev
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf 'marker\n' > "$work/docs/verification/README.md"; printf 'base\n' > "$work/a.txt"
+  git -C "$work" add -A; git -C "$work" commit -qm "chore: base"
+  git -C "$work" checkout -q -b feat/gate
+  printf 'good\n' > "$work/b.txt"; git -C "$work" add -A; git -C "$work" commit -qm "feat: good step"
+  MG_GOOD="$(git -C "$work" rev-parse HEAD)"
+  if [ "$bad" = bad ]; then
+    printf 'bad\n' > "$work/c.txt"; git -C "$work" add -A
+    git -C "$work" -c user.email=t@t -c user.name=t commit -qm "feat: bad step"
+  fi
+  git -C "$work" checkout -q main
+  git clone -q --bare "$work" "$TMPD/mg-bare-$name"
+  MG="$TMPD/mg-clone-$name"
+  git clone -q "$TMPD/mg-bare-$name" "$MG"; gitc "$MG"
+  git -C "$MG" remote set-head origin main >/dev/null 2>&1
+  MG_TIP="$(git -C "$MG" rev-parse origin/feat/gate)"
+}
+mg_build_adopted a1
+chk "merge_adopted_no_local_branch: the fixture has no local feat/gate" \
+  "$(git -C "$MG" show-ref --verify -q refs/heads/feat/gate && echo 1 || echo 0)"
+out="$(mg_merge 86 DWARVES_KIT_LOG_DIR="$TMPD/a1-log")"
+chk_no "merge_adopted_no_local_branch: not refused" "$out" "REFUSED"
+chk_no "merge_adopted_no_local_branch: not 'does not resolve to a commit'" "$out" "does not resolve to a commit"
+chk "merge_adopted_no_local_branch: the PR was merged" "$(mg_merged)"
+
+echo "--- merge_adopted_stale_local_branch: a stale local branch at a good commit cannot vouch for a bad HEAD"
+mg_build_adopted a2 bad
+git -C "$MG" branch feat/gate "$MG_GOOD"
+chk "merge_adopted_stale_local_branch: the fixture local feat/gate is behind the PR head" \
+  "$([ "$(git -C "$MG" rev-parse feat/gate)" != "$MG_TIP" ]; echo $?)"
+out="$(mg_merge 87 DWARVES_KIT_LOG_DIR="$TMPD/a2-log")"; rc=$?
+chk "merge_adopted_stale_local_branch: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "merge_adopted_stale_local_branch: the gate blocked the merge" "$out" "MERGE REFUSED #87: ship-gate blocked the push"
+chk_has "merge_adopted_stale_local_branch: the bad head is the reason" "$out" "fixture git identity"
+chk "merge_adopted_stale_local_branch: no pr merge call" "$([ "$(mg_merged)" -eq 1 ]; echo $?)"
+
+echo "--- merge_gate_interrupt: a TERM while the gate runs leaves no scratch worktree and no merge"
+cat > "$GATES/term.sh" <<'GATE'
+#!/usr/bin/env bash
+cat >/dev/null
+kill -TERM "$(cat "$(dirname "$0")/wrap.pid")"
+sleep 1
+exit 0
+GATE
+chmod +x "$GATES/term.sh"
+mg_build g5
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+env -u CLAUDE_PLUGIN_ROOT GH_STUB_OPEN_PRS="$(mg_open 88)" GH_STUB_PR_88="$(mg_json 88 "$MG_TIP")" WRAP_LAND_SHIP_GATE="$GATES/term.sh" \
+  "$WRAP" merge --apply --pr 88 "$MG" > "$TMPD/g5.out" 2>&1 &
+WRAP_PID=$!; echo "$WRAP_PID" > "$GATES/wrap.pid"
+wait "$WRAP_PID"; rc=$?
+chk "merge_gate_interrupt: the run died on the signal" "$([ "$rc" -ge 128 ]; echo $?)"
+chk "merge_gate_interrupt: no pr merge call" "$([ "$(mg_merged)" -eq 1 ]; echo $?)"
+chk "merge_gate_interrupt: the scratch worktree is gone" "$(mg_scratch_gone)"
 
 echo "--- remerge_push_runs_gate: the re-merge push gates the merge commit and undoes it on a refusal"
 build_rm() { # a bare origin whose main and feat/gate both appended to a union-marked log

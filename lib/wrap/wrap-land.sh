@@ -727,13 +727,11 @@ _land_run() {
   fi
 
   # The ship-gate call stands in for the PreToolUse hook, which sees a literal `git push` in
-  # a Bash command and never sees this one. It runs on every push land makes (draft or not);
-  # a by-sha adoption pushes nothing, so only a draft run checks it.
-  if [ "$draft" -eq 1 ] || [ "$by_sha" -eq 0 ]; then
-    local refused="PUSH REFUSED"
-    [ "$draft" -eq 0 ] || refused="DRAFT REFUSED"
-    _ship_gate_check "$wt" "$branch" "$refused" || return 2
-  fi
+  # a Bash command and never sees this one. It runs on every land, draft or not, adopted by
+  # head sha or not: a by-sha adoption pushes nothing but still merges the PR's head.
+  local refused="PUSH REFUSED"
+  [ "$draft" -eq 0 ] || refused="DRAFT REFUSED"
+  _ship_gate_check "$wt" "$obranch" "$refused" || return 2
 
   _LAND_STEP=push
   if [ "$by_sha" -eq 1 ]; then

@@ -48,7 +48,7 @@ rm -f "$GATES/pass.in"
 out="$(nd_land WRAP_LAND_SHIP_GATE="$GATES/pass.sh")"
 chk "land_nondraft_gate_payload: the gate got the worktree as .cwd" "$([ "$(jq -r '.cwd' "$GATES/pass.in" 2>/dev/null)" = "$ND_WT" ]; echo $?)"
 chk "land_nondraft_gate_payload: the gate got the push command" \
-  "$([ "$(jq -r '.tool_input.command' "$GATES/pass.in" 2>/dev/null)" = "git push origin feat/land" ]; echo $?)"
+  "$([ "$(jq -r '.tool_input.command' "$GATES/pass.in" 2>/dev/null)" = "git push origin HEAD:refs/heads/feat/land" ]; echo $?)"
 chk "land_nondraft_gate_payload: the branch was pushed" "$(nd_pushed)"
 
 echo "--- land_nondraft_stale_codex_pin: the REAL ship-gate blocks a non-draft land that carries a stale codex pin"
@@ -77,6 +77,31 @@ echo "--- land_nondraft_codex_pin_escape: the documented escape still lets the s
 out="$(nd_land DWARVES_KIT_LOG_DIR="$TMPD/ng3-log" DWARVES_KIT_SKIP_CODEX_PIN=1)"
 chk_no "land_nondraft_codex_pin_escape: the pin arm no longer blocks" "$out" "stale pin: hooks/demo-hook.sh"
 chk "land_nondraft_codex_pin_escape: the branch was pushed" "$(nd_pushed)"
+
+echo "--- land_nondraft_by_sha_runs_gate: adopting a PR by head sha pushes nothing but still merges, so the gate runs"
+asha_pr() { # asha_pr <number> <headRefName> <headRefOid>
+  printf '{"number":%s,"baseRefName":"main","author":{"login":"me"},"isDraft":false,"isCrossRepository":false,"headRefName":"%s","headRefOid":"%s"}' "$1" "$2" "$3"
+}
+asha_land() { # asha_land <name> <gate> -- one land of the worktree whose PR sits under another branch name
+  nd_build "$1"
+  git -C "$ND_WT" push -q origin HEAD:refs/heads/fix/renamed
+  ND_TIP="$(git -C "$ND_WT" rev-parse HEAD)"
+  : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+  env -u CLAUDE_PLUGIN_ROOT GH_STUB_OPEN_PRS="[$(asha_pr 71 fix/renamed "$ND_TIP")]" \
+    GH_STUB_LAND_REPO="$ND_WT" GH_STUB_LAND_REMOTE="$ND_BARE" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
+    WRAP_LAND_SHIP_GATE="$2" "$WRAP" land "$ND_WT" --no-pull 2>&1
+}
+out="$(asha_land ng4 "$GATES/block.sh")"; rc=$?
+chk "land_nondraft_by_sha_runs_gate: a blocking gate refuses with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "land_nondraft_by_sha_runs_gate: says the gate blocked the push" "$out" "PUSH REFUSED: ship-gate blocked the push"
+chk "land_nondraft_by_sha_runs_gate: the adopted PR was never merged" \
+  "$([ "$(grep -cE '^pr merge' "$GH_STUB_CALLS")" -eq 0 ]; echo $?)"
+rm -f "$GATES/pass.in"
+out="$(asha_land ng5 "$GATES/pass.sh")"
+chk_has "land_nondraft_by_sha_runs_gate: a passing gate lets the adopted PR merge" "$out" "adopted #71 by head sha"
+chk "land_nondraft_by_sha_runs_gate: the merge ran" "$([ "$(grep -cE '^pr merge 71' "$GH_STUB_CALLS")" -ge 1 ]; echo $?)"
+chk "land_nondraft_by_sha_runs_gate: the gate was told the adopted branch" \
+  "$([ "$(jq -r '.tool_input.command' "$GATES/pass.in" 2>/dev/null)" = "git push origin HEAD:refs/heads/fix/renamed" ]; echo $?)"
 
 echo "---"
 echo "test-wrap-land-gate: $PASS passed, $FAIL FAILED"

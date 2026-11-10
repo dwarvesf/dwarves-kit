@@ -3254,7 +3254,7 @@ rm -f "$DR_IN" "$DR_ROOT"
 out="$(dr_land)"; rc=$?
 chk "draft_runs_ship_gate: a passing gate lets the draft open" "$rc"
 chk "draft_runs_ship_gate: the gate got the worktree as .cwd" "$([ "$(jq -r '.cwd' "$DR_IN")" = "$DR_WT" ]; echo $?)"
-chk "draft_runs_ship_gate: the gate got the push command" "$([ "$(jq -r '.tool_input.command' "$DR_IN")" = "git push origin feat/land" ]; echo $?)"
+chk "draft_runs_ship_gate: the gate got the push command" "$([ "$(jq -r '.tool_input.command' "$DR_IN")" = "git push origin HEAD:refs/heads/feat/land" ]; echo $?)"
 chk "draft_runs_ship_gate: CLAUDE_PLUGIN_ROOT defaults to the kit root" "$([ "$(cat "$DR_ROOT")" = "$(cd "$KIT_DIR" && pwd)" ]; echo $?)"
 chk_no "draft_runs_ship_gate: a passing gate's stdout is dropped" "$out" "stub gate notice"
 chk_has "draft_runs_ship_gate: the path override is announced" "$out" "WRAP_LAND_SHIP_GATE"
@@ -3263,7 +3263,7 @@ rm -f "$DR_IN"
 out="$(dr_land GH_STUB_OPEN_HEAD_feat_q_uote="[]")"; rc=$?
 chk "draft_runs_ship_gate: a branch name with a quote still opens" "$rc"
 chk "draft_runs_ship_gate: the payload stays valid JSON for that branch" \
-  "$([ "$(jq -r '.tool_input.command' "$DR_IN" 2>/dev/null)" = 'git push origin feat/q"uote' ]; echo $?)"
+  "$([ "$(jq -r '.tool_input.command' "$DR_IN" 2>/dev/null)" = 'git push origin HEAD:refs/heads/feat/q"uote' ]; echo $?)"
 
 echo "--- draft_real_ship_gate_smoke: the real hook gets a payload it reads (it refuses the fixture identity)"
 # Needs the kit's own lib/ beside hooks/ (a checkout, not a bare install), which is how this suite runs.

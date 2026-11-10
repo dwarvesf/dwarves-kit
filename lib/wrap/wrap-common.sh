@@ -65,9 +65,11 @@ _gh_merge_transient() {
 }
 
 # _ship_gate_check <dir> <branch> <label> -- run hooks/ship-gate.sh on <dir>'s HEAD the way the
-# PreToolUse hook would on `git push origin <branch>`. The hook only sees a literal push in a
-# Bash command, never the push (or merge) a wrap verb makes from inside its own script, so
-# each verb calls this before it pushes or merges. Fails closed: a missing gate or a non-zero
+# PreToolUse hook would on a push of that HEAD to <branch>. The hook only sees a literal push
+# in a Bash command, never the push (or merge) a wrap verb makes from inside its own script, so
+# each verb calls this before it pushes or merges. The command names HEAD as the source
+# (`HEAD:refs/heads/<branch>`): the gate's push parser resolves a bare branch name to the LOCAL
+# branch of that name, which in a detached scratch worktree is absent or stale. Fails closed: a missing gate or a non-zero
 # exit prints "<label>: ship-gate blocked the push" plus the gate's own reason on stderr and
 # returns 2. WRAP_LAND_SHIP_GATE overrides the gate path (tests only; announced when set).
 _ship_gate_check() {
@@ -80,7 +82,7 @@ _ship_gate_check() {
     return 2
   fi
   # Stdout is dropped (a hook can print a JSON systemMessage there); stderr is the reason.
-  gate_err="$(jq -n --arg cwd "$dir" --arg cmd "git push origin ${branch}" '{cwd: $cwd, tool_input: {command: $cmd}}' \
+  gate_err="$(jq -n --arg cwd "$dir" --arg cmd "git push origin HEAD:refs/heads/${branch}" '{cwd: $cwd, tool_input: {command: $cmd}}' \
     | CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}" bash "$gate" 2>&1 >/dev/null)"; gate_rc=$?
   if [ "$gate_rc" -ne 0 ]; then
     echo "     ${label}: ship-gate blocked the push" >&2
