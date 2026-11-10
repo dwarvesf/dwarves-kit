@@ -229,7 +229,26 @@ _beat() {  # slug
   mkdir -p "$(dirname "$f")" 2>/dev/null || true
   : > "$f"
 }
-_beat_clear() { local f; f=$(_run_file "$1" beat) || return 0; rm -f "$f" 2>/dev/null || true; }
+_beat_clear() {
+  local f; f=$(_run_file "$1" beat) || return 0
+  rm -f "$f" "$(_run_file "$1" launch)" 2>/dev/null || true
+}
+
+# The launch record: what the conductor knew when the window opened, for the one reader that has to
+# judge the run WITHOUT the conductor. If the conductor dies, the reaper (watch-board.sh) has only the
+# slug, and a verified delta needs the repo plus the HEAD, branch tips and clock from before the run.
+# `key=value` lines, same shape as `<slug>.guard`. Cleared with the beat, so it lives exactly as long as
+# the in-flight claim does.
+_launch_snapshot_write() {  # slug repo head-before tips-before started-iso
+  local f; f=$(_run_file "$1" launch) || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || true
+  printf 'repo=%s\nhead=%s\ntips=%s\nsince=%s\n' "$2" "$3" "$4" "$5" > "$f"
+}
+_launch_get() {  # slug key
+  local f; f=$(_run_file "$1" launch) || return 0
+  [ -f "$f" ] || return 0
+  awk -F= -v k="$2" '$1==k {v=substr($0, length(k)+2)} END{if(v!="") print v}' "$f"
+}
 
 # `<slug>.guard` is `key=value` lines. Read prints the LAST value for the key (empty if unset);
 # write rewrites the file with that key replaced. Small enough that rewrite-whole beats an in-place
@@ -429,7 +448,7 @@ _repo_skip_reason() {  # repo
   local repo="$1" cur def
   { [ -n "$repo" ] && [ -d "$repo" ] && git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; } \
     || { printf 'repo missing'; return; }
-  [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || { printf 'dirty tree'; return; }
+  [ -z "$(_status_porcelain "$repo")" ] || { printf 'dirty tree'; return; }
   cur=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null)
   def=$(_default_branch "$repo")
   [ -n "$def" ] && [ "$cur" = "$def" ] || { printf 'not on default branch (%s)' "$cur"; return; }
@@ -800,7 +819,7 @@ _progress_evidence() {  # slug repo head-before
   if [ -n "$repo" ] && [ -d "$repo" ]; then
     after=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
     { [ -n "$after" ] && [ -n "$before" ] && [ "$after" != "$before" ]; } && { printf 'verified'; return; }
-    [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ] && { printf 'verified'; return; }
+    [ -n "$(_status_porcelain "$repo")" ] && { printf 'verified'; return; }
   fi
 
   # Hatch 4: a question freezes the counters. Counting it as stagnation would quarantine exactly
@@ -911,6 +930,81 @@ _schedule_retry() {  # slug stall-count
   _guard_set "$slug" retry_after $((now + mins * 60))
 }
 
+# ---- board flip ---------------------------------------------------------------------
+# A terminal verdict reaches the board row, so the row stops saying `queued` while the journal says
+# the work ran. `done` -> `executing` (the work sits in a branch or PR; `/kit:wrap` flips it to
+# shipped on merge). `gated` -> `parked` (a human must look). `stalled`, `error` and `skipped` are
+# retryable and leave the row alone. Only a row still `queued` moves: a human's move wins.
+#
+# The queue's own board edit leaves BACKLOG.md dirty in the repo. Without care the NEXT row of the same
+# repo (this run or a later watcher tick) would be skipped as a `dirty tree`, then read that edit as its
+# own protected-path write (BACKLOG.md is protected) and as progress evidence (a dirty tree counts as
+# `verified`). So each flip records the board's content hash in `<run-dir>/board-flips.tsv`, and
+# `_status_porcelain` hides the board line only while its content still equals the last recorded hash.
+# A run that edits the board itself changes the hash, so the exemption never covers a run's write.
+
+_flips_file() { printf '%s/board-flips.tsv' "$(_run_dir)"; }
+
+# `git status --porcelain` for <repo>, minus the board line when the queue's own flip is its only edit.
+_status_porcelain() {  # repo
+  local repo="$1" board="$1/_meta/BACKLOG.md" now rec ff
+  now=$(git -C "$repo" status --porcelain 2>/dev/null)
+  ff=$(_flips_file)
+  if [ ! -f "$board" ] || [ ! -f "$ff" ]; then printf '%s' "$now"; return; fi
+  rec=$(awk -F'\t' -v b="$board" '$1==b {h=$2} END{print h}' "$ff")
+  if [ -n "$rec" ] && [ "$(git -C "$repo" hash-object "$board" 2>/dev/null)" = "$rec" ]; then
+    printf '%s' "$now" | awk '{ if (substr($0,4) != "_meta/BACKLOG.md") print }'
+  else
+    printf '%s' "$now"
+  fi
+}
+
+# The board row id a slug names: `<repo>__<ID>`, the shape both slug producers emit. A hand-authored
+# slug (no `__<ID>`) names no board row and prints nothing.
+_board_row_id() {  # slug
+  local id="${1##*__}"
+  case "$1" in *__*) ;; *) return 1 ;; esac
+  [[ "$id" =~ ^[A-Z]+-[0-9]+$ ]] || return 1
+  printf '%s' "$id"
+}
+
+# Flip <slug>'s board row for a terminal verdict. Returns 1 after saying why on stderr; the caller
+# keeps the journal verdict either way.
+_board_flip_terminal() {  # slug repo verdict reason
+  local slug="$1" repo="$2" verdict="$3" reason="${4:-}" id to board backlog cur lead note out
+  _verdict_is_terminal "$verdict" || return 0
+  id=$(_board_row_id "$slug") || return 0
+  case "$verdict" in done) to=executing ;; *) to=parked ;; esac
+  board="$repo/_meta/BACKLOG.md"
+  backlog="$(cd "$(dirname "${BASH_SOURCE[0]}")/../board" && pwd)/backlog.sh"
+  if [ -z "$repo" ]; then
+    _warn "[queue] BOARD FLIP FAILED $slug: repo unknown (no launch record), row $id not moved to $to."
+    return 1
+  fi
+  if [ ! -f "$board" ]; then
+    _warn "[queue] BOARD FLIP FAILED $slug: no board at '$board' (row $id not moved to $to)."
+    return 1
+  fi
+  cur=$(BACKLOG_FILE="$board" bash "$backlog" get "$id" 2>&1) || {
+    _warn "[queue] BOARD FLIP FAILED $slug: cannot read row $id: $cur"
+    return 1; }
+  lead="${cur%%[ \[(]*}"
+  if [ "$lead" != queued ]; then
+    _say "[queue] $slug: board row $id is '$lead', not queued; left alone."
+    return 0
+  fi
+  # The note lands in a markdown table cell: no pipes or brackets, one line, short.
+  note="queue $slug: $verdict${reason:+ ($reason)}"
+  note=$(printf '%s' "$note" | tr -d '|[]\r' | tr '\n\t' '  ')
+  [ "${#note}" -gt 160 ] && note="${note:0:157}..."
+  out=$(BACKLOG_FILE="$board" bash "$backlog" set "$id" "$to" "$note" 2>&1) || {
+    _warn "[queue] BOARD FLIP FAILED $slug: set $id $to refused: $out"
+    return 1; }
+  mkdir -p "$(_run_dir)" 2>/dev/null || true
+  printf '%s\t%s\n' "$board" "$(git -C "$repo" hash-object "$board" 2>/dev/null)" >> "$(_flips_file)"
+  _say "[queue] $slug: board row $id -> $to."
+}
+
 # ---- protected paths ----------------------------------------------------------------
 # Print a reason if the run touched a path an unattended run may not write, else nothing.
 #
@@ -937,7 +1031,7 @@ _protected_touched() {  # repo head-before
       # and a failed glob match on THAT string is a false negative in a deny-list, not a safe
       # default: `git mv scratch.md CLAUDE.md`, left staged, would ship ungated (security review,
       # HIGH). So emit both sides of a rename as separate paths.
-      git -C "$repo" status --porcelain 2>/dev/null | cut -c4- \
+      _status_porcelain "$repo" | cut -c4- \
         | sed -e 's/ -> /\'$'\n''/'
     } | sort -u
   )
@@ -1007,6 +1101,7 @@ cmd_run() {
     head_before=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
     tips_before=$(_branch_tips "$repo")
     started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    _launch_snapshot_write "$slug" "$repo" "$head_before" "$tips_before" "$started_iso"
     verdict=$(_run_row "$slug" "$repo" "$pointer")
 
     case "$verdict" in
@@ -1035,6 +1130,8 @@ cmd_run() {
     _beat_clear "$slug"
     _journal_append "$slug" "$verdict" "$reason"
     _say "[queue] $slug: $verdict${reason:+ ($reason)}."
+    _board_flip_terminal "$slug" "$repo" "$verdict" "$reason" \
+      || _warn "[queue] $slug: the journal verdict '$verdict' stands; its board row was NOT flipped."
 
     # Queue-wide spend ceiling. Accumulate the run's self-reported tool-calls; once the
     # BATCH total crosses the ceiling, the current row has already finished + shipped (SWE-agent:

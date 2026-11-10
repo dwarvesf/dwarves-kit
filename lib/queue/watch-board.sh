@@ -116,7 +116,7 @@ _has_auto() {
 #                          is merely paused.
 #   dead  (>= DEAD)        confirmed gone. Write the verdict, schedule the retry, clear the beat.
 _reap_stale_runs() {  # journal
-  local journal="$1" rundir beat slug age sig reason verdict stalls
+  local journal="$1" rundir beat slug age sig reason verdict stalls lrepo
   rundir="$(_run_dir)"
   [ -d "$rundir" ] || return 0
   for beat in "$rundir"/*.beat; do
@@ -136,22 +136,30 @@ _reap_stale_runs() {  # journal
     # relabelling that `stalled` would throw away real, finished work.
     sig="$(_exit_signal "$slug")"
     reason=""
+    lrepo="$(_launch_get "$slug" repo)"
     if [ "$sig" = true ]; then
-      # The reaper does not know the slug's repo, so it cannot check the git delta: a finished run
-      # whose conductor died is never `done` here, only `gated` for a human (reason `unverified`
-      # unless the run wrote its own REASON).
+      # The conductor's own rule: a REASON beside the completion means a human looks (`gated`); a bare
+      # completion is `done` only on VERIFIED evidence. The launch record (repo, HEAD, branch tips,
+      # window-open time) is what lets the reaper ask the conductor's own `_run_delta` that question.
+      # No record (a run from before the record existed) or no delta: today's `gated`, never `done`.
       reason="$(_status_get "$slug" REASON)"
       verdict="gated"
-      [ -n "$reason" ] || reason="unverified: the conductor died before the run's git delta was checked"
+      if [ -z "$reason" ] && [ -n "$lrepo" ] \
+         && _run_delta "$lrepo" "$(_launch_get "$slug" head)" "$(_launch_get "$slug" tips)" "$(_launch_get "$slug" since)"; then
+        # Fail closed on protected paths. The conductor checks them only for an untrusted-path run, and
+        # the reaper cannot tell which kind died, so it always checks: at worst a trusted run is gated.
+        reason="$(_protected_touched "$lrepo" "$(_launch_get "$slug" head)")"
+        [ -n "$reason" ] || verdict="done"
+      fi
+      [ "$verdict" = done ] || [ -n "$reason" ] || reason="unverified: the conductor died before the run's git delta was checked"
       _guard_clear "$slug"
     else
       verdict=stalled
       reason="conductor heartbeat dead for ${age}s"
-      # The stall ladder ALWAYS climbs here. The reaper does not know which repo this slug ran
-      # against, so it can never obtain `verified` evidence, and a self-report is not allowed to
-      # clear the ladder (security review, HIGH): a run that writes `FILES_CHANGED: 1` on every
-      # attempt would otherwise be permanently exempt from quarantine, which is the one promise
-      # this guard exists to keep.
+      # The stall ladder ALWAYS climbs here. A self-report is not allowed to clear the ladder
+      # (security review, HIGH): a run that writes `FILES_CHANGED: 1` on every attempt would otherwise
+      # be permanently exempt from quarantine, which is the one promise this guard exists to keep.
+      # A real delta does not rescue a run that never claimed completion either: it stalled.
       stalls=$(( $(_guard_num "$slug" stalls) + 1 ))
       _guard_set "$slug" stalls "$stalls"
       _schedule_retry "$slug" "$stalls"
@@ -161,7 +169,9 @@ _reap_stale_runs() {  # journal
     _journal_append "$slug" "$verdict" "$reason"
     _mux_kill "$slug"          # the orphan window, if tmux still holds one
     _beat_clear "$slug"
-    _say "[watch] reaped $slug: $verdict ($reason)"
+    _say "[watch] reaped $slug: $verdict${reason:+ ($reason)}"
+    _board_flip_terminal "$slug" "$lrepo" "$verdict" "$reason" \
+      || _warn "[watch] $slug: the journal verdict '$verdict' stands; its board row was NOT flipped."
   done
 }
 
