@@ -30,7 +30,8 @@ _KIT_HOOK_LOG_NAMES="anti-rationalization board-row-gate citation-guard commit-f
 _kit_root_pinned() { [ "${KIT_LEDGER_DIR+set}" = "set" ] || [ -n "${DWARVES_KIT_LOG_DIR:-}" ]; }
 
 # _kit_migrate_corpus <durable>: copy the legacy run corpus in. The sentinel lands only on cp
-# success, so a partial copy (permissions, disk) retries on the next install.
+# success, so a partial copy (permissions, disk) retries on the next install. A symlinked legacy dir
+# is refused: no copy, no .migrated, a .migrate-refused reason instead, and the next run retries.
 _kit_migrate_corpus() {
   local durable="$1" legacy
   legacy="$(kit_legacy_log_dir)"
@@ -41,12 +42,14 @@ _kit_migrate_corpus() {
     # -R recursive, -n no-clobber; the trailing /. copies contents, not the dir itself.
     if cp -Rn "$legacy/." "$durable/" 2>/dev/null; then
       : > "$durable/.migrated" 2>/dev/null || true
+      rm -f "$durable/.migrate-refused" 2>/dev/null || true
     fi
   elif [ -L "$legacy" ]; then
     # Never migrate THROUGH a symlink: cp would dereference it and fan an attacker-planted
-    # target's contents into the corpus /kit:retro and the eval read. Warn, and sentinel.
+    # target's contents into the corpus /kit:retro and the eval read. Warn and record the reason,
+    # but never write .migrated: the sentinel means "the corpus is present here", and nothing was copied.
     echo "kit-migrate: legacy log dir is a symlink; refusing to migrate through it ($legacy)" >&2
-    : > "$durable/.migrated" 2>/dev/null || true
+    printf 'legacy-symlink: %s\n' "$legacy" > "$durable/.migrate-refused" 2>/dev/null || true
   else
     # Fresh install: no legacy dir ever existed. Mark done.
     : > "$durable/.migrated" 2>/dev/null || true

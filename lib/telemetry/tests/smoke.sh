@@ -148,9 +148,9 @@ env "${env_base[@]}" bash -c 'source "$0" && source "${0%/*}/kit-migrate.sh" && 
 grep -q 'symlink' "$WORK/mig-err.txt" \
   && ok "6c the refusal is announced on stderr" \
   || no "6c the symlink refusal was silent"
-[ -f "$WORK/durable-b/.migrated" ] \
-  && ok "6d the sentinel is dropped, so a hostile link is not re-scanned every command" \
-  || no "6d no sentinel -- the hostile link would be re-scanned on every kit command"
+[ ! -e "$WORK/durable-b/.migrated" ] && [ -f "$WORK/durable-b/.migrate-refused" ] \
+  && ok "6d no .migrated sentinel (nothing was copied); the refusal reason is recorded instead" \
+  || no "6d a sentinel claims a corpus that was never copied, or the refusal reason is missing"
 
 echo "== wiring: the module's own consumer resolves through the resolver =="
 
