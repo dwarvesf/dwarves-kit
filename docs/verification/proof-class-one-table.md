@@ -4,11 +4,11 @@ The proof class names, their rank, and the stateful words both classifiers share
 
 | Check | Result |
 |---|---|
-| New suite `tests/test-proof-class-table.sh` | 15 PASS, ALL PASS |
-| 48 affected suites, run directly | 47 rc 0 first pass; the 1 failure (FEATURES.md fresh) fixed and rerun 120/120 |
+| New suite `tests/test-proof-class-table.sh` | 25 PASS, ALL PASS (includes fail-closed on a malformed ERE row, a spaces-not-tabs row, a bad rank, and `coverage` with the table missing) |
+| 48 affected suites, run directly, twice (before and after the fail-closed fix) | 47 rc 0 each time; the 1 failure each time (FEATURES.md fresh) fixed with `check --fix`, rerun 120/120 |
 | Old vs new, ledger over the last 60 master commit diffs | 0 changed, 0 moved down |
 | Old vs new, gate over the same 60 commit subjects | 0 changed |
-| Negative control | old `proof-gate.sh` restored: 3 FAILED |
+| Negative control | old `proof-gate.sh` restored: 3 FAILED; loader before the fail-closed fix restored: 10 FAILED |
 
 ## New suite
 
@@ -19,6 +19,12 @@ Output:
 PASS an added word reaches both classifiers (and not the unedited copy)
 PASS proof-ledger.sh: missing table is fatal
 PASS proof-gate.sh: missing table is fatal
+PASS malformed ERE row: proof-ledger.sh classify fails closed
+PASS malformed ERE row: proof-gate.sh class fails closed
+PASS spaces-not-tabs row: proof-ledger.sh classify fails closed
+PASS spaces-not-tabs row: proof-gate.sh class fails closed
+PASS class row with a non-integer rank: proof-gate.sh contract fails closed
+PASS coverage still answers with the table missing
 PASS no classifier in lib/gate types the shared words or the class list inline
 PASS copy detector catches a planted shared word list
 PASS copy detector catches a planted class list
@@ -107,3 +113,22 @@ Verdict: RED as intended
 ```
 
 Restored with `git checkout -- lib/gate/proof-gate.sh`; the suite is green again (ALL PASS).
+
+### Fail-closed guards
+
+The loader validates the table at load: every row has exactly 3 tab fields, class ranks are unique integers, each stateful word and the joined pattern are valid EREs. Any fault is FATAL with exit 1. `proof-gate.sh` loads the table only in the verbs that classify (`class`, `requirement`, `contract`, `skeleton`, `classes`), so `coverage` still answers with the table missing.
+
+```
+Command: git show 27f20795:lib/gate/proof-classes.sh >| lib/gate/proof-classes.sh && git show 27f20795:lib/gate/proof-gate.sh >| lib/gate/proof-gate.sh && bash tests/test-proof-class-table.sh
+Exit: 10
+Output:
+FAIL malformed ERE row: ledger rc=0 out=grep: parentheses not balanced
+FAIL malformed ERE row: gate rc=2 out=grep: parentheses not balanced
+FAIL spaces-not-tabs row: ledger rc=0 out=stateful
+FAIL class row with a non-integer rank: gate rc=2 out=
+FAIL coverage with no table: rc=1 out=FATAL: lib/gate/proof-classes.tsv missing, unreadable, or lacks a class or statefu
+10 FAILED
+Verdict: RED as intended
+```
+
+Restored with `git checkout --`; the suite is green again (ALL PASS, 25 PASS).
