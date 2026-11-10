@@ -171,20 +171,22 @@ The operator settled the open items, and a second batch removed the next layer o
 
 **Kept as is.** The validate round machine is correct but hand-coded; a declared table would cost more than it saves today.
 
-## Open
+## Third pass
 
-| # | Machine | Where | Gap | Kind |
-|---|---|---|---|---|
-| 1 | Queue verdict to board row | `lib/queue/queue.sh` | a `done` run leaves its row `queued` | bug |
-| 2 | `wrap land` kind to `wrap ship` | `lib/wrap/wrap-ship.sh` | a `draft` land result reads as a refusal | bug |
-| 3 | Hermes writeback | `lib/board/board-writeback.sh` | a card move writes a backward row move with no notice | bug |
-| 4 | Migration sentinel | `lib/telemetry/kit-migrate.sh` | a symlinked legacy dir gets the sentinel with no copy, never retried | bug |
-| 5 | Queue sidecars | `lib/queue/` | three writers; a dead beat never reaches `done` | duplicate logic |
-| 6 | Mega reconcile labels | `lib/mega/mega-review.py` | label strings re-declared from `mega.sh` | copy |
-| 7 | Proof class | `lib/gate/proof-ledger.sh`, `proof-gate.sh` | two classifiers, same names, different inputs | copy |
-| 8 | `wrap adopt` rows | `lib/wrap/wrap-adopt.sh` | rows matched by free text | fragile |
-| 9 | Handoff closed set | `lib/session/handoffs.sh` | closed status set re-declared | copy |
-| 10 | Multica status map | `lib/sync/sources/multica.py` | `claimed` and `speccing` both map to `todo` | lossy |
-| 11 | Audit pass | `lib/audit/audit.sh` | no in-flight or failed state | missing state |
+The eleven items left open after the second pass, closed in one batch. Each landed after the changed suites passed on a fresh master.
 
-Cross-cutting: `stalled` and `blocked` carry several meanings across queue and mega.
+| # | Machine | PR | What shipped |
+|---|---|---|---|
+| 1 | Queue verdict to board row | #1135 | a terminal verdict moves a still-queued row: `done` to `executing`, `gated` to `parked` |
+| 2 | `wrap land` kind to `wrap ship` | #1134 | ship cannot reach a draft land; an unexpected kind now reports a bug instead of a refusal |
+| 3 | Hermes writeback | #1138 | a backward active move prints a notice; writeback carries it to stderr and the commit body |
+| 4 | Migration sentinel | #1133 | a symlinked legacy dir writes `.migrate-refused`, never `.migrated`, and retries next run |
+| 5 | Queue sidecars | #1135 | the reaper reuses the conductor delta check, so a dead run with real work records `done` |
+| 6 | Mega reconcile labels | #1133 | one `lib/mega/labels.tsv` for `mega.sh` and `mega-review.py` |
+| 7 | Proof class | #1140 | one `lib/gate/proof-classes.tsv`; a malformed table fails closed |
+| 8 | `wrap adopt` rows | #1139 | each row carries an `ok` / `skip` / `fail` code; the summary text is free to change |
+| 9 | Handoff closed set | #1134 | derived from the `terminal` class in `lib/board/states.tsv` |
+| 10 | Multica status map | none | not worth it: the `board:kw` marker already keeps the original state |
+| 11 | Audit pass | #1136 | `bin/audit start`; `audit due` shows `running` and `abandoned` |
+
+**Still open.** `stalled` and `blocked` carry several meanings across queue and mega. Renaming them touches the events log and labels readers already know, and fixes no wrong behavior today.
