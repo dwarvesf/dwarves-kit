@@ -7,7 +7,8 @@
 | Path | Gate before this change | Gate now |
 |---|---|---|
 | `land --draft` | `hooks/ship-gate.sh` called inline | same, through `_ship_gate_check` |
-| `land` (non-draft) | none: `git push origin <branch>` ran with no gate | `_ship_gate_check` before the push |
+| `land` (non-draft) | none: the push ran with no gate | `_ship_gate_check` before the push |
+| `land` adopting a PR by head sha | none (pushes nothing, but merges the PR head) | `_ship_gate_check` on the adopted branch |
 | `merge --apply`, `gh pr merge` | none | `_merge_ship_gate` on the PR head in a scratch worktree |
 | re-merge push (`_push_ff`, used by `land` and `merge`) | none | `_ship_gate_check` on the merge commit, commit undone on refusal |
 | `merge --repo <owner>/<name>` | none | none: no checkout to read; prints a skip note |
@@ -18,8 +19,8 @@
 Command: bash tests/test-wrap-land-gate.sh && bash tests/test-wrap-merge-gate.sh
 Exit: 0
 Output:
-  test-wrap-land-gate: 14 passed, 0 FAILED
-  test-wrap-merge-gate: 28 passed, 0 FAILED
+  test-wrap-land-gate: 20 passed, 0 FAILED
+  test-wrap-merge-gate: 40 passed, 0 FAILED
 Verdict: PASS
 ```
 
@@ -89,7 +90,7 @@ Output:
 Verdict: PASS (control RED: the merge commit is no longer undone, origin takes the push)
 ```
 
-Restored and green again:
+Restored and green again (counts before the review round; the later table is current):
 
 ```
 Command: bash tests/test-wrap-land-gate.sh; bash tests/test-wrap-merge-gate.sh
@@ -98,6 +99,52 @@ Output:
   test-wrap-land-gate: 14 passed, 0 FAILED
   test-wrap-merge-gate: 28 passed, 0 FAILED
 Verdict: PASS
+```
+
+## Review round: wrong target and the by-sha path
+
+The first review found two holes, both fixed in new commits and covered below.
+
+- The gate's push parser resolves a bare branch name to the LOCAL branch of that name, not HEAD. In merge's detached scratch worktree that branch is absent (an adopted repo refused every PR with "does not resolve to a commit") or stale (a bad head passed on an old local branch). The payload now names `HEAD:refs/heads/<branch>`.
+- A non-draft `land` that adopts a PR by head sha skipped the gate, then merged. It now runs the gate on the adopted branch.
+- A TERM or INT while merge's gate runs removes the scratch worktree and re-raises.
+
+The adopted fixtures need `lane_gates = true` on the default branch: the gate's fail-closed push parsing applies only there.
+
+```
+Command: bash tests/test-wrap-land-gate.sh && bash tests/test-wrap-merge-gate.sh
+Exit: 0
+Output:
+  test-wrap-land-gate: 20 passed, 0 FAILED
+  test-wrap-merge-gate: 40 passed, 0 FAILED
+Verdict: PASS
+```
+
+Negative control, after the fix was committed (`c85fa416`, fixture `2dc2186b`), each mutation restored with `git checkout -- <file>`:
+
+```
+Command: <payload names the bare branch again in lib/wrap/wrap-common.sh>; bash tests/test-wrap-merge-gate.sh; bash tests/test-wrap-land-gate.sh
+Exit: 1 (RED expected)
+Output:
+  test-wrap-merge-gate: 32 passed, 8 FAILED   (no-local-branch case refused, stale-local-branch case passes a bad head, payload)
+  test-wrap-land-gate: 18 passed, 2 FAILED
+Verdict: PASS (control RED)
+```
+
+```
+Command: <by-sha land skips the gate again in lib/wrap/wrap-land.sh>; bash tests/test-wrap-land-gate.sh
+Exit: 1 (RED expected)
+Output:
+  test-wrap-land-gate: 16 passed, 4 FAILED
+Verdict: PASS (control RED)
+```
+
+```
+Command: <no signal trap around the gate in lib/wrap/wrap-merge.sh>; bash tests/test-wrap-merge-gate.sh
+Exit: 1 (RED expected)
+Output:
+  test-wrap-merge-gate: 39 passed, 1 FAILED   (scratch worktree left behind)
+Verdict: PASS (control RED)
 ```
 
 ## Not covered
