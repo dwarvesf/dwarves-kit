@@ -560,6 +560,39 @@ else
   no "empty root wrong (rc=$nrrc): $nrout"
 fi
 
+echo "[closed-set] the board part of closed comes from lib/board/states.tsv class terminal"
+copy_root="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+mkdir -p "$copy_root/lib/session" "$copy_root/lib/board" "$copy_root/repo/_meta/handoffs"
+cp "$HO" "$copy_root/lib/session/handoffs.sh"
+cp "$DIR/../board/states.tsv" "$copy_root/lib/board/states.tsv"
+cat > "$copy_root/repo/_meta/BACKLOG.md" <<'EOF'
+| ID | Title | Lane | Status |
+|---|---|---|---|
+| CS-1 | shipped row | tiny | shipped |
+| CS-2 | dropped row | tiny | dropped |
+| CS-3 | archive word done | tiny | done |
+| CS-4 | archive word resolved | tiny | resolved |
+| CS-5 | parked row | tiny | parked |
+| CS-6 | queued row | tiny | queued |
+| CS-7 | new terminal row | tiny | retired |
+EOF
+for id in 1 2 3 4 5 6 7; do
+  printf '# Handoff\n\n## Next\nFinish CS-%s.\n' "$id" > "$copy_root/repo/_meta/handoffs/h$id.md"
+done
+verdict() { # <handoffs.sh> <n>
+  bash "$1" list --repo "$copy_root/repo" --limit 20 | grep "h$2.md" | grep -oE '(DEAD|LIVE|UNCITED)' | head -1
+}
+for pair in 1:DEAD 2:DEAD 3:DEAD 4:DEAD 5:LIVE 6:LIVE 7:LIVE; do
+  n="${pair%%:*}"; want="${pair##*:}"; got="$(verdict "$copy_root/lib/session/handoffs.sh" "$n")"
+  if [[ "$got" == "$want" ]]; then ok "CS-$n is $want with the shipped states.tsv"; else no "CS-$n expected $want, got '$got'"; fi
+done
+printf 'retired\tterminal\t-\n' >> "$copy_root/lib/board/states.tsv"
+got="$(verdict "$copy_root/lib/session/handoffs.sh" 7)"
+if [[ "$got" == "DEAD" ]]; then ok "a new terminal row in a copied states.tsv is honored"; else no "new terminal state not honored, got '$got'"; fi
+rm -f "$copy_root/lib/board/states.tsv"
+miss="$(bash "$copy_root/lib/session/handoffs.sh" list --repo "$copy_root/repo" 2>&1)"; mrc=$?
+if [[ $mrc -ne 0 && "$miss" == *"states.tsv"* ]]; then ok "a missing states.tsv fails loudly"; else no "missing states.tsv not loud (rc=$mrc): $miss"; fi
+
 echo
 if [[ $fail -eq 0 ]]; then
   echo "smoke: all $pass passed"
