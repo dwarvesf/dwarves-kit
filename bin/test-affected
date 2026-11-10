@@ -6,7 +6,7 @@
 # basename match and has no cache; this one picks by path OR basename anywhere in a suite,
 # records a PASS per content key, and can explain each pick (--list).
 #
-# Usage: test-affected [--base <ref>] [--list] [--no-cache]   (env: TEST_AFFECTED_JOBS, see Parallel)
+# Usage: test-affected [--base <ref>] [--list] [--no-cache]   (env: TEST_AFFECTED_JOBS, KIT_TEST_HOST_SLOTS, see Parallel)
 #   --base <ref>  diff base (default: origin/<default branch>, resolved like `wrap`)
 #   --list        print the selection and the reason for each (self | references <path> |
 #                 module <mod> | reads <path>), plus UNCOVERED files; run nothing
@@ -38,6 +38,12 @@
 # 1), halved (minimum 1) when `lib/host/load-warn.sh --over` says the 1-minute load is over its
 # threshold. Output is collated afterwards, one line per suite in selection order, so it never depends
 # on which suite finished first.
+# Host slots: JOBS caps this run only, and other runs on the host cannot be seen from here. Every suite
+# worker therefore also takes one slot of a host-wide counting semaphore (tests/lib/host-slots.sh) for
+# the length of the suite, serial suites included. KIT_TEST_HOST_SLOTS=<n> sets the slot count (default
+# cores / 2, minimum 2; 0 turns the gate off); KIT_TEST_SLOT_DIR=<dir> moves the slots (default
+# ${TMPDIR:-/tmp}/dwarves-kit-test-slots). A worker that has to wait notes it in the suite's log; the
+# suite's time limit starts once it runs.
 # Exit: 0 all green, 1 any FAIL or TIMEOUT, 2 usage or no base.
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,11 +79,19 @@ fi
 if [ "${1:-}" = "--run-one" ]; then
   out="$2"; suite="$3"; limit="$4"; key="${5:-}"
   name="$(suite_id "$suite")"
+  # Take a host-wide slot first (tests/lib/host-slots.sh): the job count caps this run only, so
+  # concurrent runs would otherwise add up. Released by the EXIT trap. The clock starts after the wait.
+  if [ -f "$SELF_DIR/../tests/lib/host-slots.sh" ]; then
+    # shellcheck source=tests/lib/host-slots.sh
+    . "$SELF_DIR/../tests/lib/host-slots.sh"
+    trap host_slot_release EXIT
+    host_slot_acquire "$out/$name.log"
+  fi
   t0="$(date +%s)"; rc=0
   # The host operator kit.toml never reaches a suite (tests/test-operator-pin.sh). A suite that needs
   # its own operator file sets the variable itself.
   export KIT_CONFIG_OPERATOR="$out/no-operator-config"
-  _timeout "$limit" bash "$suite" >"$out/$name.log" 2>&1 || rc=$?
+  _timeout "$limit" bash "$suite" >>"$out/$name.log" 2>&1 || rc=$?
   echo "$(( $(date +%s) - t0 ))" >"$out/$name.secs"
   if [ "$rc" -eq 0 ] && [ -n "${TA_CDIR:-}" ] && [ -n "$key" ]; then
     printf 'PASS %s\n' "$suite" >"$TA_CDIR/$key" 2>/dev/null || true
