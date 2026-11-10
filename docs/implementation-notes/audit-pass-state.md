@@ -12,7 +12,7 @@
 
 ## Tradeoffs
 
-- A `ran` call with the literal single-word note `started` reads as a started line. Accepted: no skill writes that note.
+- `ran` refuses the exact note `started` (exit 64), so a ran line can never read as a start. A longer note that begins with `started` is accepted.
 - `start` does not clear an earlier abandoned start. The next `ran` does, and a second `start` supersedes it.
 
 ## Open questions
