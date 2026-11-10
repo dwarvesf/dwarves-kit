@@ -229,7 +229,26 @@ _beat() {  # slug
   mkdir -p "$(dirname "$f")" 2>/dev/null || true
   : > "$f"
 }
-_beat_clear() { local f; f=$(_run_file "$1" beat) || return 0; rm -f "$f" 2>/dev/null || true; }
+_beat_clear() {
+  local f; f=$(_run_file "$1" beat) || return 0
+  rm -f "$f" "$(_run_file "$1" launch)" 2>/dev/null || true
+}
+
+# The launch record: what the conductor knew when the window opened, for the one reader that has to
+# judge the run WITHOUT the conductor. If the conductor dies, the reaper (watch-board.sh) has only the
+# slug, and a verified delta needs the repo plus the HEAD, branch tips and clock from before the run.
+# `key=value` lines, same shape as `<slug>.guard`. Cleared with the beat, so it lives exactly as long as
+# the in-flight claim does.
+_launch_snapshot_write() {  # slug repo head-before tips-before started-iso
+  local f; f=$(_run_file "$1" launch) || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || true
+  printf 'repo=%s\nhead=%s\ntips=%s\nsince=%s\n' "$2" "$3" "$4" "$5" > "$f"
+}
+_launch_get() {  # slug key
+  local f; f=$(_run_file "$1" launch) || return 0
+  [ -f "$f" ] || return 0
+  awk -F= -v k="$2" '$1==k {v=substr($0, length(k)+2)} END{if(v!="") print v}' "$f"
+}
 
 # `<slug>.guard` is `key=value` lines. Read prints the LAST value for the key (empty if unset);
 # write rewrites the file with that key replaced. Small enough that rewrite-whole beats an in-place
@@ -958,7 +977,11 @@ _board_flip_terminal() {  # slug repo verdict reason
   case "$verdict" in done) to=executing ;; *) to=parked ;; esac
   board="$repo/_meta/BACKLOG.md"
   backlog="$(cd "$(dirname "${BASH_SOURCE[0]}")/../board" && pwd)/backlog.sh"
-  if [ -z "$repo" ] || [ ! -f "$board" ]; then
+  if [ -z "$repo" ]; then
+    _warn "[queue] BOARD FLIP FAILED $slug: repo unknown (no launch record), row $id not moved to $to."
+    return 1
+  fi
+  if [ ! -f "$board" ]; then
     _warn "[queue] BOARD FLIP FAILED $slug: no board at '$board' (row $id not moved to $to)."
     return 1
   fi
@@ -1078,6 +1101,7 @@ cmd_run() {
     head_before=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
     tips_before=$(_branch_tips "$repo")
     started_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    _launch_snapshot_write "$slug" "$repo" "$head_before" "$tips_before" "$started_iso"
     verdict=$(_run_row "$slug" "$repo" "$pointer")
 
     case "$verdict" in
