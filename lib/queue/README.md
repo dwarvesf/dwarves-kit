@@ -4,7 +4,7 @@ The overnight launcher and the mega-goal runner. Both are dumb non-LLM drivers: 
 
 **Entry points**
 - `bin/queue` forwards to `lib/queue/queue.sh`.
-- `queue.sh run <src.tsv>`: open a real interactive `/goal` session per queued mega in a tmux window, watch for `RUNNER_DONE` or `RUNNER_GATED`, journal each outcome, then start the next. Flags: `--dry-run`, `--max-megas N`, `--from-boards`, `--journal`, `--ready`, `--push-only`, `--sanitize-prompt`.
+- `queue.sh run <src.tsv>`: open a real interactive `/goal` session per queued mega in a tmux window, watch for `RUNNER_DONE` or `RUNNER_GATED`, journal each outcome, then start the next. A `done` or `gated` run also moves its board row (`queued` to `executing` or `parked`) when the slug is `<repo>__<ID>`; the reaper in `watch-board.sh` does the same for a dead beat, and records `done` when the run wrote `EXIT_SIGNAL: true` and left a real delta. Flags: `--dry-run`, `--max-megas N`, `--from-boards`, `--journal`, `--ready`, `--push-only`, `--sanitize-prompt`.
 - `queue.sh watch [--apply] [--max N] [--board PATH]`: filter a board's `queued` rows marked `#auto` into the same TSV (`watch-board.sh`). Dry run by default.
 - `queue.sh wait <slug> [--timeout S]`: block until a run reaches a terminal journal state.
 - `orchestrate.sh next|run|flip|panes|queue|status|orca-reset <megagoal-dir>`: drive a mega-goal as one fresh `claude -p` session per sub-goal. `run` takes `--dry-run`, `--step`, `--stream`, `--capture-tokens`, `--board` and `--backend claude|orca`. There is no `bin/` forwarder.
