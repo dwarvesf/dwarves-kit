@@ -1,7 +1,7 @@
 # Board row status: the one declaration of the machine (docs/briefs/DECISION-BRIEF-declared-state-machines.md).
 # Every reader derives its state set from this file: backlog.sh (`states`, `machine`), board-writeback.sh,
 # lib/sync/sync_core.py (and the sync sources through it), lib/sync/sweep/board-health.
-# tests/test-meta-declared-states.sh fails when a script hardcodes the vocabulary again.
+# tests/test-board-states.sh fails when a script hardcodes the vocabulary again.
 #
 # Columns are TAB-separated: state, class, next.
 #   class  active    work is open and moving
