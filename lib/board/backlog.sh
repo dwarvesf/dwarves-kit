@@ -32,6 +32,9 @@
 #                                    Refuses (exit 1, writes nothing) when <ID-NNN> matches more
 #                                    than one row -- a union-merge duplicate would otherwise have
 #                                    both rows flipped silently. Run `dedupe` first.
+#                                    Never refuses on direction: a move out of a terminal state
+#                                    or back to an earlier active state (states.tsv order) still
+#                                    writes, with a one-line notice on stderr.
 #   backlog.sh dedupe <ID-NNN>     -> collapse duplicate rows sharing one id down to one: keeps
 #                                    the shipped/dropped/parked copy (in that order), else the
 #                                    last occurrence; a unique id is a no-op
@@ -118,6 +121,14 @@ next() {
 }
 
 _is_terminal() { case " $_TERMINAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# _is_backward <from> <to>: true when both are active and <to> is declared EARLIER than <from>
+# in states.tsv. The file order is the only source; awk reads the whole table, so no SIGPIPE.
+_is_backward() {
+  _machine | awk -F'\t' -v f="$1" -v t="$2" '
+    $2 == "active" { n++; if ($1 == f) fi = n; if ($1 == t) ti = n }
+    END { exit !(fi && ti && ti < fi) }'
+}
 
 # states [--class active|hold|terminal]: the vocabulary, one per line, in declared order.
 states() {
@@ -237,6 +248,8 @@ set_state() {
   from="$(_rows | awk -F'\t' -v id="$id" '$1 == id { v = $3 } END { print v }')"
   if [ -n "$from" ] && [ "$from" != "$state" ] && _is_terminal "$from"; then
     echo "board set: $id reopens from terminal '$from' to '$state'" >&2
+  elif [ -n "$from" ] && _is_backward "$from" "$state"; then
+    echo "board set: $id moves back from '$from' to '$state'" >&2
   fi
   awk -F'|' -v OFS='|' -v id="$id" -v st="$state" -v note="$note" -v terminal=" $_TERMINAL_STATES " '
     $0 ~ "^\\| *" id " *\\|" {

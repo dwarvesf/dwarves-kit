@@ -467,6 +467,45 @@ assert "NC6: the diff touches ONLY ID-501's status line (2 changed lines: -/+), 
   "$([ "$(printf '%s\n' "$NC6_DIFF" | grep -c '^[+-]|')" -eq 2 ] && echo 0 || echo 1)"
 
 echo ""
+echo "=== BK: a backward card move (executing -> queued) writes, exits 0, and the notice reaches the report ==="
+# backlog.sh set prints a stderr notice on a backward active move and never refuses. Writeback calls
+# it under set -e with stdout discarded, so the notice must survive in its stderr and the commit body.
+REMOTE3="$TMPDIR_T/remote3.git"
+git init -q --bare "$REMOTE3"
+FIXR3="$TMPDIR_T/fixR3"
+mkdir -p "$FIXR3/_meta"
+git init -q "$FIXR3"; git -C "$FIXR3" config user.email t@t; git -C "$FIXR3" config user.name t
+cat > "$FIXR3/_meta/BACKLOG.md" <<'BOARD_R3'
+| ID | Item | Notes | Status |
+|----|------|-------|--------|
+| ID-601 | Backward thing | notes | executing |
+BOARD_R3
+git -C "$FIXR3" add -A && git -C "$FIXR3" commit -q -m "chore(test): seed fixR3 board"
+DEF3="$(git -C "$FIXR3" symbolic-ref --short HEAD)"
+git -C "$FIXR3" remote add origin "$REMOTE3"
+git -C "$FIXR3" push -q -u origin "$DEF3"
+REG3="$TMPDIR_T/boards3.txt"
+echo "fixR3 $FIXR3/_meta/BACKLOG.md on" > "$REG3"
+H601="$(bash "$BOARD_MIRROR" row-hash fixR3 ID-601 "Backward thing" notes executing)"
+SNAP3="$TMPDIR_T/snap3.jsonl"
+jq -nc --arg h "$H601" '{origin:"fixR3:ID-601",repo:"fixR3",id:"ID-601",board:"fixR3",hermes_id:"t_601",row_hash:$h,hermes_status:"ready",seen_at:"2026-01-01T00:00:00Z"}' > "$SNAP3"
+LIST_BK="$TMPDIR_T/list-bk.json"
+jq -nc '[{id:"t_601",status:"triage",title:"x"}]' > "$LIST_BK"
+: > "$CALLS"; : > "$GHCALLS"
+STUB_CALL_LOG="$CALLS" STUB_LIST_JSON="$LIST_BK" HERMES_BIN="$STUB" GH_BIN="$GHSTUB" GH_CALL_LOG="$GHCALLS" \
+  bash "$BOARD" writeback --repo-root "$TMPDIR_T" --registry "$REG3" --snapshot "$SNAP3" >"$TMPDIR_T/wb-bk.out" 2>"$TMPDIR_T/wb-bk.err"
+WBBK_RC=$?
+assert "BK: writeback exits 0 on a backward card move" "$([ "$WBBK_RC" -eq 0 ] && echo 0 || echo 1)"
+assert "BK: the sync branch carries ID-601 as queued (the move still writes)" \
+  "$(git -C "$FIXR3" show chore/board-sync:_meta/BACKLOG.md | grep -q '^| ID-601 .*| queued ' && echo 0 || echo 1)"
+assert "BK: the notice stays off stdout (stdout belongs to the snapshot lines)" \
+  "$(grep -q 'moves back' "$TMPDIR_T/wb-bk.out" && echo 1 || echo 0)"
+assert "BK: the stderr report carries the backward notice for ID-601" \
+  "$(grep -qF "ID-601 moves back from 'executing' to 'queued'" "$TMPDIR_T/wb-bk.err" && echo 0 || echo 1)"
+assert "BK: the commit body records the backward notice" \
+  "$(git -C "$FIXR3" show chore/board-sync -s --format=%B | grep -qF "ID-601 moves back from 'executing' to 'queued'" && echo 0 || echo 1)"
+
+echo ""
 echo "=== Static security audit: argv-safety, no eval/sh-c, no direct DB access ==="
 assert "board-writeback.sh never eval/sh-c's a parsed variable" \
   "$(grep -qE '\beval\b|sh -c' "$BOARD_WRITEBACK" && echo 1 || echo 0)"

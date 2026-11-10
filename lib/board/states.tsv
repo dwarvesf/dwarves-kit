@@ -1,7 +1,7 @@
 # Board row status: the one declaration of the machine (docs/briefs/DECISION-BRIEF-declared-state-machines.md).
 # Every reader derives its state set from this file: backlog.sh (`states`, `machine`), board-writeback.sh,
 # lib/sync/sync_core.py (and the sync sources through it), lib/sync/sweep/board-health.
-# tests/test-meta-declared-states.sh fails when a script hardcodes the vocabulary again.
+# tests/test-board-states.sh fails when a script hardcodes the vocabulary again.
 #
 # Columns are TAB-separated: state, class, next.
 #   class  active    work is open and moving
@@ -10,7 +10,8 @@
 #   next   the forward path a caller normally takes from this state, space-separated, `-` for none.
 #          Advisory: `set` accepts any declared state from any non-terminal state (hand repairs,
 #          reconcile, and sync legitimately jump), so this column answers "where do I go next",
-#          never "what is allowed".
+#          never "what is allowed". A move back to an EARLIER active row (file order) also prints
+#          a stderr notice and still writes.
 # Order matters: it is the render order of `backlog.sh board` and of `states`.
 queued	active	claimed
 claimed	active	speccing executing
