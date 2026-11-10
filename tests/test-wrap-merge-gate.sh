@@ -120,6 +120,8 @@ mg_build_adopted() { # mg_build_adopted <name> [bad] -- adopted repo; with "bad"
   git -C "$work" config user.email dev@dwarves.foundation; git -C "$work" config user.name dev
   git -C "$work" symbolic-ref HEAD refs/heads/main
   printf 'marker\n' > "$work/docs/verification/README.md"; printf 'base\n' > "$work/a.txt"
+  # Fail-closed push parsing applies only where the default branch carries lane_gates = true.
+  printf '[gate]\nlane_gates = true\n' > "$work/.kit.toml"
   git -C "$work" add -A; git -C "$work" commit -qm "chore: base"
   git -C "$work" checkout -q -b feat/gate
   printf 'good\n' > "$work/b.txt"; git -C "$work" add -A; git -C "$work" commit -qm "feat: good step"
