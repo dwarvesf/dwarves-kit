@@ -176,6 +176,14 @@ test('a survey takes the row, so the band steps aside', async ($, on) => {
   await ui.unmount()
 })
 
+test('on the desktop surface the band steps aside and a row from a mod beneath still renders', async ($, on) => {
+  await setup($, on, [], { downstream: 'agentpane row' })
+  const ui = await $.ui.mount({ plugin: 'board-pane', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  expect(await ui.find({ key: 'seg-tasks' })).toBeUndefined()
+  expect((await ui.find({ key: 'downstream' }))?.text).toBe('agentpane row')
+  await ui.unmount()
+})
+
 test('the PR lookup is cached for five minutes across turns', async ($, on) => {
   const { calls, clock } = await setup($, on)
   const ghCalls = () => calls.filter(name => name === 'gh').length
