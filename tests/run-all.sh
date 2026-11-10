@@ -37,6 +37,10 @@
 #                                  under <n>, one listed higher keeps its own. For a runner far slower
 #                                  than the host the file was measured on. Empty or non-numeric: unset.
 #                                  RUN_ALL_TIMEOUT_SECS, when set, still wins over both.
+#        KIT_TEST_HOST_SLOTS=<n>  suites running at once across EVERY run on the host (tests/lib/host-slots.sh;
+#                                  each suite worker takes a slot, serial suites too). Default: cores / 2,
+#                                  minimum 2; 0 turns the gate off. RUN_ALL_JOBS only caps this one run.
+#        KIT_TEST_SLOT_DIR=<dir>  where the slots live (default dwarves-kit-test-slots under the per-user temp dir, else ${TMPDIR:-/tmp})
 #        DWARVES_KIT_LOG_DIR / KIT_LEDGER_DIR  the kit log root (lib/telemetry/kit-log-dir.sh); a failed
 #                                  suite's full output is kept under <root>/run-all/<stamp>/<suite>.out
 # Exit:  0 all green, 1 one or more failed (every failure is listed at the end).
@@ -107,6 +111,14 @@ source "$KIT_DIR/tests/lib/suites.sh"
 if [ "${1:-}" = "--run-one" ]; then
   suite="$2"; outdir="$3"
   name="$(suite_id "$suite")"
+  # Take a host-wide slot first (tests/lib/host-slots.sh): RUN_ALL_JOBS caps this run only, so
+  # concurrent runs would otherwise add up. Released by the EXIT trap. The clock starts after the wait.
+  # A fixture kit that lacks the helper runs ungated.
+  if [ -f "$KIT_DIR/tests/lib/host-slots.sh" ]; then
+    source "$KIT_DIR/tests/lib/host-slots.sh"
+    trap host_slot_release EXIT
+    host_slot_acquire "$outdir/$name.log"
+  fi
   # Whole seconds via date, not EPOCHREALTIME: Apple ships bash 3.2, which has neither
   # that variable nor the arithmetic to make sub-second numbers worth the trouble. The
   # stamp is written unconditionally; only the collate loop cares whether --time was given.
@@ -120,7 +132,7 @@ if [ "${1:-}" = "--run-one" ]; then
   # data-path resolver honors them) and write there. Take them away from every suite; a suite that
   # tests the resolver sets what it needs itself.
   unset XDG_STATE_HOME XDG_CACHE_HOME XDG_CONFIG_HOME KIT_DATA_ROOT
-  if _timeout "$_limit" bash "$suite" >"$outdir/$name.log" 2>&1; then
+  if _timeout "$_limit" bash "$suite" >>"$outdir/$name.log" 2>&1; then
     echo "ok" >"$outdir/$name.status"
     mark="."
   else
