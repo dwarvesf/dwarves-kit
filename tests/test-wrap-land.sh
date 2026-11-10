@@ -3269,7 +3269,7 @@ echo "--- draft_real_ship_gate_smoke: the real hook gets a payload it reads (it 
 # Needs the kit's own lib/ beside hooks/ (a checkout, not a bare install), which is how this suite runs.
 dr_build dr16r
 : > "$GH_STUB_CALLS"
-out="$(env -u CLAUDE_PLUGIN_ROOT DWARVES_KIT_LOG_DIR="$TMPD/dr-hook-log" GH_STUB_OPEN_PRS='[]' "$WRAP" land "$DR_WT" --draft 2>&1)"; rc=$?
+out="$(env -u CLAUDE_PLUGIN_ROOT -u WRAP_LAND_SHIP_GATE DWARVES_KIT_LOG_DIR="$TMPD/dr-hook-log" GH_STUB_OPEN_PRS='[]' "$WRAP" land "$DR_WT" --draft 2>&1)"; rc=$?
 chk "draft_real_ship_gate_smoke: the real hook refuses the fixture identity with exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "draft_real_ship_gate_smoke: says the gate blocked the push" "$out" "DRAFT REFUSED: ship-gate blocked the push"
 chk_has "draft_real_ship_gate_smoke: relays the hook's own reason" "$out" "BLOCKED"

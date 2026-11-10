@@ -713,8 +713,7 @@ _land_run() {
     fi
   fi
 
-  # Draft-only refusals, all before the push. The ship-gate call stands in for the PreToolUse
-  # hook, which sees a literal `git push` in a Bash command and never sees this one.
+  # Draft-only refusals, all before the push.
   if [ "$draft" -eq 1 ]; then
     if [ "$open_count" -eq 1 ] && [ "$(printf '%s' "$open_json" | jq -r '.[0].isDraft // false' 2>/dev/null)" != "true" ]; then
       local nd_n; nd_n="$(printf '%s' "$open_json" | jq -r '.[0].number' 2>/dev/null)"
@@ -725,22 +724,15 @@ _land_run() {
       echo "     DRAFT REFUSED: no proof-of-done file and no --body-file; a draft with a title-only body is not allowed" >&2
       return 2
     fi
-    local gate gate_err gate_rc
-    gate="${WRAP_LAND_SHIP_GATE:-$SELF_DIR/../../hooks/ship-gate.sh}"
-    [ -z "${WRAP_LAND_SHIP_GATE:-}" ] || echo "     note: ship-gate path overridden by WRAP_LAND_SHIP_GATE (${gate})" >&2
-    if [ ! -f "$gate" ]; then
-      echo "     DRAFT REFUSED: ship-gate blocked the push" >&2
-      echo "     ship-gate hook not found: ${gate}" >&2
-      return 2
-    fi
-    # Stdout is dropped (a hook can print a JSON systemMessage there); stderr is the reason.
-    gate_err="$(jq -n --arg cwd "$wt" --arg cmd "git push origin ${branch}" '{cwd: $cwd, tool_input: {command: $cmd}}' \
-      | CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}" bash "$gate" 2>&1 >/dev/null)"; gate_rc=$?
-    if [ "$gate_rc" -ne 0 ]; then
-      echo "     DRAFT REFUSED: ship-gate blocked the push" >&2
-      [ -z "$gate_err" ] || printf '%s\n' "$gate_err" >&2
-      return 2
-    fi
+  fi
+
+  # The ship-gate call stands in for the PreToolUse hook, which sees a literal `git push` in
+  # a Bash command and never sees this one. It runs on every push land makes (draft or not);
+  # a by-sha adoption pushes nothing, so only a draft run checks it.
+  if [ "$draft" -eq 1 ] || [ "$by_sha" -eq 0 ]; then
+    local refused="PUSH REFUSED"
+    [ "$draft" -eq 0 ] || refused="DRAFT REFUSED"
+    _ship_gate_check "$wt" "$branch" "$refused" || return 2
   fi
 
   _LAND_STEP=push

@@ -302,6 +302,36 @@ _pr_head_resync_body() {
   return 2
 }
 
+# _merge_ship_gate <repo> <n> <branch> <head-oid> -- run the ship-gate on PR <n>'s head before
+# it merges. The head is <head-oid> itself (the head the gates read, fetched by sha when the
+# checkout lacks it), checked out detached in a scratch worktree removed on every path; the
+# repo's own worktrees are never touched. 0 when the gate passes; 2 (reason on stderr) when it
+# refuses or the head cannot be read, so the caller leaves the PR open.
+_merge_ship_gate() {
+  local repo="$1" n="$2" branch="$3" head_oid="$4" scratch rc
+  if [ -z "$branch" ]; then
+    echo "FAILED merge #${n}: MERGE REFUSED: the PR head branch is unknown, so the ship-gate cannot run; left open" >&2
+    return 2
+  fi
+  if ! git -C "$repo" cat-file -e "${head_oid}^{commit}" 2>/dev/null \
+     && ! git -C "$repo" fetch -q origin "$head_oid" 2>/dev/null; then
+    echo "FAILED merge #${n}: MERGE REFUSED: could not fetch the PR head for the ship-gate; left open" >&2
+    return 2
+  fi
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/kit-mergegate.XXXXXX")" || {
+    echo "FAILED merge #${n}: MERGE REFUSED: no scratch dir for the ship-gate; left open" >&2; return 2; }
+  if ! git -C "$repo" worktree add -q --detach "${scratch}/wt" "$head_oid" 2>/dev/null; then
+    rm -rf "$scratch"
+    echo "FAILED merge #${n}: MERGE REFUSED: could not check out the PR head for the ship-gate; left open" >&2
+    return 2
+  fi
+  _ship_gate_check "${scratch}/wt" "$branch" "MERGE REFUSED #${n}"; rc=$?
+  git -C "$repo" worktree remove --force "${scratch}/wt" >/dev/null 2>&1
+  rm -rf "$scratch"
+  [ "$rc" -eq 0 ] || echo "FAILED merge #${n}: left open" >&2
+  return "$rc"
+}
+
 # _branch_worktree <repo> <branch> -- the checkout that holds <branch>, empty when none does.
 # `--porcelain -z` NUL-terminates every attribute, which keeps a path carrying a newline whole.
 _branch_worktree() {
@@ -985,7 +1015,7 @@ cmd_merge() {
     printf '%s\t%s\t%s\n' "$n" "$head" "$base" >> "$cache"
   done
 
-  local first_eligible="" verdict title conflict_n="" conflict_count=0
+  local first_eligible="" gate_branch="" verdict title conflict_n="" conflict_count=0
   local superseded_n="" superseded_branch=""
   for n in $numbers; do
     detail="$(cat "${jsondir}/pr-${n}.json" 2>/dev/null)"
@@ -1005,7 +1035,7 @@ cmd_merge() {
     fi
     if [ "$verdict" = "OK" ]; then
       echo "eligible #${n} ${title} [${head}]"
-      [ -n "$first_eligible" ] || first_eligible="$n"
+      [ -n "$first_eligible" ] || { first_eligible="$n"; gate_branch="$head"; }
     else
       echo "SKIP #${n} ${title}: ${verdict#* }"
       case "${verdict%% *}" in
@@ -1080,7 +1110,7 @@ cmd_merge() {
           verdict="SKIP dependents open, retarget them first"
         fi
         if [ "$verdict" = "OK" ]; then
-          first_eligible="$conflict_n"
+          first_eligible="$conflict_n"; gate_branch="$c_head"
           head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
           echo "eligible #${conflict_n} after the re-merge"
         else
@@ -1093,7 +1123,7 @@ cmd_merge() {
             r_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
             if _fallback_ok "$cache" "$c_head" "$conflict_n" \
                && _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$r_oid" "$detail"; then
-              first_eligible="$SQ_PR"; head_oid="$SQ_OID"
+              first_eligible="$SQ_PR"; head_oid="$SQ_OID"; gate_branch="${c_head}-squash"
               superseded_n="$conflict_n"; superseded_branch="${c_head}-squash"
             fi
           fi
@@ -1101,7 +1131,7 @@ cmd_merge() {
       elif _fallback_ok "$cache" "$c_head" "$conflict_n" \
         && _squash_fallback "$repo" "$url" "$def" "$conflict_n" "$c_head" "$c_oid" \
              "$(cat "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"; then
-        first_eligible="$SQ_PR"; head_oid="$SQ_OID"
+        first_eligible="$SQ_PR"; head_oid="$SQ_OID"; gate_branch="${c_head}-squash"
         superseded_n="$conflict_n"; superseded_branch="${c_head}-squash"
       fi
     fi
@@ -1146,6 +1176,14 @@ cmd_merge() {
     1) ;;
     *) echo "FAILED merge #${first_eligible}: the ci label could not be set" >&2; return 2 ;;
   esac
+  fi
+
+  # The ship-gate reads the head about to land, the one check the PreToolUse hook cannot
+  # make for a merge this script runs. By slug there is no checkout to read it in.
+  if [ -n "$slug" ]; then
+    echo "note: ship-gate skipped for #${first_eligible}: --repo has no local checkout to read the head in"
+  else
+    _merge_ship_gate "$repo" "$first_eligible" "$gate_branch" "$head_oid" || return 2
   fi
 
   # Squash only, one PR per call, never --delete-branch (a worktree may hold the branch)

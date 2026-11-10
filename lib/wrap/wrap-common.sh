@@ -64,6 +64,32 @@ _gh_merge_transient() {
 '|temporar|failed to connect'
 }
 
+# _ship_gate_check <dir> <branch> <label> -- run hooks/ship-gate.sh on <dir>'s HEAD the way the
+# PreToolUse hook would on `git push origin <branch>`. The hook only sees a literal push in a
+# Bash command, never the push (or merge) a wrap verb makes from inside its own script, so
+# each verb calls this before it pushes or merges. Fails closed: a missing gate or a non-zero
+# exit prints "<label>: ship-gate blocked the push" plus the gate's own reason on stderr and
+# returns 2. WRAP_LAND_SHIP_GATE overrides the gate path (tests only; announced when set).
+_ship_gate_check() {
+  local dir="$1" branch="$2" label="$3" gate gate_err gate_rc
+  gate="${WRAP_LAND_SHIP_GATE:-$SELF_DIR/../../hooks/ship-gate.sh}"
+  [ -z "${WRAP_LAND_SHIP_GATE:-}" ] || echo "     note: ship-gate path overridden by WRAP_LAND_SHIP_GATE (${gate})" >&2
+  if [ ! -f "$gate" ]; then
+    echo "     ${label}: ship-gate blocked the push" >&2
+    echo "     ship-gate hook not found: ${gate}" >&2
+    return 2
+  fi
+  # Stdout is dropped (a hook can print a JSON systemMessage there); stderr is the reason.
+  gate_err="$(jq -n --arg cwd "$dir" --arg cmd "git push origin ${branch}" '{cwd: $cwd, tool_input: {command: $cmd}}' \
+    | CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SELF_DIR/../.." && pwd)}" bash "$gate" 2>&1 >/dev/null)"; gate_rc=$?
+  if [ "$gate_rc" -ne 0 ]; then
+    echo "     ${label}: ship-gate blocked the push" >&2
+    [ -z "$gate_err" ] || printf '%s\n' "$gate_err" >&2
+    return 2
+  fi
+  return 0
+}
+
 # _gh_merge_retry <pr> <repo-url> <head-oid> -- `gh pr merge` behind a bounded
 # transient-error retry: WRAP_MERGE_RETRY_MAX attempts (default 3) with
 # attempt * WRAP_MERGE_RETRY_SLEEP seconds of backoff (default 5). A real
@@ -594,6 +620,13 @@ _verify_or_undo() {
 # (undo the same), and an unreadable remote resets nothing, since the commit may be there.
 _push_ff() {
   local wt="$1" branch="$2" tip="$3" rc remote rrc
+  # The merge commit is the head being shipped: the ship-gate reads it before the push, and a
+  # refusal undoes it like a failed verify. _MVP_PUSH stays unset, so a signal here undoes too.
+  if ! _ship_gate_check "$wt" "$branch" "PUSH REFUSED"; then
+    [ -n "$MVP_HIT" ] && return 130
+    _undo_local "$wt" "$branch" "$tip"; return $?
+  fi
+  [ -n "$MVP_HIT" ] && return 130
   _MVP_PUSH=1
   git -C "$wt" push origin "HEAD:refs/heads/${branch}"; rc=$?
   [ -n "$MVP_HIT" ] && return 130

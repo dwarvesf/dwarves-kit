@@ -903,13 +903,21 @@ out="$(GH_STUB_OPEN_PRS="$(tv_open_one 25 feat/tv)" GH_STUB_PR_25="$(tv_pr_json 
 chk "tree-verify: a merge commit off main exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
 chk_has "tree-verify: names the merge commit off main" "$out" "is not on origin/main"
 
-echo "--- an unreachable head object: never a false pass, exits 3"
+echo "--- an unreachable head object: the ship-gate cannot read it, so the merge is refused before gh runs"
 BOGUS_OID="0000000000000000000000000000000000000f"
+: > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_PRS="$(tv_open_one 22 feat/tv)" GH_STUB_PR_22="$(tv_pr_json 22 feat/tv "$BOGUS_OID")" \
   "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
-chk "tree-verify: an unreachable head object exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
-chk_has "tree-verify: names it unverifiable rather than passing silently" "$out" \
-  "tree UNVERIFIABLE the PR head is not a local object"
+chk "tree-verify: an unreachable head object exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "tree-verify: names the unreadable head rather than merging" "$out" \
+  "MERGE REFUSED: could not fetch the PR head for the ship-gate"
+chk "tree-verify: an unreachable head object never reaches pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+echo "--- _tree_verify itself still never passes an unreachable head object"
+out="$(bash -c 'source "$1/lib/wrap/wrap-common.sh"; source "$1/lib/wrap/wrap-land.sh"; _tree_verify "$2" main "$3" "$4"' _ \
+  "$KIT_DIR" "$TVM" "$BOGUS_OID" "$(git -C "$TVM" rev-parse origin/main)" 2>&1)"
+chk_has "tree-verify: _tree_verify names an unreachable head unverifiable" "$out" \
+  "UNVERIFIABLE the PR head is not a local object"
 
 echo "--- scoped match: another PR landed on main meanwhile, only the touched path must agree"
 build_tv_repo scoped
