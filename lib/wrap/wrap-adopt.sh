@@ -33,12 +33,17 @@ ADOPT_SH="$LIB_ROOT/adopt.sh"
 # The apply path's per-repo scratch (start's stderr, the captured land log R8
 # parses). cmd_adopt creates it once and the verb's EXIT trap removes it.
 ADOPT_TMP=""
-ADOPT_ROW=""; ADOPT_PR="-"; ADOPT_STOP=0
+ADOPT_ROW=""; ADOPT_CODE="fail"; ADOPT_PR="-"; ADOPT_STOP=0
 # The batch (R10): repos in argument order, each one's summary name, PR column
 # and row, the running index, and the worktree once cmd_start printed one. The
 # INT/TERM trap reads them, so they are globals.
 ADOPT_N=0; ADOPT_I=1; ADOPT_WT=""
 ADOPT_REPOS=(); ADOPT_NAMES=(); ADOPT_PRS=(); ADOPT_ROWS=()
+
+# _adopt_row <code> <text> -- sets the row and its machine code together. The code
+# is what the exit status reads; the text is only printed. Codes: ok (the repo is
+# adopted, or a dry run would adopt it), skip (nothing to do), fail (anything else).
+_adopt_row() { ADOPT_CODE="$1"; ADOPT_ROW="$2"; }
 
 # _adopt_blob <repo> <revspec> -- a blob's text (empty when absent), never an error.
 _adopt_blob() { git -C "$1" show "$2" 2>/dev/null; }
@@ -353,16 +358,16 @@ _adopt_preflight() {
 # `adopt.sh --check` on the main checkout). start and land are functions of this
 # script, never the bin/wrap entry. The verb never removes what a failure
 # leaves: after cmd_start every failure row names the worktree, and R12 decides
-# whether a `resume:` line can follow. Sets ADOPT_ROW, ADOPT_PR (`#<n>` or `-`),
+# whether a `resume:` line can follow. Sets ADOPT_ROW with its ADOPT_CODE, ADOPT_PR (`#<n>` or `-`),
 # and ADOPT_STOP (1 on the land-pipeline interrupt); always returns 0.
 _adopt_one() {
   local repo="$1" def="$2" bodyfile="$3"
   local wt="" out rc style mb miss detail log land_rc merged prn line fl driver ig
-  ADOPT_ROW=""; ADOPT_PR="-"; ADOPT_STOP=0
+  ADOPT_ROW=""; ADOPT_CODE="fail"; ADOPT_PR="-"; ADOPT_STOP=0
 
   wt="$(cmd_start "$repo" "$ADOPT_BRANCH" 2>"$ADOPT_TMP/start.err")"; rc=$?
   if [ "$rc" -ne 0 ]; then
-    ADOPT_ROW="failed: start: $(tail -n 1 "$ADOPT_TMP/start.err" 2>/dev/null)"
+    _adopt_row fail "failed: start: $(tail -n 1 "$ADOPT_TMP/start.err" 2>/dev/null)"
     return 0
   fi
   ADOPT_WT="$wt"
@@ -374,20 +379,20 @@ _adopt_one() {
   out="$("$driver" "$wt" 2>&1)"; rc=$?
   [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    /'
   if [ "$rc" -ne 0 ]; then
-    ADOPT_ROW="failed: adopt exit ${rc}; worktree left at ${wt}"
+    _adopt_row fail "failed: adopt exit ${rc}; worktree left at ${wt}"
     return 0
   fi
 
   out="$(git -C "$wt" add -A 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ]; then
-    ADOPT_ROW="failed: git add: $(printf '%s\n' "$out" | tail -n 1); worktree left at ${wt}"
+    _adopt_row fail "failed: git add: $(printf '%s\n' "$out" | tail -n 1); worktree left at ${wt}"
     return 0
   fi
 
   # R6-: a staged symlink, or a path whose type changed, can carry another file's text into the
   # commit. The path-name guard below cannot see it, so refuse on the mode and the status letter.
   if git -C "$wt" diff --cached --raw --no-renames | awk '$2 == "120000" || $5 == "T" { f = 1 } END { exit !f }'; then
-    ADOPT_ROW="failed: adoption staged a symlink or a type change; worktree left at ${wt}"
+    _adopt_row fail "failed: adoption staged a symlink or a type change; worktree left at ${wt}"
     return 0
   fi
   # R6: every staged path must sit inside ADOPT_PATHS; the one allowed
@@ -395,7 +400,7 @@ _adopt_one() {
   style="$(_adopt_style_of "$wt" ":")"
   miss="$(git -C "$wt" diff --cached --name-only --no-renames -z | _adopt_paths_miss "$style")"
   if [ -n "$miss" ]; then
-    ADOPT_ROW="failed: adoption wrote ${miss}, outside the scaffold set; worktree left at ${wt}"
+    _adopt_row fail "failed: adoption wrote ${miss}, outside the scaffold set; worktree left at ${wt}"
     return 0
   fi
   # R6's in-worktree ignored check, before the empty-list test: the worktree is
@@ -406,25 +411,25 @@ _adopt_one() {
   [ -n "$style" ] && ig="$ig .claude/output-styles/${style}.md"
   miss="$(git -C "$wt" status --porcelain --ignored -- $ig 2>/dev/null | sed -n 's/^!! //p' | sed -n 1p)"
   if [ -n "$miss" ]; then
-    ADOPT_ROW="failed: adoption path ${miss} is gitignored in origin/${def}; worktree left at ${wt}"
+    _adopt_row fail "failed: adoption path ${miss} is gitignored in origin/${def}; worktree left at ${wt}"
     return 0
   fi
   if [ -z "$(git -C "$wt" diff --cached --name-only --no-renames)" ]; then
-    ADOPT_ROW="no change: origin/${def} already carries the adoption; worktree left at ${wt}"
+    _adopt_row fail "no change: origin/${def} already carries the adoption; worktree left at ${wt}"
     return 0
   fi
   # R6a: the one executable-bearing file may gain kit hooks and outputStyle only.
   if [ -n "$(git -C "$wt" diff --cached --name-only --no-renames -- .claude/settings.json)" ]; then
     if ! detail="$(_adopt_settings_diff "$(_adopt_blob "$wt" ":.claude/settings.json")" \
                                         "$(_adopt_blob "$wt" "origin/${def}:.claude/settings.json")")"; then
-      ADOPT_ROW="failed: adoption changed .claude/settings.json beyond kit hooks: ${detail}; worktree left at ${wt}"
+      _adopt_row fail "failed: adoption changed .claude/settings.json beyond kit hooks: ${detail}; worktree left at ${wt}"
       return 0
     fi
   fi
 
   out="$(git -C "$wt" commit -q -m "$ADOPT_COMMIT_SUBJECT" -m "$ADOPT_COMMIT_BODY" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ]; then
-    ADOPT_ROW="failed: commit: $(printf '%s\n' "$out" | tail -n 1); worktree left at ${wt}"
+    _adopt_row fail "failed: commit: $(printf '%s\n' "$out" | tail -n 1); worktree left at ${wt}"
     return 0
   fi
 
@@ -442,7 +447,7 @@ _adopt_one() {
     fi
   fi
   if [ -n "$miss" ]; then
-    ADOPT_ROW="failed: the commit differs from the guarded set: ${miss}; worktree left at ${wt}"
+    _adopt_row fail "failed: the commit differs from the guarded set: ${miss}; worktree left at ${wt}"
     return 0
   fi
 
@@ -452,7 +457,7 @@ _adopt_one() {
   out="$(cd "$wt" && bash "$PROOF_LEDGER_SH" override "${ADOPT_BRANCH#*/}" "$OVERRIDE_REASON" 2>&1)"; rc=$?
   [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    /'
   if [ "$rc" -ne 0 ]; then
-    ADOPT_ROW="failed: override: $(printf '%s\n' "$out" | tail -n 1); resume: wrap land ${wt}${bodyfile:+ --body-file $bodyfile}"
+    _adopt_row fail "failed: override: $(printf '%s\n' "$out" | tail -n 1); resume: wrap land ${wt}${bodyfile:+ --body-file $bodyfile}"
     return 0
   fi
 
@@ -473,21 +478,21 @@ _adopt_one() {
   [ -n "$prn" ] && ADOPT_PR="$prn"
   case "$land_rc" in
     130|143)
-      ADOPT_ROW="interrupted: land exit ${land_rc}; read ${wt}"; ADOPT_STOP=1; return 0 ;;
+      _adopt_row fail "interrupted: land exit ${land_rc}; read ${wt}"; ADOPT_STOP=1; return 0 ;;
     3)
       line="$(grep 'merged #' "$log" | grep -v 'tree verified' | sed -n '1{s/^ *//;p;}')"
-      ADOPT_ROW="failed: land exit 3: ${line}; worktree left at ${wt}"
+      _adopt_row fail "failed: land exit 3: ${line}; worktree left at ${wt}"
       return 0 ;;
   esac
   if [ -n "$merged" ]; then
     if "$ADOPT_SH" --check "$repo" >/dev/null 2>&1; then
-      ADOPT_ROW="adopted"
+      _adopt_row ok "adopted"
       fl="$(grep -E 'FAILED ' "$log" | sed -n '1{s/^ *//;p;}')"
-      [ -n "$fl" ] && ADOPT_ROW="adopted; ${fl}"
+      [ -z "$fl" ] || _adopt_row fail "adopted; ${fl}"
     else
       fl="$(grep -F 'PULL BLOCKED' "$log" | sed -n '1{s/^ *//;p;}')"
       [ -z "$fl" ] && fl="adopt --check exit 1"
-      ADOPT_ROW="merged, not adopted on the main checkout: ${fl}"
+      _adopt_row fail "merged, not adopted on the main checkout: ${fl}"
     fi
     return 0
   fi
@@ -495,12 +500,12 @@ _adopt_one() {
   # commit is already on origin, so the row quotes it and adds no `resume:`.
   fl="$(grep -F 'wrap merge' "$log" | sed -n '1{s/^ *//;p;}')"
   if [ -n "$fl" ]; then
-    ADOPT_ROW="failed: land exit ${land_rc}: ${fl}"
+    _adopt_row fail "failed: land exit ${land_rc}: ${fl}"
     return 0
   fi
   fl="$(grep -E 'REFUSED|FAILED' "$log" | sed -n '1{s/^ *//;p;}')"
   [ -z "$fl" ] && fl="$(tail -n 1 "$log" | sed 's/^ *//')"
-  ADOPT_ROW="failed: land exit ${land_rc}: ${fl}; resume: wrap land ${wt}${bodyfile:+ --body-file $bodyfile}"
+  _adopt_row fail "failed: land exit ${land_rc}: ${fl}; resume: wrap land ${wt}${bodyfile:+ --body-file $bodyfile}"
   return 0
 }
 
@@ -547,7 +552,7 @@ _adopt_trap() {
 # next, an interrupt (R8's land-pipeline row, or the INT/TERM trap) stops the
 # batch with `not run` rows, and the run ends with the ADOPT SUMMARY table.
 cmd_adopt() {
-  local apply=0 bodyfile="" nrepos=0 arg i crepo row gh_state
+  local apply=0 bodyfile="" nrepos=0 arg i crepo row code gh_state
   local -a repos=()
 
   while [ $# -gt 0 ]; do
@@ -599,28 +604,28 @@ cmd_adopt() {
     printf '== %s\n' "$crepo"
     prcol="-"
     if [ "$stopped" = 1 ]; then
-      row="not run"
+      row="not run"; code="fail"
     elif [ "$gh_state" != "ok" ]; then
-      row="refused: gh is ${gh_state}"
+      row="refused: gh is ${gh_state}"; code="fail"
     else
       _adopt_preflight "$crepo" "$bodyfile"
       [ -z "$ADOPT_DRY" ] || printf '%s\n' "$ADOPT_DRY" | sed 's/^/    /'
       [ -z "$PF_NOTE" ] || printf '    %s\n' "$PF_NOTE"
       case "$PF_STATUS" in
-        skip)    row="skip: already adopted" ;;
-        refused) row="refused: ${PF_REASONS}" ;;
+        skip)    row="skip: already adopted"; code="skip" ;;
+        refused) row="refused: ${PF_REASONS}"; code="fail" ;;
         *)
           if [ "$apply" = 1 ]; then
             _adopt_one "$crepo" "$PF_DEF" "$bodyfile"
-            row="$ADOPT_ROW"; prcol="$ADOPT_PR"
+            row="$ADOPT_ROW"; code="$ADOPT_CODE"; prcol="$ADOPT_PR"
             [ "$ADOPT_STOP" = 1 ] && stopped=1
           else
-            row="would adopt"
+            row="would adopt"; code="ok"
           fi ;;
       esac
     fi
-    case "$row" in
-      "would adopt"|"skip: already adopted"|"adopted") ;;
+    case "$code" in
+      ok|skip) ;;
       *) failed=1 ;;
     esac
     ADOPT_ROWS[$i]="$row"; ADOPT_PRS[$i]="$prcol"

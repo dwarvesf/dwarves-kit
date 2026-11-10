@@ -13,7 +13,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | Command | Trigger | Description | Specs | Tests |
 |---|---|---|---|---|
 | `/kit:absorb` | `[H/I]` | Maintainer-only: audit the kit's upstream sources (Credits drift + seed-rescan) and draft a dated, proposal-only absorption report. Does no… | SPEC-004, SPEC-007, SPEC-009 +7 | test-command-emit-sweep.sh, test-hooks.sh, test-meta-spec-depth.sh +1 |
-| `/kit:adopt` | `[H/I]` | Adopt the current (or a target) repo into the dwarves-kit operate-contract: write a small AGENTS.md pointer (never over a repo's own file) … | SPEC-004, SPEC-013, SPEC-014 +40 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-clean-room.sh +21 |
+| `/kit:adopt` | `[H/I]` | Adopt the current (or a target) repo into the dwarves-kit operate-contract: write a small AGENTS.md pointer (never over a repo's own file) … | SPEC-004, SPEC-013, SPEC-014 +40 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-clean-room.sh +22 |
 | `/kit:assign` | `[H/I]` | Turn a backlog item (ID-NNN) into a scoped goal draft and route it into the right WORKFLOW lane. Writes .claude/goals/, never executes. | SPEC-006, SPEC-007, SPEC-024 +35 | test-hooks.sh, test-meta-contract.sh, test-meta-goal-ledger.sh +4 |
 | `/kit:battery` | `[H/I]` | The full independent-verification battery for a finished branch: a fresh-context acceptance verifier that RE-EXECUTES the verification comm… | SPEC-239, SPEC-244, SPEC-245 +8 | run-workflow.sh, test-battery-gate.sh, test-board-work.sh +12 |
 | `/kit:debug` | `[H/I]` | Systematic debug loop: root cause before any fix. Four phases, an evidence ledger, the 3-fix architecture wall. Use for any bug, defect, re… | SPEC-006, SPEC-013, SPEC-014 +18 | test-command-triggers.sh, test-config-registry.sh, test-doc-figures.sh +7 |
@@ -50,7 +50,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:verify` | `[H/I]` | Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier + kit:system-verifier) on the current spec/b… | SPEC-002, SPEC-003, SPEC-006 +54 | test-board-digest.sh, test-board-hermes.sh, test-board-sweep-verify.sh +28 |
 | `/kit:visual-team` | `[H/I]` | Parallel multi-lens critique of a visual/UI design. Dispatches 5 design lenses, merges findings, reports a verdict. Report-only, downstream… | SPEC-016, SPEC-018, SPEC-019 +12 | test-command-emit-sweep.sh, test-meta-review-verifiers.sh, test-meta-spec-depth.sh +1 |
 | `/kit:wayfind` | `[H]` | Plan a chunk of work too big for one agent session as a shared decision map: map.md + typed decision tickets in the mega-goal folder, resol… | SPEC-206, SPEC-207, SPEC-217 +2 | - |
-| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +69 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +43 |
+| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +69 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +44 |
 
 ## Agents
 
@@ -146,7 +146,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 
 | Verb | Trigger | Source | Description | Specs | Tests |
 |---|---|---|---|---|---|
-| `adopt pointer` | `[V]` | `lib/adopt.sh` | inject the small AGENTS.md pointer, proof marker and CLAUDE.md loader into a target repo, hash-safe and idempotent | SPEC-047, SPEC-048, SPEC-049 +12 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-clean-room.sh +12 |
+| `adopt pointer` | `[V]` | `lib/adopt.sh` | inject the small AGENTS.md pointer, proof marker and CLAUDE.md loader into a target repo, hash-safe and idempotent | SPEC-047, SPEC-048, SPEC-049 +12 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-clean-room.sh +13 |
 | `board work` | `[V]` | `lib/board/work.sh` | one table of who is on what, how far along and who is stuck, joined at call time from board, git, Orca and the run ledger; read-only | SPEC-366, SPEC-370 | test-board-work.sh, test-mega-box.sh, test-orchestrate-orca.sh |
 | `check-edit` | `[V]` | `lib/gate/check-edit.sh` | check-edit signal for execute: did the build weaken the checks the spec names, from a base ref diff | SPEC-369 | test-whole-spec-dispatch.sh |
 | `classify floor` | `[V]` | `lib/classify/lane-classify.sh` | the diff floor: full when changed paths hit a hard path, else the size floor for the chosen lane | SPEC-036, SPEC-044, SPEC-045 +74 | test-ceremony-fits-diff.sh, test-clean-room.sh, test-codex-hooks.sh +41 |

@@ -339,6 +339,29 @@ reword_ladder() {
   WRAP_LADDER_REWORDED="$dir/bin/wrap"
 }
 
+# reword_adopt -- sets $WRAP_ADOPT_REWORDED to the bin/wrap of a kit copy whose adopt row
+# phrases (the producers in wrap-adopt.sh alone, never the exit-code reader) are reworded. A
+# reader that still compares a row by its words stops matching in the copy, so a case run
+# through it proves the exit code branches on the row code.
+reword_adopt() {
+  [ -n "${WRAP_ADOPT_REWORDED:-}" ] && return 0
+  local dir="$TMPD/reworded-adopt-kit" f
+  mkdir -p "$dir/bin"; cp -R "$KIT_DIR/lib" "$dir/lib"; cp "$KIT_DIR/bin/wrap" "$dir/bin/wrap"
+  f="$dir/lib/wrap/wrap-adopt.sh"
+  sed -i.bak -e '/^    case "\$row" in$/,/^    esac$/!{' -e 's/"would adopt"/"dry run: would take"/g' \
+    -e 's/"skip: already adopted"/"skip: nothing to take"/g' \
+    -e 's/"adopted"/"landed"/g' -e 's/"adopted; /"landed; /g' \
+    -e 's/"refused: /"declined: /g' -e 's/"failed: /"broke: /g' \
+    -e 's/"no change: /"unchanged: /g' -e 's/"merged, not adopted /"merged only /g' \
+    -e 's/"interrupted/"stopped/g' -e 's/"not run"/"skipped over"/g' -e '}' "$f"
+  rm -f "$f.bak"
+  grep -q '"landed"' "$f" && grep -q '"broke: ' "$f" && grep -q '"declined: ' "$f" \
+    && grep -q '"dry run: would take"' "$f" && grep -q '"merged only ' "$f" \
+    && ! grep -q '"failed: ' "$f" && ! grep -q '"refused: ' "$f" \
+    || { echo "reword_adopt: phrase not found" >&2; return 1; }
+  WRAP_ADOPT_REWORDED="$dir/bin/wrap"
+}
+
 build_remote() { # build_remote <name> <default branch>
   local name="$1" def="$2" work="$TMPD/work-$1" b
   mkdir -p "$work"
