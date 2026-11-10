@@ -62,6 +62,9 @@ source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missi
 # dependency on kit-config.sh is explicit, not incidental to another lib's internals.
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
+# The proof class names and the stateful words both classifiers share (lib/gate/proof-classes.tsv).
+# shellcheck source=lib/gate/proof-classes.sh
+source "$PROOF_LEDGER_DIR/proof-classes.sh" || exit 1
 # shellcheck source=lib/spec/spec-find.sh
 # A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
 if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
@@ -107,7 +110,7 @@ classify() {
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: classify <root> <base>" >&2; return 64; }
   local changed subjects blob
   changed="$(_changed "$root" "$base")"
-  [ -n "$changed" ] || { echo inert; return 0; }   # empty diff: nothing to gate
+  [ -n "$changed" ] || { pc_emit inert; return 0; }   # empty diff: nothing to gate
 
   # board-only: begin
   # A push whose COMMITTED paths are all board files (the backlog, its archive) is inert: a row flip
@@ -119,7 +122,7 @@ classify() {
   committed="$(git -C "$root" diff --name-only --no-renames "$base"..HEAD 2>/dev/null)" || committed=""
   if [ -n "$committed" ]; then
     notboard="$(printf '%s\n' "$committed" | awk '$0 !~ /^(_meta\/BACKLOG\.md|BACKLOG\.md|_meta\/archive\/BACKLOG[^\/]*\.md)$/')"
-    [ -n "$notboard" ] || { echo inert; return 0; }
+    [ -n "$notboard" ] || { pc_emit inert; return 0; }
   fi
   # board-only: end
 
@@ -133,7 +136,7 @@ classify() {
   # A docs tree counts as docs: a generated HTML/SVG/PNG drawing set under docs/ holds JS and images but
   # ships no behavior (see _nondoc_paths for what stays code). Any other file keeps its own class.
   if [ -z "$(printf '%s\n' "$changed" | _nondoc_paths)" ]; then
-    echo inert; return 0
+    pc_emit inert; return 0
   fi
 
   # Subject words count only when a non-doc path is also a non-test path. A tests-only diff
@@ -153,10 +156,12 @@ classify() {
   blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
   # stateful: deploy / migration / data / persistent-state signals (only reached when the diff
   # touches non-doc files, so a docs-only commit can no longer be misclassified by its subject).
-  if grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss' < <(printf '%s' "$blob"); then
-    echo stateful; return 0
+  # Shared words come from proof-classes.tsv; the diff-only extras (a /db/ path, the word seed) stay here.
+  local stateful_re; stateful_re="$(pc_stateful_ere)|/db/|\bseed\b"
+  if grep -qE "$stateful_re" < <(printf '%s' "$blob"); then
+    pc_emit stateful; return 0
   fi
-  echo behavioral
+  pc_emit behavioral
 }
 
 # deployable <root> <base>: prints yes|no by mapping classify()'s existing "stateful" class

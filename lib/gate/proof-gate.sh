@@ -46,11 +46,21 @@ LIB_ROOT="$(cd "$PROOF_GATE_DIR/.." && pwd -P)"  # the lib/ dir; cross-subsystem
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
+# The proof class names and the stateful words both classifiers share (lib/gate/proof-classes.tsv).
+# Loaded only by the verbs that classify (main, before any subshell, and proof_class): `coverage` never
+# classifies, and hooks/ship-gate.sh swallows its stderr, so a table fault there must not silence it.
+_pc_load() {
+  type pc_emit >/dev/null 2>&1 && return 0
+  # shellcheck source=lib/gate/proof-classes.sh
+  source "$PROOF_GATE_DIR/proof-classes.sh" || exit 1
+}
+
 # Single source for the type derivation (review: proof_contract + proof_class each
 # forked their own classify; one helper, one fork per caller, zero divergence risk).
 _classify_type() { bash "$LIB_ROOT/classify/task-type-classify.sh" classify "$@" 2>/dev/null || true; }
 
 proof_class() {
+  _pc_load
   local desc lc lane
   desc="$*"
   lc="$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')"
@@ -58,12 +68,14 @@ proof_class() {
   # 1. inert: defer to the lane classifier's cosmetic/doc detection.
   lane="$(bash "$LIB_ROOT/classify/lane-classify.sh" classify "$desc" 2>/dev/null || echo normal)"
   if [ "$lane" = "tiny" ] || [ "$lane" = "backfill" ]; then
-    echo inert; return 0
+    pc_emit inert; return 0
   fi
 
   # 2. stateful: deployment, migration, or data / persistent-state surfaces.
-  if printf '%s' "$lc" | grep -qE 'deploy|rollout|release to|ship to prod|production|migrat|schema|data[ -]model|database|\bdb\b|backfill data|seed|backup|restore|persistent|stateful|drop[s]? .*(table|column)|alter table|data loss|delete[s]? .*data|\bincident\b|\binc-[0-9]+|triage'; then
-    echo stateful; return 0
+  # Shared words come from proof-classes.tsv; the task-text-only extras stay here.
+  local stateful_re; stateful_re="$(pc_stateful_ere)|release to|ship to prod|\bdb\b|backfill data|seed|stateful|drops .*(table|column)|delete[s]? .*data|\bincident\b|\binc-[0-9]+|triage"
+  if printf '%s' "$lc" | grep -qE "$stateful_re"; then
+    pc_emit stateful; return 0
   fi
 
   # 3. registry default for the classified type: a doc task is
@@ -76,11 +88,11 @@ proof_class() {
   rtype="$(_classify_type "$desc")"
   if [ -n "$rtype" ]; then
     rclass="$(_registry_field "$rtype" 5)"
-    case "$rclass" in stateful|behavioral|inert) echo "$rclass"; return 0;; esac
+    if pc_is_class "$rclass"; then pc_emit "$rclass"; return 0; fi
   fi
 
   # 4. behavioral: the fallback for types with no registry row.
-  echo behavioral
+  pc_emit behavioral
 }
 
 proof_requirement() {
@@ -276,13 +288,14 @@ proof_coverage() {
 
 main() {
   local sub="${1:-}"; shift || true
+  case "$sub" in class|requirement|contract|skeleton|classes) _pc_load;; esac
   case "$sub" in
     class)       proof_class "$@";;
     requirement) proof_requirement "$@";;
     contract)    proof_contract "$@";;
     coverage)    proof_coverage "$@";;
     skeleton)    proof_skeleton "$@";;
-    classes)     printf 'stateful\nbehavioral\ninert\n';;
+    classes)     pc_classes;;
     *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|coverage <spec> [proof.md ...]|skeleton <slug> [\"<desc>\"]|classes}" >&2; return 64;;
   esac
 }
