@@ -104,6 +104,39 @@ for s in proof-ledger.sh proof-gate.sh; do
   fi
 done
 
+# ---- 5b. a malformed row fails closed in BOTH classifiers, never classifies behavioral ----
+# An invalid ERE makes grep exit 2, which `if grep -q` reads as "no match": every input would drop to
+# behavioral. A row whose tabs became spaces is one field and would be skipped silently.
+good_tsv="$(cat "$TMP/kit/lib/gate/proof-classes.tsv.off")"
+check_closed() {   # <label> <tsv row>
+  printf '%s\n' "$good_tsv" > "$TMP/kit/lib/gate/proof-classes.tsv"
+  printf '%b\n' "$2" >> "$TMP/kit/lib/gate/proof-classes.tsv"
+  local out rc
+  out="$(bash "$TMP/kit/lib/gate/proof-ledger.sh" classify "$R" "$BASE" 2>&1)"; rc=$?
+  if [ "$rc" != 0 ] && [ "${out#*behavioral}" = "$out" ] && case "$out" in *FATAL*proof-classes*) true;; *) false;; esac; then
+    pass "$1: proof-ledger.sh classify fails closed"; else fail "$1: ledger rc=$rc out=$out"; fi
+  out="$(bash "$TMP/kit/lib/gate/proof-gate.sh" class 'fix the parser' 2>&1)"; rc=$?
+  if [ "$rc" != 0 ] && [ "${out#*behavioral}" = "$out" ] && case "$out" in *FATAL*proof-classes*) true;; *) false;; esac; then
+    pass "$1: proof-gate.sh class fails closed"; else fail "$1: gate rc=$rc out=$out"; fi
+  out="$(bash "$TMP/kit/lib/gate/proof-gate.sh" contract 'fix the parser' 2>&1)"; rc=$?
+  if [ "$rc" != 0 ] && case "$out" in *FATAL*proof-classes*) true;; *) false;; esac; then
+    pass "$1: proof-gate.sh contract fails closed"; else fail "$1: contract rc=$rc out=$out"; fi
+}
+check_closed "malformed ERE row" 'stateful\tdrop (table\tdrop it'
+check_closed "spaces-not-tabs row" 'stateful zqxword zqxword rollover'
+check_closed "class row with a non-integer rank" 'class\textra\thigh'
+printf '%s\n' "$good_tsv" > "$TMP/kit/lib/gate/proof-classes.tsv"
+rm -f "$TMP/kit/lib/gate/proof-classes.tsv.off"
+
+# ---- 5c. coverage never classifies, so a missing table must not silence it ----
+# hooks/ship-gate.sh swallows the verb's stderr, so a load failure there would hide the advisory.
+CV="$TMP/spec.md"
+printf '# Spec: x\nLane: full\n\n## Test plan\n\n| # | Case | Category | Covers (AC) | Expected | Proof |\n|---|------|----------|-------------|----------|-------|\n| 1 | happy | happy-path | AC-1 | ok | cmd |\n\n## Verification\n' > "$CV"
+mv "$TMP/kit/lib/gate/proof-classes.tsv" "$TMP/kit/lib/gate/proof-classes.tsv.off"
+out="$(bash "$TMP/kit/lib/gate/proof-gate.sh" coverage "$CV" 2>&1)"; rc=$?
+[ "$rc" = 0 ] && case "$out" in NO-MAP*) true;; *) false;; esac && pass "coverage still answers with the table missing" || fail "coverage with no table: rc=$rc out=$out"
+mv "$TMP/kit/lib/gate/proof-classes.tsv.off" "$TMP/kit/lib/gate/proof-classes.tsv"
+
 # ---- 6. no classifier hardcodes the shared vocabulary again ----
 # A copy is a non-comment code line in lib/gate/*.sh (the helper is exempt) that carries four or more
 # table words verbatim (one word alone is ordinary code, e.g. `deployable`), or names all three

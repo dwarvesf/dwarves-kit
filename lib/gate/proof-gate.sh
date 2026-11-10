@@ -47,14 +47,20 @@ LIB_ROOT="$(cd "$PROOF_GATE_DIR/.." && pwd -P)"  # the lib/ dir; cross-subsystem
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
 # The proof class names and the stateful words both classifiers share (lib/gate/proof-classes.tsv).
-# shellcheck source=lib/gate/proof-classes.sh
-source "$PROOF_GATE_DIR/proof-classes.sh" || exit 1
+# Loaded only by the verbs that classify (main, before any subshell, and proof_class): `coverage` never
+# classifies, and hooks/ship-gate.sh swallows its stderr, so a table fault there must not silence it.
+_pc_load() {
+  type pc_emit >/dev/null 2>&1 && return 0
+  # shellcheck source=lib/gate/proof-classes.sh
+  source "$PROOF_GATE_DIR/proof-classes.sh" || exit 1
+}
 
 # Single source for the type derivation (review: proof_contract + proof_class each
 # forked their own classify; one helper, one fork per caller, zero divergence risk).
 _classify_type() { bash "$LIB_ROOT/classify/task-type-classify.sh" classify "$@" 2>/dev/null || true; }
 
 proof_class() {
+  _pc_load
   local desc lc lane
   desc="$*"
   lc="$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')"
@@ -282,6 +288,7 @@ proof_coverage() {
 
 main() {
   local sub="${1:-}"; shift || true
+  case "$sub" in class|requirement|contract|skeleton|classes) _pc_load;; esac
   case "$sub" in
     class)       proof_class "$@";;
     requirement) proof_requirement "$@";;
