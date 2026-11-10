@@ -395,7 +395,8 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    // The desktop app draws no band above the prompt; keep other mods' rows.
+    if (e.props.hasSurvey || e.surface === 'desktop') return next(e)
     const { tasks, handoffs, worktrees, staleWorktrees: stale, prs } = await read($, summary)
     const { Box, Text, Button } = $.ui.resolve(e)
     // A press fills the prompt and never submits: the person reads it and presses Enter.
