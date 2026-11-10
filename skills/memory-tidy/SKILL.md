@@ -18,6 +18,8 @@ This is the judgment half of the kit's memory plane. The mechanical half is `sta
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start memory-tidy`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Branch in a worktree first** (native worktree tool). All edits and deletions ride this branch. Touching the store on the current branch is the failure this skill exists to prevent.
 
 2. **Mechanical pre-pass.** Run `uv run stats memory-sweep` from the kit's `lib/stats/` and filter its JSON for this repo's store: dead path refs per note, stale index entries. Always also diff both directions: the note files on disk vs the entries in `MEMORY.md` (files not indexed are invisible to sessions; entries with no file are ghosts).

@@ -73,6 +73,8 @@ evidence is the saved output, never a memory of it.
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start web-drift`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Enumerate.** `python3 lib/webcheck/webcheck.py sites`. Write the list down before probing
    anything; it is the queue, and a resumed run picks up from it. No sites declared: say so,
    name `WEB_DRIFT_SITES`, and stop. That is a clean result, not a failure.

@@ -29,6 +29,8 @@ a dispatch choice with no caller, a release check that trusts a sha alone.
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start ci-drift`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Branch first.** All edits ride an isolated branch. Auditing on master is the failure this
    skill exists to prevent.
 

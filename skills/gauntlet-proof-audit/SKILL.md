@@ -28,6 +28,8 @@ never rewrites a historical record; it reports discrepancies for the operator.
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start gauntlet-proof-audit`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Branch first.** All edits ride an isolated branch. Auditing on master is the failure this
    skill exists to prevent.
 

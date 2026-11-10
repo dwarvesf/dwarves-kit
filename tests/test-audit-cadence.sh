@@ -8,7 +8,9 @@
 #   2. PARSE: only the Cadence table feeds the instance set, and every cadence word maps to
 #      its period in days.
 #   3. DUE: never-run reads as DUE, a fresh marker clears it, an aged marker brings it back.
-#   4. NC: an undeclared instance is refused and writes no marker; an unknown verb refuses.
+#   4. PASS STATE: `start` logs a started line; running / abandoned / cleared-by-ran; ran-only
+#      logs read as before.
+#   5. NC: an undeclared instance is refused and writes no marker; an unknown verb refuses.
 #
 # Hermetic: KIT_LEDGER_DIR points at a temp dir, so no real ledger is read or written.
 set -uo pipefail
@@ -78,6 +80,62 @@ bash "$AUDIT" ran not-an-instance >/dev/null 2>&1; rc=$?
 after="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
 assert_true "audit ran refuses an undeclared instance" "$([ "$rc" != "0" ]; echo $?)"
 assert_true "no marker was appended" "$([ "$before" = "$after" ]; echo $?)"
+
+echo "== pass state: old logs (ran lines only) read exactly as before =="
+# Snapshot of a ran-only log: the DUE column must stay DUE or "-", never running/abandoned.
+out="$(bash "$AUDIT" due)"
+assert_true "ran-only log shows no running state" "$(echo "$out" | grep -E 'running|abandoned' >/dev/null; [ $? -ne 0 ]; echo $?)"
+
+echo "== pass state: start records a started line, ran lines stay byte-identical =="
+ran_before="$(grep -v ' started$' "$KIT_LEDGER_DIR/audit-runs.log")"
+bash "$AUDIT" start web-drift >/dev/null
+last="$(tail -n 1 "$KIT_LEDGER_DIR/audit-runs.log")"
+assert_true "start appended '<epoch> <iso> web-drift started'" "$(echo "$last" | grep -E '^[0-9]+ [0-9TZ:-]+ web-drift started$' >/dev/null; echo $?)"
+ran_after="$(grep -v ' started$' "$KIT_LEDGER_DIR/audit-runs.log")"
+assert_true "ran lines unchanged by start" "$([ "$ran_before" = "$ran_after" ]; echo $?)"
+
+echo "== pass state: a fresh started with no ran reads running =="
+out="$(bash "$AUDIT" due)"
+assert_true "web-drift is running" "$(echo "$out" | grep -E '^web-drift .*never .*running$' >/dev/null; echo $?)"
+
+echo "== pass state: a started older than the timeout reads abandoned =="
+old=$(( $(date +%s) - 7 * 3600 ))
+printf '%s %s %s %s\n' "$old" "2026-01-01T00:00:00Z" "ci-drift" "started" >> "$KIT_LEDGER_DIR/audit-runs.log"
+out="$(bash "$AUDIT" due)"
+assert_true "ci-drift is abandoned at 7h" "$(echo "$out" | grep -E '^ci-drift .*abandoned$' >/dev/null; echo $?)"
+inside=$(( $(date +%s) - 5 * 3600 ))
+printf '%s %s %s %s\n' "$inside" "2026-01-01T00:00:00Z" "backlog-reconcile" "started" >> "$KIT_LEDGER_DIR/audit-runs.log"
+out="$(bash "$AUDIT" due)"
+assert_true "backlog-reconcile is still running at 5h" "$(echo "$out" | grep -E '^backlog-reconcile .*running$' >/dev/null; echo $?)"
+
+echo "== pass state: a ran after the started clears it =="
+sleep 1
+bash "$AUDIT" ran web-drift "finished" >/dev/null
+bash "$AUDIT" ran ci-drift "finished" >/dev/null
+out="$(bash "$AUDIT" due)"
+assert_true "web-drift no longer running" "$(echo "$out" | grep -E '^web-drift .*running' >/dev/null; [ $? -ne 0 ]; echo $?)"
+assert_true "ci-drift no longer abandoned" "$(echo "$out" | grep -E '^ci-drift .*abandoned' >/dev/null; [ $? -ne 0 ]; echo $?)"
+assert_true "ci-drift reads as a normal fresh run" "$(echo "$out" | grep -E '^ci-drift .*0d +-$' >/dev/null; echo $?)"
+
+echo "== pass state: a started older than the last ran does not matter =="
+assert_true "doc-drift (ran, no start) unaffected" "$(echo "$out" | grep -E '^doc-drift .*DUE$' >/dev/null; echo $?)"
+
+echo "== NC: start refuses an undeclared instance and writes nothing =="
+before="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
+bash "$AUDIT" start not-an-instance >/dev/null 2>&1; rc=$?
+after="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
+assert_true "audit start refuses an undeclared instance" "$([ "$rc" != "0" ]; echo $?)"
+assert_true "no started line appended" "$([ "$before" = "$after" ]; echo $?)"
+
+echo "== NC: ran refuses the bare note 'started' (it would read as a start) =="
+before="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
+msg="$(bash "$AUDIT" ran doc-drift started 2>&1 >/dev/null)"; rc=$?
+after="$(wc -l < "$KIT_LEDGER_DIR/audit-runs.log")"
+assert_true "ran with note 'started' exits 64" "$([ "$rc" = "64" ]; echo $?)"
+assert_true "message is one line naming bin/audit start" "$([ "$(printf '%s\n' "$msg" | wc -l | tr -d ' ')" = "1" ] && echo "$msg" | grep -F 'bin/audit start' >/dev/null; echo $?)"
+assert_true "no line appended" "$([ "$before" = "$after" ]; echo $?)"
+bash "$AUDIT" ran doc-drift "started the pass, finished" >/dev/null 2>&1; rc=$?
+assert_true "a longer note that begins with started is still accepted" "$([ "$rc" = "0" ]; echo $?)"
 
 echo "== NC: an unknown verb refuses =="
 bash "$AUDIT" sweep >/dev/null 2>&1; rc=$?

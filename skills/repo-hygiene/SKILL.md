@@ -154,6 +154,8 @@ cannot gather is a scan that failed, not a vantage problem.
 
 ## Process
 
+At the start of the pass (after any refusal guard below passes), run `bin/audit start repo-hygiene`, so a crashed or abandoned pass leaves a trace: `bin/audit due` shows it `running` or `abandoned`.
+
 1. **Refusal guard.** REFUSE if the target is not a git repo. The machine surface belongs to
    `disk-reclaim`, and running here against a bare directory would silently audit nothing.
 

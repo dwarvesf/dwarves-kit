@@ -17,7 +17,13 @@
 # Verbs:
 #   audit due                      report each instance: cadence, last run, age, due or not
 #   audit cadences                 the declared table, as <instance><TAB><days>
-#   audit ran <instance> [note]    record that a pass just ran (the only write path)
+#   audit start <instance>         record that a pass began (a `started` line; see below)
+#   audit ran <instance> [note]    record that a pass just ran
+#
+# Pass state. `start` appends `<epoch> <iso> <instance> started` to the same stream, so a pass
+# that crashes or is abandoned leaves a trace. `due` then shows, per instance, `running` (a
+# started newer than the last ran, younger than the timeout), `abandoned` (the same, older),
+# else DUE or `-` from the last ran as before. A log with only `ran` lines reads as it always did.
 #
 # Exit: 0 whenever the command itself ran. `due` reports; it does not fail on a due
 # instance, because a scheduled caller reads the list rather than an exit code.
@@ -28,6 +34,9 @@ LIB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KIT_DIR="$(cd "$LIB_ROOT/.." && pwd)"
 PATTERN_DOC="$KIT_DIR/docs/patterns/audit-loop.md"
 RUNS_STREAM="audit-runs.log"
+# A started pass with no later ran is `running` for this long, then `abandoned`. A constant, not
+# a knob: the kit has no audit config section, and the longest pass is well under this.
+STARTED_TIMEOUT_SECS=$(( 6 * 3600 ))
 
 # shellcheck source=lib/ledger/ledger.sh
 source "$LIB_ROOT/ledger/ledger.sh"
@@ -72,21 +81,45 @@ read_cadences() {
 # ledger stays append-only and no reader has to sort it.
 last_run_epoch() { # <instance>
   local instance="$1" line
-  line="$(ledger_read "$RUNS_STREAM" | awk -v i="$instance" '$3 == i { last = $1 } END { if (last) print last }')" || true
+  line="$(ledger_read "$RUNS_STREAM" | awk -v i="$instance" '$3 == i && !($4 == "started" && NF == 4) { last = $1 } END { if (last) print last }')" || true
+  printf '%s' "$line"
+}
+
+# Last `started` line for one instance, as an epoch second. Empty when none.
+last_started_epoch() { # <instance>
+  local line
+  line="$(ledger_read "$RUNS_STREAM" | awk -v i="$1" '$3 == i && $4 == "started" && NF == 4 { last = $1 } END { if (last) print last }')" || true
   printf '%s' "$line"
 }
 
 cmd_cadences() { read_cadences; }
 
+cmd_start() {
+  local instance="${1:-}"
+  [ -n "$instance" ] || { echo "audit start: usage: audit start <instance>" >&2; return 64; }
+  require_declared start "$instance" || return 1
+  local now iso
+  now="$(date +%s)"
+  iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ledger_append "$RUNS_STREAM" "$now $iso $instance started"
+  echo "started: $instance at $iso"
+}
+
+# Refuse an instance the pattern doc does not declare: a typo would otherwise write a
+# marker nothing ever reads, and `due` would keep reporting the real instance as overdue.
+require_declared() { # <verb> <instance>
+  if ! read_cadences | cut -f1 | grep -qxF "$2"; then
+    echo "audit $1: '$2' is not declared in the Cadence table of $PATTERN_DOC" >&2
+    return 1
+  fi
+}
+
 cmd_ran() {
   local instance="${1:-}"; shift || true
   [ -n "$instance" ] || { echo "audit ran: usage: audit ran <instance> [note]" >&2; return 64; }
-  # Refuse an instance the pattern doc does not declare: a typo would otherwise write a
-  # marker nothing ever reads, and `due` would keep reporting the real instance as overdue.
-  if ! read_cadences | cut -f1 | grep -qxF "$instance"; then
-    echo "audit ran: '$instance' is not declared in the Cadence table of $PATTERN_DOC" >&2
-    return 1
-  fi
+  # A bare `started` note would read back as a start marker; the pass-begin write is `start`.
+  [ "${*:-}" != "started" ] || { echo "audit ran: note 'started' is reserved; use bin/audit start $instance" >&2; return 64; }
+  require_declared ran "$instance" || return 1
   local now iso
   now="$(date +%s)"
   iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -97,7 +130,7 @@ cmd_ran() {
 cmd_due() {
   local now; now="$(date +%s)"
   printf '%-22s %-10s %-12s %-6s %s\n' "INSTANCE" "CADENCE" "LAST RUN" "AGE" "DUE"
-  local instance days last age lastlabel agelabel due
+  local instance days last age lastlabel agelabel due started
   while IFS="$(printf '\t')" read -r instance days; do
     [ -n "$instance" ] || continue
     last="$(last_run_epoch "$instance")"
@@ -109,6 +142,10 @@ cmd_due() {
       agelabel="${age}d"
       if [ "$age" -ge "$days" ]; then due="DUE"; else due="-"; fi
     fi
+    started="$(last_started_epoch "$instance")"
+    if [ -n "$started" ] && { [ -z "$last" ] || [ "$started" -gt "$last" ]; }; then
+      if [ $(( now - started )) -ge "$STARTED_TIMEOUT_SECS" ]; then due="abandoned"; else due="running"; fi
+    fi
     printf '%-22s %-10s %-12s %-6s %s\n' "$instance" "${days}d" "$lastlabel" "$agelabel" "$due"
   done < <(read_cadences)
 }
@@ -119,17 +156,19 @@ main() {
     due) cmd_due "$@" ;;
     cadences) cmd_cadences "$@" ;;
     ran) cmd_ran "$@" ;;
+    start) cmd_start "$@" ;;
     ""|-h|--help|help)
       cat >&2 <<'USAGE'
 audit -- cadence trigger for the audit-loop instances (docs/patterns/audit-loop.md)
   audit due                     which instances the cadence has come around for
   audit cadences                the declared instance -> period (days) table
+  audit start <instance>        record that a pass began (due shows running / abandoned)
   audit ran <instance> [note]   record that a pass just ran
 Cadence is declared in the `## Cadence` table of docs/patterns/audit-loop.md.
 The kit ships no cron and no daemon: a human or a scheduled job reads `due`.
 USAGE
       return 0 ;;
-    *) echo "audit: unknown verb '$cmd' (try: due, cadences, ran)" >&2; return 64 ;;
+    *) echo "audit: unknown verb '$cmd' (try: due, cadences, start, ran)" >&2; return 64 ;;
   esac
 }
 
