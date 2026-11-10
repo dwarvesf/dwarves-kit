@@ -31,6 +31,14 @@ trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 # ~/.config/dwarves-kit/kit.toml can never reach a case that does not set it deliberately.
 KIT_CONFIG_OPERATOR="$TMPD/no-operator-config"; export KIT_CONFIG_OPERATOR
 
+# `land` runs the ship-gate before every push, and the real hook refuses the fixture identity
+# (t@t) the builders commit with. Default every case to a passing stub; a case that tests the
+# gate sets WRAP_LAND_SHIP_GATE itself or unsets it to reach the real hook.
+mkdir -p "$TMPD/default-gate"
+printf '#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n' > "$TMPD/default-gate/pass.sh"
+chmod +x "$TMPD/default-gate/pass.sh"
+WRAP_LAND_SHIP_GATE="$TMPD/default-gate/pass.sh"; export WRAP_LAND_SHIP_GATE
+
 # Pin the gate-ledger root at a scratch dir: `land`'s ship-gate record is the first
 # thing in this file that calls gate-ledger.sh, so every `$WRAP` call below now shells out to
 # it. Without this, that call would resolve the real machine's ~/.local/state/dwarves-kit/logs

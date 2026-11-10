@@ -257,7 +257,9 @@ test-weekend-batch 60
 test-whole-spec-dispatch 60
 test-wrap-cli 60
 test-wrap-deploy 60
+test-wrap-land-gate 60
 test-wrap-log 60
+test-wrap-merge-gate 60
 test-wrap-merge-nopull 60
 test-wrap-merge-stacked 60
 test-wrap-scan 60
