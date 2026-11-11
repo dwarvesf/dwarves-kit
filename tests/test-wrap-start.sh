@@ -203,6 +203,52 @@ chk "carry: a foreign stash entry is still there" \
 chk "carry: the foreign entry's message is unchanged" \
   "$(git -C "$CREPO" stash list --format='%gs' | grep -qF ': someone-elses-stash'; echo $?)"
 
+echo "--- (g) an unmerged index entry in main: a failed stash push is not 'nothing to carry'"
+build_start carry-g rmain main
+CREPO="$TMPD/st-repo-carry-g"
+CWT="$(cd "$CREPO" && pwd -P)/.claude/worktrees/carry-g"
+echo dirty-g >> "$CREPO/a.txt"
+# Stages 1 and 2 of an unrelated path: the leftover of a conflicted `stash pop`.
+ublob="$(echo u | git -C "$CREPO" hash-object -w --stdin)"
+printf '100644 %s 1\tu.txt\n100644 %s 2\tu.txt\n' "$ublob" "$ublob" | git -C "$CREPO" update-index --index-info
+out="$("$WRAP" start "$CREPO" feat/carry-g --carry a.txt 2>&1 >/dev/null)"; rc=$?
+chk "carry: a failed stash push exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "carry: a failed stash push never says nothing to carry" \
+  "$(printf '%s' "$out" | grep -qF 'nothing to carry'; [ $? -ne 0 ]; echo $?)"
+chk_has "carry: a failed stash push shows git's own error" "$out" "u.txt: needs merge"
+chk_has "carry: a failed stash push names the cause and the worktree" "$out" \
+  "git stash push failed in $(cd "$CREPO" && pwd -P); nothing was carried, the worktree exists at ${CWT}"
+chk "carry: a failed stash push left the edit in main" "$(grep -qx dirty-g "$CREPO/a.txt"; echo $?)"
+chk "carry: a failed stash push left no stash entry" "$([ -z "$(git -C "$CREPO" stash list)" ]; echo $?)"
+
+echo "--- (h) staged outside the pathspec stays in main and never reaches the worktree"
+build_start carry-h rmain main
+CREPO="$TMPD/st-repo-carry-h"
+CWT="$(cd "$CREPO" && pwd -P)/.claude/worktrees/carry-h"
+mkdir -p "$CREPO/dir-h"
+echo mine > "$CREPO/dir-h/inner.txt"
+echo mine-file > "$CREPO/mine.txt"
+echo theirs-edit >> "$CREPO/a.txt"
+echo theirs-new > "$CREPO/theirs.txt"
+git -C "$CREPO" add a.txt theirs.txt
+STAGED_BEFORE="$(git -C "$CREPO" diff --cached --name-only | tr '\n' ' ')"
+out="$("$WRAP" start "$CREPO" feat/carry-h --carry mine.txt dir-h 2>"$TMPD/carry-h.err")"; rc=$?
+chk "carry staged-outside: exits 0" "$rc"
+chk "carry staged-outside: the named file landed" "$(grep -qx mine-file "$CWT/mine.txt"; echo $?)"
+chk "carry staged-outside: the named directory landed" "$(grep -qx mine "$CWT/dir-h/inner.txt"; echo $?)"
+chk "carry staged-outside: the worktree status holds only the named paths" \
+  "$([ "$(git -C "$CWT" status --porcelain -uall | sed 's/^...//' | sort | tr '\n' ' ')" = "dir-h/inner.txt mine.txt " ]; echo $?)"
+chk "carry staged-outside: the staged edit never reached the worktree" \
+  "$(git -C "$CWT" diff --quiet HEAD -- a.txt; echo $?)"
+chk "carry staged-outside: the staged new file never reached the worktree" \
+  "$([ ! -e "$CWT/theirs.txt" ]; echo $?)"
+chk "carry staged-outside: the carried line names only the named paths" \
+  "$([ "$(cat "$TMPD/carry-h.err")" = "carried: dir-h/inner.txt mine.txt " ]; echo $?)"
+chk "carry staged-outside: main still has the same files staged" \
+  "$([ "$(git -C "$CREPO" diff --cached --name-only | tr '\n' ' ')" = "$STAGED_BEFORE" ]; echo $?)"
+chk "carry staged-outside: main still holds the staged edit" "$(grep -qx theirs-edit "$CREPO/a.txt"; echo $?)"
+chk "carry staged-outside: the clean apply dropped the stash" "$([ -z "$(git -C "$CREPO" stash list)" ]; echo $?)"
+
 echo "--- plain start (no --carry) is unaffected"
 build_start carry-f rmain main
 CREPO="$TMPD/st-repo-carry-f"

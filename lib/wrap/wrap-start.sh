@@ -151,23 +151,26 @@ cmd_start() {
 # `stash pop`, never a bare `stash`, never an entry this run did not push itself.
 _start_carry() {
   local repo="$1" wt="$2" branch="$3"; shift 3
-  local name sha ref h s gd out
+  local name sha ref h s gd out pout rc=0 p
+  local spec=() excl=()
 
   _write_guard "$repo" \
     || { echo "wrap.sh start: index.lock held by another writer; the worktree exists at ${wt}" >&2; return 2; }
 
   name="wrap-start-carry ${branch} $(date +%s)-$$"
   if [ $# -gt 0 ]; then
-    git -C "$repo" stash push -u -q -m "$name" -- "$@" >/dev/null 2>&1
-  else
+    spec=(-- "$@")
+  elif ! git -C "$repo" check-ignore -q "$wt" 2>/dev/null; then
     # The new worktree lives in <repo>/.claude/worktrees. A gitignore normally hides it. Without
     # one (GIT_CONFIG_GLOBAL=/dev/null, a fresh account) `-u` takes it as dirt, so the pathspec
     # leaves it out; an ignored path in a pathspec makes git refuse, so only then.
-    if git -C "$repo" check-ignore -q "$wt" 2>/dev/null; then
-      git -C "$repo" stash push -u -q -m "$name" >/dev/null 2>&1
-    else
-      git -C "$repo" stash push -u -q -m "$name" -- . ':(exclude).claude/worktrees' >/dev/null 2>&1
-    fi
+    spec=(-- . ':(exclude).claude/worktrees')
+  fi
+  # A failed push (an unmerged index entry, say) saves nothing, which is not "nothing to carry".
+  if ! pout="$(git -C "$repo" stash push -u -q -m "$name" ${spec[@]+"${spec[@]}"} 2>&1)"; then
+    [ -z "$pout" ] || echo "$pout" >&2
+    echo "wrap.sh start: git stash push failed in ${repo}; nothing was carried, the worktree exists at ${wt}" >&2
+    return 2
   fi
 
   sha=""
@@ -178,9 +181,25 @@ _start_carry() {
     echo "nothing to carry" >&2
     return 0
   fi
-  echo "carried: $(git -C "$repo" stash show -u --name-only "$sha" 2>/dev/null | tr '\n' ' ')" >&2
+  [ $# -gt 0 ] || echo "carried: $(git -C "$repo" stash show -u --name-only "$sha" 2>/dev/null | tr '\n' ' ')" >&2
 
-  if out="$(git -C "$wt" stash apply -q "$sha" 2>&1)"; then
+  out="$(git -C "$wt" stash apply -q "$sha" 2>&1)" || rc=$?
+  if [ $# -gt 0 ]; then
+    # The stash commit's tree holds the whole index, so the apply also replays changes staged
+    # outside the pathspec; put those back to HEAD so only the named paths land.
+    for p in "$@"; do excl+=(":(exclude)${p}"); done
+    while IFS= read -r -d '' p; do
+      git -C "$wt" --literal-pathspecs reset -q HEAD -- "$p" >/dev/null 2>&1 || true
+      if git -C "$wt" --literal-pathspecs ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then
+        git -C "$wt" --literal-pathspecs checkout -- "$p" >/dev/null 2>&1 || true
+      else
+        rm -f -- "${wt}/${p}"
+      fi
+    done < <(git -C "$wt" diff --name-only -z HEAD -- . "${excl[@]}" 2>/dev/null)
+    echo "carried: $(git -C "$wt" diff --name-only HEAD -- "$@" 2>/dev/null | tr '\n' ' ')$(git -C "$wt" ls-files -o --exclude-standard -- "$@" 2>/dev/null | tr '\n' ' ')" >&2
+  fi
+
+  if [ "$rc" = 0 ]; then
     ref=""
     while read -r gd h; do
       [ "$h" = "$sha" ] && { ref="$gd"; break; }
@@ -192,7 +211,6 @@ _start_carry() {
   [ -z "$out" ] || echo "$out" >&2
   return 2
 }
-
 
 # _start_pick <repo> <wt> <default> <branch>... -- the --pick half. Resolves every branch first
 # (local ref, then origin's tracking ref, then a live fetch of that one branch), so a missing
