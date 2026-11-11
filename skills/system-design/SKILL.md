@@ -8,11 +8,12 @@ disable-model-invocation: false
 
 A repo keeps ONE system design document: `docs/SYSTEM-DESIGN.md`. High-level design is levels L1-L2, low-level design is L3-L4, in the same file, told apart by the `level:` field. This skill owns the document's lifecycle: its format, its per-feature updates, and rendering the UML drawing set (a self-contained HTML page that marks what a branch changed). A human reviews a feature's design as UML, sheet by sheet.
 
-The engine ships with the kit in `~/.claude/dwarves-kit/lib/system-design/`: `FORMAT.md` (the model format, read it before editing a model), `build`, `shots.mjs`, `template.html`, `delta.js`, `layout.js`, `test.mjs`, `examples/marketplace/` (no hints, the fallback layout). This file holds the workflow only.
+The engine ships with the kit in `~/.claude/dwarves-kit/lib/system-design/`: `FORMAT.md` (the model format, read it before editing a model), `build`, `shots.mjs`, `template.html`, `delta.js`, `layout.js`, `test.mjs`, `examples/marketplace/` (UML, no hints, the fallback layout), `examples/marketplace-c4/` (the four C4 views). This file holds the workflow only.
 
 ## Where a design lives
 
 - A cross-repo platform design lives in the platform repo's `docs/SYSTEM-DESIGN.md`. A code repo's own model holds only its internal L3-L4 detail.
+- C4 for structure, UML for behavior and data. Draw who talks to what as `type: c4` views (context, container, component, deployment, linked with `zoom:`); draw flows, state and tables as sequence, state and ERD sheets. A structure sheet is never a UML component diagram when a C4 view fits.
 - One sheet per concern: L1 use cases; L2 one component sheet per pipeline; L3 one ERD per store and one sequence per flow; L4 one state machine per entity with a lifecycle.
 - Commit the rendered set next to the model at `docs/design/<feature>-uml.html`, rebuilt from the same model each round.
 
@@ -37,7 +38,7 @@ The engine ships with the kit in `~/.claude/dwarves-kit/lib/system-design/`: `FO
    `--style <fragment.html>` adds a repo's own look: an HTML fragment (a Google Fonts `<link>` plus a `<style>` that redefines `--display`, `--body`, `--mono` or color tokens, or `--fz` to scale every diagram label (box sizes follow)) inserted after the template's styles, so it wins. Keep the fragment in the repo, such as `docs/system-design-style.html`.
 
    No git history to diff (a scratch file, an example): `--base-file <old SYSTEM-DESIGN.md>`. Omit both for a plain drawing set.
-   Optional `tone: blue|green|amber|rose|violet|gray` on nodes, lanes, states, cases, actors, participants and edges colors a sheet by meaning (`FORMAT.md`, Tone); it never counts as a change.
+   Optional `tone: blue|green|amber|rose|violet|gray` on nodes, lanes, states, cases, actors, participants, C4 elements and boundaries, and edges colors a sheet by meaning (`FORMAT.md`, Tone); it never counts as a change.
    Look at every PNG before publishing: no label on a box or another label, no edge through a box, lanes and rows aligned. Move cells with `at` or add a `via` until it holds.
 6. Publish the HTML with the Artifact tool. The `<title>` is the model name. Rebuild to the SAME file path every time, so the Artifact URL stays.
 7. Ask the human to review per changed diagram: list each sheet with a `changed` or `new` tag and its "Check here" questions, and wait for their call before code starts.

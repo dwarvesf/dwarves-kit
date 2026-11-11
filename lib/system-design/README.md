@@ -1,6 +1,6 @@
 # system-design
 
-The engine behind the `system-design` skill. It renders a repo's `docs/SYSTEM-DESIGN.md` (Markdown prose plus fenced `uml` YAML blocks) as one self-contained HTML drawing set, and marks every element `new`, `changed` or `removed` against a base git ref or base file. `/kit:design` uses it to review a feature as a UML delta. The skill (`skills/system-design/SKILL.md`) owns the workflow; this directory owns the code.
+The engine behind the `system-design` skill. It renders a repo's `docs/SYSTEM-DESIGN.md` (Markdown prose plus fenced `uml` YAML blocks: UML types and C4 views) as one self-contained HTML drawing set, and marks every element `new`, `changed` or `removed` against a base git ref or base file. `/kit:design` uses it to review a feature as a UML delta. The skill (`skills/system-design/SKILL.md`) owns the workflow; this directory owns the code.
 
 ## Use
 
@@ -11,6 +11,10 @@ bash lib/system-design/build --model docs/SYSTEM-DESIGN.md --base "$(git merge-b
 # No git history to diff: a base file
 bash lib/system-design/build --model lib/system-design/examples/marketplace/SYSTEM-DESIGN.md \
   --base-file lib/system-design/examples/marketplace/SYSTEM-DESIGN.base.md --out /tmp/uml.html
+
+# C4 views of the same marketplace, with the delta against its base file
+bash lib/system-design/build --model lib/system-design/examples/marketplace-c4/SYSTEM-DESIGN.md \
+  --base-file lib/system-design/examples/marketplace-c4/SYSTEM-DESIGN.base.md --out /tmp/c4.html
 
 # Also one PNG per sheet (needs node 22+ and Chrome; CHROME overrides the macOS path)
 bash lib/system-design/build --model <model> --out /tmp/uml.html --shots /tmp/shots
@@ -40,10 +44,10 @@ bash lib/system-design/doc-figures render --format svg --fz 1.3 <model> <outdir>
 | `build` | Bash entry: splices the model, the base, `delta.js` and `layout.js` into `template.html`. Resolves its siblings from its own directory. |
 | `template.html` | The page: parses the model in the browser (js-yaml 4.1.0 from cdnjs, pinned with SRI) and draws each sheet. |
 | `delta.js` | Parses a model and diffs two of them. Pure functions. |
-| `layout.js` | Grid placement, orthogonal routing, edge label placement. Pure functions. |
+| `layout.js` | Grid placement, orthogonal routing, edge label placement, C4 boundary planning and frames. Pure functions. |
 | `shots.mjs` | Headless Chrome over the DevTools protocol, one PNG per sheet; with `SHOT_CLIP=figure`, `SHOT_FORMAT=svg` writes a standalone SVG instead and `SHOT_ZOOM` scales the figure. |
 | `doc-figures` | Bash entry for the README and guide figures. `render` runs `build --shots` over `docs/figures/MODEL.md` with `SHOT_CLIP=figure`, writes `<id>.png` (or `<id>.svg`) and `MANIFEST.tsv` (id and the first 16 hex of the sha256 of that sheet's uml block; a full 64-hex manifest from before still checks). `check` needs no browser: it fails when a sheet changed without a re-render, a figure is missing, a sheet has both a PNG and a rendered SVG, or a `figures/<id>.png` reference in `README.md` or `docs/**/*.md` names no manifest id. |
-| `test.mjs` | Smoke test over `examples/marketplace/`. |
+| `test.mjs` | Smoke test over `examples/marketplace/` (UML) and `examples/marketplace-c4/` (C4): delta, c4 parsing, zoom links, fallback layout. |
 | `FORMAT.md` | The model format and layout hints. |
 
 ## Test
