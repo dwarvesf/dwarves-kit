@@ -60,6 +60,10 @@ echo "=== case 22: visual off, byte-identical to origin/master ==="
 # (none of which this change touches), so any output delta is the gate file alone.
 MST="$TMPD/master"; mkdir -p "$MST/lib/gate" "$MST/docs"
 git -C "$KIT" show origin/master:lib/gate/proof-gate.sh > "$MST/lib/gate/proof-gate.sh"
+# The gate sources its class table from its own directory, so master's copy needs master's table too.
+for f in proof-classes.sh proof-classes.tsv; do
+  git -C "$KIT" show "origin/master:lib/gate/$f" > "$MST/lib/gate/$f" || exit 1
+done
 ln -sfn "$KIT/lib/classify" "$MST/lib/classify"
 ln -sfn "$KIT/lib/config"   "$MST/lib/config"
 ln -sfn "$KIT/docs/verification" "$MST/docs/verification"
