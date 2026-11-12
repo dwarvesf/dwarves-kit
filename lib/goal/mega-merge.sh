@@ -489,8 +489,10 @@ merge() {
   # KIT_MERGE_HEAD_COMMIT); the branch delete and the squash are its business.
   # An unreadable key, or no repo root to read it from, refuses: it never means "unset".
   local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd="" prc ddef=""
-  # origin/HEAD can name a stale default branch; ask GitHub which one it is.
-  if [ -n "$root" ]; then ddef="$(kit_merge_default_branch "$root")"; pcmd="$(kit_merge_command "$root" "$ddef")"; prc=$?; else prc=2; fi
+  # origin/HEAD can name a stale default branch; a real merge asks GitHub which one it is. A dry
+  # run and the per-pr-review posture never call gh (a standing guarantee), so they read origin/HEAD.
+  if [ "$execute" -eq 1 ] && [ "$posture" != "per-pr-review" ] && [ -n "$root" ]; then ddef="$(kit_merge_default_branch "$root")"; fi
+  if [ -n "$root" ]; then pcmd="$(kit_merge_command "$root" "$ddef")"; prc=$?; else prc=2; fi
   if [ "$prc" -eq 2 ]; then
     echo "BLOCKED: cannot read the project merge command for PR #$pr; failing closed and refusing auto-merge." >&2
     _log "$rid" "BLOCKED merge pr=$pr (project merge command unreadable, fail-closed)"
