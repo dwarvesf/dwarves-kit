@@ -9,7 +9,7 @@ Distills OWASP Top 10:2025, ASVS 5.0.0 (levels 1-2), the OWASP Cheat Sheet Serie
 4. Hash passwords with bcrypt or argon2. Never roll your own auth.
 5. Run the language's dependency-CVE scanner before shipping: `cargo audit`/`cargo deny` (Rust), Bandit plus `pip-audit` (Python, not the nonexistent `pip audit`; `uv audit` shipped June 2026 as a faster alternative but is still preview/unstable and lockfile-only, don't rely on it yet), `pnpm audit` (TypeScript/Node), ShellCheck (Bash, for injection-class issues).
 6. Error handling never leaks stack traces or secrets to logs or output.
-7. Least privilege by default: scoped CORS (no wildcard in prod), scoped tokens over root or service-account credentials.
+7. Least privilege by default: scoped CORS (no wildcard in prod), scoped tokens over root or service-account credentials; auth tokens live in httpOnly cookies, never localStorage.
 8. Supply-chain provenance is not optional: signed CI builds, pinned lockfiles, never `curl | bash`. OWASP ranks Software Supply Chain Failures #3 (A03:2025), up from a subset of #6 in 2021.
 9. Close default-misconfiguration gaps before shipping: no default/sample credentials, no verbose framework error pages in prod, no open cloud storage buckets, security headers set (OWASP A02:2025, #2 risk).
 10. Emit security-relevant logs, not just error logs: auth failures, access-control denials, and input-validation rejections need to exist and reach an alerting path, not just a log file nobody reads (OWASP A09:2025).
