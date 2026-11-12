@@ -488,8 +488,9 @@ merge() {
   # squash below. It gets the PR number (the head the gate ran on rides as
   # KIT_MERGE_HEAD_COMMIT); the branch delete and the squash are its business.
   # An unreadable key, or no repo root to read it from, refuses: it never means "unset".
-  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd="" prc
-  if [ -n "$root" ]; then pcmd="$(kit_merge_command "$root")"; prc=$?; else prc=2; fi
+  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd="" prc ddef=""
+  # origin/HEAD can name a stale default branch; ask GitHub which one it is.
+  if [ -n "$root" ]; then ddef="$(kit_merge_default_branch "$root")"; pcmd="$(kit_merge_command "$root" "$ddef")"; prc=$?; else prc=2; fi
   if [ "$prc" -eq 2 ]; then
     echo "BLOCKED: cannot read the project merge command for PR #$pr; failing closed and refusing auto-merge." >&2
     _log "$rid" "BLOCKED merge pr=$pr (project merge command unreadable, fail-closed)"
@@ -518,14 +519,14 @@ merge() {
   echo "EXECUTING: $cmd_str"
   _log "$rid" "EXECUTE merge pr=$pr lane=$lane posture=$posture"
   if [ "$prc" -eq 0 ]; then
-    kit_merge_exec "$root" "$pcmd" "$pr" "$head"; rc=$?
+    kit_merge_exec "$root" "$pcmd" "$pr" "$head" "$ddef"; rc=$?
     if [ "$rc" -ne 0 ]; then
       echo "BLOCKED: the project merge command refused PR #$pr (exit $rc); no other way to merge was tried." >&2
       _log "$rid" "BLOCKED merge pr=$pr (project merge command exit $rc)"
       return "$rc"
     fi
     # Exit 0 is not a merge: a script may only arm auto-merge. Ask GitHub.
-    if ! kit_merge_verify "$root" "$pr"; then
+    if ! kit_merge_verify "$root" "$pr" "" "$head"; then
       echo "BLOCKED: PR #$pr is not merged after the project merge command; stopping." >&2
       _log "$rid" "BLOCKED merge pr=$pr (not MERGED after the project merge command)"
       return 1

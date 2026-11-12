@@ -80,9 +80,10 @@ next_link() {
   # A project that names its own merge command merges through it (lib/config/merge-command.sh),
   # and a refusal stops the chain: the plain squash is never the fallback. Resolved first, so an
   # unreadable key refuses before anything is reconciled or retargeted.
-  local top pcmd="" prc=1
+  local top pcmd="" prc=1 ddef
   top="$(git rev-parse --show-toplevel)"
-  pcmd="$(kit_merge_command "$top")" && prc=0 || prc=$?
+  ddef="$(kit_merge_default_branch "$top")"
+  pcmd="$(kit_merge_command "$top" "$ddef")" && prc=0 || prc=$?
   if [ "$prc" -eq 2 ]; then
     echo "stack-merge: cannot read the project merge command; refusing to merge #$pr the plain way" >&2
     return 1
@@ -107,7 +108,7 @@ next_link() {
     if [ "$DRY" = 1 ]; then _say "DRY: $pcmd $pr"
     else
       # No head pin: stack-merge has no gate that read a head to pin (the plain path pinned none either).
-      if ! kit_merge_exec "$top" "$pcmd" "$pr" ""; then
+      if ! kit_merge_exec "$top" "$pcmd" "$pr" "" "$ddef"; then
         echo "stack-merge: the project merge command refused #$pr; no other way to merge was tried, stopping the chain" >&2
         if [ -n "$child" ]; then
           echo "stack-merge: restoring #$child onto $head (it was retargeted to $base for this merge)" >&2

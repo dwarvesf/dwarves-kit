@@ -374,24 +374,39 @@ command = ""                    # [impl] the command that merges a PR, run as `<
                                  #        goes through it: `wrap land`, `wrap merge`,
                                  #        `lib/goal/mega-merge.sh merge` and `lib/goal/stack-merge.sh`.
                                  #        It replaces the plain merge outright, so the kit passes no merge
-                                 #        flags; the head the kit gated rides in KIT_MERGE_HEAD_COMMIT (the
-                                 #        PR number in KIT_MERGE_PR). Before it runs, the kit re-reads the
-                                 #        PR head and refuses if it moved off the gated one; afterwards it
-                                 #        checks GitHub reports the PR MERGED. A non-zero exit stops the kit
+                                 #        flags. The head the kit gated rides in KIT_MERGE_HEAD_COMMIT (the
+                                 #        PR number in KIT_MERGE_PR); that variable is ADVISORY, so the
+                                 #        script should pass `--match-head-commit "$KIT_MERGE_HEAD_COMMIT"`
+                                 #        to its own merge call. Before it runs, the kit re-reads the PR
+                                 #        head and refuses if it moved off the gated one; afterwards it
+                                 #        checks GitHub reports the PR MERGED (mega-merge also checks the
+                                 #        merged head is the gated one). A non-zero exit stops the kit
                                  #        flow with the command's own output: no retry, no fallback to the
-                                 #        plain merge. TRUST: the value is read from the `.kit.toml`
-                                 #        COMMITTED on the default branch (refs/remotes/origin/<default>),
-                                 #        never the working tree, HEAD or the PR being merged, so a PR
-                                 #        cannot change how it is merged (an edit takes effect once it is
-                                 #        merged); then the operator `kit.toml`, then the kit-root one. The
-                                 #        command runs from a CLEAN detached checkout of that same commit
-                                 #        (untracked local files are not there) with BASH_ENV and the GIT_*
-                                 #        variables removed. If the key cannot be read, or is not one simple
-                                 #        command (no ; & | < > backtick $( newline, no #), the kit refuses
-                                 #        to merge; it never reads that as unset. `wrap merge --repo
-                                 #        <slug>` has no checkout to run it in, so it is refused when this
-                                 #        is set. A value set in the operator or kit-root file applies to
-                                 #        every repo on the host.
+                                 #        plain merge, no timeout. WHO SETS IT: anyone who can push to the
+                                 #        default branch (project file), or the operator. Code pushed there
+                                 #        runs on the operator's machine at the next merge, without a local
+                                 #        pull (the kit fetches the ref itself; a failed fetch leaves a
+                                 #        possibly stale ref, but the merge needs the network anyway).
+                                 #        WHERE IT IS READ: the `.kit.toml` COMMITTED on the default branch
+                                 #        (refs/remotes/origin/<default>), never the working tree, HEAD or
+                                 #        the PR being merged, so a PR cannot change how it is merged; then
+                                 #        the operator `kit.toml`, then the kit-root one. WHERE IT RUNS: a
+                                 #        CLEAN detached checkout of that commit (untracked local files are
+                                 #        not there), with BASH_ENV, ENV, GIT_DIR, GIT_WORK_TREE,
+                                 #        GIT_INDEX_FILE, GIT_COMMON_DIR and the KIT_* config variables
+                                 #        removed; GH_TOKEN, PATH and the rest are inherited on purpose.
+                                 #        THE ONE SHAPE READ: `command = "..."` under a plain `[merge]`
+                                 #        header, with no backslash and no `#` inside the quotes. The
+                                 #        dotted form (`merge.command = ...`), an inline table, `[[merge]]`,
+                                 #        a single- or triple-quoted value, a repeated key and a `#` in the
+                                 #        value are REFUSED (the kit never reads them as unset). An
+                                 #        unreadable key, or a value that is not one simple command (no
+                                 #        ; & | < > backtick $( or newline), also refuses the merge. That
+                                 #        denylist guards against mistakes; it is NOT a security boundary,
+                                 #        because whoever can write the value can write the script it names.
+                                 #        `wrap merge --repo <slug>` has no checkout to run it in, so it is
+                                 #        refused when this is set. A value set in the operator or kit-root
+                                 #        file applies to every repo on the host.
 
 [wrap]                          # `/kit:wrap` landing-step config (lib/wrap/wrap.sh log)
 activity_log = ""               # [consumer] absolute or ~-prefixed path, under $HOME, to the

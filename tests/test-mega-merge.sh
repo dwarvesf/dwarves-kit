@@ -238,7 +238,8 @@ echo "\$*" >> "$PIN_LOG"
 # the project merge command path re-reads the head and asks whether the PR is MERGED
 case "\$*" in
   *"pr view"*"--json headRefOid"*) printf '{"headRefOid":"%s"}\n' "\$(cat "$CUR_HEAD")"; exit 0 ;;
-  *"pr view"*"--json state"*) echo '{"state":"MERGED"}'; exit 0 ;;
+  *"pr view"*"--json state"*) printf '{"state":"MERGED","headRefOid":"%s"}\n' "\$(cat "$CUR_HEAD")"; exit 0 ;;
+  *"repo view"*) [ ! -s "$TMP/defbranch" ] || printf '{"defaultBranchRef":{"name":"%s"}}\n' "\$(cat "$TMP/defbranch")"; exit 0 ;;
 esac
 [ "\$1 \$2" = "pr merge" ] || exit 0
 pin=""; prev=""
@@ -305,6 +306,7 @@ mc_fixture() { # <dir> <key yes|no>
   cat > "$w/scripts/pr-merge.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'ran pr=%s head=%s\n' "$1" "${KIT_MERGE_HEAD_COMMIT:-}" >> "$MC_LOG"
+if [ -e "$MC_MOVE" ]; then echo ffffffffffffffffffffffffffffffffffffffff > "$CUR_HEAD"; fi
 if [ -e "$MC_REFUSE" ]; then echo "pr-merge: REFUSED: PR $1 is a one-way door and has no second approval" >&2; exit 7; fi
 exit 0
 SH
@@ -313,7 +315,7 @@ SH
   git -C "$d" fetch -q "$FIX" HEAD   # the stub PR head and its parent must be commits here, the gate reads them
 }
 mc_fixture "$TMP/mcfix-yes" yes; mc_fixture "$TMP/mcfix-no" no
-export MC_REFUSE="$TMP/mc-refuse"
+export MC_REFUSE="$TMP/mc-refuse" MC_MOVE="$TMP/mc-move" CUR_HEAD
 mcrun() { MEGA_MERGE_ROOT="$1" pinrun 1 somerid full "${@:2}"; }
 
 : > "$MC_LOG"; : > "$PIN_LOG"; echo "$HEAD_SHA" > "$CUR_HEAD"
@@ -342,6 +344,27 @@ OH="$(mcrun "$TMP/mcfix-yes" --execute)"; RH=$?
 ok "project-merge [head moved]: refused with a nonzero exit" $([ "$RH" -ne 0 ] && echo 0 || echo 1)
 ok "project-merge [head moved]: the command never started" $([ ! -s "$MC_LOG" ] && echo 0 || echo 1)
 echo "$HEAD_SHA" > "$CUR_HEAD"
+
+# The script merged a head the kit never checked (KIT_MERGE_HEAD_COMMIT is advisory): reported as a failure.
+: > "$MC_LOG"; : > "$PIN_LOG"; echo "$HEAD_SHA" > "$CUR_HEAD"; : > "$MC_MOVE"
+OV="$(mcrun "$TMP/mcfix-yes" --execute)"; RV=$?
+ok "project-merge [merged a moved head]: reported as a failure (nonzero)" $([ "$RV" -ne 0 ] && echo 0 || echo 1)
+has "was merged at head ffffffffffffffffffffffffffffffffffffffff" "$OV"; ok "project-merge [merged a moved head]: names the merged head" $?
+has "did not honor KIT_MERGE_HEAD_COMMIT" "$OV"; ok "project-merge [merged a moved head]: says the script ignored the pin" $?
+ok "project-merge [merged a moved head]: the command did run once" $([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ] && echo 0 || echo 1)
+rm -f "$MC_MOVE"; echo "$HEAD_SHA" > "$CUR_HEAD"
+
+# origin/HEAD names a stale default branch ("old", no key); GitHub says the default is main (the key is there).
+mc_fixture "$TMP/mcfix-stale" yes
+git -C "$TMP/mcfix-stale" checkout -q -b old; git -C "$TMP/mcfix-stale" rm -q .kit.toml
+git -C "$TMP/mcfix-stale" -c user.email=t@t -c user.name=t commit -qm "chore: old branch without the key"
+git -C "$TMP/mcfix-stale" push -q origin old; git -C "$TMP/mcfix-stale" checkout -q main
+git -C "$TMP/mcfix-stale" remote set-head origin old >/dev/null 2>&1
+: > "$MC_LOG"; : > "$PIN_LOG"; echo main > "$TMP/defbranch"
+OS="$(mcrun "$TMP/mcfix-stale" --execute)"; RS=$?
+ok "project-merge [stale origin/HEAD]: GitHub's default branch decides, the project command runs" $([ "$RS" -eq 0 ] && grep -q '^ran pr=1' "$MC_LOG" && echo 0 || echo 1)
+if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge [stale origin/HEAD]: no plain merge" 1; else ok "project-merge [stale origin/HEAD]: no plain merge" 0; fi
+: > "$TMP/defbranch"
 
 # An unreadable key (default branch not readable, key only in the working tree) fails closed.
 mc_fixture "$TMP/mcfix-bad" no

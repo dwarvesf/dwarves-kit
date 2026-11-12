@@ -33,7 +33,28 @@ echo "pr-merge: REFUSED: PR $1 is a one-way door and has no second approval" >&2
 exit 7
 SH
     ;;
+    exit3) cat <<'SH'
+#!/usr/bin/env bash
+printf 'ran pr=%s\n' "$1" >> "$MC_LOG"
+echo "pr-merge: exit 3 (the same code the kit uses for a moved head)" >&2
+exit 3
+SH
+    ;;
+    slow) cat <<'SH'
+#!/usr/bin/env bash
+printf 'ran pr=%s\n' "$1" >> "$MC_LOG"
+sleep 20
+SH
+    ;;
   esac
+}
+
+# mc_repo_toml <name> <toml text> -- a repo whose default branch commits exactly this .kit.toml.
+mc_repo_toml() {
+  local c; c="$(mc_repo "$1" no ok)"
+  printf '%s\n' "$2" > "$c/.kit.toml"
+  git -C "$c" add -A; git -C "$c" commit -qm "chore: set the key"; git -C "$c" push -q origin main
+  printf '%s\n' "$c"
 }
 
 # mc_repo <name> <key yes|no> <script ok|refuse> -- a bare remote plus a clone on main. With key=yes the
@@ -142,6 +163,43 @@ chk "exec: ran in a clean checkout, not the working tree" "$(grep -q 'cwd=.*kit-
 chk "exec: the temporary checkout is removed" "$([ -z "$(git -C "$R7" worktree list --porcelain | grep kit-merge-run)" ]; echo $?)"
 chk "exec: no head given, KIT_MERGE_HEAD_COMMIT stays unset" "$(grep -q 'head= ' "$MC_LOG"; echo $?)"
 
+# Forms the reader cannot parse refuse (exit 2). Before the fix they read as unset and the kit merged plain.
+FORMN=0
+while IFS='|' read -r label toml; do
+  FORMN=$((FORMN+1)); toml="$(printf '%b' "$toml")"
+  RF="$(mc_repo_toml "form-$FORMN" "$toml")"
+  fo="$(kit_merge_command "$RF" 2>&1)"; rc=$?
+  chk "unreadable form ($label): refuses (exit 2), not unset" "$([ "$rc" -eq 2 ]; echo $?)"
+done <<'FORMS'
+dotted key|merge.command = "bash scripts/pr-merge.sh"
+inline table|merge = { command = "bash scripts/pr-merge.sh" }
+triple-quoted value|[merge]\ncommand = """bash scripts/pr-merge.sh"""
+array of tables|[[merge]]\ncommand = "bash scripts/pr-merge.sh"
+single-quoted value|[merge]\ncommand = 'bash scripts/pr-merge.sh'
+quoted dotted key|"merge".command = "bash scripts/pr-merge.sh"
+sub-table|[merge.extra]\ncommand = "bash scripts/pr-merge.sh"
+repeated key|[merge]\ncommand = "bash a.sh"\ncommand = "bash b.sh"
+hash inside the value|[merge]\ncommand = "bash scripts/pr-merge.sh #approved"
+escaped quote|[merge]\ncommand = "bash \\"a b\\""
+FORMS
+RG="$(mc_repo_toml form-good $'[merge]\ncommand = "bash scripts/pr-merge.sh"   # the one shape')"
+fo="$(kit_merge_command "$RG" 2>&1)"; rc=$?
+chk "the plain shape with a trailing comment still reads (exit 0)" "$rc"
+chk_has "...and gives the value" "$fo" "bash scripts/pr-merge.sh"
+RG="$(mc_repo_toml form-empty $'[merge]\ncommand = ""')"
+kit_merge_command "$RG" >/dev/null 2>&1; rc=$?
+chk "an empty value is a plain unset (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+RG="$(mc_repo_toml form-other $'[wrap]\nmerge_own_prs = true\n[gate]\nmerge_gate = false')"
+kit_merge_command "$RG" >/dev/null 2>&1; rc=$?
+chk "other keys that merely start with 'merge' are not the merge table (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+# the operator file is read with the same shape rule
+OPB="$TMPD/mc-operator-bad"; mkdir -p "$OPB"; printf 'merge.command = "bash ops/x.sh"\n' > "$OPB/kit.toml"
+KIT_CONFIG_OPERATOR="$OPB" kit_merge_command "$R2" >/dev/null 2>&1; rc=$?
+chk "operator kit.toml in an unreadable form: refuses (exit 2)" "$([ "$rc" -eq 2 ]; echo $?)"
+printf '[merge]\ncommand = "bash ops/x.sh #cut"\n' > "$OPB/kit.toml"
+KIT_CONFIG_OPERATOR="$OPB" kit_merge_command "$R2" >/dev/null 2>&1; rc=$?
+chk "operator kit.toml with a # in the value: refuses (exit 2)" "$([ "$rc" -eq 2 ]; echo $?)"
+
 # By slug: a gh shim answers the contents read; every other call goes to the harness stub.
 mkdir -p "$TMPD/shim"
 cat > "$TMPD/shim/gh" <<SH
@@ -150,6 +208,7 @@ case "\$*" in
   *contents/.kit.toml*)
     case "\${MC_SLUG_MODE:-}" in
       set) printf '[merge]\ncommand = "bash scripts/pr-merge.sh"\n'; exit 0 ;;
+      dotted) printf 'merge.command = "bash scripts/pr-merge.sh"\n'; exit 0 ;;
       none|hidden) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
       *) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
     esac ;;
@@ -170,6 +229,8 @@ PATH="$TMPD/shim:$PATH" MC_SLUG_MODE=err kit_merge_command_slug owner/name main 
 chk "slug: any other read failure: exit 2, never read as unset" "$([ "$rc" -eq 2 ]; echo $?)"
 PATH="$TMPD/shim:$PATH" MC_SLUG_MODE=hidden kit_merge_command_slug owner/name main >/dev/null; rc=$?
 chk "slug: a 404 on the file AND on the listing (no contents access): exit 2, not unset" "$([ "$rc" -eq 2 ]; echo $?)"
+PATH="$TMPD/shim:$PATH" MC_SLUG_MODE=dotted kit_merge_command_slug owner/name main >/dev/null 2>&1; rc=$?
+chk "slug: the dotted form refuses (exit 2), not unset" "$([ "$rc" -eq 2 ]; echo $?)"
 
 # ===========================================================================
 echo "=== wrap merge --apply: the project command merges, the plain merge is never called ==="
@@ -335,6 +396,93 @@ out="$(cd "$S3" && PATH="$TMPD/smgh:$PATH" bash "$SM" next 54 2>&1)"; rc=$?
 chk "stack-merge, key unset: exits 0" "$rc"
 chk "stack-merge, key unset: gh pr merge called once, as before" "$([ "$(grep -c '^pr merge 54 --squash --delete-branch' "$TMPD/sm-gh.log")" -eq 1 ]; echo $?)"
 chk "stack-merge, key unset: the script never runs" "$([ ! -s "$MC_LOG" ]; echo $?)"
+
+# ===========================================================================
+echo "=== exit 3 from the command; an unreadable key end to end ==="
+# ===========================================================================
+# land_wt_on <clone> -- a worktree on feat/land with one commit, as land_fixture builds it.
+land_wt_on() {
+  git -C "$1" worktree add -q -b feat/land "$1/wt" main >/dev/null 2>&1
+  echo land > "$1/wt/landed.txt"
+  git -C "$1/wt" add -A; git -C "$1/wt" commit -qm "feat: the landed change"
+}
+
+E1="$(mc_repo e1 yes exit3)"; mc_pr "$E1" "$TMPD/mbare-e1" 61
+: > "$GH_STUB_CALLS"; : > "$MC_LOG"
+out="$("$WRAP" merge --apply "$E1" 2>&1)"; rc=$?
+chk "wrap merge, command exits 3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "wrap merge, command exits 3: named as the project command's refusal" "$out" "REFUSED merge #61: the project merge command exited 3"
+chk "wrap merge, command exits 3: no plain merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+L5="$(mc_repo l5 yes exit3)"; land_wt_on "$L5"; L5WT="$(cd "$L5/wt" && pwd -P)"; L5TIP="$(git -C "$L5WT" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"; : > "$MC_LOG"
+out="$(GH_STUB_PR_46="{\"headRefOid\":\"$L5TIP\"}" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=46 GH_STUB_LAND_REPO="$L5WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l5" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$L5WT" 2>&1)"; rc=$?
+chk "wrap land, command exits 3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "wrap land, command exits 3: named as the project command's refusal" "$out" "MERGE REFUSED #46: the project merge command exited 3"
+chk "wrap land, command exits 3: no plain merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# an unreadable key (the dotted form) through wrap merge, wrap land and stack-merge
+E2="$(mc_repo_toml e2 'merge.command = "bash scripts/pr-merge.sh"')"; mc_pr "$E2" "$TMPD/mbare-e2" 62
+: > "$GH_STUB_CALLS"; : > "$MC_LOG"
+out="$("$WRAP" merge --apply "$E2" 2>&1)"; rc=$?
+chk "wrap merge, unreadable key: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "wrap merge, unreadable key: says why" "$out" "names [merge] in a form the kit cannot read"
+chk "wrap merge, unreadable key: no plain merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "wrap merge, unreadable key: the script never runs" "$([ ! -s "$MC_LOG" ]; echo $?)"
+
+L6="$(mc_repo_toml l6 'merge.command = "bash scripts/pr-merge.sh"')"; land_wt_on "$L6"; L6WT="$(cd "$L6/wt" && pwd -P)"; L6TIP="$(git -C "$L6WT" rev-parse HEAD)"
+: > "$GH_STUB_CALLS"; : > "$MC_LOG"
+out="$(GH_STUB_PR_47="{\"headRefOid\":\"$L6TIP\"}" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=47 GH_STUB_LAND_REPO="$L6WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l6" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$L6WT" 2>&1)"; rc=$?
+chk "wrap land, unreadable key: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "wrap land, unreadable key: says why" "$out" "names [merge] in a form the kit cannot read"
+chk_has "wrap land, unreadable key: names the refusal" "$out" "MERGE REFUSED #47"
+chk "wrap land, unreadable key: no plain merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+S5="$(mc_repo_toml s5 'merge.command = "bash scripts/pr-merge.sh"')"
+git -C "$S5" push -q origin main:refs/heads/feat/link; git -C "$S5" fetch -q origin
+: > "$TMPD/sm-gh.log"; : > "$MC_LOG"
+out="$(cd "$S5" && MC_CHILD=58 PATH="$TMPD/smgh:$PATH" bash "$SM" next 58 2>&1)"; rc=$?
+chk "stack-merge, unreadable key: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "stack-merge, unreadable key: says why" "$out" "cannot read the project merge command"
+chk "stack-merge, unreadable key: no plain merge and no retarget" "$(grep -qE '^pr (merge|edit)' "$TMPD/sm-gh.log" && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== kit_merge_exec guards: no default-branch commit, a failing worktree add, an interrupt ==="
+# ===========================================================================
+R8="$(mc_repo r8 no ok)"
+git -C "$R8" symbolic-ref -d refs/remotes/origin/HEAD >/dev/null 2>&1
+git -C "$R8" remote set-url origin "$TMPD/does-not-exist"; git -C "$R8" update-ref -d refs/remotes/origin/main
+: > "$MC_LOG"; kit_merge_exec "$R8" "bash scripts/pr-merge.sh" 70 "" >/dev/null 2>&1; rc=$?
+chk "exec, default branch unresolvable: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "exec, default branch unresolvable: nothing ran, not even in the live working tree" "$([ ! -s "$MC_LOG" ]; echo $?)"
+
+R9="$(mc_repo r9 yes ok)"
+mkdir -p "$TMPD/gitshim" "$TMPD/mc-tmp-a"
+REAL_GIT="$(command -v git)"
+printf '#!/usr/bin/env bash\ncase " $* " in *" worktree add "*) echo "fatal: simulated worktree add failure" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' "$REAL_GIT" > "$TMPD/gitshim/git"
+chmod +x "$TMPD/gitshim/git"
+: > "$MC_LOG"
+eo="$(PATH="$TMPD/gitshim:$PATH" TMPDIR="$TMPD/mc-tmp-a" kit_merge_exec "$R9" "bash scripts/pr-merge.sh" 71 "" 2>&1)"; rc=$?
+chk "exec, worktree add fails: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "exec, worktree add fails: says so" "$eo" "cannot check out"
+chk "exec, worktree add fails: the command never ran" "$([ ! -s "$MC_LOG" ]; echo $?)"
+chk "exec, worktree add fails: no temp directory left behind" "$([ -z "$(ls "$TMPD/mc-tmp-a" | grep kit-merge-run)" ]; echo $?)"
+
+# an interrupt removes the temporary checkout and its worktree entry
+R10="$(mc_repo r10 yes slow)"; mkdir -p "$TMPD/mc-tmp-b"; : > "$MC_LOG"
+set -m
+TMPDIR="$TMPD/mc-tmp-b" bash -c 'source "$1/lib/config/merge-command.sh"; kit_merge_exec "$2" "bash scripts/pr-merge.sh" 72 ""' _ "$KIT_DIR" "$R10" >/dev/null 2>&1 &
+BGPID=$!
+set +m
+for _ in $(seq 1 40); do grep -q '^ran pr=72' "$MC_LOG" && break; sleep 0.5; done
+chk "interrupt: the slow command started" "$(grep -q '^ran pr=72' "$MC_LOG"; echo $?)"
+kill -TERM -- "-$BGPID" 2>/dev/null
+for _ in $(seq 1 40); do [ -z "$(ls "$TMPD/mc-tmp-b" 2>/dev/null | grep kit-merge-run)" ] && break; sleep 0.5; done
+wait "$BGPID" 2>/dev/null
+chk "interrupt: the temporary checkout is removed" "$([ -z "$(ls "$TMPD/mc-tmp-b" | grep kit-merge-run)" ]; echo $?)"
+chk "interrupt: the worktree entry is gone from the repo" "$([ -z "$(git -C "$R10" worktree list --porcelain | grep kit-merge-run)" ]; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-merge-command: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
