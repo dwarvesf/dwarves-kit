@@ -1,0 +1,9 @@
+{"id":"fixture","ok":true,"result":{"worktrees":[
+ {"repo":"demo-repo","displayName":"main","branch":"refs/heads/main","agents":[
+  {"paneKey":"structured-agent-session-claude_aaaaaaaa_1111_4111_8111_aaaaaaaaaaaa:leaf-1","state":"done","conversationName":"Journal tab","lastAssistantMessage":"JOURNAL-PREVIEW first two hundred chars only","updatedAt":1800000000000},
+  {"paneKey":"c55edcb9-0000-4000-8000-000000000000:leaf-2","state":"idle","conversationName":"Needle tab","lastAssistantMessage":"Needle reply: the quarterly rollout plan is approved with two caveats about staging","updatedAt":1800000000000},
+  {"paneKey":"structured-agent-session-claude_bbbbbbbb_2222_4222_8222_bbbbbbbbbbbb:leaf-3","state":"working","conversationName":"Self tab","lastAssistantMessage":"SELF-PREVIEW the calling session's own tab","updatedAt":1800000000000},
+  {"paneKey":"c55edcb9-1111-4111-8111-111111111111:leaf-4","state":"done","conversationName":"Lost tab","lastAssistantMessage":"Nothing on disk says this sentence anywhere at all","updatedAt":1800000000000}
+ ]},
+ {"repo":"demo-repo","displayName":"feature","branch":"refs/heads/feat/x","agents":[]}
+],"hostScope":"local","totalCount":2,"truncated":false}}

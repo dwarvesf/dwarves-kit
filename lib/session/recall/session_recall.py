@@ -14,8 +14,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
+import subprocess
 import sys
 import unicodedata
+from pathlib import Path
 from datetime import datetime, timezone
 
 PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -892,10 +895,207 @@ def collect_artifacts(query, file=None, session=None, project=None, search_all=F
 
 # --- CLI ---------------------------------------------------------------------
 
+# --- --orca: every Orca agent tab and the full final reply behind it ----------
+# `orca worktree ps --json` lists tabs with a 200-char reply preview. The full reply
+# lives in the Claude transcript, and a tab's paneKey is NOT the Claude session id.
+# Orca's own journal db maps its session id (the paneKey stem) to the Claude session
+# ids it ran under (providerHandleChain), so the transcript is a lookup, not a guess.
+# The text-needle match is the fallback for a tab the journal does not know.
+
+ORCA_REPLY_CHARS = 1500
+ORCA_PREVIEW_CHARS = 200
+ORCA_PANE_PREFIX = "structured-agent-session-"
+ORCA_NEEDLE_LEN = 50
+ORCA_NEEDLE_MIN = 20
+ORCA_NEEDLE_FILES = 300
+ORCA_NEEDLE_SLACK_S = 120
+ORCA_SELF_MARKER = "recall --orca"
+_ORCA_CTRL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")  # C0/C1 except \t and \n
+
+
+class OrcaError(Exception):
+    pass
+
+
+def orca_user_data() -> str:
+    return os.environ.get("ORCA_USER_DATA_PATH") or os.path.expanduser("~/Library/Application Support/orca")
+
+
+def orca_tabs():
+    """One dict per agent tab from `orca worktree ps --json` (executable: $ORCA_CLI_COMMAND
+    or `orca`). Raises OrcaError when the CLI is missing, fails, or prints no JSON."""
+    exe = os.environ.get("ORCA_CLI_COMMAND") or "orca"
+    try:
+        proc = subprocess.run([exe, "worktree", "ps", "--json"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise OrcaError(f"cannot run {exe}: {e}") from None
+    if proc.returncode != 0:
+        raise OrcaError(f"{exe} worktree ps exited {proc.returncode}: {proc.stderr.strip()[:200]}")
+    try:
+        result = json.loads(proc.stdout)["result"]
+        worktrees = result["worktrees"]
+    except (ValueError, KeyError, TypeError):
+        raise OrcaError(f"{exe} worktree ps printed no .result.worktrees JSON") from None
+    tabs = []
+    for wt in worktrees if isinstance(worktrees, list) else []:
+        if not isinstance(wt, dict):
+            continue
+        workspace = f"{wt.get('repo') or '?'}:{wt.get('displayName') or wt.get('branch') or '?'}"
+        for a in wt.get("agents") or []:
+            if isinstance(a, dict):
+                tabs.append({"workspace": workspace, "tab": a.get("conversationName") or a.get("displayName")
+                             or a.get("taskTitle") or "(unnamed)", "state": a.get("state") or "?",
+                             "updated_ms": a.get("updatedAt") if isinstance(a.get("updatedAt"), int) else 0,
+                             "pane_key": str(a.get("paneKey") or ""),
+                             "preview": str(a.get("lastAssistantMessage") or "")})
+    return tabs, bool(result.get("truncated"))
+
+
+def orca_handles(orca_id: str, db_path: str):
+    """Claude session ids the Orca session `orca_id` ran under, newest first; [] when the
+    journal db is absent, unreadable, or does not know the id. Opened read-only."""
+    try:
+        con = sqlite3.connect(Path(db_path).as_uri() + "?mode=ro", uri=True, timeout=2)
+        try:
+            row = con.execute("SELECT record_json FROM agent_session_records WHERE session_id = ?",
+                              (orca_id,)).fetchone()
+        finally:
+            con.close()
+        chain = json.loads(row[0]).get("providerHandleChain") or [] if row else []
+    except (sqlite3.Error, ValueError, AttributeError, TypeError):
+        return []
+    ids = [h["handle"]["sessionId"] for h in chain
+           if isinstance(h, dict) and isinstance(h.get("handle"), dict)
+           and isinstance(h["handle"].get("sessionId"), str)]
+    return ids[::-1]
+
+
+def _projects_files(stem: str = "*"):
+    """Top-level transcripts only: `projects/<slug>/<stem>.jsonl`, never a subagent's."""
+    import glob
+    return glob.glob(os.path.join(PROJECTS, "*", stem + ".jsonl"))
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _needle_match(tab, self_ids):
+    """Fallback: the newest top-level transcript whose final reply contains the first
+    ORCA_NEEDLE_LEN chars of the tab's preview. Only files written since the tab's last
+    update are tried. Excludes the calling session (by id, else the newest candidate that
+    holds this very call). Checks the FINAL reply, not any text, so a transcript that merely
+    quotes the preview does not match."""
+    needle = _norm(tab["preview"])[:ORCA_NEEDLE_LEN]
+    if len(needle) < ORCA_NEEDLE_MIN:
+        return None
+    floor = tab["updated_ms"] / 1000 - ORCA_NEEDLE_SLACK_S
+    cands = []
+    for f in _projects_files():
+        try:
+            mt = os.path.getmtime(f)
+        except OSError:
+            continue
+        if mt >= floor and os.path.basename(f)[:-len(".jsonl")] not in self_ids:
+            cands.append((mt, f))
+    cands.sort(reverse=True)
+    skip_self = not self_ids
+    for _, f in cands[:ORCA_NEEDLE_FILES]:
+        try:
+            if skip_self:
+                with open(f, encoding="utf-8", errors="replace") as fh:
+                    if ORCA_SELF_MARKER in fh.read():
+                        skip_self = False
+                        continue
+            final = final_reply_text(load(f))
+        except OSError:
+            continue
+        if final and needle in _norm(final):
+            return f
+    return None
+
+
+def resolve_orca_tab(tab, self_ids, self_orca_id=""):
+    """(transcript path or None, how). how: journal | needle | self | none."""
+    base = tab["pane_key"].split(":", 1)[0]
+    if base.startswith(ORCA_PANE_PREFIX):
+        base = base[len(ORCA_PANE_PREFIX):]
+    handles = orca_handles(base, os.path.join(orca_user_data(), "agent-session-journal.db")) if base else []
+    if (self_orca_id and base == self_orca_id) or any(h in self_ids for h in handles):
+        return None, "self"
+    for h in handles:
+        files = _projects_files(h)
+        if files:
+            return max(files, key=os.path.getmtime), "journal"
+    path = _needle_match(tab, self_ids)
+    return (path, "needle") if path else (None, "none")
+
+
+def _orca_clean(text: str, cap: int):
+    """(text, truncated): control chars to `?`, secret shapes redacted, then capped. The
+    redaction regex runs on a bounded prefix only (see REDACT_PREFIX)."""
+    text = text.strip()
+    cleaned = _strip_unicode_control_categories(_ORCA_CTRL_RE.sub("?", _redact_prefix(text, cap)))
+    cleaned = TAIL_EXTRA_SECRET_RE.sub("[redacted]", SECRET_SHAPE_RE.sub("[redacted]", cleaned))
+    cut = len(text) > cap
+    if len(cleaned) > cap:
+        cleaned = cleaned[:cap - 1] + "…"
+    elif cut:
+        cleaned += "…"
+    return cleaned, cut
+
+
+def collect_orca(max_chars: int = ORCA_REPLY_CHARS):
+    """Rows for every Orca agent tab; the second value says Orca truncated its own list."""
+    tabs, truncated = orca_tabs()
+    self_ids = {v for v in (os.environ.get("CLAUDE_SESSION_ID"), os.environ.get("CLAUDE_CODE_SESSION_ID")) if v}
+    self_orca = os.environ.get("ORCA_AGENT_SESSION_ID", "")
+    rows = []
+    for tab in tabs:
+        path, how = resolve_orca_tab(tab, self_ids, self_orca)
+        reply, cut = None, False
+        if path:
+            try:
+                full = final_reply_text(load(path))
+            except OSError:
+                full = None
+            if full:
+                reply, cut = _orca_clean(full, max_chars)
+        if reply is None:
+            if how in ("journal", "needle"):
+                how = "none"  # transcript found but holds no assistant text
+            reply, _ = _orca_clean(tab["preview"], ORCA_PREVIEW_CHARS)
+        ms = tab["updated_ms"]
+        rows.append({"workspace": _clean_ctrl(tab["workspace"]), "tab": _clean_ctrl(tab["tab"]),
+                     "state": _clean_ctrl(tab["state"]), "updated_ms": ms,
+                     "updated": datetime.fromtimestamp(ms / 1000).strftime("%Y-%m-%d %H:%M") if ms else "?",
+                     "pane_key": _clean_ctrl(tab["pane_key"]), "match": how,
+                     "transcript": path if how in ("journal", "needle") else None,
+                     "reply": reply, "truncated": cut})
+    return rows, truncated
+
+
+def render_orca(rows, truncated: bool = False) -> str:
+    notes = {"self": "this session, transcript excluded; Orca's 200-char preview:",
+             "none": "no transcript match; Orca's 200-char preview:"}
+    lines = [f"# orca agent tabs: {len(rows)}", DATA_MARKER]
+    if truncated:
+        lines.append("# orca truncated its worktree list; some tabs are missing")
+    for r in rows:
+        lines += ["", f"## {r['workspace']} · {r['tab']} · {r['state']} · {r['updated']}"]
+        if r["match"] in notes:
+            lines.append(notes[r["match"]])
+        elif r["truncated"]:
+            lines.append(f"(cut at {len(r['reply'])} chars; full: session-recall --final {r['transcript']})")
+        lines.append(r["reply"])
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     file = project = tail = final = replies = fence_tag = out_path = written = session = subagents = None
-    search_all = as_json = sessions = artifacts = False
+    search_all = as_json = sessions = artifacts = orca = False
+    max_chars = None  # --orca reply cap; None = ORCA_REPLY_CHARS
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
     max_bytes = FINAL_MAX_BYTES
     query_parts = []
@@ -905,7 +1105,8 @@ def main(argv=None) -> int:
              "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]] "
              "[--replies FILE] "
              "[--written PATH (--file F | --session PREFIX) [--out FILE]] "
-             "[--artifacts [<filter>] [--file F | --session PREFIX | --project SLUG | --all] [--limit N] [--json]]\n")
+             "[--artifacts [<filter>] [--file F | --session PREFIX | --project SLUG | --all] [--limit N] [--json]] "
+             "[--orca [--max-chars N] [--json]]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -930,6 +1131,17 @@ def main(argv=None) -> int:
             written = next(it, None)
         elif a == "--artifacts":
             artifacts = True
+        elif a == "--orca":
+            orca = True
+        elif a == "--max-chars":
+            raw = next(it, None)
+            try:
+                max_chars = int(raw)
+                if max_chars < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                sys.stderr.write(usage)
+                return 2
         elif a == "--session":
             session = next(it, None)
         elif a == "--fence":
@@ -980,6 +1192,28 @@ def main(argv=None) -> int:
     if "--out" in argv and not out_path:
         sys.stderr.write(usage)
         return 2
+    if max_chars is not None and not orca:
+        sys.stderr.write(usage)
+        return 2
+    if orca:
+        # --orca takes only --json and --max-chars; every other mode flag is a conflict
+        if (query or file is not None or project is not None or search_all or sessions or artifacts
+                or tail is not None or final is not None or replies is not None or written is not None
+                or session is not None or subagents is not None or fence_tag is not None
+                or out_path is not None or max_bytes != FINAL_MAX_BYTES or limit is not None):
+            sys.stderr.write(usage)
+            return 2
+        try:
+            rows, truncated = collect_orca(max_chars or ORCA_REPLY_CHARS)
+        except OrcaError as e:
+            sys.stderr.write(f"session-recall: {e}\n")
+            return 1
+        if as_json:
+            payload = {"data_marker": DATA_MARKER, "orca_truncated": truncated, "tabs": rows}
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        else:
+            sys.stdout.write(render_orca(rows, truncated) + "\n")
+        return 0
     if subagents is not None:
         # --subagents takes a prefix, an optional description filter, --project or --file, --json
         if (not subagents or subagents.startswith("-") or sessions or artifacts or tail is not None
