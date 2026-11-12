@@ -59,11 +59,23 @@ _adopt_style_of() {
   _adopt_blob "$1" "$spec" | jq -r '.outputStyle // ""' 2>/dev/null
 }
 
-# _adopt_agents_only <dir> -- 0 when `adopt.agents_only` resolves true for <dir> (project
+# _adopt_agents_only <dir> [<ref>] -- 0 when `adopt.agents_only` resolves true for <dir> (project
 # .kit.toml, else operator, else kit-root): the repo keeps AGENTS.md as its one instruction
-# file and adopt never writes CLAUDE.md. The same resolution adopt.sh itself uses.
+# file and adopt never writes CLAUDE.md. The same resolution adopt.sh itself uses, including
+# its kit-root pick (the dev checkout's kit.toml before the install's). With a <ref> the project
+# file is read as COMMITTED at that ref, because the worktree adopt runs in is built from
+# origin/<default>: a key that is only in the main checkout must not decide the preflight.
 _adopt_agents_only() {
-  [ "$(KIT_PROJECT_ROOT="$1" kit_config_get adopt.agents_only false)" = "true" ]
+  local dir="$1" ref="${2:-}" proj="$1" tmp="" v kroot="${KIT_CONFIG_ROOT:-}"
+  [ -f "$LIB_ROOT/../kit.toml" ] && kroot="$(cd "$LIB_ROOT/.." && pwd)"
+  if [ -n "$ref" ]; then
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit-adopt-ao.XXXXXX")" || return 1
+    kit_config_show_at "$dir" "$ref" >| "$tmp/.kit.toml" 2>/dev/null || : >| "$tmp/.kit.toml"
+    proj="$tmp"
+  fi
+  v="$(KIT_CONFIG_ROOT="$kroot" KIT_PROJECT_ROOT="$proj" kit_config_get adopt.agents_only false)"
+  if [ -n "$tmp" ]; then rm -f "$tmp/.kit.toml"; rmdir "$tmp" 2>/dev/null || :; fi
+  [ "$v" = "true" ]
 }
 
 # _adopt_paths <agents-only 0|1> -- the ADOPT_PATHS words, CLAUDE.md dropped under agents-only.
@@ -211,7 +223,7 @@ _pf_add() { PF_REASONS="${PF_REASONS:+$PF_REASONS; }$1"; }
 _adopt_preflight() {
   local repo="$1" bodyfile="$2"
   PF_STATUS="ok"; PF_REASONS=""; PF_NOTE=""; ADOPT_DRY=""; ADOPT_STYLE=""
-  ADOPT_AO=0; _adopt_agents_only "$repo" && ADOPT_AO=1
+  ADOPT_AO=0
   local gd cgd main_co=1 def="" cur up tpl style="" drc drf
   local line s sp p paths wt tip otip url="" json ghrc nums ahead=""
   local ono=0 wtp=0 rebase_seen=0 lmb lmiss
@@ -224,6 +236,12 @@ _adopt_preflight() {
 
   def="$(_default_branch "$repo" 2>/dev/null)"
   [ -n "$def" ] || _pf_add "no default branch resolved"
+  # The key as the adoption worktree will see it: committed on origin/<default>, else the checkout.
+  if [ -n "$def" ] && git -C "$repo" rev-parse --verify -q "refs/remotes/origin/$def" >/dev/null 2>&1; then
+    _adopt_agents_only "$repo" "refs/remotes/origin/$def" && ADOPT_AO=1
+  else
+    _adopt_agents_only "$repo" && ADOPT_AO=1
+  fi
 
   # R3b: a main checkout's git dir IS its common dir; a linked worktree's differs.
   gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"

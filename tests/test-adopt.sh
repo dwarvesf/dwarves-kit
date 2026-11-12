@@ -734,18 +734,25 @@ if cmp -s "$AO3/CLAUDE.md" "$AO3/CLAUDE.before"; then ok "agents_only: --refresh
 
 # AO4: --dry-run writes nothing and never plans a CLAUDE.md write.
 AO4="$(ao_repo)"
-O_AO4="$(bash lib/adopt.sh --dry-run "$AO4" 2>&1)"
-if [ ! -e "$AO4/AGENTS.md" ] && [ ! -e "$AO4/CLAUDE.md" ] && ! echo "$O_AO4" | grep -q 'would .*CLAUDE\.md' \
-  && ! echo "$O_AO4" | grep -q 'append the operate-contract block'; then
+O_AO4="$(bash lib/adopt.sh --dry-run "$AO4" 2>&1)"; R_AO4=$?
+if [ "$R_AO4" -eq 0 ] && [ ! -e "$AO4/AGENTS.md" ] && [ ! -e "$AO4/CLAUDE.md" ] && echo "$O_AO4" | grep -q 'would create AGENTS.md' \
+  && ! echo "$O_AO4" | grep -q 'would .*CLAUDE\.md' && ! echo "$O_AO4" | grep -q 'append the operate-contract block'; then
   ok "agents_only: --dry-run writes nothing and plans no CLAUDE.md or duplicate block"
 else
   no "agents_only dry-run"; echo "$O_AO4"
 fi
 
 # AO5: the knob wins over an explicit --single-source, which would otherwise write CLAUDE.md.
-AO5="$(ao_repo)"
+# With two DIFFERENT files --single-source alone refuses (exit 1); the key makes it a plain agents-only run.
+AO5="$(ao_repo)"; printf 'CLAUDE TEXT\n' > "$AO5/CLAUDE.md"; printf 'AGENTS TEXT\n' > "$AO5/AGENTS.md"
 bash lib/adopt.sh --single-source "$AO5" >/dev/null 2>&1; r_ao5=$?
-if [ "$r_ao5" -eq 0 ] && [ ! -e "$AO5/CLAUDE.md" ]; then ok "agents_only: wins over --single-source (no CLAUDE.md)"; else no "agents_only vs --single-source (rc=$r_ao5)"; fi
+if [ "$r_ao5" -eq 0 ] && [ "$(cat "$AO5/CLAUDE.md")" = "CLAUDE TEXT" ] && grep -qxF '<!-- kit:adopt -->' "$AO5/AGENTS.md"; then
+  ok "agents_only: wins over --single-source (differing files adopt, CLAUDE.md untouched)"
+else
+  no "agents_only vs --single-source (rc=$r_ao5)"
+fi
+AO5N="$(newrepo)"; printf 'CLAUDE TEXT\n' > "$AO5N/CLAUDE.md"; printf 'AGENTS TEXT\n' > "$AO5N/AGENTS.md"
+if bash lib/adopt.sh --single-source "$AO5N" >/dev/null 2>&1; then no "--single-source without the key should refuse differing files"; else ok "negative control: without the key --single-source refuses the same two files"; fi
 
 # AO6: the operator kit.toml can set the key for a repo with no .kit.toml of its own.
 OPAO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '[adopt]\nagents_only = true\n' > "$OPAO/kit.toml"
@@ -762,7 +769,29 @@ else
   no "agents_only=false still writes the loader"
 fi
 
-rm -rf "$AO1" "$AO2" "$AO3" "$AO4" "$AO5" "$AO6" "$AO7" "$OPAO"
+# AO8: an old kit AGENTS.md is not given a block (that would change its hash); --refresh --swap-agents still swaps it.
+AO8="$(ao_repo)"; old_kit_copy > "$AO8/AGENTS.md"; cp "$AO8/AGENTS.md" "$AO8/AGENTS.before"
+bash lib/adopt.sh "$AO8" >/dev/null 2>&1
+keep_ok=0; cmp -s "$AO8/AGENTS.md" "$AO8/AGENTS.before" && keep_ok=1
+bash lib/adopt.sh --refresh --swap-agents "$AO8" >/dev/null 2>&1
+if [ "$keep_ok" -eq 1 ] && cmp -s "$AO8/AGENTS.md" "$POINTER"; then ok "agents_only: an old kit AGENTS.md gets no block and still swaps to the pointer"; else no "agents_only vs --swap-agents (keep=$keep_ok)"; fi
+
+# AO9: --refresh refuses an AGENTS.md with two blocks, or an END before the START, and writes nothing.
+AO9="$(ao_repo)"; printf 'top\n<!-- kit:adopt -->\na\n<!-- /kit:adopt -->\nmiddle consumer text\n<!-- kit:adopt -->\nb\n<!-- /kit:adopt -->\n' > "$AO9/AGENTS.md"; cp "$AO9/AGENTS.md" "$AO9/AGENTS.before"
+bash lib/adopt.sh --refresh "$AO9" >/dev/null 2>&1; r_ao9=$?
+if [ "$r_ao9" -eq 1 ] && cmp -s "$AO9/AGENTS.md" "$AO9/AGENTS.before"; then ok "agents_only: --refresh refuses two blocks and keeps the consumer text between them"; else no "agents_only two blocks (rc=$r_ao9)"; fi
+AO9B="$(ao_repo)"; printf '<!-- /kit:adopt -->\nquoted example\n<!-- kit:adopt -->\n' > "$AO9B/AGENTS.md"; cp "$AO9B/AGENTS.md" "$AO9B/AGENTS.before"
+bash lib/adopt.sh --refresh "$AO9B" >/dev/null 2>&1; r_ao9b=$?
+if [ "$r_ao9b" -eq 1 ] && cmp -s "$AO9B/AGENTS.md" "$AO9B/AGENTS.before"; then ok "agents_only: --refresh refuses an END before the START"; else no "agents_only reversed markers (rc=$r_ao9b)"; fi
+
+# AO10: appending and refreshing the block keeps the file's permission bits.
+AO10="$(ao_repo)"; printf 'REPO RULES\n' > "$AO10/AGENTS.md"; chmod 640 "$AO10/AGENTS.md"
+bash lib/adopt.sh "$AO10" >/dev/null 2>&1; m1="$(stat -c %a "$AO10/AGENTS.md" 2>/dev/null || stat -f %Lp "$AO10/AGENTS.md")"
+printf '<!-- kit:adopt -->\nstale\n<!-- /kit:adopt -->\n' >> "$AO10/AGENTS.md"
+bash lib/adopt.sh --refresh "$AO10" >/dev/null 2>&1; m2="$(stat -c %a "$AO10/AGENTS.md" 2>/dev/null || stat -f %Lp "$AO10/AGENTS.md")"
+if [ "$m1" = 640 ]; then ok "agents_only: the block append keeps the AGENTS.md mode (640)"; else no "agents_only mode after append ($m1)"; fi
+
+rm -rf "$AO1" "$AO2" "$AO3" "$AO4" "$AO5" "$AO5N" "$AO6" "$AO7" "$AO8" "$AO9" "$AO9B" "$AO10" "$OPAO"
 rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7" "$T13" "$T14" "$T15" "$T16" "$T17" "$T18" "$T19"
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"

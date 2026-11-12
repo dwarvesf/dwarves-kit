@@ -682,7 +682,7 @@ chk "42: exits 0" "$rc"
 chk_has "42: result row names the PR" "$out" "result: #7 adopted"
 chk "42: origin CLAUDE.md is the committed bytes" \
   "$([ "$(git -C "$C41" show origin/main:CLAUDE.md)" = "repo rules" ]; echo $?)"
-chk "42: origin AGENTS.md carries the managed block or the pointer" \
+chk "42: origin AGENTS.md is the kit pointer (it carries the rules, so no block)" \
   "$(git -C "$C41" show origin/main:AGENTS.md | grep -q 'kit:agents-pointer'; echo $?)"
 chk "42: the hand edit to CLAUDE.md is still in the checkout" \
   "$([ "$(cat "$C41/CLAUDE.md")" = "repo rules, edited" ]; echo $?)"
@@ -695,6 +695,20 @@ out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub43.sh" \
   adopt_apply "$C43" "$TMPD/abare-c43")"; rc=$?
 chk "43: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "43: names CLAUDE.md as outside the scaffold set" "$out" "failed: adoption wrote CLAUDE.md, outside the scaffold set"
+# negative control: the same driver with the key off is inside the scaffold set
+C43N="$(ao_clone c43n off)"; git -C "$C43N" checkout -q -- CLAUDE.md
+: > "$GH_STUB_CALLS"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub43.sh" \
+  adopt_apply "$C43N" "$TMPD/abare-c43n")"; rc=$?
+chk_no "43: negative control, key off: CLAUDE.md passes the path guard" "$out" "outside the scaffold set"
+
+echo "=== adopt: the key committed in the main checkout but not on origin does not decide the preflight (44) ==="
+C44="$(ao_clone c44 off)"
+printf '[adopt]\nagents_only = true\n' > "$C44/.kit.toml"
+git -C "$C44" add .kit.toml; git -C "$C44" commit -qm "chore: key not pushed"
+out="$("$WRAP" adopt "$C44" 2>&1)"; rc=$?
+chk "44: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "44: the dirty CLAUDE.md still collides, the worktree adopt would read origin's file" "$out" "M CLAUDE.md in the main checkout would block the post-land pull"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-adopt: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

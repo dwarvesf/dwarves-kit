@@ -1206,11 +1206,18 @@ mkfx main
 printf 'Status: VALIDATED\n- [ ] t\n' > "$FX/docs/specs/SPEC-001-foo.md"
 assert_output_contains "single live spec is selected" "spec:VALIDATED" "$(cr)"
 
-# AGENTS.md alone is a valid instruction file (the adopt.agents_only layout): no missing-file warning.
+# An adopted AGENTS.md-only repo (the adopt.agents_only layout) is not missing an instruction file.
+# A stray AGENTS.md the kit never wrote still warns, as does a repo with neither file.
 mkfx main
-assert_output_contains "no CLAUDE.md and no AGENTS.md -> warns" "No CLAUDE.md or AGENTS.md" "$(cr)"
+assert_output_contains "no CLAUDE.md and no AGENTS.md -> warns" "No CLAUDE.md in project root" "$(cr)"
 printf 'rules\n' > "$FX/AGENTS.md"
-assert_output_not_contains "AGENTS.md alone -> no missing-file warning" "No CLAUDE.md" "$(cr)"
+assert_output_contains "stray AGENTS.md (no kit marker) -> still warns" "No CLAUDE.md in project root" "$(cr)"
+printf 'rules\n\n<!-- kit:adopt -->\nblock\n<!-- /kit:adopt -->\n' > "$FX/AGENTS.md"
+assert_output_not_contains "AGENTS.md with the kit block -> no warning" "No CLAUDE.md" "$(cr)"
+printf '<!-- kit:agents-pointer v1 -->\n# AGENTS.md\n' > "$FX/AGENTS.md"
+assert_output_not_contains "AGENTS.md that is the kit pointer -> no warning" "No CLAUDE.md" "$(cr)"
+rm -f "$FX/AGENTS.md"; printf 'x\n' > "$FX/CLAUDE.md"
+assert_output_not_contains "CLAUDE.md present -> no warning" "No CLAUDE.md" "$(cr)"
 
 mkfx main
 printf 'Status: SHIPPED (v1.6.0)\n' > "$FX/docs/specs/SPEC-001-foo.md"

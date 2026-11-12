@@ -87,8 +87,11 @@ _title_slug() {
 # then the _meta/megagoals default.
 _megagoal_root() {
   local repo="$1" hint root
-  if [ -f "$repo/CLAUDE.md" ]; then
-    hint="$(grep -E '^megagoal_root:[[:space:]]*' "$repo/CLAUDE.md" | head -1 \
+  # The hint lives in CLAUDE.md, or in AGENTS.md for a repo that keeps no CLAUDE.md (adopt.agents_only).
+  local hintfile=""
+  if [ -f "$repo/CLAUDE.md" ]; then hintfile="$repo/CLAUDE.md"; elif [ -f "$repo/AGENTS.md" ]; then hintfile="$repo/AGENTS.md"; fi
+  if [ -n "$hintfile" ]; then
+    hint="$(grep -E '^megagoal_root:[[:space:]]*' "$hintfile" | head -1 \
       | sed -E 's/^megagoal_root:[[:space:]]*//; s/[[:space:]]+$//')"
     if [ -n "$hint" ]; then
       case "$hint" in /*) printf '%s\n' "$hint" ;; *) printf '%s/%s\n' "$repo" "$hint" ;; esac

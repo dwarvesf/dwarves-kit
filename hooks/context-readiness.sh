@@ -21,9 +21,15 @@ if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
 fi
 
 # Only warn about missing essentials, don't confirm present ones
-# A repo with only AGENTS.md is fine: Claude Code v2.1.277+ reads it when no CLAUDE.md exists
-# (the adopt.agents_only layout). A hook never reads kit.toml, so the file is the signal.
-[ ! -f "CLAUDE.md" ] && [ ! -f "AGENTS.md" ] && WARNINGS+="No CLAUDE.md or AGENTS.md in project root. "
+# An adopted repo with no CLAUDE.md (the adopt.agents_only layout) keeps its instructions in
+# AGENTS.md, which Claude Code v2.1.277+ reads directly. A hook never reads kit.toml (the
+# standing lint), so the kit's own marker or pointer in AGENTS.md is the signal; a stray
+# AGENTS.md with neither still warns.
+if [ ! -f "CLAUDE.md" ]; then
+  if [ -f "AGENTS.md" ] && { grep -qxF '<!-- kit:adopt -->' AGENTS.md 2>/dev/null \
+       || head -n 1 AGENTS.md 2>/dev/null | grep -q '^<!-- kit:agents-pointer'; }; then :
+  else WARNINGS+="No CLAUDE.md in project root. "; fi
+fi
 
 # Board awareness: the SessionStart injection is the entry
 # surface, so it must see the board, or queued work is invisible at session

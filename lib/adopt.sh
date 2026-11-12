@@ -343,10 +343,19 @@ pointer_is_block=0
 [ "$BLOCK_IN_AGENTS" -eq 1 ] && head -n 1 "$agents" 2>/dev/null | grep -q '^<!-- kit:agents-pointer' && pointer_is_block=1
 # A dry run on a repo with no AGENTS.md: step 1 would write the pointer, which carries the rules.
 [ "$AGENTS_ONLY" -eq 1 ] && [ "$DRY" -eq 1 ] && [ ! -f "$agents" ] && pointer_is_block=1
+# Agents-only and an AGENTS.md that is an old kit copy (a known hash, or the old contract's own
+# first line): that file carries the rules itself, and a block appended now would change its hash
+# so a later --refresh --swap-agents could no longer recognise it.
+if [ "$AGENTS_ONLY" -eq 1 ] && [ -f "$agents" ]; then
+  if grep -q "^$(sha256_of "$agents") " "$known_list" 2>/dev/null \
+    || [ "$(head -n 1 "$agents" | tr -d '\r')" = "# AGENTS.md: the operating layer" ]; then pointer_is_block=1; fi
+fi
+# keep_mode <from> <to>: the replacement of a file keeps its permission bits (mktemp makes 0600).
+keep_mode() { [ -f "$1" ] && chmod "$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null)" "$2" 2>/dev/null || :; }
 if [ ! -f "$block_target" ] || ! grep -qxF "$START" "$block_target" 2>/dev/null; then
   if [ "$pointer_is_block" -eq 1 ]; then :   # the pointer already carries the rules; no block
   elif [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
-    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; mv "$tmp" "$block_target"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; keep_mode "$block_target" "$tmp"; mv "$tmp" "$block_target"
   fi
   [ "$pointer_is_block" -eq 1 ] || did=1
 elif [ "$REFRESH" -eq 1 ]; then
@@ -358,6 +367,15 @@ elif [ "$REFRESH" -eq 1 ]; then
     echo "adopt: add an '$END' line after the managed block, or delete the block, then re-run." >&2
     exit 1
   fi
+  # The strip below drops everything between a START line and the next END line. Two STARTs, two
+  # ENDs, or an END before the START (a quoted example in a consumer file) would drop text outside
+  # the block, so refuse unless the file holds exactly one block in order.
+  if [ "$(grep -cxF "$START" "$block_target")" -ne 1 ] || [ "$(grep -cxF "$END" "$block_target")" -ne 1 ] \
+    || [ "$(grep -nxF "$START" "$block_target" | cut -d: -f1)" -gt "$(grep -nxF "$END" "$block_target" | cut -d: -f1)" ]; then
+    echo "adopt: $block_target holds more than one '$START' / '$END' line, or an '$END' before the '$START'; refusing --refresh (would drop text outside the block)." >&2
+    echo "adopt: leave exactly one block, then re-run." >&2
+    exit 1
+  fi
   if [ "$DRY" -eq 1 ]; then note "refresh the operate-contract block in $block_target"; did=1; else
     tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     # END{if(drop)exit 3}: belt-and-suspenders against an unterminated block slipping past the
@@ -367,7 +385,7 @@ elif [ "$REFRESH" -eq 1 ]; then
       END{if(drop) exit 3}' "$block_target" > "$tmp" \
       || { echo "adopt: failed to strip the managed block from $block_target (unterminated?)" >&2; exit 1; }
     claude_block "$block_mode" >> "$tmp"
-    if cmp -s "$tmp" "$block_target"; then rm -f "$tmp"; else mv "$tmp" "$block_target"; did=1; fi
+    if cmp -s "$tmp" "$block_target"; then rm -f "$tmp"; else keep_mode "$block_target" "$tmp"; mv "$tmp" "$block_target"; did=1; fi
   fi
 fi
 
