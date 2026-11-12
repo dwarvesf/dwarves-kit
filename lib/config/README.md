@@ -5,6 +5,7 @@ The kit's configuration layer. One resolver reads layered `kit.toml` values, one
 **Entry points**
 - `bin/config {list|get|explain|seams|data}` forwards to `lib/config/config.sh`. `list` shows every declared knob, `get <key>` prints the resolved value, `explain <key>` shows the env, project, kit-root and default chain, `seams [--check]` reports cross-kit seams.
 - `lib/config/kit-config.sh`: source it for `kit_config_get <section.key> [default]`, `kit_config_root`, `kit_config_operator` and `kit_config_project`. Project beats operator beats kit-root beats default. It is the only reader of TOML.
+- `lib/config/merge-command.sh`: source it for `kit_merge_command <repo> [<default>]`, `kit_merge_command_slug`, `kit_merge_exec` and `kit_merge_verify`, the project's own PR merge command (`[merge] command`) that `wrap land`, `wrap merge`, `mega-merge` and `stack-merge` run in place of the plain squash. Tests: `tests/test-merge-command.sh`.
 - `lib/config/modules.sh`: source it for `kit_modules_known`, `kit_modules_core`, `kit_module_default`, `kit_module_hooks`, `kit_module_hook_events` and `kit_module_clis`.
 - `lib/config/hook-module.sh off <hook-script-basename>`: exit 0 when the hook's module is switched off. `hooks/anchor-root.sh` calls it before every non-spine hook.
 - `bin/config data [where|path <kind> <name>|move [--apply]]` (`lib/config/data.sh`): where the kit keeps its runtime state, cache and config, how each path resolved (`new`, `legacy`, `pinned`), and the opt-in move of old data to the new root (dry run unless `--apply`).

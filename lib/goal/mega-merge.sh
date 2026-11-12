@@ -59,6 +59,9 @@ SPEC_FIND="$LIB_ROOT/spec/spec-find.sh"
 CONFIG_LIB="${CONFIG_LIB:-$LIB_ROOT/config/kit-config.sh}"
 # shellcheck source=lib/config/kit-config.sh
 [ -f "$CONFIG_LIB" ] && . "$CONFIG_LIB"
+# The project's own merge command (`[merge] command`); see lib/config/merge-command.sh.
+# shellcheck source=lib/config/merge-command.sh
+source "$LIB_ROOT/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
 # Durable run-telemetry root: resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
@@ -481,7 +484,21 @@ merge() {
     return 1
   fi
 
-  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head"
+  # A project that names its own merge command merges through it, never through the plain
+  # squash below. It gets the PR number (the head the gate ran on rides as
+  # KIT_MERGE_HEAD_COMMIT); the branch delete and the squash are its business.
+  # An unreadable key, or no repo root to read it from, refuses: it never means "unset".
+  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd="" prc ddef=""
+  # origin/HEAD can name a stale default branch; a real merge asks GitHub which one it is. A dry
+  # run and the per-pr-review posture never call gh (a standing guarantee), so they read origin/HEAD.
+  if [ "$execute" -eq 1 ] && [ "$posture" != "per-pr-review" ] && [ -n "$root" ]; then ddef="$(kit_merge_default_branch "$root")"; fi
+  if [ -n "$root" ]; then pcmd="$(kit_merge_command "$root" "$ddef")"; prc=$?; else prc=2; fi
+  if [ "$prc" -eq 2 ]; then
+    echo "BLOCKED: cannot read the project merge command for PR #$pr; failing closed and refusing auto-merge." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (project merge command unreadable, fail-closed)"
+    return 1
+  fi
+  [ "$prc" -ne 0 ] || cmd_str="$pcmd $pr   (project merge command; KIT_MERGE_HEAD_COMMIT=$head)"
   if [ "$posture" = "per-pr-review" ]; then
     echo "DRY-RUN (posture=per-pr-review, a human reviews every PR): $cmd_str"
     _log "$rid" "DRY-RUN merge pr=$pr lane=$lane posture=per-pr-review"
@@ -503,6 +520,21 @@ merge() {
 
   echo "EXECUTING: $cmd_str"
   _log "$rid" "EXECUTE merge pr=$pr lane=$lane posture=$posture"
+  if [ "$prc" -eq 0 ]; then
+    kit_merge_exec "$root" "$pcmd" "$pr" "$head" "$ddef"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "BLOCKED: the project merge command refused PR #$pr (exit $rc); no other way to merge was tried." >&2
+      _log "$rid" "BLOCKED merge pr=$pr (project merge command exit $rc)"
+      return "$rc"
+    fi
+    # Exit 0 is not a merge: a script may only arm auto-merge. Ask GitHub.
+    if ! kit_merge_verify "$root" "$pr" "" "$head"; then
+      echo "BLOCKED: PR #$pr is not merged after the project merge command; stopping." >&2
+      _log "$rid" "BLOCKED merge pr=$pr (not MERGED after the project merge command)"
+      return 1
+    fi
+    return 0
+  fi
   gh pr merge "$pr" --squash --delete-branch --match-head-commit "$head"
 }
 

@@ -848,7 +848,13 @@ _land_run() {
   _land_pr_checks_gate "$wt" "$url" "$n" || return 2
 
   _LAND_STEP=merge
-  _gh_merge_retry "$n" "$url" "$tip"; rc=$?
+  _merge_pr "$n" "$url" "$tip" "$repo" "" "$def"; rc=$?
+  if [ "$rc" -ne 0 ] && [ "$WRAP_MERGE_PROJECT" = 1 ]; then
+    # The project's own merge command refused (or could not run). Its message is above.
+    # No conflict cycle, no retry, no plain merge.
+    echo "     MERGE REFUSED #${n}: the project merge command exited ${rc}; no other way to merge was tried" >&2
+    return 2
+  fi
   if [ "$rc" -ne 0 ]; then
     # A refusal worth answering is CONFLICTING and nothing else: the branch is already
     # pushed, so one merge of origin/<def> into it (never a rebase) is the only move that
@@ -962,7 +968,7 @@ _land_run() {
       echo "     checks failed on the merged head $(_short "$tip"): ${failed_checks}; the merge commit is on origin" >&2
       return 2
     fi
-    _gh_merge_retry "$n" "$url" "$tip"; rc=$?
+    _merge_pr "$n" "$url" "$tip" "$repo" "" "$def"; rc=$?
     if [ "$rc" -ne 0 ]; then
       echo "     MERGE FAILED #${n}: exit ${rc} after the merge cycle; once its checks pass, run wrap merge --apply --pr ${n}; the merge commit $(_short "$tip") is on origin" >&2
       return 2

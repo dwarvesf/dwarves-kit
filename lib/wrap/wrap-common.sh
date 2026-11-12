@@ -118,6 +118,44 @@ _gh_merge_retry() {
   done
 }
 
+# _merge_pr <pr> <repo-url> <head-oid> <repo-dir> [<slug> <default-branch>] -- the one merge call
+# of `wrap land` and `wrap merge`. A repo that sets `[merge] command` (lib/config/merge-command.sh)
+# merges through it, exactly once, with its output on the terminal and its exit code returned; the
+# plain merge above runs only when the key is unset. WRAP_MERGE_PROJECT is 1 whenever the project
+# command was in charge (it refused, could not be read, or could not be run), so a caller stops on
+# it and never tries another way to merge. <repo-dir> is the local checkout; with none, <slug> and
+# <default-branch> name the repo and the key is read through gh, but there is no checkout to run it
+# in, so a set key refuses the merge.
+WRAP_MERGE_PROJECT=0
+_merge_pr() {
+  local n="$1" url="$2" head_oid="$3" mrepo="${4:-}" mslug="${5:-}" mdef="${6:-}" mcmd mrc=1
+  WRAP_MERGE_PROJECT=0
+  if [ -n "$mrepo" ]; then
+    mcmd="$(kit_merge_command "$mrepo" "$mdef")"; mrc=$?
+  elif [ -n "$mslug" ]; then
+    mcmd="$(kit_merge_command_slug "$mslug" "$mdef")"; mrc=$?
+  else
+    echo "merge #${n}: no repo to read the project merge command from; refusing to merge" >&2
+    WRAP_MERGE_PROJECT=1; return 2
+  fi
+  case "$mrc" in
+    1) _gh_merge_retry "$n" "$url" "$head_oid"; return $? ;;
+    0)
+      WRAP_MERGE_PROJECT=1
+      if [ -z "$mrepo" ]; then
+        echo "merge #${n}: this repo sets [merge] command (${mcmd}); a merge by slug has no checkout to run it in. Run it from a local checkout. Nothing merged." >&2
+        return 2
+      fi
+      echo "merge #${n}: running the project merge command: ${mcmd} ${n}"
+      kit_merge_exec "$mrepo" "$mcmd" "$n" "$head_oid" "$mdef" "$url"
+      return $? ;;
+    *)
+      WRAP_MERGE_PROJECT=1
+      echo "merge #${n}: cannot read the project merge command; refusing to fall back to the plain merge. Nothing merged." >&2
+      return 2 ;;
+  esac
+}
+
 # GNU stat first: on GNU, `-f` means file-system status and prints a mount point with exit 0,
 # so a BSD-first order parses garbage on Linux. BSD stat rejects `-c` and falls through.
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }

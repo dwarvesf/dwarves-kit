@@ -164,7 +164,7 @@ It moves every `.claude/goals/<slug>.md` whose `target_spec` resolves to a SHIPP
 says merge, do not merge by hand: `bash lib/goal/stack-merge.sh chain <bottom-pr#> ...` runs the
 proven per-link dance (retarget child BEFORE merging the parent, squash-merge, reconcile
 the child on the new tip with a superset-safe merge). `--dry-run` prints the plan first.
-This replaces the manual merge of Step 8's output, not Step 8 itself.
+This replaces the manual merge of Step 8's output, not Step 8 itself. A repo that sets `[merge] command` in its committed `.kit.toml` merges every link through that command instead of the plain squash, and a refusal stops the chain (the same key `bin/wrap land` honors).
 
 ### Step 8: Open PR (if on a feature branch)
 

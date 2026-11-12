@@ -230,6 +230,10 @@ reroutes, never blocks; `orchestrate.sh run` calls it itself.
 worktree lands with `bin/wrap land <worktree>` (publish, PR, checks, squash merge, one
 command), never a hand-typed publish, PR create and merge loop. A `gate` PR is the exception:
 it opens as a draft by hand because it must not merge.
+A repo that sets `[merge] command` in its committed `.kit.toml` merges every PR through that
+command (`lib/goal/mega-merge.sh merge` runs `<command> <pr>` in place of the `gh pr merge` it
+would print, with the gated head in `KIT_MERGE_HEAD_COMMIT`). A refusal blocks the merge, exits
+non-zero, and never falls back to the plain merge.
 
 **Run mode (mirrors the skill's knob).** The conductor dispatches ready sub-goals
 as parallel background SUBAGENTS by default (workers keep the kit's internal

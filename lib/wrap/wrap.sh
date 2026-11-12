@@ -173,6 +173,8 @@ GATE_LEDGER_SH="$LIB_ROOT/gate/gate-ledger.sh"
 PROOF_LEDGER_SH="$LIB_ROOT/gate/proof-ledger.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/config/merge-command.sh
+source "$LIB_ROOT/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
 for _m in common scan apply pull carry ci merge land start ship log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m

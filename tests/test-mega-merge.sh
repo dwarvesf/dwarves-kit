@@ -235,6 +235,12 @@ mkdir -p "$TMP/pin"
 cat > "$TMP/pin/gh" <<SH
 #!/usr/bin/env bash
 echo "\$*" >> "$PIN_LOG"
+# the project merge command path re-reads the head and asks whether the PR is MERGED
+case "\$*" in
+  *"pr view"*"--json headRefOid"*) printf '{"headRefOid":"%s"}\n' "\$(cat "$CUR_HEAD")"; exit 0 ;;
+  *"pr view"*"--json state"*) printf '{"state":"MERGED","headRefOid":"%s"}\n' "\$(cat "$CUR_HEAD")"; exit 0 ;;
+  *"repo view"*) [ ! -s "$TMP/defbranch" ] || printf '{"defaultBranchRef":{"name":"%s"}}\n' "\$(cat "$TMP/defbranch")"; exit 0 ;;
+esac
 [ "\$1 \$2" = "pr merge" ] || exit 0
 pin=""; prev=""
 for a in "\$@"; do [ "\$prev" = "--match-head-commit" ] && pin="\$a"; prev="\$a"; done
@@ -285,6 +291,98 @@ OM="$(pinrun 1 somerid full --execute)"; RM=$?
 ok "head-moved-fails: --execute returns nonzero when the head moved" $([ "$RM" -ne 0 ] && echo 0 || echo 1)
 if has "DELETED-BRANCH" "$(cat "$PIN_LOG")"; then ok "head-moved-fails: no branch delete on a refused merge" 1; else ok "head-moved-fails: no branch delete on a refused merge" 0; fi
 echo "$HEAD_SHA" > "$CUR_HEAD"
+
+echo ""
+echo "=== mega-merge project merge command: [merge] command replaces the plain merge, a refusal blocks ==="
+# A fixture repo whose default branch carries .kit.toml [merge] command and the script it names.
+# MEGA_MERGE_ROOT points mega-merge at it, so the project command is read from there.
+MC_LOG="$TMP/mc-merge.log"; export MC_LOG
+mc_fixture() { # <dir> <key yes|no>
+  local d="$1" w="$1-work"
+  mkdir -p "$w/scripts"; git -C "$w" init -q; git -C "$w" symbolic-ref HEAD refs/heads/main
+  git -C "$w" config user.email t@t; git -C "$w" config user.name t; git -C "$w" config commit.gpgsign false
+  echo base > "$w/a.txt"
+  [ "$2" = yes ] && printf '[merge]\ncommand = "bash scripts/pr-merge.sh"\n' > "$w/.kit.toml"
+  cat > "$w/scripts/pr-merge.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'ran pr=%s head=%s\n' "$1" "${KIT_MERGE_HEAD_COMMIT:-}" >> "$MC_LOG"
+if [ -e "$MC_MOVE" ]; then echo ffffffffffffffffffffffffffffffffffffffff > "$CUR_HEAD"; fi
+if [ -e "$MC_REFUSE" ]; then echo "pr-merge: REFUSED: PR $1 is a one-way door and has no second approval" >&2; exit 7; fi
+exit 0
+SH
+  git -C "$w" add -A; git -C "$w" commit -qm base
+  git clone -q --bare "$w" "$d.git"; git clone -q "$d.git" "$d"; git -C "$d" remote set-head origin main >/dev/null 2>&1
+  git -C "$d" fetch -q "$FIX" HEAD   # the stub PR head and its parent must be commits here, the gate reads them
+}
+mc_fixture "$TMP/mcfix-yes" yes; mc_fixture "$TMP/mcfix-no" no
+export MC_REFUSE="$TMP/mc-refuse" MC_MOVE="$TMP/mc-move" CUR_HEAD
+mcrun() { MEGA_MERGE_ROOT="$1" pinrun 1 somerid full "${@:2}"; }
+
+: > "$MC_LOG"; : > "$PIN_LOG"; echo "$HEAD_SHA" > "$CUR_HEAD"
+OD="$(mcrun "$TMP/mcfix-yes")"
+has "bash scripts/pr-merge.sh 1" "$OD"; ok "project-merge: the DRY-RUN line prints the project command" $?
+if has "gh pr merge" "$OD"; then ok "project-merge: the DRY-RUN line no longer prints the plain gh merge" 1; else ok "project-merge: the DRY-RUN line no longer prints the plain gh merge" 0; fi
+ok "project-merge: a dry run does not run the project command" $([ ! -s "$MC_LOG" ] && echo 0 || echo 1)
+
+OE="$(mcrun "$TMP/mcfix-yes" --execute)"; RE=$?
+ok "project-merge: --execute returns 0 when the command succeeds" $([ "$RE" -eq 0 ] && echo 0 || echo 1)
+has "ran pr=1 head=$HEAD_SHA" "$(cat "$MC_LOG")"; ok "project-merge: the command got the PR number and the gated head" $?
+if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge: gh pr merge is never called when the key is set" 1; else ok "project-merge: gh pr merge is never called when the key is set" 0; fi
+
+: > "$MC_LOG"; : > "$PIN_LOG"; : > "$MC_REFUSE"
+OR="$(mcrun "$TMP/mcfix-yes" --execute)"; RR=$?
+ok "project-merge [refusal]: --execute returns the command's exit code (7)" $([ "$RR" -eq 7 ] && echo 0 || echo 1)
+has "pr-merge: REFUSED: PR 1 is a one-way door" "$OR"; ok "project-merge [refusal]: the command's own message is shown" $?
+has "BLOCKED: the project merge command refused PR #1 (exit 7)" "$OR"; ok "project-merge [refusal]: mega-merge names the block" $?
+if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge [refusal]: no fallback to the plain gh merge" 1; else ok "project-merge [refusal]: no fallback to the plain gh merge" 0; fi
+ok "project-merge [refusal]: the command ran exactly once" $([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ] && echo 0 || echo 1)
+rm -f "$MC_REFUSE"
+
+# The head moved after the gate: the command is not started (the plain path pinned the head too).
+: > "$MC_LOG"; : > "$PIN_LOG"; echo "ffffffffffffffffffffffffffffffffffffffff" > "$CUR_HEAD"
+OH="$(mcrun "$TMP/mcfix-yes" --execute)"; RH=$?
+ok "project-merge [head moved]: refused with a nonzero exit" $([ "$RH" -ne 0 ] && echo 0 || echo 1)
+ok "project-merge [head moved]: the command never started" $([ ! -s "$MC_LOG" ] && echo 0 || echo 1)
+echo "$HEAD_SHA" > "$CUR_HEAD"
+
+# The script merged a head the kit never checked (KIT_MERGE_HEAD_COMMIT is advisory): reported as a failure.
+: > "$MC_LOG"; : > "$PIN_LOG"; echo "$HEAD_SHA" > "$CUR_HEAD"; : > "$MC_MOVE"
+OV="$(mcrun "$TMP/mcfix-yes" --execute)"; RV=$?
+ok "project-merge [merged a moved head]: reported as a failure (nonzero)" $([ "$RV" -ne 0 ] && echo 0 || echo 1)
+has "was merged at head ffffffffffffffffffffffffffffffffffffffff" "$OV"; ok "project-merge [merged a moved head]: names the merged head" $?
+has "did not honor KIT_MERGE_HEAD_COMMIT" "$OV"; ok "project-merge [merged a moved head]: says the script ignored the pin" $?
+ok "project-merge [merged a moved head]: the command did run once" $([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ] && echo 0 || echo 1)
+rm -f "$MC_MOVE"; echo "$HEAD_SHA" > "$CUR_HEAD"
+
+# origin/HEAD names a stale default branch ("old", no key); GitHub says the default is main (the key is there).
+mc_fixture "$TMP/mcfix-stale" yes
+git -C "$TMP/mcfix-stale" checkout -q -b old; git -C "$TMP/mcfix-stale" rm -q .kit.toml
+git -C "$TMP/mcfix-stale" -c user.email=t@t -c user.name=t commit -qm "chore: old branch without the key"
+git -C "$TMP/mcfix-stale" push -q origin old; git -C "$TMP/mcfix-stale" checkout -q main
+git -C "$TMP/mcfix-stale" remote set-head origin old >/dev/null 2>&1
+: > "$MC_LOG"; : > "$PIN_LOG"; echo main > "$TMP/defbranch"
+OS="$(mcrun "$TMP/mcfix-stale" --execute)"; RS=$?
+ok "project-merge [stale origin/HEAD]: GitHub's default branch decides, the project command runs" $([ "$RS" -eq 0 ] && grep -q '^ran pr=1' "$MC_LOG" && echo 0 || echo 1)
+if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge [stale origin/HEAD]: no plain merge" 1; else ok "project-merge [stale origin/HEAD]: no plain merge" 0; fi
+: > "$TMP/defbranch"
+
+# An unreadable key (default branch not readable, key only in the working tree) fails closed.
+mc_fixture "$TMP/mcfix-bad" no
+printf '[merge]\ncommand = "bash scripts/pr-merge.sh"\n' > "$TMP/mcfix-bad/.kit.toml"
+git -C "$TMP/mcfix-bad" symbolic-ref -d refs/remotes/origin/HEAD >/dev/null 2>&1
+git -C "$TMP/mcfix-bad" remote set-url origin "$TMP/does-not-exist"; git -C "$TMP/mcfix-bad" update-ref -d refs/remotes/origin/main
+: > "$MC_LOG"; : > "$PIN_LOG"
+OB="$(mcrun "$TMP/mcfix-bad" --execute)"; RB=$?
+ok "project-merge [unreadable key]: --execute fails closed (nonzero)" $([ "$RB" -ne 0 ] && echo 0 || echo 1)
+has "cannot read the project merge command" "$OB"; ok "project-merge [unreadable key]: says why" $?
+if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge [unreadable key]: no fallback to the plain gh merge" 1; else ok "project-merge [unreadable key]: no fallback to the plain gh merge" 0; fi
+OBD="$(mcrun "$TMP/mcfix-bad")"
+if has "gh pr merge" "$OBD"; then ok "project-merge [unreadable key]: the dry run does not offer the plain merge" 1; else ok "project-merge [unreadable key]: the dry run does not offer the plain merge" 0; fi
+
+: > "$MC_LOG"; : > "$PIN_LOG"
+ON="$(mcrun "$TMP/mcfix-no" --execute)"; RN=$?
+ok "project-merge [key unset]: --execute still merges with gh, unchanged" $([ "$RN" -eq 0 ] && has "pr merge 1 --squash --delete-branch --match-head-commit $HEAD_SHA" "$(cat "$PIN_LOG")" && echo 0 || echo 1)
+ok "project-merge [key unset]: the script never runs" $([ ! -s "$MC_LOG" ] && echo 0 || echo 1)
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
