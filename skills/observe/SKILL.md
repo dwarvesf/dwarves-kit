@@ -1,6 +1,6 @@
 ---
 name: observe
-description: Query and render the kit's control plane (fleet runs, spend, debt; backed by lib/bench) from an agent session. NOT for your own Claude Code usage, skill, tool or hook stats (that is `session observe`, lib/session/observe). Use when asked about the fleet's runs, gate verdicts, conformance, spend/tokens/cache economics, the cognitive-debt score, replaying a recorded run, or building/refreshing the observability dashboard. Trigger phrases include "dashboard", "control plane", "how much did we spend", "token usage", "cognitive debt", "fleet stats".
+description: Query and render the kit's control plane (fleet runs, spend, debt; backed by lib/bench) from an agent session. NOT for your own Claude Code usage, skill, tool or hook stats (that is `session observe`, lib/session/observe). Use when asked about the fleet's runs, gate verdicts, conformance, spend/tokens/cache economics, the cognitive-debt score, replaying a recorded run, or building/refreshing the observability dashboard. Trigger phrases include "dashboard", "control plane", "how much did we spend", "token usage", "cognitive debt", "fleet stats". Also answers "how did the last kit job run go" for the scheduled kit jobs (memory-tidy, harvest-sweep, kit-weekly).
 ---
 
 # observe , the control plane from an agent session
@@ -64,6 +64,18 @@ python3 lib/bench/viewer.py build --ledger name=<rid> --out viewer.html  # diagr
 The dashboard's Config & tool policy section renders `kit.toml` and the tool-choice
 policy; the enforcement half is `hooks/tool-policy-guard.sh` reading
 the file `config data path config tool-policy.json` prints.
+
+## Scheduled kit jobs: how did the last run go
+
+The kit's scheduled jobs leave a log, a marker or a report. Read those; never rerun a job to find out. Counts and the last status lines only: harvest reports and intel digests quote transcripts.
+
+| Job | Question | Read |
+|---|---|---|
+| `memory-tidy` (biweekly audit) | Is a pass due, when did the last one finish | `bin/audit due` (the `memory-tidy` row: last run, age, DUE) |
+| `kit-weekly` (digest, proposals, index refresh) | Did the week's jobs run, which failed | `tail -n 30 "$(bin/config data path state intel)/kit-weekly.log"`: `'<job>' ok`, `'<job>' FAILED (exit N)`, `unknown job ... skipped`; newest `intel-YYYY-MM-DD.md` in the same folder is the digest |
+| `harvest-sweep` (transcript extraction) | Did the last sweep run, what did it find | `python3 hooks/harvest_sweep.py --status` (newest report path, `candidates=`, `queued=`); `tail -n 5 ~/Library/Logs/dwarves-kit/<label>.log` for `end rc=N` |
+
+Answer in a few `label: value` lines: job, last run, result, one failure reason. A job that reports `skip: no installed marker` or `harvest.enable is not true` is off by choice, not broken. The fix path for a red job is the job's own runbook (`deploy/macos/README.md`), never a wider run.
 
 ## Benchmarks
 
