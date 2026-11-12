@@ -97,6 +97,10 @@ Verdict: RED as intended
 
 Restored: `git status --short` printed nothing after each `git checkout --`, and both suites are green on the restored files (above).
 
+## Rollback
+
+The key defaults to false, so the merge changes no repo until one sets it. To undo for a repo: set `agents_only = false` (or delete the line) in its `.kit.toml`, delete the `<!-- kit:adopt -->` block from its `AGENTS.md` by hand if it has one, and run `/kit:adopt --refresh` to restore the `CLAUDE.md` loader. To undo the change itself: revert the merge commit; no data, ledger or schema moves with it.
+
 ## Not proven
 
 - No real Claude Code session was started on an `AGENTS.md`-only repo. The v2.1.277 behavior is the vendor's documented one (https://code.claude.com/docs/en/memory, section "AGENTS.md").
