@@ -59,6 +59,9 @@ SPEC_FIND="$LIB_ROOT/spec/spec-find.sh"
 CONFIG_LIB="${CONFIG_LIB:-$LIB_ROOT/config/kit-config.sh}"
 # shellcheck source=lib/config/kit-config.sh
 [ -f "$CONFIG_LIB" ] && . "$CONFIG_LIB"
+# The project's own merge command (`[merge] command`); see lib/config/merge-command.sh.
+# shellcheck source=lib/config/merge-command.sh
+source "$LIB_ROOT/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
 # Durable run-telemetry root: resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
@@ -481,7 +484,12 @@ merge() {
     return 1
   fi
 
-  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head"
+  # A project that names its own merge command merges through it, never through the plain
+  # squash below. It gets the PR number (the head the gate ran on rides as
+  # KIT_MERGE_HEAD_COMMIT); the branch delete and the squash are its business.
+  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd=""
+  if [ -n "$root" ]; then pcmd="$(kit_merge_command "$root")" || pcmd=""; fi
+  [ -z "$pcmd" ] || cmd_str="$pcmd $pr   (project merge command; KIT_MERGE_HEAD_COMMIT=$head)"
   if [ "$posture" = "per-pr-review" ]; then
     echo "DRY-RUN (posture=per-pr-review, a human reviews every PR): $cmd_str"
     _log "$rid" "DRY-RUN merge pr=$pr lane=$lane posture=per-pr-review"
@@ -503,6 +511,14 @@ merge() {
 
   echo "EXECUTING: $cmd_str"
   _log "$rid" "EXECUTE merge pr=$pr lane=$lane posture=$posture"
+  if [ -n "$pcmd" ]; then
+    kit_merge_exec "$root" "$pcmd" "$pr" "$head"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "BLOCKED: the project merge command refused PR #$pr (exit $rc); no other way to merge was tried." >&2
+      _log "$rid" "BLOCKED merge pr=$pr (project merge command exit $rc)"
+    fi
+    return "$rc"
+  fi
   gh pr merge "$pr" --squash --delete-branch --match-head-commit "$head"
 }
 

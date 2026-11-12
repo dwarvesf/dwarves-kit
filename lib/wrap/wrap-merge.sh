@@ -1208,9 +1208,22 @@ cmd_merge() {
   # and never --auto (an armed auto-merge lands a later push).
   # --match-head-commit pins the merge to the head the gates just read, so a push that
   # lands between the gate and the merge aborts the call instead of shipping unreviewed.
-  _gh_merge_retry "$first_eligible" "$url" "$head_oid"
+  # A repo that sets [merge] command merges through it (lib/config/merge-command.sh); by slug
+  # there is no checkout to read or run it in, so a set command refuses the merge.
+  if [ -n "$slug" ]; then
+    _gh_merge_retry "$first_eligible" "$url" "$head_oid" "" "$slug" "$def"
+  else
+    _gh_merge_retry "$first_eligible" "$url" "$head_oid" "$repo"
+  fi
   local rc=$?
-  if [ "$rc" -ne 0 ]; then echo "FAILED merge #${first_eligible}: exit ${rc}" >&2; return 2; fi
+  if [ "$rc" -ne 0 ]; then
+    if [ "$WRAP_MERGE_PROJECT" = 1 ]; then
+      echo "REFUSED merge #${first_eligible}: the project merge command exited ${rc}; no other way to merge was tried" >&2
+    else
+      echo "FAILED merge #${first_eligible}: exit ${rc}" >&2
+    fi
+    return 2
+  fi
 
   local after state sha
   after="$(gh pr view "$first_eligible" --repo "$url" --json state,mergeCommit 2>/dev/null)"

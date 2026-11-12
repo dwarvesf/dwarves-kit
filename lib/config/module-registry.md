@@ -391,6 +391,12 @@ never turns the step off.
 |---|---|---|---|---|---|
 | - | adopt.single_source | `false` | [impl] | (none) | Default for `--single-source` when neither that flag nor `--no-single-source` is passed on the `adopt.sh` invocation: folds an existing `CLAUDE.md` into `AGENTS.md` and targets the operate-contract block at `AGENTS.md` instead of `CLAUDE.md`. An explicit `--single-source`/`--no-single-source` flag always wins over the knob; whichever turned single-source mode on, `adopt.sh` prints one line naming it. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it changes what adopt writes into the target and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). |
 
+### merge (the project's own PR merge command, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | merge.command | `""` | [impl] | (none) | The command that merges a PR, run as `<command> <pr-number>` in the repo checkout (example `bash scripts/pr-merge.sh`). Empty means the kit's own squash merge, unchanged. When set, `wrap land`, `wrap merge`, `lib/goal/mega-merge.sh merge` and `lib/goal/stack-merge.sh` all run it instead of the plain merge, pass no merge flags, and export `KIT_MERGE_PR` and `KIT_MERGE_HEAD_COMMIT`. A non-zero exit stops the flow with the command's own output: no retry, no fallback to the plain merge. `wrap merge --repo <slug>` has no checkout to run it in and refuses. The project value is read from the `.kit.toml` COMMITTED on the default branch (`origin/<default>`, else `HEAD`), never the working tree or the PR being merged, then the operator `kit.toml`, then the kit-root `kit.toml`; resolver `lib/config/merge-command.sh`. A value cannot contain `#`. |
+
 ### wrap (`/kit:wrap` landing-step config, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |

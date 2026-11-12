@@ -93,7 +93,17 @@ A `🔴 **Needs you:**` block lists lettered actions instead. Each one opens wit
 | `LAND REFUSED` | The worktree holds an ignored file under a directory the branch touches. A clean checkout would not have it. Commit it, move it, or remove it. |
 | `TREE MISMATCH` | GitHub says merged but the tree disagrees. Treat the merge as not landed and re-check the PR by hand. |
 | A PR shows `CONFLICTING` | Run `bin/wrap merge --apply --pr <n> <repo>`. It tries one re-merge of the default branch. |
+| `MERGE REFUSED` or `REFUSED merge` naming the project merge command | Your repo's `[merge] command` said no. Read its message above the line, fix what it names (draft, red check, one-way door approval), and run the merge again. The kit never works around it. |
 | `gh` is missing or not signed in | Branches without a plain ancestor proof are left alone and `merge` refuses. Sign in with `gh auth login`. |
+
+**A repo with its own merge script.** Some repos refuse a plain squash: their merge script checks drafts, red or pending checks, conflicts, and a one-way door that needs a second approval. Name it once in the repo's `.kit.toml`:
+
+```toml
+[merge]
+command = "bash scripts/pr-merge.sh"
+```
+
+Then every merge the kit makes runs `<command> <pr-number>` in the repo checkout instead of the plain squash: `bin/wrap land`, `bin/wrap merge`, `lib/goal/mega-merge.sh merge` and `lib/goal/stack-merge.sh`. The kit passes no merge flags. The head it checked rides in `KIT_MERGE_HEAD_COMMIT`. If the command exits non-zero, the flow stops with the command's own message and the kit does not retry or fall back to the plain squash; the PR stays open. The kit still checks that GitHub reports the PR merged. The value is read from the `.kit.toml` committed on the default branch, so a PR cannot change how it is merged; an edit takes effect once it is merged. `bin/wrap merge --repo <owner>/<name>` has no checkout to run it in, so it refuses when the key is set. Default empty: no change for any other repo. Detail: `kit.toml` `[merge] command`.
 
 ## Related
 

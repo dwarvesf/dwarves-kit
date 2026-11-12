@@ -20,6 +20,11 @@
 # `-X ours` cannot resolve, leaving the merge in progress for a human.
 set -euo pipefail
 
+SM_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The project's own merge command (`[merge] command`).
+# shellcheck source=lib/config/merge-command.sh
+source "$SM_LIB/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
+
 DRY=0
 
 _say() { printf '%s\n' "$*"; }
@@ -86,8 +91,21 @@ next_link() {
     _run gh pr edit "$child" --base "$base"
   fi
 
-  _say "squash-merge #$pr ($head)"
-  _run gh pr merge "$pr" --squash --delete-branch
+  # A project that names its own merge command merges through it (lib/config/merge-command.sh),
+  # and a refusal stops the chain: the plain squash is never the fallback.
+  local pcmd=""
+  pcmd="$(kit_merge_command "$PWD")" || pcmd=""
+  if [ -n "$pcmd" ]; then
+    _say "merge #$pr ($head) through the project merge command: $pcmd $pr"
+    if [ "$DRY" = 1 ]; then _say "DRY: $pcmd $pr"
+    elif ! kit_merge_exec "$PWD" "$pcmd" "$pr" ""; then
+      echo "stack-merge: the project merge command refused #$pr; no other way to merge was tried, stopping the chain" >&2
+      return 1
+    fi
+  else
+    _say "squash-merge #$pr ($head)"
+    _run gh pr merge "$pr" --squash --delete-branch
+  fi
 
   if [ -n "$child" ]; then
     [ "$DRY" = 1 ] || _clean_tree

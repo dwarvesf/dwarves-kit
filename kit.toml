@@ -367,6 +367,25 @@ boards = ""                     # [consumer] absolute or ~-prefixed path to the 
 notes = ""                      # [consumer] command that answers "have I written about this",
                                  #        called as `<cmd> query <subject> --k N --floor F --json`.
 
+[merge]                         # how the kit merges a PR (lib/config/merge-command.sh)
+command = ""                    # [impl] the command that merges a PR, run as `<command> <pr-number>` in
+                                 #        the repo checkout (example: `bash scripts/pr-merge.sh`). Empty =
+                                 #        the kit's own squash merge, as before. When set, EVERY merge the
+                                 #        kit makes goes through it: `wrap land`, `wrap merge`,
+                                 #        `lib/goal/mega-merge.sh merge` and `lib/goal/stack-merge.sh`.
+                                 #        It replaces the plain merge outright, so the kit passes no merge
+                                 #        flags; the head the kit checked rides in the env var
+                                 #        KIT_MERGE_HEAD_COMMIT (and the PR number in KIT_MERGE_PR). A
+                                 #        non-zero exit stops the kit flow with the command's own output
+                                 #        and the kit never retries or falls back to the plain merge; the
+                                 #        kit still checks afterwards that GitHub reports the PR MERGED.
+                                 #        A merge by slug (`wrap merge --repo`) has no checkout to run it
+                                 #        in, so it is refused when this is set. A project `.kit.toml` MAY
+                                 #        set it, but the value is read from the `.kit.toml` COMMITTED on
+                                 #        the default branch, never the working tree or the PR being
+                                 #        merged; an edit takes effect once it is merged. Order: project
+                                 #        > operator > kit-root. A value cannot contain `#`.
+
 [wrap]                          # `/kit:wrap` landing-step config (lib/wrap/wrap.sh log)
 activity_log = ""               # [consumer] absolute or ~-prefixed path, under $HOME, to the
                                  #        operator's own activity log file. Read from the KIT-ROOT

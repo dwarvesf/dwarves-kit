@@ -98,9 +98,40 @@ _ship_gate_check() {
 # refusal returns on the first try with its original exit code and output.
 WRAP_MERGE_RETRY_MAX=${WRAP_MERGE_RETRY_MAX:-3}
 WRAP_MERGE_RETRY_SLEEP=${WRAP_MERGE_RETRY_SLEEP:-5}
+#
+# The optional 4th to 6th arguments route the merge through the project's own command
+# (`[merge] command`, lib/config/merge-command.sh): <repo-dir> is the local checkout, or
+# <slug> and <def> name a repo with no checkout. When the project sets a command it runs
+# INSTEAD of the plain merge, exactly once, with its output on the terminal as printed, and
+# its exit code is returned. WRAP_MERGE_PROJECT is set to 1 for that run (also when the
+# command is set but cannot be run or read), so a caller stops on a refusal and never tries
+# another way to merge. With the key unset nothing below the routing block changes.
+WRAP_MERGE_PROJECT=0
+WRAP_MERGE_PROJECT_CMD=""
 _gh_merge_retry() {
-  local n="$1" url="$2" head_oid="$3"
-  local attempt=1 out rc
+  local n="$1" url="$2" head_oid="$3" mrepo="${4:-}" mslug="${5:-}" mdef="${6:-}"
+  local attempt=1 out rc mcmd mrc=1
+  WRAP_MERGE_PROJECT=0; WRAP_MERGE_PROJECT_CMD=""
+  if [ -n "$mrepo" ]; then
+    mcmd="$(kit_merge_command "$mrepo")"; mrc=$?
+  elif [ -n "$mslug" ]; then
+    mcmd="$(kit_merge_command_slug "$mslug" "$mdef")"; mrc=$?
+  fi
+  case "$mrc" in
+    0)
+      WRAP_MERGE_PROJECT=1; WRAP_MERGE_PROJECT_CMD="$mcmd"
+      if [ -z "$mrepo" ]; then
+        echo "merge #${n}: this repo sets [merge] command (${mcmd}); a merge by slug has no checkout to run it in. Run it from a local checkout. Nothing merged." >&2
+        return 2
+      fi
+      echo "merge #${n}: running the project merge command: ${mcmd} ${n}"
+      kit_merge_exec "$mrepo" "$mcmd" "$n" "$head_oid"
+      return $? ;;
+    2)
+      WRAP_MERGE_PROJECT=1
+      echo "merge #${n}: cannot read the project merge command from ${mslug}@${mdef}; refusing to fall back to the plain merge. Nothing merged." >&2
+      return 2 ;;
+  esac
   while :; do
     out="$(gh pr merge "$n" --repo "$url" --squash --match-head-commit "$head_oid" 2>&1)"; rc=$?
     if [ "$rc" -eq 0 ]; then printf '%s\n' "$out"; return 0; fi
