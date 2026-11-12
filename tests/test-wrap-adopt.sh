@@ -652,6 +652,64 @@ chk_has "40: names the symlink" "$out" "failed: adoption staged a symlink or a t
 chk "40: no commit on the branch" \
   "$([ "$(git -C "$C40" rev-list --count origin/main..chore/kit-adopt)" = 0 ]; echo $?)"
 
+# ao_clone <name> <on|off> -- an unadopted clone with a tracked CLAUDE.md that is then edited
+# by hand (the dirty file R3c reads). "on" also commits and pushes a .kit.toml that sets
+# adopt.agents_only.
+ao_clone() {
+  local c; c="$(adopt_clone "$1")"
+  printf 'repo rules\n' > "$c/CLAUDE.md"
+  [ "$2" = on ] && printf '[adopt]\nagents_only = true\n' > "$c/.kit.toml"
+  git -C "$c" add -A; git -C "$c" commit -qm "chore: add claude md"; git -C "$c" push -q origin main
+  printf 'repo rules, edited\n' > "$c/CLAUDE.md"
+  printf '%s\n' "$c"
+}
+
+echo "=== adopt: agents_only drops CLAUDE.md from the collision check (41) ==="
+C41="$(ao_clone c41 on)"
+out="$("$WRAP" adopt "$C41" 2>&1)"; rc=$?
+chk "41: dirty CLAUDE.md, key on: exits 0" "$rc"
+chk_has "41: dirty CLAUDE.md, key on: would adopt" "$out" "would adopt"
+chk_no "41: dirty CLAUDE.md, key on: no collision line" "$out" "CLAUDE.md in the main checkout"
+C41N="$(ao_clone c41n off)"
+out="$("$WRAP" adopt "$C41N" 2>&1)"; rc=$?
+chk "41: negative control, key off: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "41: negative control, key off: CLAUDE.md still collides" "$out" "M CLAUDE.md in the main checkout would block the post-land pull"
+
+echo "=== adopt: agents_only apply lands a commit with no CLAUDE.md (42) ==="
+: > "$GH_STUB_CALLS"
+out="$(adopt_apply "$C41" "$TMPD/abare-c41")"; rc=$?
+chk "42: exits 0" "$rc"
+chk_has "42: result row names the PR" "$out" "result: #7 adopted"
+chk "42: origin CLAUDE.md is the committed bytes" \
+  "$([ "$(git -C "$C41" show origin/main:CLAUDE.md)" = "repo rules" ]; echo $?)"
+chk "42: origin AGENTS.md is the kit pointer (it carries the rules, so no block)" \
+  "$(git -C "$C41" show origin/main:AGENTS.md | grep -q 'kit:agents-pointer'; echo $?)"
+chk "42: the hand edit to CLAUDE.md is still in the checkout" \
+  "$([ "$(cat "$C41/CLAUDE.md")" = "repo rules, edited" ]; echo $?)"
+
+echo "=== adopt: agents_only makes a driver that writes CLAUDE.md fail the path guard (43) ==="
+adopt_stub "$TMPD/adopt-stub43.sh" 'echo oops > "$1/CLAUDE.md"'
+C43="$(ao_clone c43 on)"; git -C "$C43" checkout -q -- CLAUDE.md
+: > "$GH_STUB_CALLS"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub43.sh" \
+  adopt_apply "$C43" "$TMPD/abare-c43")"; rc=$?
+chk "43: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "43: names CLAUDE.md as outside the scaffold set" "$out" "failed: adoption wrote CLAUDE.md, outside the scaffold set"
+# negative control: the same driver with the key off is inside the scaffold set
+C43N="$(ao_clone c43n off)"; git -C "$C43N" checkout -q -- CLAUDE.md
+: > "$GH_STUB_CALLS"
+out="$(WRAP_ADOPT_TEST=1 WRAP_ADOPT_SH="$TMPD/adopt-stub43.sh" \
+  adopt_apply "$C43N" "$TMPD/abare-c43n")"; rc=$?
+chk_no "43: negative control, key off: CLAUDE.md passes the path guard" "$out" "outside the scaffold set"
+
+echo "=== adopt: the key committed in the main checkout but not on origin does not decide the preflight (44) ==="
+C44="$(ao_clone c44 off)"
+printf '[adopt]\nagents_only = true\n' > "$C44/.kit.toml"
+git -C "$C44" add .kit.toml; git -C "$C44" commit -qm "chore: key not pushed"
+out="$("$WRAP" adopt "$C44" 2>&1)"; rc=$?
+chk "44: exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "44: the dirty CLAUDE.md still collides, the worktree adopt would read origin's file" "$out" "M CLAUDE.md in the main checkout would block the post-land pull"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-adopt: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap-adopt: all $PASS passed"

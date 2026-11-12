@@ -27,6 +27,11 @@ hook. `--single-source` folds the block into `AGENTS.md` and skips step 1.
 Claude Code auto-loads `CLAUDE.md`, not `AGENTS.md`, which is why the loader block exists: it
 `@AGENTS.md`-imports the real contract so an agent session actually reads it.
 
+A repo may opt out of the loader with `[adopt] agents_only = true` in its `.kit.toml`. Then adopt never
+writes or edits `CLAUDE.md`, the managed block lands in `AGENTS.md`, and row 3 above does not apply.
+Claude Code v2.1.277 and later reads `AGENTS.md` directly when no `CLAUDE.md` exists in the working
+directory or above it; before v2.1.281 some sessions (Bedrock, telemetry off) read only `CLAUDE.md`.
+
 ## The `KIT_LEDGER_DIR` knob
 
 One root, shared by the write-side ledger and the read-side `stats` projection. Precedence

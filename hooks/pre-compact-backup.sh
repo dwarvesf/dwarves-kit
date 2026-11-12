@@ -69,7 +69,7 @@ $(find . -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.go" -o -name 
 
 ## Context essentials (re-inject after compaction)
 
-Read CLAUDE.md for full project rules. Key reminders:
+Read CLAUDE.md (or AGENTS.md when the repo has no CLAUDE.md) for full project rules. Key reminders:
 - Check the active spec (docs/specs/SPEC-NNN) before implementing anything
 - Do not push to main/master directly
 - Write tests before or alongside implementation

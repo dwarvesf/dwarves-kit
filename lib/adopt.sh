@@ -10,7 +10,8 @@
 # kit copy is replaced, and only by --refresh --swap-agents) and the proof marker never is.
 #
 # The CLAUDE.md loader uses an `@AGENTS.md` import (Claude Code includes the file, not just a
-# "go read it" pointer; absorbed from repository-harness's --claude shim).
+# "go read it" pointer; absorbed from repository-harness's --claude shim). A repo that wants
+# AGENTS.md as its only instruction file sets `adopt.agents_only = true` (see below).
 #
 # Usage: adopt.sh [--check | --dry-run | --refresh [--swap-agents]] [--single-source | --no-single-source] [--with <a,b,c>] <target-dir>
 #   --check   : report status only (exit 0 adopted / 1 not), write nothing.
@@ -31,6 +32,15 @@
 #               `--single-source` always wins, and `--no-single-source` forces it off over a
 #               `true` knob. Whichever of the flag or the knob turned it on, adopt prints one
 #               line naming which.
+#   adopt.agents_only (kit.toml knob, default false; a project .kit.toml may set it): the repo keeps
+#               AGENTS.md as its ONE instruction file. adopt, fresh or --refresh, never creates,
+#               restores or edits CLAUDE.md, and an existing CLAUDE.md is left exactly as found.
+#               The operate-contract block lands in AGENTS.md (the same managed block --single-source
+#               writes). AGENTS.md itself is still created as the pointer when absent and never
+#               overwritten when present. Claude Code v2.1.277 and later reads AGENTS.md directly
+#               when no CLAUDE.md exists in the working directory or above it; older builds, and
+#               some later sessions (Bedrock, telemetry off) before v2.1.281, read only CLAUDE.md.
+#               It wins over --single-source and adopt.single_source, which both write a CLAUDE.md.
 #   --with <a,b,c> : only meaningful the first time (seeding a fresh <target>/.kit.toml): the
 #               named modules start `true` in the seeded [modules] section instead of the
 #               kit-root defaults. Ignored (with a note) once <target>/.kit.toml exists -- a
@@ -137,18 +147,35 @@ elif [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] \
   [ "$CHECK" -eq 0 ] && echo "adopt: single-source mode on (adopt.single_source knob)"
 fi
 
-# --single-source: the operate-contract block lands in AGENTS.md, never in the one-line
+# adopt.agents_only: the repo wants AGENTS.md as its one instruction file. Resolved project >
+# operator > kit-root, so a project .kit.toml can set it. It only decides which of two files
+# adopt writes inside the project being adopted, and adopt is run by hand on that project.
+AGENTS_ONLY=0
+if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] \
+  && [ "$(KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" kit_config_get adopt.agents_only false)" = "true" ]; then
+  AGENTS_ONLY=1
+  if [ "$SINGLE" -eq 1 ]; then
+    SINGLE=0
+    [ "$CHECK" -eq 0 ] && echo "adopt: adopt.agents_only is on: single-source mode skipped, CLAUDE.md is never written"
+  fi
+  [ "$CHECK" -eq 0 ] && echo "adopt: agents-only mode on (adopt.agents_only knob): CLAUDE.md is left alone"
+fi
+
+# --single-source and agents-only: the operate-contract block lands in AGENTS.md, never in the
 # CLAUDE.md `@AGENTS.md` pointer. block_target is used everywhere the block used to hardcode
 # $claude; normal mode leaves it pointed at $claude (zero behavior change).
+BLOCK_IN_AGENTS=0
+{ [ "$SINGLE" -eq 1 ] || [ "$AGENTS_ONLY" -eq 1 ]; } && BLOCK_IN_AGENTS=1
 block_target="$claude"
-[ "$SINGLE" -eq 1 ] && block_target="$agents"
+[ "$BLOCK_IN_AGENTS" -eq 1 ] && block_target="$agents"
 
 is_adopted() {
   # -qxF: the marker must be its own full line (matches how awk strips the block). A substring
   # grep would mis-detect a marker quoted inside prose and skip the append path (review #6).
-  [ -f "$agents" ] && [ -f "$marker" ] && [ -f "$claude" ] \
+  # Agents-only: there is no CLAUDE.md to require.
+  [ -f "$agents" ] && [ -f "$marker" ] && { [ "$AGENTS_ONLY" -eq 1 ] || [ -f "$claude" ]; } \
     && { grep -qxF "$START" "$block_target" 2>/dev/null \
-         || { [ "$SINGLE" -eq 1 ] && head -n 1 "$agents" | grep -q '^<!-- kit:agents-pointer'; }; }
+         || { [ "$BLOCK_IN_AGENTS" -eq 1 ] && head -n 1 "$agents" | grep -q '^<!-- kit:agents-pointer'; }; }
 }
 
 if [ "$CHECK" -eq 1 ]; then
@@ -159,7 +186,8 @@ fi
 # them, would send the read or the write to a file outside the project, so refuse the target.
 # shellcheck source=lib/config/safe-path.sh
 source "$SELF_DIR/config/safe-path.sh"
-kit_refuse_symlink_path "$TARGET" "$agents" "$claude" "$workflow" "$marker" "$dotkit" \
+claude_guard="$claude"; [ "$AGENTS_ONLY" -eq 1 ] && claude_guard=""   # never touched in agents-only mode
+kit_refuse_symlink_path "$TARGET" "$agents" ${claude_guard:+"$claude_guard"} "$workflow" "$marker" "$dotkit" \
   "$project_settings" "$TARGET/.claude/output-styles" \
   || { echo "adopt: not adopting $TARGET" >&2; exit 1; }
 
@@ -246,7 +274,7 @@ phase boundary. The gate machinery (gate-ledger, ship-gate) parses that copy, no
 EOF
 }
 
-# claude_block $1: pass "self" when block_target IS AGENTS.md (--single-source) to drop the
+# claude_block $1: pass "self" when block_target IS AGENTS.md (--single-source or agents-only) to drop the
 # @AGENTS.md import line -- AGENTS.md importing itself would be circular. Any other value (the
 # normal case, writing into CLAUDE.md) keeps the import.
 claude_block() {
@@ -308,15 +336,26 @@ if [ ! -f "$workflow" ] || { [ "$REFRESH" -eq 1 ] && ! cmp -s <(workflow_block) 
 fi
 
 # 3. Operate-contract block -- append once; --refresh replaces the managed block. Normal mode
-# writes it into CLAUDE.md as an @AGENTS.md import; --single-source writes it directly into
-# AGENTS.md (block_target), and the one-line CLAUDE.md pointer is left alone.
-block_mode=""; [ "$SINGLE" -eq 1 ] && block_mode="self"
+# writes it into CLAUDE.md as an @AGENTS.md import; --single-source and agents-only write it
+# directly into AGENTS.md (block_target), and CLAUDE.md is left alone.
+block_mode=""; [ "$BLOCK_IN_AGENTS" -eq 1 ] && block_mode="self"
 pointer_is_block=0
-[ "$SINGLE" -eq 1 ] && head -n 1 "$agents" 2>/dev/null | grep -q '^<!-- kit:agents-pointer' && pointer_is_block=1
+[ "$BLOCK_IN_AGENTS" -eq 1 ] && head -n 1 "$agents" 2>/dev/null | grep -q '^<!-- kit:agents-pointer' && pointer_is_block=1
+# A dry run on a repo with no AGENTS.md: step 1 would write the pointer, which carries the rules.
+[ "$AGENTS_ONLY" -eq 1 ] && [ "$DRY" -eq 1 ] && [ ! -f "$agents" ] && pointer_is_block=1
+# Agents-only and an AGENTS.md that is an old kit copy (a known hash, or the old contract's own
+# first line): that file carries the rules itself, and a block appended now would change its hash
+# so a later --refresh --swap-agents could no longer recognise it.
+if [ "$AGENTS_ONLY" -eq 1 ] && [ -f "$agents" ]; then
+  if grep -q "^$(sha256_of "$agents") " "$known_list" 2>/dev/null \
+    || [ "$(head -n 1 "$agents" | tr -d '\r')" = "# AGENTS.md: the operating layer" ]; then pointer_is_block=1; fi
+fi
+# keep_mode <from> <to>: the replacement of a file keeps its permission bits (mktemp makes 0600).
+keep_mode() { [ -f "$1" ] && chmod "$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null)" "$2" 2>/dev/null || :; }
 if [ ! -f "$block_target" ] || ! grep -qxF "$START" "$block_target" 2>/dev/null; then
   if [ "$pointer_is_block" -eq 1 ]; then :   # the pointer already carries the rules; no block
   elif [ "$DRY" -eq 1 ]; then note "append the operate-contract block to $block_target"; else
-    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; mv "$tmp" "$block_target"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; { [ -f "$block_target" ] && cat "$block_target"; printf '\n'; claude_block "$block_mode"; } > "$tmp"; keep_mode "$block_target" "$tmp"; mv "$tmp" "$block_target"
   fi
   [ "$pointer_is_block" -eq 1 ] || did=1
 elif [ "$REFRESH" -eq 1 ]; then
@@ -328,6 +367,15 @@ elif [ "$REFRESH" -eq 1 ]; then
     echo "adopt: add an '$END' line after the managed block, or delete the block, then re-run." >&2
     exit 1
   fi
+  # The strip below drops everything between a START line and the next END line. Two STARTs, two
+  # ENDs, or an END before the START (a quoted example in a consumer file) would drop text outside
+  # the block, so refuse unless the file holds exactly one block in order.
+  if [ "$(grep -cxF "$START" "$block_target")" -ne 1 ] || [ "$(grep -cxF "$END" "$block_target")" -ne 1 ] \
+    || [ "$(grep -nxF "$START" "$block_target" | cut -d: -f1)" -gt "$(grep -nxF "$END" "$block_target" | cut -d: -f1)" ]; then
+    echo "adopt: $block_target holds more than one '$START' / '$END' line, or an '$END' before the '$START'; refusing --refresh (would drop text outside the block)." >&2
+    echo "adopt: leave exactly one block, then re-run." >&2
+    exit 1
+  fi
   if [ "$DRY" -eq 1 ]; then note "refresh the operate-contract block in $block_target"; did=1; else
     tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
     # END{if(drop)exit 3}: belt-and-suspenders against an unterminated block slipping past the
@@ -337,7 +385,7 @@ elif [ "$REFRESH" -eq 1 ]; then
       END{if(drop) exit 3}' "$block_target" > "$tmp" \
       || { echo "adopt: failed to strip the managed block from $block_target (unterminated?)" >&2; exit 1; }
     claude_block "$block_mode" >> "$tmp"
-    if cmp -s "$tmp" "$block_target"; then rm -f "$tmp"; else mv "$tmp" "$block_target"; did=1; fi
+    if cmp -s "$tmp" "$block_target"; then rm -f "$tmp"; else keep_mode "$block_target" "$tmp"; mv "$tmp" "$block_target"; did=1; fi
   fi
 fi
 

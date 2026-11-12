@@ -17,7 +17,7 @@
 ADOPT_BRANCH="chore/kit-adopt"
 ADOPT_PATHS="AGENTS.md CLAUDE.md WORKFLOW.md .kit.toml docs/verification/README.md .claude/settings.json .claude/output-styles/"
 ADOPT_COMMIT_SUBJECT="chore: adopt the dwarves-kit operate-contract"
-ADOPT_COMMIT_BODY="AGENTS.md pointer, CLAUDE.md loader, WORKFLOW pointer, proof marker, starter .kit.toml, kit hook wiring."
+ADOPT_COMMIT_BODY="AGENTS.md pointer, CLAUDE.md loader (none under adopt.agents_only), WORKFLOW pointer, proof marker, starter .kit.toml, kit hook wiring."
 OVERRIDE_REASON="written by wrap adopt --apply: adoption scaffold only, every path in ADOPT_PATHS (R6); .claude/settings.json changes limited to kit hook commands and outputStyle (R6a); no other file changed"
 # Passed to jq as --arg re and applied with test(): \A and \z reject an embedded
 # newline, which ^ and $ would let past. Matches the two command shapes the kit's
@@ -59,10 +59,36 @@ _adopt_style_of() {
   _adopt_blob "$1" "$spec" | jq -r '.outputStyle // ""' 2>/dev/null
 }
 
+# _adopt_agents_only <dir> [<ref>] -- 0 when `adopt.agents_only` resolves true for <dir> (project
+# .kit.toml, else operator, else kit-root): the repo keeps AGENTS.md as its one instruction
+# file and adopt never writes CLAUDE.md. The same resolution adopt.sh itself uses, including
+# its kit-root pick (the dev checkout's kit.toml before the install's). With a <ref> the project
+# file is read as COMMITTED at that ref, because the worktree adopt runs in is built from
+# origin/<default>: a key that is only in the main checkout must not decide the preflight.
+_adopt_agents_only() {
+  local dir="$1" ref="${2:-}" proj="$1" tmp="" v kroot="${KIT_CONFIG_ROOT:-}"
+  [ -f "$LIB_ROOT/../kit.toml" ] && kroot="$(cd "$LIB_ROOT/.." && pwd)"
+  if [ -n "$ref" ]; then
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit-adopt-ao.XXXXXX")" || return 1
+    kit_config_show_at "$dir" "$ref" >| "$tmp/.kit.toml" 2>/dev/null || : >| "$tmp/.kit.toml"
+    proj="$tmp"
+  fi
+  v="$(KIT_CONFIG_ROOT="$kroot" KIT_PROJECT_ROOT="$proj" kit_config_get adopt.agents_only false)"
+  if [ -n "$tmp" ]; then rm -f "$tmp/.kit.toml"; rmdir "$tmp" 2>/dev/null || :; fi
+  [ "$v" = "true" ]
+}
+
+# _adopt_paths <agents-only 0|1> -- the ADOPT_PATHS words, CLAUDE.md dropped under agents-only.
+_adopt_paths() {
+  if [ "${1:-0}" = 1 ]; then printf '%s' "$ADOPT_PATHS" | sed 's/ CLAUDE\.md / /'; else printf '%s' "$ADOPT_PATHS"; fi
+}
+
 # _adopt_path_ok <path> <staged-style> -- 0 when <path> is inside ADOPT_PATHS:
 # the six fixed files, or .claude/output-styles/<s>.md for the style the staged
-# settings actually name (R6 narrows the directory to that one file).
+# settings actually name (R6 narrows the directory to that one file). Under
+# agents-only (ADOPT_AO=1) CLAUDE.md is outside the set: adopt must not write it.
 _adopt_path_ok() {
+  [ "$1" = "CLAUDE.md" ] && [ "${ADOPT_AO:-0}" = 1 ] && return 1
   case "$1" in
     AGENTS.md|CLAUDE.md|WORKFLOW.md|.kit.toml|docs/verification/README.md|.claude/settings.json) return 0 ;;
     .claude/output-styles/*)
@@ -183,6 +209,7 @@ PF_NOTE=""
 PF_DEF=""
 ADOPT_DRY=""
 ADOPT_STYLE=""
+ADOPT_AO=0
 _pf_add() { PF_REASONS="${PF_REASONS:+$PF_REASONS; }$1"; }
 
 # _adopt_preflight <repo> <body-file> -- every read-only check R3 names, in the
@@ -196,6 +223,7 @@ _pf_add() { PF_REASONS="${PF_REASONS:+$PF_REASONS; }$1"; }
 _adopt_preflight() {
   local repo="$1" bodyfile="$2"
   PF_STATUS="ok"; PF_REASONS=""; PF_NOTE=""; ADOPT_DRY=""; ADOPT_STYLE=""
+  ADOPT_AO=0
   local gd cgd main_co=1 def="" cur up tpl style="" drc drf
   local line s sp p paths wt tip otip url="" json ghrc nums ahead=""
   local ono=0 wtp=0 rebase_seen=0 lmb lmiss
@@ -208,6 +236,12 @@ _adopt_preflight() {
 
   def="$(_default_branch "$repo" 2>/dev/null)"
   [ -n "$def" ] || _pf_add "no default branch resolved"
+  # The key as the adoption worktree will see it: committed on origin/<default>, else the checkout.
+  if [ -n "$def" ] && git -C "$repo" rev-parse --verify -q "refs/remotes/origin/$def" >/dev/null 2>&1; then
+    _adopt_agents_only "$repo" "refs/remotes/origin/$def" && ADOPT_AO=1
+  else
+    _adopt_agents_only "$repo" && ADOPT_AO=1
+  fi
 
   # R3b: a main checkout's git dir IS its common dir; a linked worktree's differs.
   gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
@@ -219,7 +253,7 @@ _adopt_preflight() {
   # R3c: any status line under an ADOPT_PATHS pathspec blocks the post-land pull.
   while IFS= read -r line; do
     [ -n "$line" ] && _pf_add "$line in the main checkout would block the post-land pull"
-  done < <(git -C "$repo" status --porcelain --untracked-files=all --no-renames -- $ADOPT_PATHS 2>/dev/null)
+  done < <(git -C "$repo" status --porcelain --untracked-files=all --no-renames -- $(_adopt_paths "$ADOPT_AO") 2>/dev/null)
 
   # R3d: a sequencer op in progress.
   for s in MERGE_HEAD rebase-merge rebase-apply CHERRY_PICK_HEAD REVERT_HEAD; do
@@ -328,6 +362,7 @@ _adopt_preflight() {
   # style file joins only when the dry run reports one (repos ignore .claude/* and
   # re-include .claude/settings.json).
   for p in AGENTS.md CLAUDE.md WORKFLOW.md .kit.toml docs/verification/README.md .claude/settings.json; do
+    [ "$p" = CLAUDE.md ] && [ "$ADOPT_AO" = 1 ] && continue
     git -C "$repo" check-ignore -q -- "$p" 2>/dev/null && _pf_add "$p is gitignored"
   done
   if [ -n "$style" ] \
@@ -371,6 +406,7 @@ _adopt_one() {
     return 0
   fi
   ADOPT_WT="$wt"
+  ADOPT_AO=0; _adopt_agents_only "$wt" && ADOPT_AO=1
 
   driver="$ADOPT_SH"
   if [ "${WRAP_ADOPT_TEST:-0}" = "1" ] && [ -n "${WRAP_ADOPT_SH:-}" ]; then
@@ -408,6 +444,7 @@ _adopt_one() {
   # can miss. git prints a collapsed directory (`!! .claude/`) when one is
   # ignored whole.
   ig="AGENTS.md CLAUDE.md WORKFLOW.md .kit.toml docs/verification/README.md .claude/settings.json"
+  [ "$ADOPT_AO" = 1 ] && ig="AGENTS.md WORKFLOW.md .kit.toml docs/verification/README.md .claude/settings.json"
   [ -n "$style" ] && ig="$ig .claude/output-styles/${style}.md"
   miss="$(git -C "$wt" status --porcelain --ignored -- $ig 2>/dev/null | sed -n 's/^!! //p' | sed -n 1p)"
   if [ -n "$miss" ]; then
