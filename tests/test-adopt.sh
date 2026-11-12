@@ -691,6 +691,78 @@ else
 fi
 rm -f "$CCY" "$CCN"
 
+# --- adopt.agents_only: AGENTS.md is the repo's one instruction file; CLAUDE.md is never written ---
+ao_repo() { local d; d="$(newrepo)"; printf '[adopt]\nagents_only = true\n' > "$d/.kit.toml"; echo "$d"; }
+
+# AO1: a fresh adopt writes the pointer, the marker and the hook wiring, but no CLAUDE.md;
+# --check passes; a second run is a clean no-op.
+AO1="$(ao_repo)"
+O_AO1="$(bash lib/adopt.sh "$AO1" 2>&1)"
+if [ ! -e "$AO1/CLAUDE.md" ] && cmp -s "$AO1/AGENTS.md" "$POINTER" && [ -f "$AO1/docs/verification/README.md" ] \
+  && echo "$O_AO1" | grep -q 'agents-only mode on (adopt.agents_only knob)'; then
+  ok "agents_only: fresh adopt writes the pointer and no CLAUDE.md, and names the knob"
+else
+  no "agents_only fresh adopt"; echo "$O_AO1"; ls -a "$AO1"
+fi
+if bash lib/adopt.sh --check "$AO1" >/dev/null; then ok "agents_only: --check exits 0 with no CLAUDE.md"; else no "agents_only --check"; fi
+git -C "$AO1" add -A; git -C "$AO1" -c user.email=t@t -c user.name=t commit -qm "chore: adopt"
+bash lib/adopt.sh "$AO1" >/dev/null; bash lib/adopt.sh --refresh "$AO1" >/dev/null
+if git -C "$AO1" diff --quiet && [ ! -e "$AO1/CLAUDE.md" ] && [ -z "$(git -C "$AO1" status --porcelain)" ]; then
+  ok "agents_only: re-run and --refresh are clean no-ops and never restore CLAUDE.md"
+else
+  no "agents_only idempotency"; git -C "$AO1" status --short
+fi
+
+# AO2: an existing CLAUDE.md is left byte-identical across adopt and --refresh, and a
+# repo-authored AGENTS.md gets exactly one managed block (refresh keeps one).
+AO2="$(ao_repo)"; printf 'CONSUMER CLAUDE RULES\n@AGENTS.md\n' > "$AO2/CLAUDE.md"; cp "$AO2/CLAUDE.md" "$AO2/CLAUDE.before"
+printf 'REPO AGENTS RULES\n' > "$AO2/AGENTS.md"
+bash lib/adopt.sh "$AO2" >/dev/null; bash lib/adopt.sh --refresh "$AO2" >/dev/null
+s2="$(grep -cxF '<!-- kit:adopt -->' "$AO2/AGENTS.md")"; e2="$(grep -cxF '<!-- /kit:adopt -->' "$AO2/AGENTS.md")"
+if cmp -s "$AO2/CLAUDE.md" "$AO2/CLAUDE.before" && [ "$s2" = 1 ] && [ "$e2" = 1 ] \
+  && head -n 1 "$AO2/AGENTS.md" | grep -qx 'REPO AGENTS RULES' && ! grep -q '^@AGENTS.md$' "$AO2/AGENTS.md"; then
+  ok "agents_only: existing CLAUDE.md untouched; AGENTS.md keeps its text plus one block with no self-import"
+else
+  no "agents_only existing CLAUDE.md (s=$s2 e=$e2)"; cat "$AO2/AGENTS.md"
+fi
+if bash lib/adopt.sh --check "$AO2" >/dev/null; then ok "agents_only: --check exits 0 for a repo-authored AGENTS.md carrying the block"; else no "agents_only --check with block"; fi
+
+# AO3: a legacy kit block already inside the consumer CLAUDE.md is not stripped or refreshed.
+AO3="$(ao_repo)"; printf 'x\n<!-- kit:adopt -->\nSTALE\n<!-- /kit:adopt -->\n' > "$AO3/CLAUDE.md"; cp "$AO3/CLAUDE.md" "$AO3/CLAUDE.before"
+bash lib/adopt.sh --refresh "$AO3" >/dev/null
+if cmp -s "$AO3/CLAUDE.md" "$AO3/CLAUDE.before"; then ok "agents_only: --refresh leaves a legacy block in CLAUDE.md alone"; else no "agents_only touched a legacy CLAUDE.md block"; fi
+
+# AO4: --dry-run writes nothing and never plans a CLAUDE.md write.
+AO4="$(ao_repo)"
+O_AO4="$(bash lib/adopt.sh --dry-run "$AO4" 2>&1)"
+if [ ! -e "$AO4/AGENTS.md" ] && [ ! -e "$AO4/CLAUDE.md" ] && ! echo "$O_AO4" | grep -q 'would .*CLAUDE\.md' \
+  && ! echo "$O_AO4" | grep -q 'append the operate-contract block'; then
+  ok "agents_only: --dry-run writes nothing and plans no CLAUDE.md or duplicate block"
+else
+  no "agents_only dry-run"; echo "$O_AO4"
+fi
+
+# AO5: the knob wins over an explicit --single-source, which would otherwise write CLAUDE.md.
+AO5="$(ao_repo)"
+bash lib/adopt.sh --single-source "$AO5" >/dev/null 2>&1; r_ao5=$?
+if [ "$r_ao5" -eq 0 ] && [ ! -e "$AO5/CLAUDE.md" ]; then ok "agents_only: wins over --single-source (no CLAUDE.md)"; else no "agents_only vs --single-source (rc=$r_ao5)"; fi
+
+# AO6: the operator kit.toml can set the key for a repo with no .kit.toml of its own.
+OPAO="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; printf '[adopt]\nagents_only = true\n' > "$OPAO/kit.toml"
+AO6="$(newrepo)"
+KIT_CONFIG_OPERATOR="$OPAO" bash lib/adopt.sh "$AO6" >/dev/null 2>&1
+if [ ! -e "$AO6/CLAUDE.md" ] && [ -f "$AO6/AGENTS.md" ]; then ok "agents_only: operator kit.toml sets it for a fresh repo"; else no "agents_only via operator kit.toml"; fi
+
+# AO7: a project key of false (or no key) keeps today's loader. The default is unchanged.
+AO7="$(newrepo)"; printf '[adopt]\nagents_only = false\n' > "$AO7/.kit.toml"
+bash lib/adopt.sh "$AO7" >/dev/null 2>&1
+if grep -q '@AGENTS.md' "$AO7/CLAUDE.md" 2>/dev/null && grep -qxF '<!-- kit:adopt -->' "$AO7/CLAUDE.md"; then
+  ok "agents_only = false (and unset) keeps the CLAUDE.md loader"
+else
+  no "agents_only=false still writes the loader"
+fi
+
+rm -rf "$AO1" "$AO2" "$AO3" "$AO4" "$AO5" "$AO6" "$AO7" "$OPAO"
 rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7" "$T13" "$T14" "$T15" "$T16" "$T17" "$T18" "$T19"
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"

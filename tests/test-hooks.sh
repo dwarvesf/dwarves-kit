@@ -1206,6 +1206,12 @@ mkfx main
 printf 'Status: VALIDATED\n- [ ] t\n' > "$FX/docs/specs/SPEC-001-foo.md"
 assert_output_contains "single live spec is selected" "spec:VALIDATED" "$(cr)"
 
+# AGENTS.md alone is a valid instruction file (the adopt.agents_only layout): no missing-file warning.
+mkfx main
+assert_output_contains "no CLAUDE.md and no AGENTS.md -> warns" "No CLAUDE.md or AGENTS.md" "$(cr)"
+printf 'rules\n' > "$FX/AGENTS.md"
+assert_output_not_contains "AGENTS.md alone -> no missing-file warning" "No CLAUDE.md" "$(cr)"
+
 mkfx main
 printf 'Status: SHIPPED (v1.6.0)\n' > "$FX/docs/specs/SPEC-001-foo.md"
 assert_output_contains "SHIPPED (vX) excluded, falls through" "no spec found" "$(cr)"

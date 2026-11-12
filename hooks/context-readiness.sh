@@ -21,7 +21,9 @@ if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
 fi
 
 # Only warn about missing essentials, don't confirm present ones
-[ ! -f "CLAUDE.md" ] && WARNINGS+="No CLAUDE.md in project root. "
+# A repo with only AGENTS.md is fine: Claude Code v2.1.277+ reads it when no CLAUDE.md exists
+# (the adopt.agents_only layout). A hook never reads kit.toml, so the file is the signal.
+[ ! -f "CLAUDE.md" ] && [ ! -f "AGENTS.md" ] && WARNINGS+="No CLAUDE.md or AGENTS.md in project root. "
 
 # Board awareness: the SessionStart injection is the entry
 # surface, so it must see the board, or queued work is invisible at session
