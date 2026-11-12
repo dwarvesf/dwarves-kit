@@ -22,8 +22,8 @@ fi
 
 # Only warn about missing essentials, don't confirm present ones
 # An adopted repo with no CLAUDE.md (the adopt.agents_only layout) keeps its instructions in
-# AGENTS.md, which Claude Code v2.1.277+ reads directly. A hook never reads kit.toml (the
-# standing lint), so the kit's own marker or pointer in AGENTS.md is the signal; a stray
+# AGENTS.md, which Claude Code v2.1.277+ reads directly. A hook never reads the kit config
+# (the standing lint), so the kit's own marker or pointer in AGENTS.md is the signal; a stray
 # AGENTS.md with neither still warns.
 if [ ! -f "CLAUDE.md" ]; then
   if [ -f "AGENTS.md" ] && { grep -qxF '<!-- kit:adopt -->' AGENTS.md 2>/dev/null \
