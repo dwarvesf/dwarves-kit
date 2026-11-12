@@ -22,11 +22,11 @@ Check these signals in order and recommend the FIRST matching action:
 
 ### 1. No project structure
 
-If there is no `CLAUDE.md` and no `package.json` / `go.mod` / `Cargo.toml` / `pyproject.toml`:
+If there is no `CLAUDE.md` or `AGENTS.md` and no `package.json` / `go.mod` / `Cargo.toml` / `pyproject.toml`:
 
 ```
 This doesn't look like an initialized project.
-Suggested: Set up CLAUDE.md with project info, or describe what you want to build.
+Suggested: Set up CLAUDE.md (or AGENTS.md) with project info, or describe what you want to build.
 ```
 
 ### 2. No spec directory

@@ -1,6 +1,6 @@
 # adopt
 
-Adopts a repo into the kit's operate-contract. It injects a small `AGENTS.md` pointer, a proof marker, and a `CLAUDE.md` loader, so an agent classifies its work and the ship gate engages. It never copies the engine into the target and never overwrites a repo's own `AGENTS.md`.
+Adopts a repo into the kit's operate-contract. It injects a small `AGENTS.md` pointer, a proof marker, and a `CLAUDE.md` loader (none when the repo sets `[adopt] agents_only = true`), so an agent classifies its work and the ship gate engages. It never copies the engine into the target and never overwrites a repo's own `AGENTS.md`.
 
 **Entry points**
 - `lib/adopt.sh [--check | --dry-run | --refresh [--swap-agents]] [--single-source | --no-single-source] [--with <a,b,c>] <target-dir>`: the `/kit:adopt` driver. It sits at the lib root, outside this directory. `--check` reports status and writes nothing. `--refresh` re-syncs the kit-managed pieces.

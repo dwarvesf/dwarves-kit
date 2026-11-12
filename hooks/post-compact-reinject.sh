@@ -12,9 +12,11 @@ set -euo pipefail
 ESSENTIALS=""
 
 # Project identity
-if [ -f "CLAUDE.md" ]; then
+PROJECT_SRC=""
+if [ -f "CLAUDE.md" ]; then PROJECT_SRC="CLAUDE.md"; elif [ -f "AGENTS.md" ]; then PROJECT_SRC="AGENTS.md"; fi
+if [ -n "$PROJECT_SRC" ]; then
   # Extract just the ## Project section (first paragraph)
-  PROJECT=$(sed -n '/^## Project/,/^##/p' CLAUDE.md | head -5 | tail -4)
+  PROJECT=$(sed -n '/^## Project/,/^##/p' "$PROJECT_SRC" | head -5 | tail -4)
   [ -n "$PROJECT" ] && ESSENTIALS+="PROJECT: ${PROJECT}"$'\n'
 fi
 

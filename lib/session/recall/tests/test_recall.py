@@ -4,9 +4,11 @@ import hashlib
 import json
 import os
 import subprocess
+import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -28,6 +30,7 @@ RESULT_BAD_JSON = os.path.join(ROOT, "fixtures", "result-bad-json.jsonl")  # las
 REPLIES_BASIC = os.path.join(ROOT, "fixtures", "replies-basic.jsonl")     # two human turns, a tool result, a task notification, a sidechain reply
 WRITTEN_WRITE = os.path.join(ROOT, "fixtures", "written-write.jsonl")     # two Writes to /scratch/plan.md, one other
 WRITTEN_HEREDOC = os.path.join(ROOT, "fixtures", "written-heredoc.jsonl")  # Bash heredocs to /scratch/notes.md, no Write
+ORCA_PS = os.path.join(ROOT, "fixtures", "orca-ps.json")                   # ps JSON: 4 agent tabs (journal, needle, self, lost)
 WRITTEN_EDIT = os.path.join(ROOT, "fixtures", "written-edit.jsonl")       # Edit, Write, then two Edits on /scratch/plan.md
 
 
@@ -1149,6 +1152,150 @@ class TestRecall(unittest.TestCase):
         b = subprocess.run([sys.executable, BIN, "backoff", "--file", SEED],
                            capture_output=True, text=True).stdout
         self.assertEqual(a, b)
+
+
+SELF_ID = "5e1f0000-0000-4000-8000-000000000001"
+OLD_ID = "01d00000-0000-4000-8000-000000000002"
+NEW_ID = "4e300000-0000-4000-8000-000000000003"
+UPDATED_S = 1800000000
+
+
+class TestOrca(unittest.TestCase):
+    """--orca against a fake `orca` executable, a fixture ps JSON, a built journal db and
+    fixture transcripts under a temp HOME. No real user data."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        t = self.tmp.name
+        self.projects = os.path.join(t, ".claude", "projects")
+        self.slug = os.path.join(self.projects, "-demo")
+        os.makedirs(self.slug)
+        self.udata = os.path.join(t, "orca")
+        os.makedirs(self.udata)
+        self.fake_orca = os.path.join(t, "fake-orca")
+        with open(self.fake_orca, "w") as fh:
+            fh.write(f"#!/bin/sh\ncat '{ORCA_PS}'\n")
+        os.chmod(self.fake_orca, 0o755)
+        con = sqlite3.connect(os.path.join(self.udata, "agent-session-journal.db"))
+        con.execute("CREATE TABLE agent_session_records (session_id TEXT PRIMARY KEY, record_json TEXT NOT NULL)")
+        for orca_id, ids in (("claude_aaaaaaaa_1111_4111_8111_aaaaaaaaaaaa", [OLD_ID, NEW_ID]),
+                             ("claude_bbbbbbbb_2222_4222_8222_bbbbbbbbbbbb", [SELF_ID])):
+            chain = [{"linkId": "x", "handle": {"provider": "claude", "sessionId": i}} for i in ids]
+            con.execute("INSERT INTO agent_session_records VALUES (?, ?)",
+                        (orca_id, json.dumps({"providerHandleChain": chain})))
+        con.commit()
+        con.close()
+        self.long_reply = "LONGREPLY " + "x" * 3000
+        self.old = self.transcript(OLD_ID, "old final reply")
+        self.new = self.transcript(NEW_ID, self.long_reply + " op://vault/item/field")
+        self.self_t = self.transcript(SELF_ID, "self final reply")
+        env = {"ORCA_CLI_COMMAND": self.fake_orca, "ORCA_USER_DATA_PATH": self.udata,
+               "CLAUDE_CODE_SESSION_ID": SELF_ID}
+        p = mock.patch.dict(os.environ, env)
+        p.start()
+        self.addCleanup(p.stop)
+        for k in ("CLAUDE_SESSION_ID", "ORCA_AGENT_SESSION_ID"):
+            os.environ.pop(k, None)
+        q = mock.patch.object(r, "PROJECTS", self.projects)
+        q.start()
+        self.addCleanup(q.stop)
+
+    def transcript(self, sid, final, user="hello", subdir=None, offset=10):
+        d = os.path.join(self.slug, *( [subdir] if subdir else []))
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, sid + ".jsonl")
+        rows = [{"type": "user", "message": {"role": "user", "content": user}},
+                {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": final}]}}]
+        with open(path, "w") as fh:
+            fh.write("\n".join(json.dumps(x) for x in rows) + "\n")
+        os.utime(path, (UPDATED_S + offset, UPDATED_S + offset))
+        return path
+
+    def tabs(self, **kw):
+        rows, _ = r.collect_orca(**kw)
+        return {x["tab"]: x for x in rows}
+
+    def test_journal_maps_tab_to_newest_handle_and_caps_reply(self):
+        t = self.tabs()["Journal tab"]
+        self.assertEqual((t["match"], t["transcript"]), ("journal", self.new))
+        self.assertEqual((t["workspace"], t["state"]), ("demo-repo:main", "done"))
+        self.assertTrue(t["truncated"])
+        self.assertEqual(len(t["reply"]), r.ORCA_REPLY_CHARS)
+        self.assertTrue(t["reply"].startswith("LONGREPLY xxx"))
+        self.assertNotIn("old final reply", t["reply"])
+
+    def test_max_chars_and_secret_redaction(self):
+        t = self.tabs(max_chars=40)["Journal tab"]
+        self.assertEqual(len(t["reply"]), 40)
+        os.utime(self.new, (UPDATED_S + 10, UPDATED_S + 10))
+        self.transcript(NEW_ID, "short reply with op://vault/item/field inside")
+        t = self.tabs()["Journal tab"]
+        self.assertFalse(t["truncated"])
+        self.assertEqual(t["reply"], "short reply with [redacted] inside")
+
+    def test_self_tab_is_excluded_and_shows_preview(self):
+        t = self.tabs()["Self tab"]
+        self.assertEqual((t["match"], t["transcript"]), ("self", None))
+        self.assertTrue(t["reply"].startswith("SELF-PREVIEW"))
+        self.assertNotIn("self final reply", t["reply"])
+
+    def test_self_tab_excluded_by_orca_session_id(self):
+        os.environ.pop("CLAUDE_CODE_SESSION_ID")
+        os.environ["ORCA_AGENT_SESSION_ID"] = "claude_bbbbbbbb_2222_4222_8222_bbbbbbbbbbbb"
+        self.assertEqual(self.tabs()["Self tab"]["match"], "self")
+
+    def test_needle_fallback_skips_self_and_subagent_transcripts(self):
+        text = "Needle reply: the quarterly rollout plan is approved with two caveats about staging. Full detail follows."
+        good = self.transcript("good0000-0000-4000-8000-00000000000a", text, offset=10)
+        # newer, same final reply: the calling session itself, and a subagent transcript
+        self.transcript(SELF_ID, text, offset=50)
+        self.transcript("agent-sub", text, subdir=os.path.join(SELF_ID, "subagents"), offset=60)
+        # newer still, but only QUOTES the needle in a user turn; its final reply differs
+        self.transcript("quote000-0000-4000-8000-00000000000b", "other reply", user=text, offset=70)
+        t = self.tabs()["Needle tab"]
+        self.assertEqual((t["match"], t["transcript"]), ("needle", good))
+        self.assertTrue(t["reply"].endswith("Full detail follows."))
+
+    def test_needle_fallback_without_env_id_skips_newest_transcript_holding_the_call(self):
+        os.environ.pop("CLAUDE_CODE_SESSION_ID")
+        text = "Needle reply: the quarterly rollout plan is approved with two caveats about staging."
+        good = self.transcript("good0000-0000-4000-8000-00000000000a", text, offset=10)
+        self.transcript("call0000-0000-4000-8000-00000000000c", text, user="run session recall --orca", offset=50)
+        self.assertEqual(self.tabs()["Needle tab"]["transcript"], good)
+
+    def test_no_match_prints_preview_and_says_so(self):
+        t = self.tabs()["Lost tab"]
+        self.assertEqual((t["match"], t["transcript"]), ("none", None))
+        self.assertEqual(t["reply"], "Nothing on disk says this sentence anywhere at all")
+        rendered = r.render_orca(list(self.tabs().values()))
+        self.assertIn("no transcript match", rendered)
+        self.assertIn("## demo-repo:main · Lost tab · done · ", rendered)
+        self.assertIn(r.DATA_MARKER, rendered)
+
+    def _cli(self, *args, env=None):
+        e = dict(os.environ, HOME=self.tmp.name)
+        e.update(env or {})
+        return subprocess.run([sys.executable, BIN, *args], capture_output=True, text=True, env=e)
+
+    def test_cli_json_and_text(self):
+        p = self._cli("--orca", "--json")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        payload = json.loads(p.stdout)
+        self.assertEqual([x["match"] for x in payload["tabs"]], ["journal", "none", "self", "none"])
+        self.assertEqual(payload["data_marker"], r.DATA_MARKER)
+        p = self._cli("--orca", "--max-chars", "30")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("# orca agent tabs: 4", p.stdout)
+        self.assertIn("full: session-recall --final " + self.new, p.stdout)
+
+    def test_cli_errors_and_bad_combos(self):
+        self.assertEqual(self._cli("--orca", env={"ORCA_CLI_COMMAND": "/no/such/orca"}).returncode, 1)
+        for extra in (["query"], ["--all"], ["--limit", "3"], ["--tail", "abc"], ["--out", "x"],
+                      ["--file", SEED], ["--sessions"]):
+            self.assertEqual(self._cli("--orca", *extra).returncode, 2, extra)
+        self.assertEqual(self._cli("--max-chars", "5").returncode, 2)
+        self.assertEqual(self._cli("--orca", "--max-chars", "0").returncode, 2)
 
 
 if __name__ == "__main__":

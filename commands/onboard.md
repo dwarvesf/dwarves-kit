@@ -60,7 +60,7 @@ Adoption is what makes an agent classify + pick a lane here and what makes the s
 (`docs/reference/consumer-contract.md`). Check it: `bash "$KIT/lib/adopt.sh" --check "$REPO"`.
 
 - **Already adopted** -- Report it healthy: name what's present (`AGENTS.md`, the `CLAUDE.md` loader
-  block, the `WORKFLOW.md` pointer, the `docs/verification/README.md` proof marker) and that
+  block unless the repo sets `adopt.agents_only`, the `WORKFLOW.md` pointer, the `docs/verification/README.md` proof marker) and that
   `.kit.toml` records its module choices. **Write nothing, and do NOT call adopt.** To change modules
   on an already-adopted repo, the honest path (since a project's own `.kit.toml` is never overwritten)
   is: hand-edit the `[modules]` section of `<repo>/.kit.toml`, then re-run `/kit:adopt` (or

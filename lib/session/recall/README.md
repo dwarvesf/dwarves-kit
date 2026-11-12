@@ -182,6 +182,25 @@ session-recall --subagents <id-prefix> --project <slug> --json   # objects: mtim
 
 Lists `<session-id>/subagents/agent-*.jsonl`, oldest first: last-modified time (`HH:MM`, the date when not today), the description from the sibling `agent-*.meta.json`, and the absolute jsonl path, ready for `--final FILE`. The session resolves like `--tail` (`--file` bypasses matching; an unknown prefix exits 1, an ambiguous one exits 2). A session with no subagents dir prints one line saying so, exit 0. Output carries the DATA marker. It cannot combine with `--sessions`, `--tail`, `--final`, `--artifacts`, `--session`, `--limit`, `--out`, `--fence`, or `--max-bytes` (exit 2).
 
+## --orca: what every Orca agent tab is doing
+
+```
+session-recall --orca                 # every tab: workspace, tab name, state, updated, final reply
+session-recall --orca --max-chars 800 # reply cap, default 1500
+session-recall --orca --json          # rows: workspace, tab, state, updated, match, transcript, reply, truncated
+```
+
+Runs `orca worktree ps --json` (`$ORCA_CLI_COMMAND`, else `orca`) and prints each tab's full final assistant reply, where Orca itself only carries a 200-char preview. A tab's `paneKey` is not the Claude session id, so the transcript comes from Orca's journal db (`$ORCA_USER_DATA_PATH`, else `~/Library/Application Support/orca/agent-session-journal.db`, opened read-only): the paneKey stem is a `session_id`, and its `providerHandleChain` lists the Claude session ids it ran under, newest first. `match` says how a tab resolved:
+
+| match | meaning |
+|---|---|
+| `journal` | transcript found through the journal db |
+| `needle` | journal does not know the tab; the newest top-level transcript whose FINAL reply contains the first 50 chars of the preview |
+| `self` | the calling session's own tab (`$CLAUDE_CODE_SESSION_ID`, `$CLAUDE_SESSION_ID`, `$ORCA_AGENT_SESSION_ID`); transcript skipped, preview shown |
+| `none` | no transcript; the 200-char preview is shown and labelled as such |
+
+Subagent transcripts are never candidates. With no session id in the environment, the needle fallback also skips the newest candidate whose text holds this very call. A cut reply names the `--final` command that prints it whole. Replies are control-char cleaned and secret-shape redacted like `--tail`. Orca exits non-zero or prints no JSON: exit 1. `--orca` combines only with `--json` and `--max-chars` (anything else exits 2).
+
 ## --artifacts: the Artifacts a session published
 
 ```

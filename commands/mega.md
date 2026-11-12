@@ -214,7 +214,7 @@ so the existing driver can walk it unmodified):
   (`lib/queue/orchestrate.sh`'s two-tier HOT/WARM feed-forward).
 
 `<dir>` resolves the same way the skill resolves its scaffold root (an explicit
-override, a `megagoal_root:` CLAUDE.md hint, or auto-detect by repo shape); for the
+override, a `megagoal_root:` hint in CLAUDE.md (or AGENTS.md when the repo has no CLAUDE.md), or auto-detect by repo shape); for the
 kit's own repo this is `.claude/goals/<slug>/` (`_meta/` is
 reserved for the BACKLOG cockpit, never a working roadmap).
 

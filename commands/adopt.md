@@ -27,7 +27,7 @@ or `--single-source` (see below).
 - `AGENTS.md` -- a small pointer (about 1KB: four rules plus where the full contract lives), not a
   copy of the 18KB contract. A repo's own `AGENTS.md` is never overwritten; an unmodified old kit
   copy is replaced only by `--refresh --swap-agents`, and an edited file gets a drift line.
-- a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md).
+- a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md). Skipped when the repo sets `[adopt] agents_only = true` (see `## adopt.agents_only` below).
 - `WORKFLOW.md` -- a pointer to the installed kit's lane x phase matrix (not a 49KB copy).
 - `docs/verification/README.md` -- the proof marker that makes the ship-gate engage.
 - `.kit.toml` -- an OPT-IN starter override of the kit-root defaults. Created
@@ -73,6 +73,17 @@ Already in that shape: a no-op. Both files exist and genuinely differ, or neithe
 refuses (exit 1) and writes nothing, so the operator merges by hand. The root-only knob
 `adopt.single_source` (default `false`) turns this mode on without the flag; `--no-single-source`
 overrides a `true` knob back off.
+
+## `adopt.agents_only`
+
+For a repo that wants `AGENTS.md` as its ONLY instruction file. Set `[adopt] agents_only = true`
+in the repo's `.kit.toml` (or in the operator `kit.toml`). Then `adopt` and `adopt --refresh` never
+create, restore or edit `CLAUDE.md`, and an existing `CLAUDE.md` is left exactly as found. The
+operate-contract block lands in `AGENTS.md` (the block `--single-source` writes), `--check` no
+longer needs `CLAUDE.md`, and the knob wins over `--single-source`. Default `false`: the
+`CLAUDE.md` loader, as before. Needs Claude Code v2.1.277 or later, which reads `AGENTS.md`
+directly when no `CLAUDE.md` exists in the working directory or above it; before v2.1.281 some
+sessions (Bedrock, telemetry off) read only `CLAUDE.md`.
 
 ## Overlays and seams
 

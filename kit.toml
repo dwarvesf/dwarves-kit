@@ -203,6 +203,21 @@ single_source = false           #        Default for `--single-source` when neit
                                  #        .kit.toml never sets it): it changes what adopt writes
                                  #        into the target, and a project toml rides inside an
                                  #        untrusted PR.
+agents_only   = false           # [impl] true = AGENTS.md is this repo's ONE instruction file. adopt,
+                                 #        fresh or --refresh, never creates, restores or edits
+                                 #        CLAUDE.md; an existing CLAUDE.md is left exactly as found.
+                                 #        The operate-contract block goes into AGENTS.md instead (the
+                                 #        block --single-source writes), and `adopt --check` and the
+                                 #        `wrap adopt` collision checks stop expecting CLAUDE.md. It
+                                 #        wins over --single-source and `single_source`. A project
+                                 #        .kit.toml MAY set it (project > operator > kit-root): it only
+                                 #        picks which file adopt writes inside the repo being adopted.
+                                 #        Needs Claude Code v2.1.277 or later, which reads AGENTS.md
+                                 #        directly when no CLAUDE.md exists in the working directory
+                                 #        or above it; before v2.1.281 some sessions (Bedrock,
+                                 #        telemetry off) read only CLAUDE.md. Source:
+                                 #        https://code.claude.com/docs/en/memory ("AGENTS.md").
+                                 #        Default false: the CLAUDE.md `@AGENTS.md` loader, as today.
 
 [output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
 style = ""                      #        Claude Code output style for adopted projects. A name under

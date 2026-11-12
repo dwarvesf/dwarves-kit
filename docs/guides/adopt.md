@@ -39,6 +39,17 @@ _Figure: adoption writes a few small pointer files. The engine stays in the kit 
 
 **One guide file.** `--single-source` folds `CLAUDE.md` into `AGENTS.md` and leaves `CLAUDE.md` as a one-line import. If both files exist and differ, it refuses and writes nothing.
 
+**No CLAUDE.md at all.** A repo that wants `AGENTS.md` as its only instruction file sets one key in its `.kit.toml`:
+
+```toml
+[adopt]
+agents_only = true
+```
+
+With the key set, `adopt` and `adopt --refresh` never create or restore `CLAUDE.md`, and an existing `CLAUDE.md` is left exactly as found. The operate-contract block lands in `AGENTS.md` (the same managed block `--single-source` writes), `adopt --check` stops asking for `CLAUDE.md`, and `bin/wrap adopt` stops counting a dirty `CLAUDE.md` as a collision. The key wins over `--single-source`. The default is `false`, so no other repo changes.
+
+This needs Claude Code v2.1.277 or later. From that version Claude Code reads `AGENTS.md` directly when no `CLAUDE.md` exists in the working directory or above it ([docs](https://code.claude.com/docs/en/memory), section "AGENTS.md"). Before v2.1.281 some sessions, such as Bedrock or telemetry off, read only `CLAUDE.md`. If your team runs older builds, leave the key off. The session-start check in `hooks/context-readiness.sh` no longer warns about a missing `CLAUDE.md` when `AGENTS.md` exists. Detail: `kit.toml` `[adopt] agents_only`.
+
 ## What you will see
 
 A first run in a fresh repo, on a machine with the kit plugin installed:
@@ -72,6 +83,7 @@ adopt: AGENTS.md is not a kit file, 1 lines (left alone)
 | A module change had no effect | Edit `[modules]` in `.kit.toml`, then run `/kit:adopt --refresh`. On a plugin machine the plugin registers every hook, so the choice is recorded but adds no project hooks. |
 | The ship gate never engages | Run `--check`. If it says not adopted, check that `docs/verification/README.md` exists. |
 | `--single-source` exits 1 | Both guide files exist and differ. Merge them by hand, then run it again. |
+| `adopt` keeps writing `CLAUDE.md` and you want it gone | Set `[adopt] agents_only = true` in the repo's `.kit.toml`, delete the loader block from `CLAUDE.md` by hand, and re-run `/kit:adopt --refresh`. |
 
 ## Related
 
