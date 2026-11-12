@@ -235,6 +235,11 @@ mkdir -p "$TMP/pin"
 cat > "$TMP/pin/gh" <<SH
 #!/usr/bin/env bash
 echo "\$*" >> "$PIN_LOG"
+# the project merge command path re-reads the head and asks whether the PR is MERGED
+case "\$*" in
+  *"pr view"*"--json headRefOid"*) printf '{"headRefOid":"%s"}\n' "\$(cat "$CUR_HEAD")"; exit 0 ;;
+  *"pr view"*"--json state"*) echo '{"state":"MERGED"}'; exit 0 ;;
+esac
 [ "\$1 \$2" = "pr merge" ] || exit 0
 pin=""; prev=""
 for a in "\$@"; do [ "\$prev" = "--match-head-commit" ] && pin="\$a"; prev="\$a"; done
@@ -330,6 +335,26 @@ has "BLOCKED: the project merge command refused PR #1 (exit 7)" "$OR"; ok "proje
 if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge [refusal]: no fallback to the plain gh merge" 1; else ok "project-merge [refusal]: no fallback to the plain gh merge" 0; fi
 ok "project-merge [refusal]: the command ran exactly once" $([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ] && echo 0 || echo 1)
 rm -f "$MC_REFUSE"
+
+# The head moved after the gate: the command is not started (the plain path pinned the head too).
+: > "$MC_LOG"; : > "$PIN_LOG"; echo "ffffffffffffffffffffffffffffffffffffffff" > "$CUR_HEAD"
+OH="$(mcrun "$TMP/mcfix-yes" --execute)"; RH=$?
+ok "project-merge [head moved]: refused with a nonzero exit" $([ "$RH" -ne 0 ] && echo 0 || echo 1)
+ok "project-merge [head moved]: the command never started" $([ ! -s "$MC_LOG" ] && echo 0 || echo 1)
+echo "$HEAD_SHA" > "$CUR_HEAD"
+
+# An unreadable key (default branch not readable, key only in the working tree) fails closed.
+mc_fixture "$TMP/mcfix-bad" no
+printf '[merge]\ncommand = "bash scripts/pr-merge.sh"\n' > "$TMP/mcfix-bad/.kit.toml"
+git -C "$TMP/mcfix-bad" symbolic-ref -d refs/remotes/origin/HEAD >/dev/null 2>&1
+git -C "$TMP/mcfix-bad" remote set-url origin "$TMP/does-not-exist"; git -C "$TMP/mcfix-bad" update-ref -d refs/remotes/origin/main
+: > "$MC_LOG"; : > "$PIN_LOG"
+OB="$(mcrun "$TMP/mcfix-bad" --execute)"; RB=$?
+ok "project-merge [unreadable key]: --execute fails closed (nonzero)" $([ "$RB" -ne 0 ] && echo 0 || echo 1)
+has "cannot read the project merge command" "$OB"; ok "project-merge [unreadable key]: says why" $?
+if has "pr merge" "$(cat "$PIN_LOG")"; then ok "project-merge [unreadable key]: no fallback to the plain gh merge" 1; else ok "project-merge [unreadable key]: no fallback to the plain gh merge" 0; fi
+OBD="$(mcrun "$TMP/mcfix-bad")"
+if has "gh pr merge" "$OBD"; then ok "project-merge [unreadable key]: the dry run does not offer the plain merge" 1; else ok "project-merge [unreadable key]: the dry run does not offer the plain merge" 0; fi
 
 : > "$MC_LOG"; : > "$PIN_LOG"
 ON="$(mcrun "$TMP/mcfix-no" --execute)"; RN=$?

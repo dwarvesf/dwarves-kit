@@ -368,23 +368,30 @@ notes = ""                      # [consumer] command that answers "have I writte
                                  #        called as `<cmd> query <subject> --k N --floor F --json`.
 
 [merge]                         # how the kit merges a PR (lib/config/merge-command.sh)
-command = ""                    # [impl] the command that merges a PR, run as `<command> <pr-number>` in
-                                 #        the repo checkout (example: `bash scripts/pr-merge.sh`). Empty =
-                                 #        the kit's own squash merge, as before. When set, EVERY merge the
-                                 #        kit makes goes through it: `wrap land`, `wrap merge`,
+command = ""                    # [impl] the command that merges a PR, run as `<command> <pr-number>`
+                                 #        (example: `bash scripts/pr-merge.sh`). Empty = the kit's own
+                                 #        squash merge, as before. When set, EVERY merge the kit makes
+                                 #        goes through it: `wrap land`, `wrap merge`,
                                  #        `lib/goal/mega-merge.sh merge` and `lib/goal/stack-merge.sh`.
                                  #        It replaces the plain merge outright, so the kit passes no merge
-                                 #        flags; the head the kit checked rides in the env var
-                                 #        KIT_MERGE_HEAD_COMMIT (and the PR number in KIT_MERGE_PR). A
-                                 #        non-zero exit stops the kit flow with the command's own output
-                                 #        and the kit never retries or falls back to the plain merge; the
-                                 #        kit still checks afterwards that GitHub reports the PR MERGED.
-                                 #        A merge by slug (`wrap merge --repo`) has no checkout to run it
-                                 #        in, so it is refused when this is set. A project `.kit.toml` MAY
-                                 #        set it, but the value is read from the `.kit.toml` COMMITTED on
-                                 #        the default branch, never the working tree or the PR being
-                                 #        merged; an edit takes effect once it is merged. Order: project
-                                 #        > operator > kit-root. A value cannot contain `#`.
+                                 #        flags; the head the kit gated rides in KIT_MERGE_HEAD_COMMIT (the
+                                 #        PR number in KIT_MERGE_PR). Before it runs, the kit re-reads the
+                                 #        PR head and refuses if it moved off the gated one; afterwards it
+                                 #        checks GitHub reports the PR MERGED. A non-zero exit stops the kit
+                                 #        flow with the command's own output: no retry, no fallback to the
+                                 #        plain merge. TRUST: the value is read from the `.kit.toml`
+                                 #        COMMITTED on the default branch (refs/remotes/origin/<default>),
+                                 #        never the working tree, HEAD or the PR being merged, so a PR
+                                 #        cannot change how it is merged (an edit takes effect once it is
+                                 #        merged); then the operator `kit.toml`, then the kit-root one. The
+                                 #        command runs from a CLEAN detached checkout of that same commit
+                                 #        (untracked local files are not there) with BASH_ENV and the GIT_*
+                                 #        variables removed. If the key cannot be read, or is not one simple
+                                 #        command (no ; & | < > backtick $( newline, no #), the kit refuses
+                                 #        to merge; it never reads that as unset. `wrap merge --repo
+                                 #        <slug>` has no checkout to run it in, so it is refused when this
+                                 #        is set. A value set in the operator or kit-root file applies to
+                                 #        every repo on the host.
 
 [wrap]                          # `/kit:wrap` landing-step config (lib/wrap/wrap.sh log)
 activity_log = ""               # [consumer] absolute or ~-prefixed path, under $HOME, to the

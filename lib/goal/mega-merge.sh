@@ -487,9 +487,15 @@ merge() {
   # A project that names its own merge command merges through it, never through the plain
   # squash below. It gets the PR number (the head the gate ran on rides as
   # KIT_MERGE_HEAD_COMMIT); the branch delete and the squash are its business.
-  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd=""
-  if [ -n "$root" ]; then pcmd="$(kit_merge_command "$root")" || pcmd=""; fi
-  [ -z "$pcmd" ] || cmd_str="$pcmd $pr   (project merge command; KIT_MERGE_HEAD_COMMIT=$head)"
+  # An unreadable key, or no repo root to read it from, refuses: it never means "unset".
+  local cmd_str="gh pr merge $pr --squash --delete-branch --match-head-commit $head" pcmd="" prc
+  if [ -n "$root" ]; then pcmd="$(kit_merge_command "$root")"; prc=$?; else prc=2; fi
+  if [ "$prc" -eq 2 ]; then
+    echo "BLOCKED: cannot read the project merge command for PR #$pr; failing closed and refusing auto-merge." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (project merge command unreadable, fail-closed)"
+    return 1
+  fi
+  [ "$prc" -ne 0 ] || cmd_str="$pcmd $pr   (project merge command; KIT_MERGE_HEAD_COMMIT=$head)"
   if [ "$posture" = "per-pr-review" ]; then
     echo "DRY-RUN (posture=per-pr-review, a human reviews every PR): $cmd_str"
     _log "$rid" "DRY-RUN merge pr=$pr lane=$lane posture=per-pr-review"
@@ -511,13 +517,20 @@ merge() {
 
   echo "EXECUTING: $cmd_str"
   _log "$rid" "EXECUTE merge pr=$pr lane=$lane posture=$posture"
-  if [ -n "$pcmd" ]; then
+  if [ "$prc" -eq 0 ]; then
     kit_merge_exec "$root" "$pcmd" "$pr" "$head"; rc=$?
     if [ "$rc" -ne 0 ]; then
       echo "BLOCKED: the project merge command refused PR #$pr (exit $rc); no other way to merge was tried." >&2
       _log "$rid" "BLOCKED merge pr=$pr (project merge command exit $rc)"
+      return "$rc"
     fi
-    return "$rc"
+    # Exit 0 is not a merge: a script may only arm auto-merge. Ask GitHub.
+    if ! kit_merge_verify "$root" "$pr"; then
+      echo "BLOCKED: PR #$pr is not merged after the project merge command; stopping." >&2
+      _log "$rid" "BLOCKED merge pr=$pr (not MERGED after the project merge command)"
+      return 1
+    fi
+    return 0
   fi
   gh pr merge "$pr" --squash --delete-branch --match-head-commit "$head"
 }

@@ -1211,9 +1211,9 @@ cmd_merge() {
   # A repo that sets [merge] command merges through it (lib/config/merge-command.sh); by slug
   # there is no checkout to read or run it in, so a set command refuses the merge.
   if [ -n "$slug" ]; then
-    _gh_merge_retry "$first_eligible" "$url" "$head_oid" "" "$slug" "$def"
+    _merge_pr "$first_eligible" "$url" "$head_oid" "" "$slug" "$def"
   else
-    _gh_merge_retry "$first_eligible" "$url" "$head_oid" "$repo"
+    _merge_pr "$first_eligible" "$url" "$head_oid" "$repo" "" "$def"
   fi
   local rc=$?
   if [ "$rc" -ne 0 ]; then

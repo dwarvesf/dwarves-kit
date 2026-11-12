@@ -98,40 +98,9 @@ _ship_gate_check() {
 # refusal returns on the first try with its original exit code and output.
 WRAP_MERGE_RETRY_MAX=${WRAP_MERGE_RETRY_MAX:-3}
 WRAP_MERGE_RETRY_SLEEP=${WRAP_MERGE_RETRY_SLEEP:-5}
-#
-# The optional 4th to 6th arguments route the merge through the project's own command
-# (`[merge] command`, lib/config/merge-command.sh): <repo-dir> is the local checkout, or
-# <slug> and <def> name a repo with no checkout. When the project sets a command it runs
-# INSTEAD of the plain merge, exactly once, with its output on the terminal as printed, and
-# its exit code is returned. WRAP_MERGE_PROJECT is set to 1 for that run (also when the
-# command is set but cannot be run or read), so a caller stops on a refusal and never tries
-# another way to merge. With the key unset nothing below the routing block changes.
-WRAP_MERGE_PROJECT=0
-WRAP_MERGE_PROJECT_CMD=""
 _gh_merge_retry() {
-  local n="$1" url="$2" head_oid="$3" mrepo="${4:-}" mslug="${5:-}" mdef="${6:-}"
-  local attempt=1 out rc mcmd mrc=1
-  WRAP_MERGE_PROJECT=0; WRAP_MERGE_PROJECT_CMD=""
-  if [ -n "$mrepo" ]; then
-    mcmd="$(kit_merge_command "$mrepo")"; mrc=$?
-  elif [ -n "$mslug" ]; then
-    mcmd="$(kit_merge_command_slug "$mslug" "$mdef")"; mrc=$?
-  fi
-  case "$mrc" in
-    0)
-      WRAP_MERGE_PROJECT=1; WRAP_MERGE_PROJECT_CMD="$mcmd"
-      if [ -z "$mrepo" ]; then
-        echo "merge #${n}: this repo sets [merge] command (${mcmd}); a merge by slug has no checkout to run it in. Run it from a local checkout. Nothing merged." >&2
-        return 2
-      fi
-      echo "merge #${n}: running the project merge command: ${mcmd} ${n}"
-      kit_merge_exec "$mrepo" "$mcmd" "$n" "$head_oid"
-      return $? ;;
-    2)
-      WRAP_MERGE_PROJECT=1
-      echo "merge #${n}: cannot read the project merge command from ${mslug}@${mdef}; refusing to fall back to the plain merge. Nothing merged." >&2
-      return 2 ;;
-  esac
+  local n="$1" url="$2" head_oid="$3"
+  local attempt=1 out rc
   while :; do
     out="$(gh pr merge "$n" --repo "$url" --squash --match-head-commit "$head_oid" 2>&1)"; rc=$?
     if [ "$rc" -eq 0 ]; then printf '%s\n' "$out"; return 0; fi
@@ -147,6 +116,44 @@ _gh_merge_retry() {
     sleep "$((attempt * WRAP_MERGE_RETRY_SLEEP))"
     attempt=$((attempt + 1))
   done
+}
+
+# _merge_pr <pr> <repo-url> <head-oid> <repo-dir> [<slug> <default-branch>] -- the one merge call
+# of `wrap land` and `wrap merge`. A repo that sets `[merge] command` (lib/config/merge-command.sh)
+# merges through it, exactly once, with its output on the terminal and its exit code returned; the
+# plain merge above runs only when the key is unset. WRAP_MERGE_PROJECT is 1 whenever the project
+# command was in charge (it refused, could not be read, or could not be run), so a caller stops on
+# it and never tries another way to merge. <repo-dir> is the local checkout; with none, <slug> and
+# <default-branch> name the repo and the key is read through gh, but there is no checkout to run it
+# in, so a set key refuses the merge.
+WRAP_MERGE_PROJECT=0
+_merge_pr() {
+  local n="$1" url="$2" head_oid="$3" mrepo="${4:-}" mslug="${5:-}" mdef="${6:-}" mcmd mrc=1
+  WRAP_MERGE_PROJECT=0
+  if [ -n "$mrepo" ]; then
+    mcmd="$(kit_merge_command "$mrepo" "$mdef")"; mrc=$?
+  elif [ -n "$mslug" ]; then
+    mcmd="$(kit_merge_command_slug "$mslug" "$mdef")"; mrc=$?
+  else
+    echo "merge #${n}: no repo to read the project merge command from; refusing to merge" >&2
+    WRAP_MERGE_PROJECT=1; return 2
+  fi
+  case "$mrc" in
+    1) _gh_merge_retry "$n" "$url" "$head_oid"; return $? ;;
+    0)
+      WRAP_MERGE_PROJECT=1
+      if [ -z "$mrepo" ]; then
+        echo "merge #${n}: this repo sets [merge] command (${mcmd}); a merge by slug has no checkout to run it in. Run it from a local checkout. Nothing merged." >&2
+        return 2
+      fi
+      echo "merge #${n}: running the project merge command: ${mcmd} ${n}"
+      kit_merge_exec "$mrepo" "$mcmd" "$n" "$head_oid" "$mdef" "$url"
+      return $? ;;
+    *)
+      WRAP_MERGE_PROJECT=1
+      echo "merge #${n}: cannot read the project merge command; refusing to fall back to the plain merge. Nothing merged." >&2
+      return 2 ;;
+  esac
 }
 
 # GNU stat first: on GNU, `-f` means file-system status and prints a mount point with exit 0,

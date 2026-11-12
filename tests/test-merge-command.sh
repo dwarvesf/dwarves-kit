@@ -9,6 +9,8 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
 export MC_LOG="$TMPD/mc-script.log"
+# Pin the kit-root layer too: the resolver cases must not read the real install's kit.toml.
+mkdir -p "$TMPD/no-kit-root"; export KIT_CONFIG_ROOT="$TMPD/no-kit-root"
 
 # mc_script <ok|refuse> -- the body of scripts/pr-merge.sh. "ok" logs its arguments and, when a
 # land case wired the gh stub's landing vars, pushes the branch to the remote's main the way
@@ -17,7 +19,7 @@ mc_script() {
   case "$1" in
     ok) cat <<'SH'
 #!/usr/bin/env bash
-printf 'ran pr=%s env_pr=%s head=%s cwd=%s\n' "$1" "${KIT_MERGE_PR:-}" "${KIT_MERGE_HEAD_COMMIT:-}" "$(pwd -P)" >> "$MC_LOG"
+printf 'ran pr=%s env_pr=%s head=%s cwd=%s git_dir_env=%s\n' "$1" "${KIT_MERGE_PR:-}" "${KIT_MERGE_HEAD_COMMIT:-}" "$(pwd -P)" "${GIT_DIR:-none}" >> "$MC_LOG"
 if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
   git -C "$GH_STUB_LAND_REPO" push -q "$GH_STUB_LAND_REMOTE" "$GH_STUB_LAND_BRANCH:refs/heads/main"
 fi
@@ -74,8 +76,9 @@ cmd="$(kit_merge_command "$R1")"; rc=$?
 chk "key committed on the default branch: found" "$rc"
 chk_has "key committed on the default branch: the value" "$cmd" "bash scripts/pr-merge.sh"
 R2="$(mc_repo r2 no ok)"
-kit_merge_command "$R2" >/dev/null; rc=$?
-chk "key unset: exit 1, nothing printed" "$([ "$rc" -eq 1 ]; echo $?)"
+unset_out="$(kit_merge_command "$R2" 2>&1)"; rc=$?
+chk "key unset: exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "key unset: nothing printed" "$([ -z "$unset_out" ]; echo $?)"
 printf '[merge]\ncommand = "bash scripts/evil.sh"\n' > "$R2/.kit.toml"
 kit_merge_command "$R2" >/dev/null; rc=$?
 chk "key only in the working tree: ignored (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
@@ -93,6 +96,51 @@ cmd="$(KIT_CONFIG_OPERATOR="$OPD" kit_merge_command "$R1")"
 chk_has "the project (committed) wins over the operator" "$cmd" "bash scripts/pr-merge.sh"
 kit_merge_exec "$R1" "echo hi" "notanumber" >/dev/null 2>&1; rc=$?
 chk "kit_merge_exec rejects a non-numeric PR (exit 64)" "$([ "$rc" -eq 64 ]; echo $?)"
+kit_merge_exec "$R1" "echo hi" "0" >/dev/null 2>&1; rc=$?
+chk "kit_merge_exec rejects PR 0 (exit 64)" "$([ "$rc" -eq 64 ]; echo $?)"
+
+# Trust cases: a tag or branch named like the base cannot stand in for it, HEAD is never the source,
+# and an unreadable or non-simple value is exit 2, never "unset".
+R3="$(mc_repo r3 yes ok)"
+git -C "$R3" symbolic-ref -d refs/remotes/origin/HEAD >/dev/null 2>&1
+git -C "$R3" checkout -q -b feat/evil
+printf '[merge]\ncommand = "bash scripts/evil.sh"\n' > "$R3/.kit.toml"; git -C "$R3" add -A; git -C "$R3" commit -qm "evil key"
+git -C "$R3" tag origin/main HEAD; git -C "$R3" branch origin/master HEAD >/dev/null 2>&1
+cmd="$(kit_merge_command "$R3")"
+chk_has "no origin/HEAD, a tag named origin/main on a PR commit: the real base still wins" "$cmd" "bash scripts/pr-merge.sh"
+chk_no "...and the PR commit's value is not used" "$cmd" "evil"
+R4="$(mc_repo r4 no ok)"
+git -C "$R4" checkout -q -b feat/evil
+printf '[merge]\ncommand = "bash scripts/evil.sh"\n' > "$R4/.kit.toml"; git -C "$R4" add -A; git -C "$R4" commit -qm "evil key"
+git -C "$R4" symbolic-ref -d refs/remotes/origin/HEAD >/dev/null 2>&1
+git -C "$R4" remote set-url origin "$TMPD/does-not-exist"
+git -C "$R4" update-ref -d refs/remotes/origin/main
+kit_merge_command "$R4" >/dev/null 2>&1; rc=$?
+chk "base unresolvable, PR branch HEAD carries a key: exit 2, HEAD is not trusted" "$([ "$rc" -eq 2 ]; echo $?)"
+R5="$(mc_repo r5 no ok)"
+git -C "$R5" symbolic-ref -d refs/remotes/origin/HEAD >/dev/null 2>&1
+git -C "$R5" remote set-url origin "$TMPD/does-not-exist"; git -C "$R5" update-ref -d refs/remotes/origin/main
+kit_merge_command "$R5" >/dev/null 2>&1; rc=$?
+chk "base unresolvable, no key anywhere: still unset (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+kit_merge_command "$TMPD/not-a-dir" >/dev/null 2>&1; rc=$?
+chk "no repo dir: exit 2, never unset" "$([ "$rc" -eq 2 ]; echo $?)"
+BADN=0
+for bad in 'bash a.sh && bash b.sh' 'bash a.sh; exit 0' 'bash a.sh | tee x' 'bash a.sh $(id)' 'bash a.sh > x'; do
+  BADN=$((BADN+1)); R6="$(mc_repo "r6-$BADN" no ok)"
+  printf '[merge]\ncommand = "%s"\n' "$bad" > "$R6/.kit.toml"; git -C "$R6" add -A; git -C "$R6" commit -qm "bad key"; git -C "$R6" push -q origin main
+  kit_merge_command "$R6" >/dev/null 2>&1; rc=$?
+  chk "not a simple command ($bad): exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+done
+
+# kit_merge_exec: the script that runs is the default branch's, even when the working tree changed it.
+R7="$(mc_repo r7 yes ok)"
+printf '#!/usr/bin/env bash\necho EVIL-SCRIPT-RAN >> "$MC_LOG"\n' > "$R7/scripts/pr-merge.sh"
+: > "$MC_LOG"; GIT_DIR=/nonexistent kit_merge_exec "$R7" "bash scripts/pr-merge.sh" 55 "" >/dev/null 2>&1; rc=$?
+chk "exec: runs the committed script, not the edited working-tree one" "$([ "$rc" -eq 0 ] && grep -q '^ran pr=55' "$MC_LOG" && ! grep -q EVIL "$MC_LOG"; echo $?)"
+chk "exec: a hostile GIT_DIR in the caller's env does not reach the command" "$(grep -q 'git_dir_env=none' "$MC_LOG"; echo $?)"
+chk "exec: ran in a clean checkout, not the working tree" "$(grep -q 'cwd=.*kit-merge-run' "$MC_LOG"; echo $?)"
+chk "exec: the temporary checkout is removed" "$([ -z "$(git -C "$R7" worktree list --porcelain | grep kit-merge-run)" ]; echo $?)"
+chk "exec: no head given, KIT_MERGE_HEAD_COMMIT stays unset" "$(grep -q 'head= ' "$MC_LOG"; echo $?)"
 
 # By slug: a gh shim answers the contents read; every other call goes to the harness stub.
 mkdir -p "$TMPD/shim"
@@ -102,9 +150,13 @@ case "\$*" in
   *contents/.kit.toml*)
     case "\${MC_SLUG_MODE:-}" in
       set) printf '[merge]\ncommand = "bash scripts/pr-merge.sh"\n'; exit 0 ;;
-      none) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+      none|hidden) echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
       *) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
     esac ;;
+  *"contents/?ref="*)
+    # the directory listing of the same ref: readable for "none", also a 404 for "hidden" (no contents access)
+    if [ "\${MC_SLUG_MODE:-}" = none ]; then printf 'README.md\nsrc\n'; exit 0; fi
+    echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
 esac
 exec "$TMPD/stub/gh" "\$@"
 SH
@@ -116,6 +168,8 @@ PATH="$TMPD/shim:$PATH" MC_SLUG_MODE=none kit_merge_command_slug owner/name main
 chk "slug: no .kit.toml (404): unset, exit 1" "$([ "$rc" -eq 1 ]; echo $?)"
 PATH="$TMPD/shim:$PATH" MC_SLUG_MODE=err kit_merge_command_slug owner/name main >/dev/null; rc=$?
 chk "slug: any other read failure: exit 2, never read as unset" "$([ "$rc" -eq 2 ]; echo $?)"
+PATH="$TMPD/shim:$PATH" MC_SLUG_MODE=hidden kit_merge_command_slug owner/name main >/dev/null; rc=$?
+chk "slug: a 404 on the file AND on the listing (no contents access): exit 2, not unset" "$([ "$rc" -eq 2 ]; echo $?)"
 
 # ===========================================================================
 echo "=== wrap merge --apply: the project command merges, the plain merge is never called ==="
@@ -129,7 +183,7 @@ chk_has "key set: the verified merge is reported" "$out" "merged #31"
 chk "key set: gh pr merge is never called" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk "key set: the command ran exactly once" "$([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ]; echo $?)"
 chk_has "key set: the command got the PR number and the gated head" "$(cat "$MC_LOG")" "ran pr=31 env_pr=31 head=${MC_OID}"
-chk_has "key set: the command ran in the repo checkout" "$(cat "$MC_LOG")" "cwd=$(cd "$M1" && pwd -P)"
+chk "key set: the command ran in a clean checkout of the default branch" "$(grep -q 'cwd=.*kit-merge-run' "$MC_LOG"; echo $?)"
 chk "key set: GitHub was still asked whether the PR is MERGED" "$(grep -q '^pr view 31 .*state,mergeCommit' "$GH_STUB_CALLS"; echo $?)"
 
 M2="$(mc_repo m2 yes refuse)"; mc_pr "$M2" "$TMPD/mbare-m2" 32
@@ -185,7 +239,7 @@ land_fixture() {
 }
 L1="$(land_fixture l1 yes ok)"; L1WT="$(cd "$L1/wt" && pwd -P)"; L1TIP="$(git -C "$L1WT" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; : > "$MC_LOG"
-out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$L1WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l1" \
+out="$(GH_STUB_PR_42="{\"headRefOid\":\"$L1TIP\"}" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 GH_STUB_LAND_REPO="$L1WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l1" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$L1WT" 2>&1)"; rc=$?
 chk "land, key set: exits 0" "$rc"
 chk_has "land, key set: the command is announced" "$out" "running the project merge command: bash scripts/pr-merge.sh 42"
@@ -194,23 +248,23 @@ chk_has "land, key set: the command got the pushed head" "$(cat "$MC_LOG")" "ran
 chk_has "land, key set: the tree is still verified" "$out" "tree verified"
 chk "land, key set: the worktree is tidied away" "$([ ! -e "$L1WT" ]; echo $?)"
 
-L2="$(land_fixture l2 yes refuse)"; L2WT="$(cd "$L2/wt" && pwd -P)"
+L2="$(land_fixture l2 yes refuse)"; L2WT="$(cd "$L2/wt" && pwd -P)"; L2TIP="$(git -C "$L2WT" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; : > "$MC_LOG"
-out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$L2WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l2" \
+out="$(GH_STUB_PR_43="{\"headRefOid\":\"$L2TIP\"}" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=43 GH_STUB_LAND_REPO="$L2WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l2" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$L2WT" 2>&1)"; rc=$?
 chk "land, refusal: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "land, refusal: the command's own message is shown" "$out" "pr-merge: REFUSED: PR 43 is a one-way door and has no second approval"
-chk_has "land, refusal: the verb names it" "$out" "MERGE REFUSED #43: the project merge command exited 7; no other way to merge was tried, PR left open"
+chk_has "land, refusal: the verb names it" "$out" "MERGE REFUSED #43: the project merge command exited 7; no other way to merge was tried"
 chk "land, refusal: gh pr merge is never called" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk "land, refusal: the command ran once" "$([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ]; echo $?)"
 chk "land, refusal: the worktree is left in place" "$([ -d "$L2WT" ]; echo $?)"
 chk_no "land, refusal: no merged line" "$out" "merged #43"
 
-L3="$(land_fixture l3 yes refuse)"; L3WT="$(cd "$L3/wt" && pwd -P)"
+L3="$(land_fixture l3 yes refuse)"; L3WT="$(cd "$L3/wt" && pwd -P)"; L3TIP="$(git -C "$L3WT" rev-parse HEAD)"
 : > "$GH_STUB_CALLS"; : > "$MC_LOG"
 out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$L3WT" GH_STUB_LAND_REMOTE="$TMPD/mbare-l3" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main \
-  GH_STUB_PR_44='{"number":44,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","statusCheckRollup":[],"headRefOid":"0000000000000000000000000000000000000000"}' \
+  GH_STUB_PR_44='{"number":44,"title":"x","headRefName":"feat/land","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","statusCheckRollup":[],"headRefOid":"'"$L3TIP"'"}' \
   "$WRAP" land "$L3WT" 2>&1)"; rc=$?
 chk "land, refusal on a CONFLICTING PR: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_no "land, refusal on a CONFLICTING PR: no merge-in cycle starts" "$out" "is CONFLICTING: merging"
@@ -233,8 +287,8 @@ cat > "$TMPD/smgh/gh" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$TMPD/sm-gh.log"
 case "\$1 \$2" in
-  "pr view") case "\$*" in *headRefName*) echo feat/link ;; *baseRefName*) echo main ;; esac ;;
-  "pr list") : ;;
+  "pr view") case "\$*" in *"--json state"*) echo '{"state":"MERGED"}' ;; *headRefName*) echo feat/link ;; *baseRefName*) echo main ;; esac ;;
+  "pr list") [ -z "\${MC_CHILD:-}" ] || echo "\$MC_CHILD" ;;
 esac
 exit 0
 SH
@@ -263,6 +317,15 @@ chk_has "stack-merge, refusal: the command's own message is shown" "$out" "pr-me
 chk_has "stack-merge, refusal: names the stop" "$out" "the project merge command refused #52; no other way to merge was tried, stopping the chain"
 chk "stack-merge, refusal: gh pr merge never called" "$(grep -q '^pr merge' "$TMPD/sm-gh.log" && echo 1 || echo 0)"
 chk "stack-merge, refusal: the chain stops at the first link" "$([ "$(grep -c '^ran ' "$MC_LOG")" -eq 1 ]; echo $?)"
+
+S4="$(mc_repo s4 yes refuse)"
+git -C "$S4" push -q origin main:refs/heads/feat/link
+git -C "$S4" fetch -q origin
+: > "$TMPD/sm-gh.log"; : > "$MC_LOG"
+out="$(cd "$S4" && MC_CHILD=57 PATH="$TMPD/smgh:$PATH" bash "$SM" next 56 2>&1)"; rc=$?
+chk "stack-merge, refusal with a child PR: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk "stack-merge, refusal with a child PR: the child was retargeted for the merge" "$(grep -q '^pr edit 57 --base main' "$TMPD/sm-gh.log"; echo $?)"
+chk "stack-merge, refusal with a child PR: the child is put back on the parent branch" "$(grep -q '^pr edit 57 --base feat/link' "$TMPD/sm-gh.log"; echo $?)"
 
 S3="$(mc_repo s3 no ok)"
 git -C "$S3" push -q origin main:refs/heads/feat/link

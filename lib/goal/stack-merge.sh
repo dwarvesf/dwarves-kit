@@ -77,6 +77,17 @@ next_link() {
   base=$(gh pr view "$pr" --json baseRefName -q .baseRefName)
   child=$(gh pr list --state open --base "$head" --json number -q '.[0].number // empty')
 
+  # A project that names its own merge command merges through it (lib/config/merge-command.sh),
+  # and a refusal stops the chain: the plain squash is never the fallback. Resolved first, so an
+  # unreadable key refuses before anything is reconciled or retargeted.
+  local top pcmd="" prc=1
+  top="$(git rev-parse --show-toplevel)"
+  pcmd="$(kit_merge_command "$top")" && prc=0 || prc=$?
+  if [ "$prc" -eq 2 ]; then
+    echo "stack-merge: cannot read the project merge command; refusing to merge #$pr the plain way" >&2
+    return 1
+  fi
+
   # The link's OWN branch must sit on its base before the squash
   # (unconditional, state-keyed; fixes the resume-skips-reconcile class).
   if [ "$DRY" = 1 ]; then
@@ -91,16 +102,23 @@ next_link() {
     _run gh pr edit "$child" --base "$base"
   fi
 
-  # A project that names its own merge command merges through it (lib/config/merge-command.sh),
-  # and a refusal stops the chain: the plain squash is never the fallback.
-  local pcmd=""
-  pcmd="$(kit_merge_command "$PWD")" || pcmd=""
-  if [ -n "$pcmd" ]; then
+  if [ "$prc" -eq 0 ]; then
     _say "merge #$pr ($head) through the project merge command: $pcmd $pr"
     if [ "$DRY" = 1 ]; then _say "DRY: $pcmd $pr"
-    elif ! kit_merge_exec "$PWD" "$pcmd" "$pr" ""; then
-      echo "stack-merge: the project merge command refused #$pr; no other way to merge was tried, stopping the chain" >&2
-      return 1
+    else
+      # No head pin: stack-merge has no gate that read a head to pin (the plain path pinned none either).
+      if ! kit_merge_exec "$top" "$pcmd" "$pr" ""; then
+        echo "stack-merge: the project merge command refused #$pr; no other way to merge was tried, stopping the chain" >&2
+        if [ -n "$child" ]; then
+          echo "stack-merge: restoring #$child onto $head (it was retargeted to $base for this merge)" >&2
+          gh pr edit "$child" --base "$head" >&2 || echo "stack-merge: could not restore #$child; retarget it to $head by hand" >&2
+        fi
+        return 1
+      fi
+      if ! kit_merge_verify "$top" "$pr"; then
+        echo "stack-merge: #$pr is not merged after the project merge command, stopping the chain" >&2
+        return 1
+      fi
     fi
   else
     _say "squash-merge #$pr ($head)"
