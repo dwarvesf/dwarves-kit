@@ -129,6 +129,7 @@ test-docs-wiring 60
 test-e2e 60
 test-every-step-review 60
 test-explain 60
+test-front-door-advisory 60
 test-gate-ledger-history 60
 test-gate-ledger-report 60
 test-gate-opt-in 60
