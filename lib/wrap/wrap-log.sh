@@ -97,6 +97,8 @@ cmd_log() {
     case "$arg" in
       --date) [ $# -ge 2 ] || { echo "usage: wrap.sh log [--date YYYY-MM-DD] \"<slug>: <one sentence>\"" >&2; return 64; }
               date_str="$2"; shift 2 ;;
+      -h|--help) echo "usage: wrap.sh log [--date YYYY-MM-DD] \"<slug>: <one sentence>\""; return 0 ;;
+      -*) echo "wrap log: '${arg}' is not an entry; the text must not start with '-'" >&2; return 2 ;;
       *) [ "$have_text" = 0 ] || { echo "wrap.sh log: one text argument only" >&2; return 64; }
          text="$arg"; have_text=1; shift ;;
     esac

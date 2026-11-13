@@ -13,6 +13,13 @@ chk "--help exits 0" "$rc"
 for verb in scan apply merge start log default-branch knowledge-root stage deploy-wait rebase; do
   chk_has "--help names $verb" "$out" "$verb"
 done
+for verb in scan apply merge land start ship log default-branch knowledge-root follow-mode deploy-wait stage rebase adopt flick-7b; do
+  for hf in --help -h; do
+    out="$("$WRAP" "$verb" "$hf" 2>&1 </dev/null)"; rc=$?
+    chk "$verb $hf exits 0" "$rc"
+    chk_has "$verb $hf prints its usage" "$out" "wrap.sh $verb"
+  done
+done
 out="$("$WRAP" scan 2>&1)"; rc=$?
 chk "scan with no argument exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 out="$("$WRAP" apply 2>&1)"; rc=$?
