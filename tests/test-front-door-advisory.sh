@@ -142,6 +142,14 @@ run_hook "$D" "git push -u origin HEAD" SKILL_MANIFEST_BIN="$HANG/skill-manifest
 el=$((SECONDS - t0))
 [ "$HRC" = 0 ] && [ "$el" -lt 12 ] && ok "B3c default cap keeps the hook under the 30s budget (took ${el}s)" || no "B3c rc=$HRC took ${el}s"
 
+# --- B3d: a binary that ignores TERM is still gone by cap+2s (TERM, then KILL) ---
+DEAF="$WORK/deafbin"; mkdir -p "$DEAF"
+printf '#!/bin/bash\ntrap "" TERM\nsleep 22\n' > "$DEAF/skill-manifest"; chmod +x "$DEAF/skill-manifest"
+t0=$SECONDS
+OUT="$(SKILL_MANIFEST_BIN="$DEAF/skill-manifest" FRONT_DOOR_TIMEOUT_S=1 bash "$ADV" check "$D" 2>&1)"; RC=$?
+el=$((SECONDS - t0))
+[ -z "$OUT" ] && [ "$RC" = 0 ] && [ "$el" -le 3 ] && ok "B3d TERM-ignoring binary is killed within cap+2s (took ${el}s)" || no "B3d rc=$RC took ${el}s out: $OUT"
+
 # --- B4: a blocking check wins: a drifted front door plus a refusing gate exits 2, with no advisory ---
 b4_case() { # <label> <slug> <spec body after the header>
   local D="$WORK/b4-$2"; mkrepo "$D"

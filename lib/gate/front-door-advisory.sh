@@ -13,7 +13,7 @@
 # <dir>/ did not"); every other problem class belongs to other checks.
 #
 # BOUNDED: the binary may be a wrapper that runs `go build` first, so the call is killed after
-# FRONT_DOOR_TIMEOUT_S seconds (default 5) and the advisory is silent. bash 3.2 safe, no GNU timeout.
+# FRONT_DOOR_TIMEOUT_S seconds (default 5; TERM, then KILL after 1s more) and the advisory is silent. bash 3.2 safe, no GNU timeout.
 #
 # Usage:
 #   front-door-advisory.sh check <root> [base]   -> one `[front-door]` line per drifted path; ALWAYS exit 0
@@ -30,14 +30,14 @@ _resolve_bin() {
 }
 
 # _bounded_stderr <secs> <outfile> <cmd...>: run cmd with stdout dropped and stderr in <outfile>; kill it when
-# it outlives <secs>. The watchdog and the command hold no inherited pipe, so a caller capturing our stdout
+# it outlives <secs>: TERM, then KILL one second later for a binary that ignores TERM. The watchdog and the command hold no inherited pipe, so a caller capturing our stdout
 # is never kept waiting by either.
 _bounded_stderr() {
   local secs="$1" outf="$2" pid wd
   shift 2
   "$@" >/dev/null 2>"$outf" </dev/null &
   pid=$!
-  ( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+  ( sleep "$secs"; kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
   wd=$!
   wait "$pid" 2>/dev/null
   kill "$wd" 2>/dev/null

@@ -16,16 +16,17 @@ Output:
   ok - B3 hanging binary is cut after 1s (took 1s), silent, exit 0
   ok - B3b hook with a hanging binary returns in 2s, allows the push
   ok - B3c default cap keeps the hook under the 30s budget (took 5s)
+  ok - B3d TERM-ignoring binary is killed within cap+2s (took 2s)
   ok - B4 DO NOT SHIP verdict still blocks (rc=2), advisory absent
   ok - B4b missing full-lane gates still block (rc=2), advisory absent
   ok - B5 pushing a ref other than HEAD is silent
   ok - B6 long path is cut at 300 chars (longest line 300)
   ok - C1 real skill-manifest drift is warned
-  pass=22 fail=0
+  pass=23 fail=0
 Verdict: PASS
 ```
 
-The same file passes 22 of 22 under the default `bash` and under Apple `/bin/bash` 3.2.57 (hook and script both run by 3.2 in the second run).
+The same file passes 23 of 23 under the default `bash` and under Apple `/bin/bash` 3.2.57 (hook and script both run by 3.2 in the second run).
 
 ```
 Command: bash tests/test-codex-hooks.sh ; bash tests/test-meta-docs-registry.sh
@@ -39,7 +40,7 @@ Verdict: PASS
 ## Negative control
 
 ```
-Command: replace the watchdog (sleep "$secs"; kill "$pid") with (sleep 0; true) in lib/gate/front-door-advisory.sh; bash tests/test-front-door-advisory.sh
+Command: replace the watchdog (`sleep "$secs"; kill "$pid"`) with (sleep 0; true) in lib/gate/front-door-advisory.sh; bash tests/test-front-door-advisory.sh
 Exit: 1
 Output:
   NOT ok - B3 rc=0 took 25s out:
@@ -47,6 +48,15 @@ Output:
   NOT ok - B3c rc=0 took 25s
   pass=19 fail=3
 Verdict: PASS (timeout removed -> the hanging stub holds the hook 25s and three cases go red; restored -> 22 of 22)
+```
+
+```
+Command: drop `sleep 1; kill -9 "$pid"` from the watchdog; bash tests/test-front-door-advisory.sh
+Exit: 1
+Output:
+  NOT ok - B3d rc=0 took 23s out:
+  pass=22 fail=1
+Verdict: PASS (a TERM-ignoring stub holds the call 23s without the KILL step; restored -> 23 of 23)
 ```
 
 Earlier control, kept: breaking the detection string turned A1, A5, A7b, B1 and C1 red (`pass=10 fail=5` at the time); restored, green.
