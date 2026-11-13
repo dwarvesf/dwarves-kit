@@ -97,29 +97,44 @@ _rb_has() {
 # (-z, so a non-ASCII or quoted path reaches `git add` as itself).
 _rb_changed() { git -C "$1" diff --name-only -z 2>/dev/null; }
 
+# _rb_append_file <path> -- 0 for a path resolved by keeping both sides when both purely
+# added lines: CHANGELOG.md and a proof-of-done file (`docs/proof-of-done.md`, or a tool's
+# own `<dir>/docs/proof-of-done.md`). Every parallel branch appends a row to the proof file,
+# and a consumer repo rarely declares it merge=union, so without this the first sibling
+# squash-merge leaves every other open PR conflicting. The purity test is `_rb_changelog_merge`.
+_rb_append_file() {
+  case "$1" in
+    "$_RB_CHANGELOG"|docs/proof-of-done.md|*/docs/proof-of-done.md) return 0 ;;
+  esac
+  return 1
+}
+
 # _rb_resolve <wt> <generator or empty> <unmerged path>... -- classify every unmerged path
 # first, write nothing while any path refuses: a regenerated file when a generator exists,
-# the CHANGELOG union only when both sides purely added lines, a union-declared path still
-# unmerged and anything else a refusal. On refusal it prints `conflict in <paths>` for the
-# caller's own refusal line. Otherwise the CHANGELOG union lands and the generator runs once
-# (a generator failure returns 3 after the CHANGELOG write; 1 on a refused path).
+# an append file (`_rb_append_file`) union only when both sides purely added lines, a
+# union-declared path still unmerged and anything else a refusal. On refusal it prints
+# `conflict in <paths>` for the caller's own refusal line. Otherwise the append-file unions
+# land and the generator runs once (a generator failure returns 3 after those writes; 1 on a
+# refused path).
 _rb_resolve() {
-  local wt="$1" gen="$2" p refused="" regen=0 cl_out=""; shift 2
+  local wt="$1" gen="$2" p refused="" regen=0 out i; shift 2
+  local -a app_p=() app_o=()
   for p in "$@"; do
     if [ "$p" = "$_RB_GENERATED" ] && [ -n "$gen" ]; then regen=1
-    elif [ "$p" = "$_RB_CHANGELOG" ] && cl_out="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" && _rb_changelog_merge "$wt" "$p" "$cl_out"; then :
+    elif _rb_append_file "$p" && out="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" && _rb_changelog_merge "$wt" "$p" "$out"; then
+      app_p+=("$p"); app_o+=("$out")
     elif _union_marked "$wt" "$p"; then refused="${refused}${refused:+, }${p} (merge=union, delete/rename conflict)"
     else refused="${refused}${refused:+, }${p}"
     fi
   done
   if [ -n "$refused" ]; then
-    [ -n "$cl_out" ] && rm -f "$cl_out"
+    [ "${#app_o[@]}" -gt 0 ] && rm -f "${app_o[@]}"
     printf 'conflict in %s\n' "$refused"
     return 1
   fi
-  if [ -n "$cl_out" ]; then
-    cat "$cl_out" > "$wt/$_RB_CHANGELOG"; rm -f "$cl_out"
-  fi
+  for i in ${app_p[@]+"${!app_p[@]}"}; do
+    cat "${app_o[$i]}" > "$wt/${app_p[$i]}"; rm -f "${app_o[$i]}"
+  done
   if [ "$regen" = 1 ] && ! ( cd "$wt" && bash "$gen" generate ) >/dev/null 2>&1; then
     return 3
   fi
