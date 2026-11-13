@@ -14,8 +14,9 @@ KIT="$(cd "$HERE/../.." && pwd)"
 JOBS="${KIT_WEEKLY_JOBS:-$HERE/jobs.txt}"
 
 # launchd gives a bare PATH (/usr/bin:/bin:...); jobs shell out to consumer CLIs
-# (repo-sweep, uv, gh), so widen it the same way the retired per-job launcher did.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# (repo-sweep, uv, gh, and ctx for prose-rag-index, which `cargo install` puts in
+# ~/.cargo/bin), so widen it the same way the retired per-job launcher did.
+export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Optional consumer env (launchd gives a bare env; settings.json env only exists
 # inside Claude Code sessions). Corpus paths and similar per-machine config live
