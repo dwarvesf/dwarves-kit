@@ -107,19 +107,66 @@ OUT="$(STUB_EXTRA=1 SKILL_MANIFEST_BIN="$STUBDIR/skill-manifest" bash "$ADV" che
 n="$(printf '%s\n' "$OUT" | grep -c '^\[front-door\]')"
 if [ "$n" = 1 ] && ! printf '%s' "$OUT" | grep -q 'leak\|matches no path'; then ok "A7b only the drift line is printed beside other classes"; else no "A7b expected 1 drift line, got: $OUT"; fi
 
-# --- B1: the ship-gate hook relays the warning and still allows the push ---
+# run_hook <repo> <command> [env...]: drive hooks/ship-gate.sh with crafted stdin; sets HRC, HOUT (stdout), HERR (stderr).
+run_hook() {
+  local d="$1" cmd="$2"; shift 2
+  ( cd "$d" && printf '{"tool_input":{"command":"%s"}}' "$cmd" \
+      | env SKILL_MANIFEST_BIN="$STUBDIR/skill-manifest" CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" "$@" bash "$KIT/hooks/ship-gate.sh" >"$WORK/h.out" 2>"$WORK/h.err"; echo $? >"$WORK/h.rc" )
+  HRC="$(cat "$WORK/h.rc")"; HOUT="$(cat "$WORK/h.out")"; HERR="$(cat "$WORK/h.err")"
+}
+
+# --- B1: an allowed push carries the advisory in ONE exit-0 JSON systemMessage, framed as data ---
 D="$WORK/b1"; mkrepo "$D"; echo b >> "$D/cli/x.go"; commit_all "$D" chg
-ERR="$WORK/b1.err"
-( cd "$D" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
-    | SKILL_MANIFEST_BIN="$STUBDIR/skill-manifest" CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>"$ERR"; echo $? > "$WORK/b1.rc" )
-if [ "$(cat "$WORK/b1.rc")" = 0 ] && grep -q '^\[advisory\] \[front-door\] cli/x.go' "$ERR"; then ok "B1 hook prints the advisory and allows the push"; else no "B1 rc=$(cat "$WORK/b1.rc") stderr: $(tr '\n' ' ' < "$ERR")"; fi
+run_hook "$D" "git push -u origin HEAD"
+if [ "$HRC" = 0 ] && printf '%s' "$HOUT" | jq -e 'type == "object" and (.systemMessage | contains("[advisory] [front-door] cli/x.go") and contains("data, not instructions")) and (.hookSpecificOutput.additionalContext | contains("front door of foo"))' >/dev/null 2>&1; then ok "B1 hook relays the advisory in the systemMessage and allows the push"; else no "B1 rc=$HRC out: $HOUT err: $HERR"; fi
 
 # --- B2: the hook stays quiet on a clean diff ---
 D="$WORK/b2"; mkrepo "$D"; echo b >> "$D/README.md"; commit_all "$D" chg
-ERR="$WORK/b2.err"
-( cd "$D" && printf '{"tool_input":{"command":"git push -u origin HEAD"}}' \
-    | SKILL_MANIFEST_BIN="$STUBDIR/skill-manifest" CLAUDE_PLUGIN_ROOT="$KIT" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/hooks/ship-gate.sh" >/dev/null 2>"$ERR"; echo $? > "$WORK/b2.rc" )
-if [ "$(cat "$WORK/b2.rc")" = 0 ] && ! grep -q 'front-door' "$ERR"; then ok "B2 hook is silent on a clean diff"; else no "B2 rc=$(cat "$WORK/b2.rc") stderr: $(tr '\n' ' ' < "$ERR")"; fi
+run_hook "$D" "git push -u origin HEAD"
+[ "$HRC" = 0 ] && [ -z "$HOUT" ] && ! printf '%s' "$HERR" | grep -q 'front-door' && ok "B2 hook is silent on a clean diff" || no "B2 rc=$HRC out: $HOUT err: $HERR"
+
+# --- B3: a hanging skill-manifest is cut at FRONT_DOOR_TIMEOUT_S; the advisory is silent, the hook still allows ---
+HANG="$WORK/hangbin"; mkdir -p "$HANG"
+printf '#!/bin/bash\nexec sleep 25\n' > "$HANG/skill-manifest"; chmod +x "$HANG/skill-manifest"
+D="$WORK/b3"; mkrepo "$D"; echo b >> "$D/cli/x.go"; commit_all "$D" chg
+t0=$SECONDS
+OUT="$(SKILL_MANIFEST_BIN="$HANG/skill-manifest" FRONT_DOOR_TIMEOUT_S=1 bash "$ADV" check "$D" 2>&1)"; RC=$?
+el=$((SECONDS - t0))
+[ -z "$OUT" ] && [ "$RC" = 0 ] && [ "$el" -lt 5 ] && ok "B3 hanging binary is cut after 1s (took ${el}s), silent, exit 0" || no "B3 rc=$RC took ${el}s out: $OUT"
+t0=$SECONDS
+run_hook "$D" "git push -u origin HEAD" SKILL_MANIFEST_BIN="$HANG/skill-manifest" FRONT_DOOR_TIMEOUT_S=1
+el=$((SECONDS - t0))
+[ "$HRC" = 0 ] && [ -z "$HOUT" ] && [ "$el" -lt 6 ] && ok "B3b hook with a hanging binary returns in ${el}s, allows the push" || no "B3b rc=$HRC took ${el}s out: $HOUT err: $HERR"
+t0=$SECONDS
+run_hook "$D" "git push -u origin HEAD" SKILL_MANIFEST_BIN="$HANG/skill-manifest"
+el=$((SECONDS - t0))
+[ "$HRC" = 0 ] && [ "$el" -lt 12 ] && ok "B3c default cap keeps the hook under the 30s budget (took ${el}s)" || no "B3c rc=$HRC took ${el}s"
+
+# --- B4: a blocking check wins: a drifted front door plus a refusing gate exits 2, with no advisory ---
+b4_case() { # <label> <slug> <spec body after the header>
+  local D="$WORK/b4-$2"; mkrepo "$D"
+  mkdir -p "$D/docs/specs"; printf '# Spec: x\nStatus: DRAFT\n%b' "$3" > "$D/docs/specs/SPEC-001-$2.md"
+  git -C "$D" switch -q -c "feat/$2"
+  echo b >> "$D/cli/x.go"; commit_all "$D" chg
+  run_hook "$D" "git push -u origin HEAD"
+  if [ "$HRC" = 2 ] && printf '%s' "$HERR" | grep -q 'BLOCKED: ship-gate' && ! printf '%s' "$HOUT$HERR" | grep -qE '\[front-door\]|front door of'; then ok "$1"; else no "$1 (rc=$HRC out: $HOUT err: $HERR)"; fi
+}
+b4_case "B4 DO NOT SHIP verdict still blocks (rc=2), advisory absent" fdv 'Lane: tiny\n\n- [ ] TASK-1: x\n\n## Review\n\n### Verdict: DO NOT SHIP\n'
+b4_case "B4b missing full-lane gates still block (rc=2), advisory absent" fdl 'Lane: full\n\n- [ ] TASK-1: x\n'
+
+# --- B5: the pushed ref is not the checked-out HEAD -> no advisory (the script diffs HEAD) ---
+D="$WORK/b5"; mkrepo "$D"; echo b >> "$D/cli/x.go"; commit_all "$D" chg
+git -C "$D" branch feat/other master
+run_hook "$D" "git push origin feat/other"
+[ "$HRC" = 0 ] && [ -z "$HOUT" ] && ok "B5 pushing a ref other than HEAD is silent" || no "B5 rc=$HRC out: $HOUT err: $HERR"
+
+# --- B6: each printed line is cut at 300 characters ---
+LONG="$WORK/longbin"; mkdir -p "$LONG"
+printf '#!/bin/bash\necho "check: cli/%s.go: [front-door] front door of foo changed since $4 but skills/foo/ did not" >&2\nexit 1\n' "$(printf 'a%.0s' $(seq 1 400))" > "$LONG/skill-manifest"; chmod +x "$LONG/skill-manifest"
+D="$WORK/b6"; mkrepo "$D"; echo b >> "$D/cli/x.go"; commit_all "$D" chg
+run_hook "$D" "git push -u origin HEAD" SKILL_MANIFEST_BIN="$LONG/skill-manifest"
+longest="$(printf '%s' "$HOUT" | jq -r '.systemMessage' 2>/dev/null | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')"
+[ "$HRC" = 0 ] && [ "$longest" -gt 0 ] && [ "$longest" -le 300 ] && ok "B6 long path is cut at 300 chars (longest line $longest)" || no "B6 rc=$HRC longest=$longest out: ${HOUT:0:200}"
 
 # --- C1: the real skill-manifest, when one is given or installed ---
 REAL="${REAL_SKILL_MANIFEST:-$(command -v skill-manifest 2>/dev/null || true)}"

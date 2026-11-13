@@ -43,7 +43,7 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate quiz` | `quiz-gate.sh` | The star-tap NUDGE. Builds 5 diff-grounded questions, routes through the `understand.teach` seam. | no (nudge only) |
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
 | `gate mutation-smoke` | `mutation-smoke.sh` | Advisory. Mutates a changed line, re-runs the suite. A surviving mutation means the suite does not bite. | no (always exit 0) |
-| `gate front-door` | `front-door-advisory.sh` | Advisory. `check <root> [base]`: a push changed a path a skill lists in `metadata.front_door` without touching that skill's folder? Runs `skill-manifest check --base` and prints a `[front-door]` line per drifted path. `ship-gate.sh` calls it on every push or PR as an `[advisory]` line. Silent when no `skills/*/SKILL.md` declares `front_door`, or `skill-manifest` is missing (`SKILL_MANIFEST_BIN`, else PATH). Only the front-door diff class is shown. | no (always exit 0) |
+| `gate front-door` | `front-door-advisory.sh` | Advisory. `check <root> [base]`: a push changed a path a skill lists in `metadata.front_door` without touching that skill's folder? Runs `skill-manifest check --base` and prints a `[front-door]` line per drifted path. `ship-gate.sh` calls it from `_floor_check`, so only on a push every blocking check allowed and only when the pushed commit is HEAD; the lines ride the exit-0 `systemMessage` beside the hard-path notices, framed as data and cut at 300 chars. The binary is killed after `FRONT_DOOR_TIMEOUT_S` (default 5). Silent when no `skills/*/SKILL.md` declares `front_door`, or `skill-manifest` is missing (`SKILL_MANIFEST_BIN`, else PATH). Only the front-door diff class is shown. | no (always exit 0) |
 | (by path) | `recheck-sample.sh` | `decide <rid> [N]`: should `/kit:execute` recheck this run's end-verifier PASSes? Keyed on the rid, records the decision. | no |
 | (by path) | `check-edit.sh` | `<base> [files]`: did the build edit or weaken its own check? Prints `check-edited:` / `check-weakened:` lines. | no (always exit 0) |
 | `gate proof-table` | `proof-table-gen.{sh,py}` | Generates a run-table from a rid's ledger. Refuses to write `proof-of-done.md`. | no |
@@ -256,7 +256,7 @@ bash tests/test-gate-vocab-recording.sh  # every required gate name has a comman
 bash tests/test-ledger-durability.sh     # SPEC-097 durable root, override guard, forgery
 bash tests/test-ledger-substrate.sh      # the one append substrate
 bash tests/test-quiz-gate.sh             # SPEC-125 grounded questions + anti-fatigue
-bash tests/test-front-door-advisory.sh   # front-door drift warns, clean diff / missing binary / no front_door skill stay silent, hook relays it and allows the push
+bash tests/test-front-door-advisory.sh   # front-door drift warns, clean diff / missing binary / no front_door skill stay silent, hook relays it in the systemMessage, a hanging binary is cut, a blocking gate still wins
 bash tests/test-ship-gate-fail-closed.sh # SPEC-048
 bash tests/test-ship-gate-refs-block.sh  # a push the gate cannot account for is refused in an adopted repo
 bash tests/test-ceremony-fits-diff.sh    # docs-only diffs class inert; comment-only edits skip the hard-path floor

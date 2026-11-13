@@ -12,6 +12,9 @@
 # the check passes. Only the diff rule is surfaced ("front door of <skill> changed since <ref> but
 # <dir>/ did not"); every other problem class belongs to other checks.
 #
+# BOUNDED: the binary may be a wrapper that runs `go build` first, so the call is killed after
+# FRONT_DOOR_TIMEOUT_S seconds (default 5) and the advisory is silent. bash 3.2 safe, no GNU timeout.
+#
 # Usage:
 #   front-door-advisory.sh check <root> [base]   -> one `[front-door]` line per drifted path; ALWAYS exit 0
 #
@@ -24,6 +27,22 @@ _resolve_bin() {
   local bin="${SKILL_MANIFEST_BIN:-}"
   if [ -n "$bin" ]; then [ -x "$bin" ] && printf '%s' "$bin"; return 0; fi
   command -v skill-manifest 2>/dev/null || true
+}
+
+# _bounded_stderr <secs> <outfile> <cmd...>: run cmd with stdout dropped and stderr in <outfile>; kill it when
+# it outlives <secs>. The watchdog and the command hold no inherited pipe, so a caller capturing our stdout
+# is never kept waiting by either.
+_bounded_stderr() {
+  local secs="$1" outf="$2" pid wd
+  shift 2
+  "$@" >/dev/null 2>"$outf" </dev/null &
+  pid=$!
+  ( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+  wd=$!
+  wait "$pid" 2>/dev/null
+  kill "$wd" 2>/dev/null
+  wait "$wd" 2>/dev/null
+  return 0
 }
 
 check() {
@@ -42,8 +61,12 @@ check() {
   fi
   [ -n "$base" ] || return 0
 
-  local out line
-  out="$("$bin" check "$root" --base "$base" 2>&1 >/dev/null)" || true
+  local out line errf secs="${FRONT_DOOR_TIMEOUT_S:-5}"
+  errf="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 0
+  case "$secs" in ''|*[!0-9]*) secs=5 ;; esac
+  _bounded_stderr "$secs" "$errf" "$bin" check "$root" --base "$base"
+  out="$(cat "$errf" 2>/dev/null)"
+  rm -f "$errf"
   while IFS= read -r line; do
     case "$line" in
       "check: "*"[front-door] front door of "*" changed since "*)
