@@ -429,6 +429,74 @@ chk "re-merge with a real conflict left no half-merged tree" \
 chk "re-merge with a real conflict called no pr merge" \
   "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
+# --- apply: a consumer repo with NO merge=union declaration, conflicting on a proof file
+# Foreign repos (circle, vps-mon, foundation-ops) carry no .gitattributes, so two PRs that
+# each appended a row to docs/proof-of-done.md conflict on the PR once a sibling squash-merges,
+# and the re-merge used to refuse it as "beyond the union-marked files". Run through --pr,
+# the verb a lead uses; its first detail read is the draft check, so the re-merged answer is
+# read 3. PR numbers 4101 and up are unused elsewhere (the stub keeps a read counter per number).
+build_proofmerge() { # build_proofmerge <name> [--also-conflict|--edit-base]
+  local name="$1" mode="${2:-}" work="$TMPD/pf-work-$1" clone="$TMPD/pf-clone-$1"
+  mkdir -p "$work/docs"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '| slug | result |\n|---|---|\n| base | pass |\n' > "$work/docs/proof-of-done.md"
+  printf 'shared\n' > "$work/a.txt"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" checkout -q -b feat/union
+  if [ "$mode" = "--edit-base" ]; then
+    printf '| slug | result |\n|---|---|\n| base | PASS EDITED |\n| branch | pass |\n' > "$work/docs/proof-of-done.md"
+  else
+    printf '| branch | pass |\n' >> "$work/docs/proof-of-done.md"
+  fi
+  [ "$mode" = "--also-conflict" ] && printf 'branch side\n' > "$work/a.txt"
+  git -C "$work" commit -qam "branch row"
+  git -C "$work" checkout -q main
+  printf '| sibling | pass |\n' >> "$work/docs/proof-of-done.md"
+  [ "$mode" = "--also-conflict" ] && printf 'main side\n' > "$work/a.txt"
+  git -C "$work" commit -qam "sibling row"
+  git clone -q --bare "$work" "$TMPD/pf-bare-$name"
+  git clone -q "$TMPD/pf-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/union origin/feat/union
+}
+build_proofmerge ok
+PF_OK="$TMPD/pf-clone-ok"; PF_OK_TIP="$(git -C "$PF_OK" rev-parse feat/union)"
+chk "proof fixture has no merge=union declaration" "$([ ! -e "$PF_OK/.gitattributes" ]; echo $?)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 4101)" GH_STUB_PR_4101="$(conflict_json 4101 "$PF_OK_TIP")" \
+  GH_STUB_PR_4101_3='{"number":4101,"title":"log entry","headRefName":"feat/union","headRefOid":"%REMERGE_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$PF_OK" GH_STUB_LAND_REMOTE="$TMPD/pf-bare-ok" GH_STUB_LAND_BRANCH="feat/union" GH_STUB_LAND_DEF="main" \
+  "$WRAP" merge --apply --pr 4101 "$PF_OK" 2>&1)"; rc=$?
+chk "proof-file re-merge --apply exits 0" "$rc"
+chk_has "proof-file re-merge pushed the merge" "$out" "re-merged origin/main into feat/union, pushed"
+chk_has "proof-file re-merge re-gates the PR" "$out" "eligible #4101 after the re-merge"
+chk_has "proof-file re-merge merges the PR" "$out" "merged #4101"
+chk_no "proof-file re-merge is no longer refused" "$out" "nothing eligible to merge"
+chk "proof-file re-merge kept both rows" \
+  "$(grep -q '| branch | pass |' "$PF_OK/docs/proof-of-done.md" && grep -q '| sibling | pass |' "$PF_OK/docs/proof-of-done.md"; echo $?)"
+chk "proof-file re-merge left no conflict markers" \
+  "$(grep -qE '^(<<<<<<<|>>>>>>>)' "$PF_OK/docs/proof-of-done.md" && echo 1 || echo 0)"
+
+# Negative controls: the proof file is not a blanket pass. A real conflict beside it, or an
+# edit to a row that already existed, refuses by name and pushes nothing.
+pf_num=4102
+for mode in --also-conflict --edit-base; do
+  nm="${mode#--}"; build_proofmerge "$nm" "$mode"
+  PF_N="$TMPD/pf-clone-$nm"; PF_N_TIP="$(git -C "$PF_N" rev-parse feat/union)"
+  : > "$GH_STUB_CALLS"
+  out="$(env GH_STUB_OPEN_PRS="$(open_one $pf_num)" "GH_STUB_PR_${pf_num}=$(conflict_json $pf_num "$PF_N_TIP")" \
+    "$WRAP" merge --apply --pr "$pf_num" "$PF_N" 2>&1)"
+  chk_has "proof-file negative control ($nm): refused by name" "$out" "REFUSED feat/union: conflict in "
+  chk_has "proof-file negative control ($nm): nothing eligible" "$out" "nothing eligible to merge."
+  chk "proof-file negative control ($nm): branch tip untouched" \
+    "$([ "$(git -C "$PF_N" rev-parse feat/union)" = "$PF_N_TIP" ]; echo $?)"
+  chk "proof-file negative control ($nm): remote branch untouched" \
+    "$([ "$(git -C "$TMPD/pf-bare-$nm" rev-parse feat/union)" = "$PF_N_TIP" ]; echo $?)"
+  chk "proof-file negative control ($nm): no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+  [ "$nm" = "edit-base" ] && chk_has "proof-file edit-base refusal names the proof file" "$out" "conflict in docs/proof-of-done.md"
+  pf_num=$((pf_num + 1))
+done
+
 # --- apply: a tip that is not the gated head is never pushed
 build_remerge tip
 RM_TIP="$TMPD/rm-clone-tip"
