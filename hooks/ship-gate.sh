@@ -493,6 +493,19 @@ if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -qF -- "$SLUG" < <(grep -E '^\|' "$
   echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row" >&2
 fi
 
+# Skill front-door advisory (never blocks): a push that changes a path a skill lists in
+# metadata.front_door without touching that skill's folder. Silent when the repo has no such skill or
+# skill-manifest is not installed (lib/gate/front-door-advisory.sh). A kit install too old to carry it skips.
+FDOOR="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/front-door-advisory.sh"
+if [ -f "$FDOOR" ]; then
+  FDMSG=$(bash "$FDOOR" check "$ROOT" "${MBASE:-}" 2>/dev/null || true)
+  if [ -n "$FDMSG" ]; then
+    printf '%s\n' "$FDMSG" | sed 's/^/[advisory] /' >&2
+    mkdir -p "$(kit_hook_log_dir)" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | ADVISORY | front-door | $SLUG" >> "$(kit_hook_log_dir)/ship-gate.log" 2>/dev/null || true
+  fi
+fi
+
 # Doc-projection gate (kit repo only): the drift class that shipped twice
 # is an agent/command landing without its MANUAL/architecture
 # rows. When THIS push touches a projection surface, run the fast grep subset

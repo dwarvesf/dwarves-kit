@@ -14,13 +14,14 @@
 #   gate.sh quiz <args...>            -> quiz-gate.sh (questions|tap|respond|route)
 #   gate.sh coverage-delta <args...>  -> coverage-delta.sh (check|class|classes)
 #   gate.sh mutation-smoke <args...>  -> mutation-smoke.sh (run|candidates|...)
+#   gate.sh front-door <args...>      -> front-door-advisory.sh (check) -- skill front-door drift advisory
 #   gate.sh redteam <args...>         -> redteam-gate.sh (start|round) -- rung-4 cost checkpoint
 #   gate.sh verify-counts              -> verify-counts.sh (verif-counts = legacy alias)
 #   gate.sh -h|--help|help             -> this usage
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true
@@ -34,6 +35,7 @@ main() {
     quiz)            exec bash "$GATE_DIR/quiz-gate.sh" "$@" ;;
     coverage-delta)  exec bash "$GATE_DIR/coverage-delta.sh" "$@" ;;
     mutation-smoke)  exec bash "$GATE_DIR/mutation-smoke.sh" "$@" ;;
+    front-door)      exec bash "$GATE_DIR/front-door-advisory.sh" "$@" ;;
     redteam)         exec bash "$GATE_DIR/redteam-gate.sh" "$@" ;;
     verify-counts|verif-counts) exec bash "$GATE_DIR/verify-counts.sh" "$@" ;;   # verif-counts: legacy alias (one release)
     -h|--help|help|"") usage ;;
