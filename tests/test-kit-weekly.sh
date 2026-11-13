@@ -40,6 +40,26 @@ grep -q "'beta' FAILED (exit 3), continuing" <<<"$OUT" && ok "failing job logs +
 grep -q 'GOOD:after-failure' <<<"$OUT" && ok "job AFTER the failure still ran" || no "failure aborted the week: $OUT"
 grep -q 'done (ran=2 skipped=2 failed=1)' <<<"$OUT" && ok "summary counts ran=2 skipped=2 failed=1" || no "summary wrong: $(tail -1 <<<"$OUT")"
 
+echo "=== launchd's bare PATH still reaches a cargo-installed ctx (prose-rag-index) ==="
+# launchd runs the dispatcher with PATH=/usr/bin:/bin:/usr/sbin:/sbin; `cargo install` puts ctx in ~/.cargo/bin.
+# A fake HOME keeps the operator's real consumer env and engine out of the run.
+FAKEHOME="$TMP/home"; mkdir -p "$FAKEHOME/.cargo/bin"
+printf '#!/bin/bash\necho "CTX-RAN:$*"\n' > "$FAKEHOME/.cargo/bin/ctx"; chmod +x "$FAKEHOME/.cargo/bin/ctx"
+echo "prose-rag-index $KIT_DIR/bin/prose-rag index" > "$TMP/jobs-rag.txt"
+OUT="$(env -i HOME="$FAKEHOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin PROSE_RAG_CORPUS="$TMP/corpus" KIT_WEEKLY_JOBS="$TMP/jobs-rag.txt" /bin/bash "$DISPATCH" 2>&1)"
+grep -q 'CTX-RAN:index' <<<"$OUT" && grep -q "'prose-rag-index' ok" <<<"$OUT" \
+  && ok "bare launchd PATH finds ctx in ~/.cargo/bin and the job succeeds" \
+  || no "prose-rag-index did not reach ctx under a bare PATH: $OUT"
+rm -rf "$FAKEHOME/.cargo"
+OUT="$(env -i HOME="$FAKEHOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin KIT_WEEKLY_JOBS="$TMP/jobs-rag.txt" /bin/bash "$DISPATCH" 2>&1)"
+grep -q "no corpus configured.*nothing indexed" <<<"$OUT" && grep -q "'prose-rag-index' ok" <<<"$OUT" \
+  && ok "no engine and no corpus skips clean (an unconfigured consumer)" \
+  || no "unconfigured consumer did not skip clean: $OUT"
+OUT="$(env -i HOME="$FAKEHOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin PROSE_RAG_CORPUS="$TMP/corpus" KIT_WEEKLY_JOBS="$TMP/jobs-rag.txt" /bin/bash "$DISPATCH" 2>&1)"
+grep -q "'prose-rag-index' FAILED" <<<"$OUT" \
+  && ok "corpus set but no engine anywhere still fails loud (NC)" \
+  || no "missing engine with a corpus did not fail: $OUT"
+
 echo "=== missing jobs list is a hard error (misconfigured install must be loud) ==="
 KIT_WEEKLY_JOBS="$TMP/nope.txt" bash "$DISPATCH" >/dev/null 2>&1 \
   && no "missing jobs list exited 0" || ok "missing jobs list exits nonzero"
