@@ -181,11 +181,28 @@ for _m in common scan apply pull carry ci merge land start ship log deploy rebas
 
 _usage() { sed -n '2,54p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
+# _verb_usage <verb> -- the usage lines that start `wrap.sh <verb>`; the whole usage when none do.
+_verb_usage() {
+  local lines
+  lines="$(_usage | awk -v v="$1" '$1=="wrap.sh" && $2==v')"
+  if [ -n "$lines" ]; then printf '%s\n' "$lines"; else _usage; fi
+}
+
 # --------------------------------------------------------------------------- entry
 
 main() {
   local verb="${1:-}"
   [ $# -gt 0 ] && shift
+  # `wrap <verb> -h|--help` is a usage request for every verb, answered here once so no verb
+  # parser can read the flag as an argument (`log` would write it as an entry, the rest refuse it).
+  case "$verb:${1:-}" in
+    scan:-h|scan:--help|apply:-h|apply:--help|merge:-h|merge:--help|land:-h|land:--help|\
+    start:-h|start:--help|ship:-h|ship:--help|log:-h|log:--help|\
+    default-branch:-h|default-branch:--help|knowledge-root:-h|knowledge-root:--help|\
+    follow-mode:-h|follow-mode:--help|deploy-wait:-h|deploy-wait:--help|stage:-h|stage:--help|\
+    rebase:-h|rebase:--help|adopt:-h|adopt:--help|flick-7b:-h|flick-7b:--help)
+      _verb_usage "$verb"; return 0 ;;
+  esac
   case "$verb" in
     scan)           cmd_scan "$@" ;;
     apply)          cmd_apply "$@" ;;

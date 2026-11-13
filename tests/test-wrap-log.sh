@@ -38,6 +38,22 @@ out="$(wrap_log --date 2026-13-45 "wrap: impossible date" 2>&1)"; rc=$?
 chk "log refuses an out-of-range --date (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
 chk "log wrote nothing on the out-of-range date" "$([ "$DATE_BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
 
+HELP_BEFORE="$(cat "$LOGFILE")"
+for hf in --help -h; do
+  out="$(wrap_log "$hf" 2>&1)"; rc=$?
+  chk "log $hf exits 0" "$rc"
+  chk_has "log $hf prints usage" "$out" "wrap.sh log"
+  chk "log $hf wrote nothing" "$([ "$HELP_BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
+done
+out="$(wrap_log --date 2026-01-03 --help 2>&1)"; rc=$?
+chk "log --date D --help exits 0" "$rc"
+chk "log --date D --help wrote nothing" "$([ "$HELP_BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
+for bad in -x --bogus -- "-a dash entry"; do
+  out="$(wrap_log "$bad" 2>&1)"; rc=$?
+  chk "log refuses text starting with '-' ($bad), exit 2" "$([ "$rc" -eq 2 ]; echo $?)"
+  chk "log wrote nothing for '$bad'" "$([ "$HELP_BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
+done
+
 BEFORE="$(cat "$LOGFILE")"
 # The dash is assembled from its bytes: a literal one in this file would violate the
 # repo-wide formatting rule the verb under test enforces.
