@@ -414,6 +414,12 @@ while IFS= read -r f; do
         [ -f "$t" ] || continue
         printf '%s\tmodule %s\n' "$t" "${f#lib/}" >>"$TMP/pairs"; covered=1
       done ;;
+    lib/wrap/wrap-merge.sh)
+      # The head-resync cases live in their own suite, split off test-wrap-merge.sh for time.
+      for t in tests/test-wrap-merge.sh tests/test-wrap-merge-resync.sh; do
+        [ -f "$t" ] || continue
+        printf '%s\tmodule %s\n' "$t" "${f#lib/}" >>"$TMP/pairs"; covered=1
+      done ;;
     lib/wrap/wrap-*.sh)
       t="tests/test-wrap-${f#lib/wrap/wrap-}"
       if [ -f "$t" ]; then

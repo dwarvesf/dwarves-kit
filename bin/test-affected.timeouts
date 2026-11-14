@@ -262,6 +262,7 @@ test-wrap-land-gate 60
 test-wrap-log 60
 test-wrap-merge-gate 60
 test-wrap-merge-nopull 60
+test-wrap-merge-resync 250
 test-wrap-merge-stacked 60
 test-wrap-scan 60
 test-wrap-start 60
