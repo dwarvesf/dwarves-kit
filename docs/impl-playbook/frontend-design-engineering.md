@@ -30,6 +30,15 @@ Distills Emil Kowalski's design-engineering philosophy (Vercel/Linear, creator o
 ## Review format
 - A UI-code review reports Before/After/Why as a markdown table, one row per issue, never a prose list. This is the actual output contract of the installed `review-animations` skill.
 
+## Companion skills added later
+- `animate`: build one animation from scratch, decisions in order (purpose, tool, properties, curve, interruption, exit).
+- `choreograph`: coordinate several moving elements (order, overlap, stillness) so a group reads as one motion.
+- `animation-performance`: diagnose dropped frames, composite-only properties, CSS vs JS under load.
+- `gestures`: drag, swipe, and sheet interactions that track the finger and stay interruptible.
+- `mobile-native`: CSS and meta-tag fixes that make a web app feel installed on a phone (fuller source for the mobile checklist in `emil-design-eng`).
+- `write-swift`: modern Swift (Swift 6 concurrency, value types, Swift Testing).
+- `break` also ships a worst-case value catalog (`CATALOG.md`); `improve-animations` carries the removal hazards for plans that delete motion.
+
 ## Sources
 - [emilkowalski/skills](https://github.com/emilkowalski/skills)
 - [Agents with Taste (Emil Kowalski)](https://emilkowal.ski/ui/agents-with-taste)
