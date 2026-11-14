@@ -14,26 +14,13 @@ board, so a typo'd map value is a hard error instead of a silently
 auto-created select option. `read()` returns [] (the sink is write-only).
 """
 
-import json
-import subprocess
-
+from sources.ntn import run_ntn  # noqa: E402
 from sync_core import extract_tags, strip_tags
 
 RICH_LIMIT = 2000  # Notion rich_text element content cap, in UTF-16 code units
 
 
-def _run_ntn(args: list, data: dict | None = None):
-    cmd = ["ntn", *args]
-    stdin = None
-    if data is not None:
-        cmd += ["-d", "@-"]
-        stdin = json.dumps(data)
-    r = subprocess.run(cmd, input=stdin, capture_output=True, text=True,
-                       timeout=120)
-    if r.returncode != 0:
-        raise SystemExit(
-            f"ntn {' '.join(args[:3])} failed: {r.stderr.strip()[:500]}")
-    return json.loads(r.stdout) if r.stdout.strip() else {}
+_run_ntn = run_ntn  # the shared retrying runner, see sources/ntn.py
 
 
 def _rich(text: str) -> list:

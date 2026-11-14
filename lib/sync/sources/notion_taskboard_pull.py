@@ -25,11 +25,10 @@ rides the board row, which must stay one line. `expand_body` fetches it when a
 spoke creates the task from the row, and splices it into the row's fence.
 """
 
-import json
 import re
 import secrets
-import subprocess
 
+from sources.ntn import run_ntn  # noqa: E402
 from cockpit import redact_secrets
 
 # Sentinel wording copied from the cron being absorbed, so a worker LLM that
@@ -75,22 +74,7 @@ _DEFANG_TAG = re.compile(r"#(?=[A-Za-z0-9])")
 # token into a task note should not mint permanent history.
 
 
-def _run_ntn(args: list, data: dict | None = None):
-    cmd = ["ntn", *args]
-    stdin = None
-    if data is not None:
-        cmd += ["-d", "@-"]
-        stdin = json.dumps(data)
-    # A call with no body gets /dev/null: ntn reads a piped stdin as a request
-    # body, which would turn a read into a write.
-    feed = {"input": stdin} if stdin is not None \
-        else {"stdin": subprocess.DEVNULL}
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
-                       **feed)
-    if r.returncode != 0:
-        raise SystemExit(
-            f"ntn {' '.join(args[:3])} failed: {r.stderr.strip()[:500]}")
-    return json.loads(r.stdout) if r.stdout.strip() else {}
+_run_ntn = run_ntn  # the shared retrying runner, see sources/ntn.py
 
 
 def _plain(rich: list) -> str:
