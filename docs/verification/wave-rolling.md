@@ -13,6 +13,8 @@
 | A member lands (rc 0, box flipped in the shared ROADMAP) | Converged at once (`_wave_converge <id> --peers ...`), then `_wave_gate <running ids>` picks newly ready candidates disjoint from every running member; they spawn through `_wave_spawn`, the same path as the initial wave. |
 | Same-file guard | The landed member's branch is compared with every landed member whose run overlapped its own (spawn/reap ticks). Peers are never compared with each other: a parent and its dependent ran one after the other and may share a file. |
 | Merge order | Completion order, one at a time under the flip lock. A dependent is admitted only after its parent's merge step. |
+| Dependency hold | A box flip is not completion proof (a session flips before it exits, and may still exit nonzero). A candidate whose `depends` names a wave member that has not converged is deferred. A dep outside the wave was complete before it started. |
+| Abort | `_WAVE_ABORTED` blocks convergence and admission, fails the wave even when every member looked fine (an abort during the last converge), and `_wave_spawn` refuses to start a session after it (or kills one whose pid was recorded after the handler ran). |
 | Member exits nonzero or lands unflipped, a spawn is refused, convergence fails, abort, or a `gate!` is ready | Admission stops for the rest of the wave; running members drain (abort kills them); a member landing after a failure is not converged; `cmd_run` halts as today. |
 | Last running member lands | No admission; control returns to `cmd_run`, whose next cycle recomputes from scratch (wave if 2+ admit, else the serial body with its no-claim retry). |
 | `WAVE_CAP=1` | Unreachable, as before: `cmd_run` never enters the wave block. |
@@ -38,6 +40,13 @@ Output:
   PASS (f) WAVE_ROLLING defaults off, [mega].wave_rolling = true turns it on, the env var wins
   PASS (g1) SG-01 merged before its dependent took the slot; each PR merged exactly once; a dependent editing its parent's file is not flagged
   PASS (g2) two members that ran together both edited same.txt: SG-02 is refused (not merged); SG-03 landing after it is not converged and its slot is not refilled; the run halts
+  PASS (h1) SG-01 flipped but was still running: its dependent SG-03 started only after SG-01 exited and merged
+  PASS (h2) SG-02 flipped then exited 1: SG-03 never ran on the failed, unconverged parent; the run halted
+  PASS (i1) TERM during the last member's converge: the run halts (rc 1), the next cycle never starts SG-03
+  PASS (i2) TERM mid refill spawn: SG-03 was never started, SG-02 killed with its grandchild, the driver exited rc 1
+  PASS (j1) refill spawn refused (bad Model:): nothing else admitted, SG-02 drained, the run halted
+  PASS (j2) gate! became ready mid-wave: SG-04 not admitted into the free slot, SG-02 drained, the loop stopped for the human
+  PASS (j3) WAVE_CAP=3: one landing refilled two slots in one pass, SG-05 waited for a free slot, peak 3 sessions
   ---
   all passed
 Verdict: PASS
@@ -52,24 +61,70 @@ Command: bash tests/run-all.sh --changed origin/master --time
 Exit: 0
 Output:
   test-multiplexer                               ok (8s)
-  test-orchestrate-gate-dispatch                 ok (26s)
+  test-orchestrate-gate-dispatch                 ok (21s)
   test-orchestrate-hardening                     ok (11s)
-  test-orchestrate-orca                          ok (129s)
-  test-orchestrate                               ok (85s)
-  test-wave-converge                             ok (2s)
-  test-wave-detach-tty                           ok (27s)
-  test-wave-rid-check                            ok (34s)
-  test-wave-rolling                              ok (45s)
-  test-wave-token-capture                        ok (27s)
-  run-all: all 58 suites passed, 0 skipped for missing tooling
+  test-orchestrate-orca                          ok (114s)
+  test-orchestrate                               ok (69s)
+  test-wave-converge                             ok (1s)
+  test-wave-detach-tty                           ok (30s)
+  test-wave-rid-check                            ok (36s)
+  test-wave-rolling                              ok (82s)
+  test-wave-token-capture                        ok (32s)
+  run-all: 58 suites run; one red: test-meta-docs-registry (FEATURES.md stale after the new test text)
+  -> regenerated docs/reference/FEATURES.md; bash tests/run-all.sh --only test-meta-docs-registry: all 1 suites passed
 Verdict: PASS
 ```
 
 An earlier `--changed` run was red on (g1) under parallel load: when the dependent landed before the slow sibling, the sibling's convergence compared its two peers with each other and flagged the parent/dependent shared file, a false halt. Fixed (peers compared with the landed member only) and (g1) now forces that ordering.
 
+## Review fixes
+
+Two independent reviews of the first push found three bugs, each reproduced against the real driver before the fix (scratch repro scripts R1 to R3 and an early-flip repro), each now a suite case:
+
+| Finding | Repro on the first push | Fix | Case |
+|---|---|---|---|
+| Dependent admitted on a flipped-but-running parent | R1: SG-03 started before SG-01's merge; early-flip: SG-03 ran on a parent that then exited 1 | dependency hold (`_WAVE_GATE_HOLD`) | h1, h2 |
+| Abort during the last member's converge swallowed | R2: rc 0 and SG-03 ran in the next cycle (switch off: rc 143) | `[ "$_WAVE_ABORTED" = 1 ] && wave_failed=1` before both returns | i1 |
+| Abort during a refill spawn left a new session running | R3: driver alive 8s after TERM, SG-03 alive | `_wave_spawn` refuses after an abort (before `_pane_spawn` and `set -m`), kills a late-recorded pid; initial loop breaks | i2 |
+
+Also added: a refused refill spawn (j1), a `gate!` becoming ready mid-wave (j2), `WAVE_CAP=3` refilling two slots in one pass with a peak of 3 sessions (j3). Nits: `${WAVE_ROLLING:-0}` reads; the design block notes the peer guard goes vacuous once a peer's merge is in the local base.
+
+Per-fix negative controls (`negctl.sh --parallel 3` on commit `dfba521f`; failing cases named by re-running each mutation):
+
+```
+Command: bash lib/gate/negctl.sh --parallel 3 "$PWD" "bash tests/test-wave-rolling.sh" <mutation>...
+Exit: 0 (every control RED under its mutation, GREEN after restore)
+Output:
+  Mutation: sed -i '' 's/_WAVE_GATE_HOLD="$hold" _wave_gate/_wave_gate/' lib/queue/orchestrate.sh
+  Exit: 1 (under mutation, RED expected)
+    FAIL (h1) rc=0 boxes=3 timeline: start SG-01 flipped SG-01 start SG-02 end SG-02 merge PR 12 start SG-03 end SG-01
+    FAIL (h2) rc=1 timeline: start SG-01 end SG-01 start SG-02 flipped SG-02 start SG-03 end SG-02 end SG-03
+    2 failed
+  Restore: git checkout HEAD -- lib/queue/orchestrate.sh
+  Exit: 0 (green after restore)
+  Verdict: PASS
+
+  Mutation: sed -i '' '/^  \[ "$_WAVE_ABORTED" = 1 \] \&\& wave_failed=1$/d' lib/queue/orchestrate.sh
+  Exit: 1 (under mutation, RED expected)
+    FAIL (i1) rc=0 timeline: start SG-01 end SG-01 start SG-02 merge PR 11 end SG-02 merge PR 12 start SG-03 end SG-03
+    1 failed
+  Restore: git checkout HEAD -- lib/queue/orchestrate.sh
+  Exit: 0 (green after restore)
+  Verdict: PASS
+
+  Mutation: delete both pre-spawn abort guards in _wave_spawn and the post-record kill (if false)
+  Exit: 1 (under mutation, RED expected)
+    FAIL (i2) the driver is still alive 20s after the abort (waiting on a session spawned after it?) timeline: start SG-01 end SG-01 start SG-02 start SG-03
+    1 failed
+  Restore: git checkout HEAD -- lib/queue/orchestrate.sh
+  Exit: 0 (green after restore)
+  Verdict: PASS
+Verdict: PASS
+```
+
 ## Negative control
 
-Three mutations, each in a throwaway worktree copy, via `lib/gate/negctl.sh --parallel 3` on the committed tree:
+First push, three mutations, each in a throwaway worktree copy, via `lib/gate/negctl.sh --parallel 3` on commit `a4346beb`:
 
 ```
 Command: bash lib/gate/negctl.sh --parallel 3 "$PWD" "bash tests/test-wave-rolling.sh" <mutation>...
