@@ -616,5 +616,71 @@ TLN="$TOKLOGN/runs/kit-tok-fxn.log"
   && pass "SPEC-110 NC: default no-capture path writes NO TOKENS line (usage=?)" \
   || { fail "SPEC-110 NC: a TOKENS line was written without a capture"; cat "$TLN" 2>&1; }
 
+# ============================ TEST 7: no-claim retry (box not flipped) ============================
+# A session that exits 0 without flipping its box is re-dispatched ONCE in a fresh session, then the
+# loop halts as before. The driver never flips a box itself: only a session's own flip advances.
+# Mock: invocation N flips the box only when N >= $MOCK_FLIP_AT (0 = never); $MOCK_EXIT sets its rc.
+cat > "$TMP/claude-retry" <<'EOF'
+#!/usr/bin/env bash
+prompt=$(cat)
+n=$(cat "$MOCK_COUNT" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$MOCK_COUNT"
+printf '%s\n' "$prompt" > "$MOCK_COUNT.prompt.$n"
+if [ "${MOCK_FLIP_AT:-0}" -gt 0 ] && [ "$n" -ge "$MOCK_FLIP_AT" ]; then
+  awk '{ if ($0 ~ /^- \[ \] SG-01 /) sub(/\[ \]/, "[x]"); print }' "$MOCK_RM" > "$MOCK_RM.tmp" && mv "$MOCK_RM.tmp" "$MOCK_RM"
+fi
+exit "${MOCK_EXIT:-0}"
+EOF
+chmod +x "$TMP/claude-retry"
+mk_retry_fixture() {  # dir -> one auto sub-goal whose goal file carries a HANDOFF-worthy marker
+  local d="$1"; mkdir -p "$d/goals"
+  printf '# Mega-goal: retry fixture\n## Sub-goals\n- [ ] SG-01 only thing , auto , PR #__\n' > "$d/ROADMAP.md"
+  echo "POINTER: resume from ROADMAP" > "$d/POINTER_PROMPT.md"
+  printf '# SG-01\n**Branch:** feat/noclaim-retry\n' > "$d/goals/01-only.md"
+  echo "HANDOFF-MARKER from the previous sub-goal" > "$d/HANDOFF.md"
+}
+run_retry() {  # dir flip_at retries exit -> rc; leaves $TMP/retry.out and the count in $TMP/retry.count
+  local d="$1"; rm -f "$TMP/retry.count" "$TMP/retry.count.prompt."*
+  MOCK_COUNT="$TMP/retry.count" MOCK_RM="$d/ROADMAP.md" MOCK_FLIP_AT="$2" NOCLAIM_RETRIES="$3" MOCK_EXIT="${4:-0}" TIER4_CLOSE=0 \
+    CLAUDE_CMD="$TMP/claude-retry" bash "$ORCH" run "$d" > "$TMP/retry.out" 2>&1 < /dev/null
+}
+
+# 7a: first session leaves the box unflipped, the retry flips it -> the run completes.
+R1="$TMP/mg-retry1"; mk_retry_fixture "$R1"; run_retry "$R1" 2 1; rc=$?
+{ [ "$rc" = 0 ] && [ "$(cat "$TMP/retry.count")" = 2 ] && grep -q '^- \[x\] SG-01' "$R1/ROADMAP.md"; } \
+  && pass "no-claim retry: unflipped first session -> one fresh retry flips the box, run completes (2 sessions)" \
+  || { fail "no-claim retry: expected rc 0, 2 sessions, box flipped (rc=$rc sessions=$(cat "$TMP/retry.count" 2>/dev/null))"; cat "$TMP/retry.out"; }
+{ ! grep -q 'RETRY' "$TMP/retry.count.prompt.1" && grep -q 'RETRY 1 of 1' "$TMP/retry.count.prompt.2"; } \
+  && pass "no-claim retry: only the second prompt carries the RETRY block" || fail "no-claim retry: RETRY block placement wrong"
+grep -q 'HANDOFF-MARKER' "$TMP/retry.count.prompt.2" \
+  && pass "no-claim retry: the retry prompt still carries the previous HANDOFF" || fail "no-claim retry: retry prompt lost the HANDOFF"
+grep -q 'retrying in a fresh session (1/1)' "$TMP/retry.out" \
+  && pass "no-claim retry: the loop says it is retrying" || fail "no-claim retry: no retry message"
+
+# 7b: NEGATIVE CONTROL for no-self-claim: a session that never flips is retried ONCE, then the loop
+# halts, the box stays unchecked, and the driver flipped nothing itself.
+R2="$TMP/mg-retry2"; mk_retry_fixture "$R2"; run_retry "$R2" 0 1; rc=$?
+{ [ "$rc" != 0 ] && [ "$(cat "$TMP/retry.count")" = 2 ] && grep -q '^- \[ \] SG-01' "$R2/ROADMAP.md" \
+  && grep -q 'did not check its ROADMAP box; halting' "$TMP/retry.out"; } \
+  && pass "no-claim retry NC: never flipping -> exactly 2 sessions, then halt, box still unchecked (no self-claim)" \
+  || { fail "no-claim retry NC: expected halt after 2 sessions with the box unchecked (rc=$rc sessions=$(cat "$TMP/retry.count" 2>/dev/null))"; cat "$TMP/retry.out"; }
+
+# 7c: NOCLAIM_RETRIES=0 restores the old halt-at-once behavior (one session).
+R3="$TMP/mg-retry3"; mk_retry_fixture "$R3"; run_retry "$R3" 0 0; rc=$?
+{ [ "$rc" != 0 ] && [ "$(cat "$TMP/retry.count")" = 1 ]; } \
+  && pass "no-claim retry: NOCLAIM_RETRIES=0 halts after one session (old behavior)" \
+  || { fail "no-claim retry: NOCLAIM_RETRIES=0 ran $(cat "$TMP/retry.count" 2>/dev/null) sessions (rc=$rc)"; cat "$TMP/retry.out"; }
+
+# 7d: a session that exits nonzero is a different failure and is NOT retried here.
+R4="$TMP/mg-retry4"; mk_retry_fixture "$R4"; run_retry "$R4" 0 1 1; rc=$?
+{ [ "$rc" != 0 ] && [ "$(cat "$TMP/retry.count")" = 1 ]; } \
+  && pass "no-claim retry: a nonzero session exit is not retried" \
+  || { fail "no-claim retry: nonzero exit ran $(cat "$TMP/retry.count" 2>/dev/null) sessions (rc=$rc)"; cat "$TMP/retry.out"; }
+
+# 7e: the retry budget is per sub-goal, not per run: NOCLAIM_RETRIES=2 allows two retries (3 sessions).
+R5="$TMP/mg-retry5"; mk_retry_fixture "$R5"; run_retry "$R5" 3 2; rc=$?
+{ [ "$rc" = 0 ] && [ "$(cat "$TMP/retry.count")" = 3 ] && grep -q 'RETRY 2 of 2' "$TMP/retry.count.prompt.3"; } \
+  && pass "no-claim retry: NOCLAIM_RETRIES=2 -> two retries, third session flips" \
+  || { fail "no-claim retry: NOCLAIM_RETRIES=2 wrong (rc=$rc sessions=$(cat "$TMP/retry.count" 2>/dev/null))"; cat "$TMP/retry.out"; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

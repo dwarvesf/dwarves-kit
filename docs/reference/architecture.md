@@ -453,7 +453,10 @@ was gated on an audit that no live mega-goal ROADMAP relies on `gate`=global-sto
 `WAVE_MERGE_CMD` (the convergence merge hook; default `mega-merge.sh merge`, a dry run unless a wrapper passes `--execute`),
 `TURN_CAP` (default **300**, `[mega].turn_cap`; per-agent turn CEILING via `--max-turns` +
 a deterministic segment handoff that re-dispatches the SAME sub-goal; `0` disables) and
-`TURN_CAP_SEGMENTS` (default **10**, `[mega].turn_cap_segments`; the stuck-loop bound).
+`TURN_CAP_SEGMENTS` (default **10**, `[mega].turn_cap_segments`; the stuck-loop bound) and
+`NOCLAIM_RETRIES` (default **1**, `[mega].noclaim_retries`; a serial sub-goal whose session exits 0 with
+its box unflipped is re-dispatched in a fresh session that many times before the loop halts; `0` halts at once; a box
+checked on origin with no `PR #<n>` is never retried, and only a session's own flip ever advances the loop).
 The ceiling pairs with the stall watchdog, which is the LEASE (`WATCHDOG_STALL_SECS` alerts on
 a lapsed lease and never kills; only the ceiling stops a segment). Full design +
 exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `history/2026-10-27:docs/verification/orchestrate-wavefront.md`.

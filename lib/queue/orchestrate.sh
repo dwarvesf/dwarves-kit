@@ -42,6 +42,10 @@
 # orchestrator advances only then (no self-claim). When the local box is unchecked it reconciles
 # against `origin/<default>` first, so a box flipped inside a now-merged PR still counts (a remote
 # box counts only when its line also carries a real `PR #<n>`).
+# A session that exits 0 without flipping its box is retried in a FRESH session up to NOCLAIM_RETRIES
+# times per sub-goal per run (default 1; [mega].noclaim_retries; 0 = halt at once). The retry changes
+# nothing about completion: the driver never flips a box itself, so a retry advances only when a
+# session flips the box (or the merged PR carries it). Serial path only; a wave sub-goal still halts.
 #
 # Gate sub-goals (env MEGA_GATE_DISPATCH=1 default): a `gate` / `gate!` sub-goal is DISPATCHED like
 # an `auto` one, its prompt carries the held-PR contract (open the PR as a DRAFT, `mega-merge.sh
@@ -185,6 +189,15 @@ WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 # .kit.toml > kit-root kit.toml) > the defaults here.
 TURN_CAP="${TURN_CAP:-$(kit_config_get mega.turn_cap 300)}"
 TURN_CAP_SEGMENTS="${TURN_CAP_SEGMENTS:-$(kit_config_get mega.turn_cap_segments 10)}"
+
+# No-claim retry: a session that ends rc 0 with its box still unflipped (and no merged PR carrying it)
+# used to halt the loop until a human re-ran it; one measured run sat blocked 74 minutes that way.
+# Re-dispatch the SAME sub-goal in a fresh session, up to NOCLAIM_RETRIES times per sub-goal per run,
+# then halt exactly as before. Completion stays grounded on the box flip, never on the retry.
+# Precedence: the environment variable, then [mega].noclaim_retries (project .kit.toml > kit-root
+# kit.toml), then the 1 below. A non-numeric value falls back to 0 (halt), the fail-safe direction.
+NOCLAIM_RETRIES="${NOCLAIM_RETRIES:-$(kit_config_get mega.noclaim_retries 1)}"
+case "$NOCLAIM_RETRIES" in ''|*[!0-9]*) NOCLAIM_RETRIES=0 ;; esac
 
 # Flip-lock stale-reclaim threshold. The box-flip mutual-exclusion
 # primitive is a `mkdir` lock (atomic on POSIX; flock is absent on macOS and unused in this repo).
@@ -2445,6 +2458,8 @@ _orca_load() {
 
 cmd_run() {
   local dir="" dry=0 step=0 stream=0 board_arg="" forced_pick="" backend="${MEGA_BACKEND:-claude}"
+  local noclaim_log=""   # one line per no-claim retry spent this run (bash 3.2: no assoc arrays)
+  local bare_remote=0    # set per cycle: origin carries this sub-goal's box checked with no PR #
   while [ $# -gt 0 ]; do
     case "$1" in
       --backend)  backend="${2:-}"; [ $# -gt 0 ] && shift ;;   # the flag wins over MEGA_BACKEND
@@ -2756,6 +2771,16 @@ cmd_run() {
     # EXIT trap this script sets on the serial path).
     trap 'rm -f "$pfile"' EXIT
     _build_prompt "$dir" "$id" "$gate_hold" > "$pfile"
+    local retry_n; retry_n=$(printf '%s' "$noclaim_log" | grep -cxF "$id")
+    if [ "$retry_n" -gt 0 ]; then
+      {
+        printf '\n\n---\nRETRY %s of %s (previous session of THIS sub-goal ended without flipping its ROADMAP box)\n' "$retry_n" "$NOCLAIM_RETRIES"
+        printf 'Check the branch, the worktree and any open PR for work the earlier session already did, finish what remains, and flip the box only when the Done = check passes.\n'
+        printf 'Every earlier instruction still applies.'
+        [ "$retry_n" -ge "$NOCLAIM_RETRIES" ] && printf ' This is the last automatic attempt: a session that ends unflipped again halts the loop for a human.'
+        printf '\n'
+      } >> "$pfile"
+    fi
     # Run the session via the extracted helper: it picks the correct run-path
     # (watchdog / --stream|det-handoff stream-json / plain) and returns the session exit code.
     # slog (the stream-log path, "" when no capture happened) comes back via _ROS_SLOG for the
@@ -2804,9 +2829,14 @@ cmd_run() {
       # UNCHANGED: a remote box counts only when its line also carries a real `PR #<n>`, so a bare
       # checked box never advances the loop, on either side.
       local rview rline
+      bare_remote=0
       rview=$(_roadmap_remote_view "$dir" "$roadmap")
       if [ -n "$rview" ]; then
         rline=$(_sg_line "$rview" "$id")
+        # A box checked on origin with NO `PR #<n>` is a claim, not a completion: it is never retried
+        # either (the fast-forward above may already show it checked locally, and a retry would read
+        # that as a flip), so the loop halts for a human exactly as before.
+        box_line_is done "$rline" && ! printf '%s' "$rline" | grep -qE 'PR #[0-9]+' && bare_remote=1
         if box_line_is done "$rline" && printf '%s' "$rline" | grep -qE 'PR #[0-9]+'; then
           checked=1
           _say "[orchestrate] [reconcile] $id box is checked on origin with $(printf '%s' "$rline" | grep -oE 'PR #[0-9]+' | head -1); accepting the merged-PR flip."
@@ -2821,6 +2851,17 @@ cmd_run() {
       fi
     fi
     if [ "$checked" != 1 ]; then
+      local spent; spent=$(printf '%s' "$noclaim_log" | grep -cxF "$id")
+      if [ "$spent" -lt "$NOCLAIM_RETRIES" ] && [ "$bare_remote" = 0 ]; then
+        noclaim_log="$noclaim_log$id"$'\n'
+        # The failed session's tokens are real spend; keep its transcript before the retry reuses the path.
+        _record_tokens "$dir" "$id" "$slog"
+        [ -n "$slog" ] && mv -f "$slog" "$dir/.orchestrate/${id}.noclaim$((spent + 1)).stream.jsonl" 2>/dev/null
+        _emit_event "$dir" "$id" executing "retry $((spent + 1))/$NOCLAIM_RETRIES: previous session left the box unflipped"
+        echo "[orchestrate] [guardrail] $id did not check its ROADMAP box; retrying in a fresh session ($((spent + 1))/$NOCLAIM_RETRIES). The box must still be flipped by the session (no self-claim)." >&2
+        forced_pick="$id"
+        continue
+      fi
       _emit_event "$dir" "$id" blocked "box not flipped (no self-claim)"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
       echo "[orchestrate] [guardrail] $id did not check its ROADMAP box; halting (no self-claim, no advance on a dead/incomplete session)." >&2
