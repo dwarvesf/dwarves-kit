@@ -172,6 +172,16 @@ through the transcript (never loaded whole).
   `--written` cannot combine with a query, `--sessions`, `--tail`, `--final`, `--json`,
   `--fence`, or `--max-bytes` (exit 2).
 
+## --name: sessions by their /rename name
+
+```
+session-recall --name <name>                    # the current project, newest first
+session-recall --name <name> --all              # every project (names are rare, so this is the usual form)
+session-recall --name <name> --project <slug> --json   # rows: file, mtime, matches, opening_ask
+```
+
+`/rename` writes an `agent-name` record (and sometimes a `custom-title` record) into the session's own transcript. A plain query never finds the session by that name, because those records carry no turn text: it finds only sessions whose prompt quotes the name. `--name` reads the LAST `agentName` and `customTitle` record of each transcript, so a session renamed twice answers only to its newest name. The match is exact and case-insensitive. The read is a raw byte search backwards from the end of each file, so a very large transcript costs no parse. The same key on any other record type is skipped because the record type is checked. Rows print newest first in the `--sessions` shape with `matches` fixed at 1, and `file` is the lead transcript. No match prints one stderr line, exit 0. It takes `--file`, `--project`, `--all`, `--limit` and `--json`, and cannot combine with a query, `--sessions`, `--tail`, `--subagents`, `--final`, `--replies`, `--written`, `--session`, `--artifacts`, `--orca`, `--fence`, `--out`, `--max-bytes`, or `--max-chars` (exit 2).
+
 ## --subagents: the subagent transcripts of one session
 
 ```

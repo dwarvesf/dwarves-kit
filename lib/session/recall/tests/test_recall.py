@@ -1106,6 +1106,76 @@ class TestRecall(unittest.TestCase):
         finally:
             r.PROJECTS = orig
 
+    # --- --name: sessions by their /rename name ---------------------------------------
+
+    def _name_tree(self):
+        import shutil
+        base = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base)
+        proj = os.path.join(base, "-Users-me-workspace-x")
+        os.makedirs(proj)
+
+        def write(sid, mtime, *records):
+            path = os.path.join(proj, sid + ".jsonl")
+            with open(path, "w", encoding="utf-8") as fh:
+                with open(SEED, encoding="utf-8") as seed:
+                    fh.write(seed.read())
+                for rec in records:
+                    fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+            os.utime(path, (mtime, mtime))
+
+        def name(n, sid):
+            return {"type": "agent-name", "agentName": n, "sessionId": sid}
+        write("aaa-1", 1_700_000_100, name("land-session-merges-wrap", "aaa-1"))
+        # renamed twice: only the LAST name counts, the first no longer finds it
+        write("bbb-2", 1_700_000_200, name("old-name", "bbb-2"), name("fix-feed-defects-phase", "bbb-2"))
+        # custom-title only
+        write("ccc-3", 1_700_000_300, {"type": "custom-title", "customTitle": "titled-only", "sessionId": "ccc-3"})
+        # the same key on a record that is not a name record (a subagent attachment) is not a name
+        write("ddd-4", 1_700_000_400, {"type": "attachment", "agentName": "land-session-merges-wrap"})
+        # a wrapper whose prompt only quotes the name: found by a query search, never by --name
+        write("eee-5", 1_700_000_500, {"type": "user", "message": {"role": "user",
+              "content": "wrap the session land-session-merges-wrap"}})
+        return base
+
+    def test_name_finds_current_name_not_prose_mentions(self):
+        base = self._name_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            code, out, _ = self._run_main(["--name", "land-session-merges-wrap", "--all", "--json"])
+            self.assertEqual(code, 0)
+            files = [os.path.basename(x["file"]) for x in json.loads(out)["sessions"]]
+            self.assertEqual(files, ["aaa-1.jsonl"])  # not ddd-4 (other record type), not eee-5 (wrapper prompt)
+            files = [os.path.basename(x["file"]) for x in json.loads(
+                self._run_main(["--name", "Fix-Feed-Defects-Phase", "--all", "--json"])[1])["sessions"]]
+            self.assertEqual(files, ["bbb-2.jsonl"])  # case-insensitive, last rename wins
+            self.assertEqual(json.loads(self._run_main(["--name", "old-name", "--all", "--json"])[1])["sessions"], [])
+            files = [os.path.basename(x["file"]) for x in json.loads(
+                self._run_main(["--name", "titled-only", "--project", "x", "--json"])[1])["sessions"]]
+            self.assertEqual(files, ["ccc-3.jsonl"])  # customTitle counts
+            code, out, err = self._run_main(["--name", "no-such-name", "--all"])
+            self.assertEqual(code, 0)
+            self.assertIn("no session named 'no-such-name'", err)
+            _, out, _ = self._run_main(["--name", "land-session-merges-wrap", "--all"])
+            self.assertIn("aaa-1", out)
+            self.assertIn(r.DATA_MARKER, out)
+        finally:
+            r.PROJECTS = orig
+
+    def test_name_conflicts(self):
+        base = self._name_tree()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            for argv in (["--name"], ["--name", "--json"], ["--name", "x", "extra-query"],
+                         ["--name", "x", "--sessions"], ["--name", "x", "--tail", "aaa"],
+                         ["--name", "x", "--subagents", "aaa"], ["--name", "x", "--artifacts"],
+                         ["--name", "x", "--orca"], ["--name", "x", "--out", "f"]):
+                self.assertEqual(self._run_main(argv)[0], 2, argv)
+        finally:
+            r.PROJECTS = orig
+
     # --- --replies: the final assistant text of every human turn ---------------------
 
     def _replies(self, *extra):
