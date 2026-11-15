@@ -2433,11 +2433,17 @@ _wave_join_drop_refs() {  # repo
 }
 
 _JOIN_PID=""
+_JOIN_LEVEL=""
 _wave_join_interrupted() {  # exit-code
   [ -z "$_JOIN_PID" ] || { pkill -TERM -P "$_JOIN_PID" 2>/dev/null; kill -TERM "$_JOIN_PID" 2>/dev/null; } || :
   _wave_join_cleanup "$_JOIN_REPO" "$_JOIN_TMP"
-  _emit_event "$_JOIN_MEGADIR" wave blocked "converge: join interrupted; nothing merged"
-  echo "[orchestrate] [join] interrupted; the throwaway worktrees are removed and nothing merged." >&2
+  if [ -n "$_JOIN_LEVEL" ]; then
+    _emit_event "$_JOIN_MEGADIR" - blocked "level $_JOIN_LEVEL join interrupted"
+    echo "[orchestrate] [join] interrupted; the throwaway worktree is removed and the next level does not start." >&2
+  else
+    _emit_event "$_JOIN_MEGADIR" wave blocked "converge: join interrupted; nothing merged"
+    echo "[orchestrate] [join] interrupted; the throwaway worktrees are removed and nothing merged." >&2
+  fi
   exit "$1"
 }
 
@@ -2491,6 +2497,139 @@ _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HE
     bash "$kf" names "$tmp/merged.log" "$repo" "$base" 2>/dev/null | grep -vxFf "$tmp/base.set" | sed 's/^/    new failure: /'
   } >&2
   return 1
+}
+
+# ---- Tiered verification, serial path (docs/specs, tiered-verification rule 4) ----
+# The serial loop never merges: each worker merges its own PR, so there is no pre-merge head to pin and
+# no base run to diff against. A tiered serial run joins once per DAG level instead, at the top of every
+# cycle, before the next sub-goal dispatches: a level is joined when every sub-goal at that level or a
+# lower one is checked and it has no green record. The join runs `[test] join_cmd` on the base tree as it
+# is now (the level's merges are in it), in a throwaway worktree, judged against the lead's committed
+# known-failures list through the same `known-failures.sh classify` the wave join uses. Every config key
+# is read at the base sha pinned before the first dispatch, so no worker's merge can change the bar.
+# A green join leaves `.orchestrate/join-level-<n>.ok` (holding its executed count); a red one halts the
+# loop, and a re-run joins the level again before it dispatches anything.
+
+# _sg_levels <roadmap>: "<id>\t<level>" per sub-goal. Level 0 has no `depends`; otherwise 1 + the deepest
+# dependency. A fixpoint over the whole table, so a cycle or a dense DAG ends in at most n+1 passes.
+_sg_levels() {
+  local roadmap="$1" id _p _c deps
+  while IFS=$'\t' read -r id _p _c; do
+    deps=$(printf '%s' "$(_sg_line "$roadmap" "$id")" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" | tr '\n' ' ' || true)
+    printf '%s %s\n' "$id" "$deps"
+  done < <(_subgoals "$roadmap") | awk '
+    { id = $1; ids[++n] = id; lvl[id] = 0; nd[id] = NF - 1; for (i = 2; i <= NF; i++) dep[id, i - 1] = $i }
+    END {
+      for (pass = 0; pass <= n; pass++) {
+        ch = 0
+        for (k = 1; k <= n; k++) {
+          id = ids[k]; m = 0
+          for (j = 1; j <= nd[id]; j++) { d = dep[id, j]; if ((d in lvl) && lvl[d] + 1 > m) m = lvl[d] + 1 }
+          if (m > lvl[id]) { lvl[id] = m; ch = 1 }
+        }
+        if (!ch) break
+      }
+      for (k = 1; k <= n; k++) printf "%s\t%s\n", ids[k], lvl[ids[k]]
+    }'
+}
+
+_SERIAL_TIERED=""
+_SERIAL_CFG_BASE=""
+# _serial_level_join <megadir> <roadmap>: join every level that is due. 0 = go on (not a tiered run, nothing
+# due, or every due join green); 1 = stop the loop.
+_serial_level_join() {
+  [ "$_SERIAL_TIERED" != 0 ] || return 0
+  local megadir="$1" roadmap="$2" repo base table lvl o c l _p minpending=999999 ev="$1/.orchestrate"
+  repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null) || { _SERIAL_TIERED=0; return 0; }
+  if [ -z "$_SERIAL_TIERED" ]; then
+    _SERIAL_TIERED=0
+    base=$(_verify_base "$repo")
+    if _verify_tiered "$repo" "$base"; then
+      _SERIAL_TIERED=1
+      _SERIAL_CFG_BASE=$(git -C "$repo" rev-parse --verify -q "$base^{commit}") || _SERIAL_CFG_BASE="$base"
+    fi
+  fi
+  [ "$_SERIAL_TIERED" = 1 ] || return 0
+  table=$(_sg_levels "$roadmap")
+  while IFS=$'\t' read -r o _p c; do
+    [ "$c" = 0 ] || continue
+    l=$(printf '%s\n' "$table" | awk -F'\t' -v i="$o" '$1 == i {print $2}')
+    [ "$l" -ge "$minpending" ] || minpending=$l
+  done < <(_subgoals "$roadmap")
+  for lvl in $(printf '%s\n' "$table" | cut -f2 | sort -nu); do
+    [ "$lvl" -lt "$minpending" ] || break
+    [ ! -f "$ev/join-level-$lvl.ok" ] || continue
+    _serial_join "$megadir" "$repo" "$_SERIAL_CFG_BASE" "$lvl" || return 1
+  done
+  return 0
+}
+
+_serial_join() {  # megadir repo cfgbase level
+  local megadir="$1" repo="$2" cfg="$3" lvl="$4" kf="$LIB_ROOT/gate/known-failures.sh" cmd cur bsha remote tmp rc=0
+  cmd=$(kit_config_get_at "$repo" "$cfg" test.join_cmd "")
+  if [ -z "$cmd" ]; then
+    _emit_event "$megadir" - blocked "level $lvl join has no [test] join_cmd at the base"
+    echo "[orchestrate] [join] [mega] verify is tiered but [test] join_cmd is not set at ${cfg:0:12}; the next level does not start." >&2
+    return 1
+  fi
+  cur=$(_verify_base "$repo")
+  bsha=$(git -C "$repo" rev-parse --verify -q "$cur^{commit}") || { echo "[orchestrate] [join] cannot resolve the base '$cur'; the next level does not start." >&2; return 1; }
+  case "$cur" in
+    refs/remotes/origin/*)
+      # A failed fetch leaves a stale ref and a green on it proves nothing: the join needs origin's tip.
+      remote=$(git -C "$repo" ls-remote origin "refs/heads/${cur#refs/remotes/origin/}" 2>/dev/null | cut -f1)
+      if [ "$remote" != "$bsha" ]; then
+        _emit_event "$megadir" - blocked "level $lvl join: base is not origin's tip"
+        echo "[orchestrate] [join] the base ${bsha:0:12} is not origin's current tip (fetch failed or origin unreachable); the next level does not start." >&2
+        return 1
+      fi ;;
+  esac
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/kit-join.XXXXXX") || return 1
+  _JOIN_TMP="$tmp"; _JOIN_REPO="$repo"; _JOIN_MEGADIR="$megadir"; _JOIN_LEVEL="$lvl"; _JOIN_REFS=()
+  local old_int old_term
+  old_int=$(trap -p INT); old_term=$(trap -p TERM)
+  trap '_wave_join_interrupted 130' INT
+  trap '_wave_join_interrupted 143' TERM
+  _serial_join_run "$megadir" "$repo" "$cfg" "$lvl" "$bsha" "$tmp" "$cmd" "$kf" || rc=$?
+  _wave_join_cleanup "$repo" "$tmp"
+  trap - INT TERM
+  [ -z "$old_int" ] || eval "$old_int"; [ -z "$old_term" ] || eval "$old_term"
+  _JOIN_LEVEL=""
+  return "$rc"
+}
+
+_serial_join_run() {  # megadir repo cfg level bsha tmp cmd kf
+  local megadir="$1" repo="$2" cfg="$3" lvl="$4" bsha="$5" tmp="$6" cmd="$7" kf="$8" rc=0 cls cnt prev
+  git -C "$repo" worktree add --detach -q "$tmp/base" "$bsha" >/dev/null 2>&1 \
+    || { echo "[orchestrate] [join] cannot create the join worktree; the next level does not start." >&2; return 1; }
+  _say "[orchestrate] [join] level $lvl complete; full suite on the base tree (${bsha:0:12}) ..."
+  _join_run "$tmp/base" "$cmd" "$tmp/level.log" || rc=$?
+  cnt=$(bash "$kf" count "$tmp/level.log" "$repo" "$cfg" 2>/dev/null)
+  if [ "$rc" = 0 ]; then
+    _serial_join_green "$megadir" "$lvl" "$cnt"
+    _say "[orchestrate] [join] level $lvl green."
+    return 0
+  fi
+  # The executed count may not drop below the last green level's, so a node cannot pass by deleting tests.
+  prev=$(cat "$megadir"/.orchestrate/join-level-*.ok 2>/dev/null | grep -E '^[0-9]+$' | sort -n | tail -1)
+  cls=$(bash "$kf" classify "$tmp/level.log" "$repo" "$cfg" --exit "$rc" ${prev:+--prev-count "$prev"} 2>"$tmp/cls.err")
+  if [ "$cls" = known ]; then
+    _serial_join_green "$megadir" "$lvl" "$cnt"
+    _say "[orchestrate] [join] level $lvl fails only what the known-failures list names; green."
+    return 0
+  fi
+  _emit_event "$megadir" - blocked "level $lvl join red on the base tree (exit $rc)"
+  {
+    echo "[orchestrate] [join] RED: the full suite fails after level $lvl (exit $rc); the next level does not start. The lead routes it."
+    sed 's/^/    /' "$tmp/cls.err"
+    bash "$kf" names "$tmp/level.log" "$repo" "$cfg" 2>/dev/null | grep -vxFf <(bash "$kf" read "$repo" "$cfg" 2>/dev/null) | sed 's/^/    new failure: /'
+  } >&2
+  return 1
+}
+
+_serial_join_green() {  # megadir level count
+  mkdir -p "$1/.orchestrate" 2>/dev/null
+  printf '%s\n' "${3:--}" > "$1/.orchestrate/join-level-$2.ok"
 }
 # -----------------------------------------------------------------------------------------------
 
@@ -3012,7 +3151,15 @@ cmd_run() {
     return 0
   fi
 
+  _SERIAL_TIERED=""
   while :; do
+    # A tiered run joins every due DAG level before anything dispatches (tiered verification, rule 4); a no-op unless
+    # `[mega] verify = "tiered"`. A red join halts the loop, and a re-run joins the level again first.
+    if ! _serial_level_join "$dir" "$roadmap"; then
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      echo "[orchestrate] [join] a level join failed; halting (no self-claim, the next level does not start)." >&2
+      return 1
+    fi
     # Size-dispatch: serial-vs-wave decided per cycle on the
     # ADMITTED count (post-`_wave_gate`), NOT the raw ready size (a no-deps mega-goal has ready size
     # N, so raw size can't gate the serial path). WAVE_CAP defaults to 2 (waves ON); at WAVE_CAP=1 this guard is

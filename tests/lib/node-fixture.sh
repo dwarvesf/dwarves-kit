@@ -15,6 +15,7 @@
 # The stub suite (tests/suite.sh in the repo) is driven by env:
 #   STUB_FAIL="a,b"   failures to print as `  FAIL: <name>`
 #   STUB_COUNT=<n>    passed count in the summary (default 10)
+#   STUB_COUNT_SEQ=<file>  one count per line, one consumed per invocation (then STUB_COUNT)
 #   STUB_CRASH=1      print a crash and exit 1 with no failure line
 #   STUB_LOG=<file>   append one line per invocation (args and cwd)
 # and fails on its own when a.txt and b.txt both exist (the semantic-conflict pair: each node alone is green).
@@ -31,6 +32,7 @@ EOT
 if [ -f a.txt ] && [ -f b.txt ]; then echo "  FAIL: a and b conflict"; fails=$((fails + 1)); fi
 count="${STUB_COUNT:-10}"
 case "$(pwd -P)" in */merged) count="${STUB_COUNT_MERGED:-$count}" ;; esac
+if [ -n "${STUB_COUNT_SEQ:-}" ] && [ -s "$STUB_COUNT_SEQ" ]; then count="$(head -n 1 "$STUB_COUNT_SEQ")"; tail -n +2 "$STUB_COUNT_SEQ" > "$STUB_COUNT_SEQ.n"; mv -f "$STUB_COUNT_SEQ.n" "$STUB_COUNT_SEQ"; fi
 echo "suite: $count passed, $fails FAILED"
 [ "$fails" = 0 ]
 '

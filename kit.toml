@@ -105,7 +105,8 @@ turn_cap           = 300        # [impl] TURN_CAP. Per-agent turn CEILING for `c
 verify             = "off"      # [impl] "off" | "tiered" (SPEC-421). `tiered`: every node verification step runs the
                                 #        `affected` selection, and the full suite runs once per wave on the merged
                                 #        tree inside `_wave_converge`. Read at the base commit (`kit_config_get_at`),
-                                #        never from a node's branch. Refused with WAVE_ROLLING=1.
+                                #        never from a node's branch. Refused with WAVE_ROLLING=1. The serial path runs the
+                                #        join once per DAG level on the base tree.
 turn_cap_segments  = 10         # [impl] TURN_CAP_SEGMENTS. Max segments per sub-goal per
                                 #        `orchestrate.sh run` invocation -- the stuck-loop
                                 #        bound. Exhaustion halts the sub-goal for a human

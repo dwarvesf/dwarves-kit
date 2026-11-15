@@ -195,3 +195,4 @@ CHANGELOG.md
 - **Rejected:** none of the relayed findings.
 - **Cost accepted:** each repeat still runs. The bet is that `affected` makes repeats cheap enough; the pilot measures it. If it does not, v2's trust work gets its own spec.
 - The pilot threshold (half the node wall time) is this spec's pick, not the owner's.
+- **Serial path (rule 4), built after the wave join.** The serial loop never merges, so its join runs after each DAG level's merges on the base tree and gates the next level; it cannot hold a level's merges back. See `docs/implementation-notes/serial-path-join.md`.
