@@ -2368,11 +2368,12 @@ _verify_tiered() {  # repo base
 # green or fails only on what the base run already failed; 1 otherwise (nothing may merge). On 0 the
 # pinned heads are in _JOIN_HEADS, one per id in order.
 _JOIN_HEADS=()
+_JOIN_REFS=()
 _wave_join() {
   local megadir="$1" repo="$2" base="$3"; shift 3
   local roadmap="$megadir/ROADMAP.md" gh="${MEGA_MERGE_GH:-gh}" kf="$LIB_ROOT/gate/known-failures.sh"
   local id pr sha cmd bsha tmp rc=0
-  _JOIN_HEADS=()
+  _JOIN_HEADS=(); _JOIN_REFS=()
   cmd=$(kit_config_get_at "$repo" "$base" test.join_cmd "")
   if [ -z "$cmd" ]; then
     _emit_event "$megadir" wave blocked "converge: join has no [test] join_cmd at the base"
@@ -2390,16 +2391,17 @@ _wave_join() {
     case "$sha" in *[!0123456789abcdef]*) echo "[orchestrate] [join] PR #$pr head is not a commit id; nothing merges." >&2; return 1 ;; esac
     if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
       git -C "$repo" fetch -q origin "+refs/pull/$pr/head:refs/kit/join-pr-$pr" >/dev/null 2>&1 || :
+      _JOIN_REFS+=("refs/kit/join-pr-$pr")
       git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null || {
         _emit_event "$megadir" "$id" blocked "converge: join cannot fetch the head of PR #$pr"
         echo "[orchestrate] [join] head $sha of PR #$pr ($id) is not in the repo and could not be fetched; nothing merges." >&2
-        return 1
+        _wave_join_drop_refs "$repo"; return 1
       }
     fi
     _JOIN_HEADS+=("$sha")
   done
-  bsha=$(git -C "$repo" rev-parse --verify -q "$base^{commit}") || { echo "[orchestrate] [join] cannot resolve the base '$base'; nothing merges." >&2; return 1; }
-  tmp=$(mktemp -d "${TMPDIR:-/tmp}/kit-join.XXXXXX") || return 1
+  bsha=$(git -C "$repo" rev-parse --verify -q "$base^{commit}") || { echo "[orchestrate] [join] cannot resolve the base '$base'; nothing merges." >&2; _wave_join_drop_refs "$repo"; return 1; }
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/kit-join.XXXXXX") || { _wave_join_drop_refs "$repo"; return 1; }
   # An interrupt mid-join stops the suite, removes the throwaway worktrees, marks the wave failed and
   # leaves the run with a signal exit code; nothing merges. The prior INT/TERM traps come back after.
   _JOIN_TMP="$tmp"; _JOIN_REPO="$repo"; _JOIN_MEGADIR="$megadir"
@@ -2420,6 +2422,14 @@ _wave_join_cleanup() {  # repo tmp
   git -C "$1" worktree remove --force "$2/merged" >/dev/null 2>&1 || :
   git -C "$1" worktree prune >/dev/null 2>&1 || :
   rm -rf "$2"
+  _wave_join_drop_refs "$1"
+}
+
+# The refs the join fetched for PR heads that were not local; the merge hook fetches its own.
+_wave_join_drop_refs() {  # repo
+  local r
+  for r in ${_JOIN_REFS[@]+"${_JOIN_REFS[@]}"}; do git -C "$1" update-ref -d "$r" >/dev/null 2>&1 || :; done
+  _JOIN_REFS=()
 }
 
 _JOIN_PID=""
@@ -2572,7 +2582,17 @@ _wave_converge() {  # megadir [id...] [--peers id...]
   local lockdir="$megadir/.orchestrate/flip.lock"
   local pr rc branch rid state lane="${WAVE_MERGE_LANE:-full}"
   local tiered=0 joins=0 todo=( "${ordered[@]}" ) mergeable pins=() extra i k moved landed
-  _verify_tiered "$repo" "$base" && tiered=1
+  if ! git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null 2>&1; then
+    # No readable base commit: [mega] verify cannot be read, and the default is not an answer. Only an
+    # operator file that sets it off explicitly lets the wave go on as an unjoined one.
+    if [ "$(_kit_toml_get "$(kit_config_operator)" mega verify)" != off ]; then
+      _emit_event "$megadir" wave blocked "converge: base '$base' is unreadable, so [mega] verify cannot be read; nothing merged"
+      echo "[orchestrate] [converge] the base '$base' cannot be read, so [mega] verify cannot be read; stopping, nothing merged. Fix the base ref (git fetch), or set [mega] verify = \"off\" in the operator config." >&2
+      return 1
+    fi
+  elif _verify_tiered "$repo" "$base"; then
+    tiered=1
+  fi
   while :; do
     pins=(); mergeable=()
     if [ "$tiered" = 1 ]; then

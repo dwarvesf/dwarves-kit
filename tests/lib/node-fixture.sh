@@ -83,6 +83,20 @@ nf_node() {
   git -C "$d/push" checkout -q main 2>/dev/null
 }
 
+# nf_pullref <dir> <pr> <file> <content>: a PR head that exists only as refs/pull/<pr>/head on origin, so the
+# join must fetch it; the sha lands in heads/<pr>.
+nf_pullref() {
+  local d="$1" pr="$2" file="$3" content="$4"
+  git -C "$d/push" checkout -q -b "pull-$pr" main 2>/dev/null
+  printf '%s\n' "$content" > "$d/push/$file"
+  nf_git "$d/push" add -A
+  nf_git "$d/push" commit -q -m "feat: pull $pr"
+  git -C "$d/push" push -q origin "HEAD:refs/pull/$pr/head" 2>/dev/null
+  mkdir -p "$d/heads"
+  git -C "$d/push" rev-parse HEAD > "$d/heads/$pr"
+  git -C "$d/push" checkout -q main 2>/dev/null
+}
+
 nf_mega() {
   local d="$1" spec id branch pr n=0
   shift

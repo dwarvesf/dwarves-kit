@@ -158,6 +158,31 @@ if [ "$rc" = 143 ] && [ "$left" = 0 ] && [ "$(hooklines)" = 0 ] && [ "$(events "
 else fail "C6 interrupt: rc=$rc worktrees-left=$left hook=$(hooklines) events '$(events "$D")' out: $(tr '\n' ' ' < "$D/out.txt")"; fi
 pkill -f "$D/work" 2>/dev/null || true
 
+# The join's fetched PR refs do not outlive the wave, landed or blocked.
+mk_case refsgreen tiered; D=$CASE_DIR
+nf_pullref "$D" 11 c.txt three; nf_pullref "$D" 12 d.txt four
+nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12
+converge "$D" SG-01 SG-02; rc=$?
+left=$(git -C "$D/work" for-each-ref refs/kit | wc -l | tr -d ' ')
+[ "$rc" = 0 ] && grep -q . "$HOOK_LOG" && [ "$left" = 0 ] && pass "C6: a landed wave leaves no refs/kit/join-pr-N refs" || fail "C6 refs green: rc=$rc left=$left out: $(tr '\n' ' ' < "$D/out.txt")"
+mk_case refsred tiered; D=$CASE_DIR
+nf_pullref "$D" 11 a.txt one; nf_pullref "$D" 12 b.txt two
+nf_mega "$D" SG-01:feat/node-a:11 SG-02:feat/node-b:12
+converge "$D" SG-01 SG-02; rc=$?
+left=$(git -C "$D/work" for-each-ref refs/kit | wc -l | tr -d ' ')
+[ "$rc" = 1 ] && [ "$left" = 0 ] && pass "C6: a blocked wave leaves no refs/kit/join-pr-N refs" || fail "C6 refs red: rc=$rc left=$left out: $(tr '\n' ' ' < "$D/out.txt")"
+
+# An unreadable base fails closed: verify is not read as the default off, unless the operator set it off.
+mk_case nobase tiered; D=$CASE_DIR
+rm -rf "$D/blank"; mkdir -p "$D/blank/mega/goals"; git init -q "$D/blank" 2>/dev/null
+cp "$D/work/mega/ROADMAP.md" "$D/blank/mega/"; cp "$D/work/mega/goals/"* "$D/blank/mega/goals/"
+( bash -c 'source "$1"; shift; _wave_converge "$@"' _ "$ORCH" "$D/blank/mega" SG-01 SG-02 ) >| "$D/out.txt" 2>&1; rc=$?
+ev=$(cut -f2,3 "$D/blank/mega/.orchestrate/events.log" 2>/dev/null | tr '\t\n' ': ')
+[ "$rc" = 1 ] && [ "$(hooklines)" = 0 ] && [ "$ev" = "wave:blocked " ] && grep -q 'base' "$D/out.txt" && pass "C6: an unreadable base stops the wave with a blocked event, nothing merged" || fail "C6 nobase: rc=$rc hook=$(hooklines) events '$ev' out: $(tr '\n' ' ' < "$D/out.txt")"
+printf '[mega]\nverify = "off"\n' > "$D/cfg-op/kit.toml"; rm -rf "$D/blank/mega/.orchestrate"
+( bash -c 'source "$1"; shift; _wave_converge "$@"' _ "$ORCH" "$D/blank/mega" SG-01 SG-02 ) >| "$D/out.txt" 2>&1; rc=$?
+[ "$rc" = 0 ] && [ "$(hooklines)" = 2 ] && pass "C6: an unreadable base proceeds only when the operator config sets verify = off" || fail "C6 nobase off: rc=$rc hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"
+
 # mega-merge itself: --expect-head refuses a moved head before anything else, and never reaches gh
 mkdir -p "$TMP/mm-bin"
 printf '#!/usr/bin/env bash\ntouch "%s/gh-called"\nexit 1\n' "$TMP" > "$TMP/mm-bin/gh"; chmod +x "$TMP/mm-bin/gh"
