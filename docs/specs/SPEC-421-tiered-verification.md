@@ -1,7 +1,7 @@
 # Spec: tiered verification for mega-goal runs (node, wave join, release)
 
 Generated: 2026-11-15
-Status: DRAFT (revision 3: rescoped to cheap re-runs after the confirmation review)
+Status: SHIPPED
 Lane: full (the build touches `lib/gate/`, `lib/queue/orchestrate.sh` and the verification pipeline in `commands/execute.md`, all enforcement surfaces)
 Depth: standard (every re-verification point below was read live in the tree and in the two mega-goal skills; the Spacedown numbers come from one run on clean main)
 Type: spec-feature
