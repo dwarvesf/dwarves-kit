@@ -223,7 +223,7 @@ _land_proof_block() {
 # _LAND_IGNORED_BUILTIN -- ignored entries the guard always allows: build output, tool caches,
 # local config that must never be committed, and the kit's own state. Space-separated, three
 # forms (see _land_ignored_allowed). `*` in a path form crosses `/`, which is fine here.
-_LAND_IGNORED_BUILTIN="node_modules .wrangler dist *.tsbuildinfo __pycache__ target .pytest_cache/ .venv/ .mypy_cache/ .ruff_cache/ .env .env.* .envrc .dev.vars .DS_Store .claude/session-state tests/.cache lib/*/bin/*-rs"
+_LAND_IGNORED_BUILTIN="node_modules .wrangler dist build .build *.tsbuildinfo __pycache__ target .pytest_cache/ .venv/ .mypy_cache/ .ruff_cache/ .env .env.* .envrc .dev.vars .DS_Store .claude/session-state tests/.cache lib/*/bin/*-rs"
 
 # _land_ignored_allowed <path> -- 0 when the built-in list or the operator's
 # wrap.land_ignored_allow covers <path> (a `git status` entry, trailing `/` already

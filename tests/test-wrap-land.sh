@@ -2817,6 +2817,24 @@ mkdir -p "$IG_WT/tools/x/data/a"; ln -s "$IG_WT/base.txt" "$IG_WT/tools/x/data/a
 ig_land ig4j
 chk "4j: a symlink in a nested subdir counts as content and exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 
+echo "--- 4k: SwiftPM and script build output (.build, build) passes; a non-build ignored file still refuses"
+_ig_build ig4k '.build/\nbuild/\n' ""
+mkdir -p "$IG_WT/tools/x/mac/.build/debug" "$IG_WT/tools/x/mac/build"
+echo x > "$IG_WT/tools/x/mac/.build/debug/x"; echo x > "$IG_WT/tools/x/mac/build/x"
+chk_has "4k: fixture check: both build dirs are ignored" \
+  "$(git -C "$IG_WT" status --porcelain --ignored=matching)" "!! tools/x/mac/build/"
+ig_land ig4k
+chk "4k: mac/.build/x and mac/build/x exit 0" "$rc"
+chk_no "4k: no refusal" "$out" "LAND REFUSED"
+_ig_build ig4l '.build/\nbuild/\ndata/\n' ""
+mkdir -p "$IG_WT/tools/x/mac/.build" "$IG_WT/tools/x/mac/build" "$IG_WT/tools/x/data"
+echo x > "$IG_WT/tools/x/mac/.build/x"; echo x > "$IG_WT/tools/x/mac/build/x"; echo '{}' > "$IG_WT/tools/x/data/secret.json"
+ig_land ig4l
+chk "4l: data/secret.json beside the build dirs exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "4l: names data" "$out" "tools/x/data"
+chk_no "4l: does not name the build dirs" "$out" "mac/build"
+ig_nopush "4l" ig4l
+
 echo "--- 5: a nested .gitignore match refuses with its full path"
 _ig_build ig5 "" 'mkdir -p tools/x && echo t > tools/x/test_x.sh && echo notes.txt > tools/x/.gitignore'
 echo n > "$IG_WT/tools/x/notes.txt"
