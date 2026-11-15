@@ -510,7 +510,7 @@ tc_start_failure() {
 tc_status_and_dry_run() {
   case_begin status-and-dry-run
   mkcase
-  oenv bash "$ORCH" status "$MEGA" >/dev/null 2>&1; expect "$?" 3 "status with no Orca run exits 3"
+  oenv bash "$ORCH" status "$MEGA" >/dev/null 2>&1; expect "$?" 0 "status with no Orca run prints the claude-backend report (exit 0)"
   out=$(orun --dry-run 2>&1); expect "$?" 0 "dry-run exits 0"
   expect_match "$out" 'task SG-03:accept' "dry-run names the accept Task"
   expect "$(ls "$STATE/calls.log" 2>/dev/null)" "" "dry-run makes no Orca call"

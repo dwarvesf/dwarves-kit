@@ -682,5 +682,71 @@ R5="$TMP/mg-retry5"; mk_retry_fixture "$R5"; run_retry "$R5" 3 2; rc=$?
   && pass "no-claim retry: NOCLAIM_RETRIES=2 -> two retries, third session flips" \
   || { fail "no-claim retry: NOCLAIM_RETRIES=2 wrong (rc=$rc sessions=$(cat "$TMP/retry.count" 2>/dev/null))"; cat "$TMP/retry.out"; }
 
+# 8: claude-backend `status` (no Orca run): read-only report of roadmap counts, running sub-goals with
+# stream size/age and live session state, the last 5 events, and driver liveness.
+SM="$TMP/mg-status"; mkdir -p "$SM/.orchestrate"
+cat > "$SM/ROADMAP.md" <<'RM'
+# Mega-goal: status fixture
+## Sub-goals
+- [x] SG-01 done thing , auto , PR #1
+- [x] SG-02 shipped thing , auto , PR #2
+- [ ] SG-03 running thing , auto , PR #__
+- [ ] SG-04 queued thing , auto , PR #__
+RM
+printf '%s\t%s\t%s\t%s\n' \
+  2026-01-01T00:00:00Z SG-01 executing m1 2026-01-01T00:01:00Z SG-01 shipped box \
+  2026-01-01T00:02:00Z SG-02 executing m2 2026-01-01T00:03:00Z SG-02 shipped box \
+  2026-01-01T00:04:00Z SG-03 executing "model=x" > "$SM/.orchestrate/events.log"
+printf '{"type":"x"}\n' > "$SM/.orchestrate/SG-03.stream.jsonl"
+touch -t 200001010000 "$SM/.orchestrate/SG-03.stream.jsonl"   # ancient: the age is huge, deterministically
+printf 'seed\n' > "$SM/.orchestrate/SG-02.stream.jsonl"       # a shipped sub-goal's leftover stream
+sm_before=$(cd "$SM" && find . -type f -exec cksum {} + | sort | cksum)
+sm_out=$(WATCHDOG_STALL_SECS=60 bash "$ORCH" status "$SM" 2>&1); sm_rc=$?
+sm_after=$(cd "$SM" && find . -type f -exec cksum {} + | sort | cksum)
+{ [ "$sm_rc" = 0 ] && ! printf '%s' "$sm_out" | grep -q 'no Orca run' \
+  && printf '%s\n' "$sm_out" | grep -qF 'roadmap: done 2 / 4; open: SG-03 SG-04'; } \
+  && pass "status (claude backend): exit 0, roadmap counts + open ids, no 'no Orca run'" \
+  || { fail "status (claude backend): wrong header/counts (rc=$sm_rc)"; printf '%s\n' "$sm_out"; }
+printf '%s\n' "$sm_out" | grep -E '^  SG-03 .*since 2026-01-01T00:04:00Z .*stream 13B age [0-9]+s.* STALE' >/dev/null \
+  && pass "status: running SG-03 listed with start time, stream size, age, STALE past WATCHDOG_STALL_SECS" \
+  || { fail "status: SG-03 running row wrong"; printf '%s\n' "$sm_out"; }
+printf '%s\n' "$sm_out" | grep -E '^  SG-0[12] ' >/dev/null \
+  && { fail "status: a shipped sub-goal is listed as running"; printf '%s\n' "$sm_out"; } \
+  || pass "status: shipped SG-01/SG-02 are not running"
+printf '%s\n' "$sm_out" | grep -qF 'driver: no driver' \
+  && pass "status: prints 'no driver' when no driver runs" || { fail "status: driver line wrong"; printf '%s\n' "$sm_out"; }
+[ "$sm_before" = "$sm_after" ] && pass "status: read-only (no file written or changed)" || fail "status: wrote into the megagoal dir"
+[ "$(printf '%s\n' "$sm_out" | sed -n '/^last events:/,/^driver:/p' | grep -c '^  2026')" = 5 ] \
+  && pass "status: prints the last 5 events" || { fail "status: last-5 events wrong"; printf '%s\n' "$sm_out"; }
+
+# 8b: live session state + driver, only where lsof exists (skipped cleanly otherwise).
+if command -v lsof >/dev/null 2>&1; then
+  sleep 20 >> "$SM/.orchestrate/SG-03.stream.jsonl" & SM_SESS=$!
+  mkdir -p "$TMP/fakedrv"; printf 'sleep 20\n' > "$TMP/fakedrv/orchestrate.sh"
+  WAVE_CAP=3 WAVE_ROLLING=1 bash "$TMP/fakedrv/orchestrate.sh" run "$SM" & SM_DRV=$!
+  sleep 1
+  sm_out=$(bash "$ORCH" status "$SM" 2>&1)
+  printf '%s\n' "$sm_out" | grep -E "^  SG-03 .*pid $SM_SESS state " | grep -v STOPPED >/dev/null \
+    && pass "status: live session pid + state found via the stream file" \
+    || { fail "status: session pid/state missing"; printf '%s\n' "$sm_out"; }
+  printf '%s\n' "$sm_out" | grep -qF "driver: pid $SM_DRV alive (WAVE_CAP=3 WAVE_ROLLING=1)" \
+    && pass "status: driver pid alive with WAVE_CAP/WAVE_ROLLING" \
+    || { fail "status: driver line wrong"; printf '%s\n' "$sm_out"; }
+  kill -STOP "$SM_SESS"; sleep 1
+  sm_out=$(bash "$ORCH" status "$SM" 2>&1)
+  printf '%s\n' "$sm_out" | grep -E "^  SG-03 .*pid $SM_SESS state T.* STOPPED" >/dev/null \
+    && pass "status: a stopped (T) session is flagged STOPPED" \
+    || { fail "status: STOPPED flag missing"; printf '%s\n' "$sm_out"; }
+  kill -CONT "$SM_SESS" 2>/dev/null; kill "$SM_SESS" "$SM_DRV" 2>/dev/null; wait "$SM_SESS" "$SM_DRV" 2>/dev/null
+else
+  pass "status: lsof absent, live-session checks skipped"
+fi
+
+# 8c: the Orca path is untouched: a dir WITH an Orca run never prints the claude report.
+mkdir -p "$SM/.orchestrate/orca"; echo run-1 > "$SM/.orchestrate/orca/run"
+sm_out=$(bash "$ORCH" status "$SM" 2>&1)
+printf '%s' "$sm_out" | grep -qF 'claude backend status:' \
+  && fail "status: a dir with an Orca run printed the claude report" || pass "status: an Orca run still takes the Orca status path"
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }
