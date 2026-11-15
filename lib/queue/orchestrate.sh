@@ -2541,6 +2541,8 @@ _wave_converge() {  # megadir [id...] [--peers id...]
     if [ "$tiered" = 1 ]; then
       for id in "${todo[@]}"; do [ -n "$(_sg_pr "$roadmap" "$id")" ] && mergeable+=("$id"); done
       if [ "${#mergeable[@]}" -gt 0 ]; then
+        # A rerun joins against the base as it is now: the heads merged so far moved it.
+        [ "$joins" -gt 0 ] && base=$(_verify_base "$repo")
         joins=$((joins + 1))
         _wave_join "$megadir" "$repo" "$base" "${mergeable[@]}" || return 1
         pins=( "${_JOIN_HEADS[@]}" )

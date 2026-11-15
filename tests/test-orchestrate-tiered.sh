@@ -125,6 +125,14 @@ else fail "C7 mega-merge: rc=$rc gh-called=$([ -f "$TMP/gh-called" ] && echo yes
 out=$(PATH="$TMP/mm-bin:$PATH" MEGA_MERGE_PR_HEAD_CMD="$TMP/head-cmd" MEGA_MERGE_GATE_LEDGER=/bin/true bash "$MM" merge 7 somerid full --expect-head="$B" 2>&1) || :
 printf '%s' "$out" | grep -q 'head moved since the wave join' && fail "C7: a matching --expect-head was refused" || pass "C7: a matching --expect-head is not refused by the pin"
 
+rm -f "$TMP/gh-called"
+for bad in "" "zz" "${A:0:12}"; do
+  out=$(PATH="$TMP/mm-bin:$PATH" MEGA_MERGE_PR_HEAD_CMD="$TMP/head-cmd" MEGA_MERGE_GATE_LEDGER=/bin/true bash "$MM" merge 7 somerid full --execute --expect-head "$bad" 2>&1); rc=$?
+  [ "$rc" = 64 ] && [ ! -f "$TMP/gh-called" ] && pass "C7: --expect-head '$bad' is refused, never read as no expectation" || fail "C7 bad expect '$bad': rc=$rc out: $out"
+done
+out=$(PATH="$TMP/mm-bin:$PATH" MEGA_MERGE_PR_HEAD_CMD="$TMP/head-cmd" MEGA_MERGE_GATE_LEDGER=/bin/true bash "$MM" merge 7 somerid full --execute --expect-head 2>&1); rc=$?
+[ "$rc" = 64 ] && pass "C7: a trailing --expect-head with no value is refused" || fail "C7 trailing flag: rc=$rc out: $out"
+
 # ---- C8 rolling-refused
 mk_case rolling tiered; D=$CASE_DIR
 printf '#!/usr/bin/env bash\necho dispatched >> "%s/claude.log"\nexit 0\n' "$TMP" > "$TMP/claude-stub"; chmod +x "$TMP/claude-stub"

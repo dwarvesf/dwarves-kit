@@ -411,16 +411,23 @@ merge() {
     ''|*[!0-9]*) echo "merge: <pr> must be a bare PR number (got '$pr')" >&2; return 64 ;;
   esac
 
-  local execute=0 posture_flag="" expect_head="" arg
+  local execute=0 posture_flag="" expect_head="" have_expect=0 arg
   while [ $# -gt 0 ]; do
     arg="$1"; shift
     case "$arg" in
       --execute) execute=1 ;;
       --posture=*) posture_flag="${arg#--posture=}" ;;
-      --expect-head=*) expect_head="${arg#--expect-head=}" ;;
-      --expect-head) expect_head="${1:-}"; [ $# -gt 0 ] && shift ;;
+      --expect-head=*) have_expect=1; expect_head="${arg#--expect-head=}" ;;
+      --expect-head) have_expect=1; expect_head="${1:-}"; [ $# -gt 0 ] && shift ;;
     esac
   done
+  # A flag with no usable value never reads as "no expectation": it would merge an unjoined head.
+  if [ "$have_expect" -eq 1 ]; then
+    case "$expect_head" in
+      *[!0123456789abcdef]*|'') echo "merge: --expect-head needs a full commit id (40 lowercase hex); refusing" >&2; return 64 ;;
+    esac
+    [ "${#expect_head}" -eq 40 ] || { echo "merge: --expect-head needs a full commit id (40 lowercase hex); refusing" >&2; return 64; }
+  fi
   local posture; posture="$(_resolve_posture "$posture_flag")"
 
   # Head pin. Read the head FIRST: the merge below succeeds only if the PR head still equals H, and H
