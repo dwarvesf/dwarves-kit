@@ -68,6 +68,18 @@ Output:
 Verdict: PASS (25 checks)
 ```
 
+The regression check, once as a whole on the final tree:
+
+```
+Command: RUN_ALL_JOBS=4 bash tests/run-all.sh --changed --time
+Exit: 0
+Output:
+  run-all: all 78 suites passed, 0 skipped for missing tooling
+Verdict: PASS
+```
+
+An earlier run of the same command had one red suite, `test-no-scattered-ids`, for a spec id in two `lib` comments; the comments were reworded and the whole run repeated green.
+
 ## Fails without the change
 
 The new suite against `lib/queue/orchestrate.sh` as it is on master (`git show origin/master:lib/queue/orchestrate.sh`): 14 of the 19 checks go red (no level table, no join). The checks that stay green are the ones that assert nothing runs (`verify = off`, the fan-out cycle bound on the new helper's absence, the known-list pass-through, no leftover worktree).
