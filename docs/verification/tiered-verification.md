@@ -14,7 +14,7 @@ Output:
   PASS C5: exit 1 with no parsed failure is fail
   PASS C5: without failure_line at the base a red run is a plain failure
   All known-failures tests passed.
-Verdict: PASS (21 checks, cases C1 to C5)
+Verdict: PASS (cases C1 to C5)
 ```
 
 ```
@@ -25,7 +25,7 @@ Output:
   PASS C8: verify = tiered with WAVE_ROLLING=1 exits non-zero before any dispatch
   PASS C9: with verify = off the orchestrator output equals the committed golden
   All tiered orchestrate tests passed.
-Verdict: PASS (17 checks, cases C6 to C9)
+Verdict: PASS (25 checks, cases C6 to C9)
 ```
 
 ```
@@ -44,17 +44,20 @@ Output:
 Verdict: PASS
 ```
 
-The regression check, `RUN_ALL_JOBS=3 RUN_ALL_TIMEOUT_FLOOR_SECS=600 bash tests/run-all.sh --changed --time` (122 suites, host load over 100): 119 ok, 3 red. The three were fixed in the last commit and rerun alone:
+The regression check, once as a whole on the final tree:
 
 ```
-Command: bash tests/test-no-scattered-ids.sh; bash tests/test-whole-spec-dispatch.sh; bash tests/test-meta-docs-registry.sh
+Command: RUN_ALL_JOBS=4 bash tests/run-all.sh --changed --time
 Exit: 0
 Output:
-  test-no-scattered-ids: all 9 passed
-  === 37/37 passed, 0 failed ===
-  Passed: 120 / 120
-Verdict: PASS (the causes were an id in a lib comment, execute.md over its 30000-byte cap, and a stale FEATURES.md)
+  run-all: 122 suites, 4 at a time, 1 serial
+  run-all: all 122 suites passed, 0 skipped for missing tooling
+Verdict: PASS
 ```
+
+An earlier run of the same command (host load over 100) had 3 red suites: a stale `FEATURES.md`, `execute.md` over its 30000-byte cap, and an id in a `lib` comment. They were fixed before this run.
+
+The follow-up fixes after the security review each have a test that failed on the old code and passes now: `tests/test-orchestrate-tiered.sh` (25 checks: a hook that ignores `--expect-head`, the scrubbed join environment, a lower executed count in the merged run, SIGTERM mid-join) and `tests/test-known-failures.sh` (`--base-count`, no count line).
 
 The T0 golden (`tests/fixtures/orchestrate-golden/off.txt`) was captured from the unmodified `orchestrate.sh` in the first commit; C9 diffs a fresh run against it and passes after the edits.
 
