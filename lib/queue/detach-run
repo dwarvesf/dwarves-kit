@@ -1,0 +1,56 @@
+#!/usr/bin/env perl
+# detach-run: run a command in its OWN SESSION (no controlling terminal), forwarding abort signals.
+#
+# Why: a wave sub-goal runs as a background job on the operator's terminal. When its `claude -p` first
+# uses Bash, Claude Code builds a shell snapshot with `zsh -c -l 'source ~/.zshrc'`; a zshrc that runs
+# `stty` on the controlling terminal then gets SIGTTOU (the job is not the foreground group) and the whole
+# session stops (state T) forever. A process with no controlling terminal cannot be stopped that way.
+# macOS has no setsid(1), and `setsid()` fails for a process-group leader, so the session is made in a
+# forked CHILD while this wrapper (a plain member of the wave job's group) stays behind as the supervisor.
+#
+# Contract: KIT_DETACH_CMD = the program to run, argv = its arguments. Exit status = the child's (128+N when
+# it died on signal N, like bash). A TERM/INT/HUP delivered to this wrapper (e.g. `_wave_abort`'s negative-pid
+# group kill) is forwarded to the child's whole session group, so no `claude -p` grandchild is orphaned.
+use strict;
+use warnings;
+use POSIX qw(setsid :signal_h :sys_wait_h);
+
+my $cmd = delete $ENV{KIT_DETACH_CMD};
+die "detach-run: KIT_DETACH_CMD is not set\n" unless defined $cmd && length $cmd;
+
+my @fwd = (SIGTERM, SIGINT, SIGHUP);
+my $block = POSIX::SigSet->new(@fwd);
+my $old   = POSIX::SigSet->new;
+sigprocmask(SIG_BLOCK, $block, $old) or die "detach-run: sigprocmask: $!\n";
+
+pipe(my $r, my $w) or die "detach-run: pipe: $!\n";
+my $pid = fork();
+die "detach-run: fork: $!\n" unless defined $pid;
+
+if ($pid == 0) {
+    close $r;
+    setsid() or die "detach-run: setsid: $!\n";
+    syswrite($w, "1");
+    close $w;
+    $SIG{$_} = 'DEFAULT' for qw(TERM INT HUP);
+    sigprocmask(SIG_SETMASK, $old) or die "detach-run: sigprocmask: $!\n";
+    exec { $cmd } $cmd, @ARGV or do { print STDERR "detach-run: exec $cmd: $!\n"; POSIX::_exit(127); };
+}
+
+close $w;
+my $buf;
+sysread($r, $buf, 1);   # the child has its own session (pgid == $pid) before any signal is delivered
+close $r;
+for my $s (qw(TERM INT HUP)) {
+    $SIG{$s} = sub { kill($s, -$pid) or kill($s, $pid); };
+}
+sigprocmask(SIG_SETMASK, $old) or die "detach-run: sigprocmask: $!\n";
+
+my $got;
+while (1) {
+    $got = waitpid($pid, 0);
+    last if $got == $pid;
+    last if $got < 0 && !$!{EINTR};
+}
+my $st = $?;
+exit(WIFEXITED($st) ? WEXITSTATUS($st) : 128 + WTERMSIG($st));

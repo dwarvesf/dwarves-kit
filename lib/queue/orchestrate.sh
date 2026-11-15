@@ -2016,8 +2016,20 @@ _wave_run() {  # megadir roadmap
       # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
       # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
       # the only portable no-setsid way to get a fresh process group.
+      #
+      # That group still sits on the operator's controlling terminal, and a background group that
+      # touches it is stopped by SIGTTOU: claude's first Bash use sources the user's zshrc, which runs
+      # `stty`, and the whole session froze (state T) for an hour. So the `claude` command inside the
+      # subshell is swapped for lib/queue/detach-run, which runs the real one (KIT_DETACH_CMD) in its own
+      # session with no controlling terminal and forwards TERM/INT/HUP to it, keeping `_wave_abort`'s
+      # group kill whole. The serial path calls `$CLAUDE_CMD` directly and is untouched. No perl: run as-is.
+      local detach_cmd="$CLAUDE_CMD"
+      # NC_SKIP_WAVE_DETACH=1 is a TEST-ONLY negative control (same pattern as NC_SKIP_WAVE_TOKENS): it
+      # restores the pre-fix spawn so a test can prove the stop; never an operator flag.
+      [ "${NC_SKIP_WAVE_DETACH:-0}" = 1 ] || { command -v perl >/dev/null 2>&1 && [ -x "$ORCH_DIR/detach-run" ] && detach_cmd="$ORCH_DIR/detach-run"; }
       set -m
-      ( cd "$wt" 2>/dev/null && _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
+      ( cd "$wt" 2>/dev/null && KIT_DETACH_CMD="$CLAUDE_CMD" CLAUDE_CMD="$detach_cmd" \
+          _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
       pid=$!
       set +m
       donefile=""
