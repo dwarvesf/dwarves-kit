@@ -915,6 +915,40 @@ _merge_pr_prepare() {
   return 0
 }
 
+# _merge_register_gate <repo> <slug> <url> <def> <pr> <head-oid> -- the `--with-ci` wait for a
+# repo with no `ci` label: GitHub registers a pull_request run seconds to minutes after the
+# push, and a gate that reads the rollup first sees an empty one and merges a head whose
+# checks are still pending. Hold while the runs register, then until none is pending, then
+# re-read and re-gate that same head. A checkout with no pull_request workflow has no CI to
+# wait for and merges as before; by slug there is no checkout to read, so the short grace
+# applies, and an empty rollup there passes (unknown, not proven missing). A checkout whose
+# workflow runs on every PR and still shows no check refuses. Prints
+# the refusal; returns 0 to go on, 2 to stop with the PR open.
+_merge_register_gate() {
+  local repo="$1" slug="$2" url="$3" def="$4" n="$5" head_oid="$6" wt="" detail new_head verdict
+  if [ -z "$slug" ]; then
+    grep -rqE 'pull_request' "$repo/.github/workflows" 2>/dev/null || return 0
+    wt="$repo"
+  fi
+  _land_register_wait "$wt" "$url" "$n"
+  detail="$(_pr_detail_settled "$url" "$n")"
+  new_head="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  verdict="$(_pr_gate "$detail" "$def")"
+  if [ "$new_head" != "$head_oid" ]; then
+    echo "FAILED merge #${n}: head moved to $(_short "$new_head") during the check wait; left open" >&2
+    return 2
+  fi
+  if [ "$verdict" != "OK" ]; then
+    echo "FAILED merge #${n}: ${verdict#* } after the check wait; left open" >&2
+    return 2
+  fi
+  if [ -z "$slug" ] && _ci_zero_checks "$detail" && _land_unfiltered_pr_workflow "$repo"; then
+    echo "FAILED merge #${n}: no checks registered although the repo's workflows run on every pull_request; left open" >&2
+    return 2
+  fi
+  return 0
+}
+
 cmd_merge() {
   local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head="" slug="" rebase_stacked=0 prc ci_armed=""
   while [ $# -gt 0 ]; do
@@ -1191,7 +1225,7 @@ cmd_merge() {
         echo "FAILED merge #${first_eligible}: no check reported after the ci label went on, and merge state ${ms:-unknown} is not CLEAN; left open" >&2
         return 2
       fi ;;
-    1) ;;
+    1) _merge_register_gate "$repo" "$slug" "$url" "$def" "$first_eligible" "$head_oid" || return 2 ;;
     *) echo "FAILED merge #${first_eligible}: the ci label could not be set" >&2; return 2 ;;
   esac
   fi

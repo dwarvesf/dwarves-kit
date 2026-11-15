@@ -84,19 +84,15 @@ _rollup_failed_checks() {
           | (.name // .context // "check")) | join(", "))' 2>/dev/null
 }
 
-# _land_pr_checks_gate <wt> <repo-url> <pr> -- before the first merge, let the PR's checks
-# report and refuse a red one. A check opened seconds ago has not registered yet, and
-# `gh pr merge` does not wait for it, so the merge beat the check and the failure only
-# emailed afterwards. A repo with no `pull_request` workflow pays nothing. The wait is the
-# ci wait with a short registration grace (KIT_WRAP_LAND_GRACE_SECS) and the usual completion
-# bound (KIT_WRAP_CARRY_CHECKS_SECS). Under `--with-ci` that wait already ran, so only the
-# verdict is read. Returns 2 with the PR left open.
-# The registration grace has two sizes. GitHub queued the `pull_request` run of share#47 190s
-# after the PR opened, so 30s merged ahead of it. A workflow that is sure to run on every PR
-# (a `pull_request` trigger key, not the word inside an `if:`, with no `paths`/`labeled` filter) holds to
-# KIT_WRAP_LAND_REGISTER_SECS; a filtered one may legitimately start nothing, so it keeps
-# the short KIT_WRAP_LAND_GRACE_SECS. The wait ends at the first check that appears, so the
-# long bound costs nothing when GitHub is quick.
+# _land_register_wait <wt> <repo-url> <pr> -- the checks wait for a PR no `ci` label gates:
+# hold while GitHub registers the runs, then until none is pending (the usual completion
+# bound is KIT_WRAP_CARRY_CHECKS_SECS). The registration grace has two sizes. GitHub queued
+# the `pull_request` run of share#47 190s after the PR opened, so 30s merged ahead of it. A
+# workflow that is sure to run on every PR (a `pull_request` trigger key, not the word
+# inside an `if:`, with no `paths`/`labeled` filter) holds to KIT_WRAP_LAND_REGISTER_SECS;
+# a filtered one may legitimately start nothing, so it keeps the short
+# KIT_WRAP_LAND_GRACE_SECS. The wait ends at the first check that appears, so the long
+# bound costs nothing when GitHub is quick. An empty <wt> (merge by slug) takes the short one.
 # ponytail: the workflow test is a plain grep, so a commented-out trigger still arms the wait
 # and a `paths:` under `push:` reads as a filter on the PR; parse the `on:` block if it matters.
 KIT_WRAP_LAND_GRACE_SECS=${KIT_WRAP_LAND_GRACE_SECS:-30}
@@ -112,16 +108,31 @@ _land_unfiltered_pr_workflow() {
   done
   return 1
 }
+_land_register_wait() {
+  CI_PRELABEL_KEYS='[]'
+  local KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_GRACE_SECS"
+  [ -z "$1" ] || { _land_unfiltered_pr_workflow "$1" && KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_REGISTER_SECS"; }
+  _ci_checks_wait "$2" "$3"
+}
+
+# _land_pr_checks_gate <wt> <repo-url> <pr> [waited] -- before the first merge, let the PR's
+# checks report and refuse a red one. A check opened seconds ago has not registered yet, and
+# `gh pr merge` does not wait for it, so the merge beat the check and the failure only
+# emailed afterwards. A repo with no `pull_request` workflow (no CI at all) pays nothing and
+# merges at once. <waited>=1 says the ci-label wait already ran; otherwise the gate runs
+# _land_register_wait, `--with-ci` included: a repo without a `ci` label gets no label wait,
+# and skipping this one merged share#55 and #60 with test and lint pending.
+# Under `--with-ci`, a repo whose workflow is sure to run on every PR and whose PR still
+# reports no check at all refuses: an empty rollup there means GitHub never started the
+# runs, not that nothing failed. Without `--with-ci` that case merges with a note, as it
+# always did. Returns 2 with the PR left open.
 _land_pr_checks_gate() {
-  local wt="$1" url="$2" n="$3" proll pnum failed
+  local wt="$1" url="$2" n="$3" waited="${4:-0}" proll pnum failed
   grep -rqE 'pull_request' "$wt/.github/workflows" 2>/dev/null || return 0
-  if ! _ci_on_merge; then
-    CI_PRELABEL_KEYS='[]'
-    local KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_GRACE_SECS"
-    _land_unfiltered_pr_workflow "$wt" && KIT_WRAP_CI_GRACE_SECS="$KIT_WRAP_LAND_REGISTER_SECS"
-    _ci_checks_wait "$url" "$n"
-    [ "${CI_WAIT_END:-}" = "NONEW" ] && [ "$KIT_WRAP_CI_GRACE_SECS" = "$KIT_WRAP_LAND_REGISTER_SECS" ] \
-      && echo "     no checks registered on #${n} after ${KIT_WRAP_CI_GRACE_SECS}s; merging with none" >&2
+  if [ "$waited" != 1 ]; then
+    _land_register_wait "$wt" "$url" "$n"
+    [ "${CI_WAIT_END:-}" = "NONEW" ] && ! _ci_on_merge && _land_unfiltered_pr_workflow "$wt" \
+      && echo "     no checks registered on #${n} after ${KIT_WRAP_LAND_REGISTER_SECS}s; merging with none" >&2
   fi
   proll="$(gh pr view "$n" --repo "$url" --json statusCheckRollup 2>/dev/null)" \
     && printf '%s' "$proll" | jq -e . >/dev/null 2>&1 || {
@@ -133,6 +144,9 @@ _land_pr_checks_gate() {
   failed="$(_rollup_failed_checks "$proll")"
   if [ -n "$failed" ]; then
     echo "     MERGE REFUSED #${n}: checks failed: ${failed}; PR left open" >&2; return 2
+  fi
+  if _ci_on_merge && _ci_zero_checks "$proll" && _land_unfiltered_pr_workflow "$wt"; then
+    echo "     MERGE REFUSED #${n}: no checks registered although the repo's workflows run on every pull_request; PR left open" >&2; return 2
   fi
 }
 
@@ -836,16 +850,17 @@ _land_run() {
   # merge runs as it always did; under the gate, a label that could not be set refuses
   # rather than merging untested.
   _LAND_STEP=checks
+  local ci_waited=0
   if _ci_on_merge; then
     _ci_label_sync "$url" "$n"; rc=$?
     case "$rc" in
-      0) _ci_checks_wait "$url" "$n" ;;
+      0) _ci_checks_wait "$url" "$n"; ci_waited=1 ;;
       1) ;;
       *) echo "     MERGE FAILED #${n}: the ci label could not be set" >&2; return 2 ;;
     esac
   fi
 
-  _land_pr_checks_gate "$wt" "$url" "$n" || return 2
+  _land_pr_checks_gate "$wt" "$url" "$n" "$ci_waited" || return 2
 
   _LAND_STEP=merge
   _merge_pr "$n" "$url" "$tip" "$repo" "" "$def"; rc=$?
@@ -926,7 +941,7 @@ _land_run() {
       _ci_label_sync "$url" "$n"; rc=$?
       case "$rc" in
         0) _ci_checks_wait "$url" "$n" ;;
-        1) ;;
+        1) _land_register_wait "$wt" "$url" "$n" ;;
         *) echo "     MERGE FAILED #${n}: the ci label could not be set; the merge commit $(_short "$tip") is on origin" >&2
            return 2 ;;
       esac
@@ -966,6 +981,10 @@ _land_run() {
     failed_checks="$(_rollup_failed_checks "$proll")"
     if [ -n "$failed_checks" ]; then
       echo "     checks failed on the merged head $(_short "$tip"): ${failed_checks}; the merge commit is on origin" >&2
+      return 2
+    fi
+    if _ci_on_merge && _ci_zero_checks "$proll" && _land_unfiltered_pr_workflow "$wt"; then
+      echo "     no checks registered on the merged head $(_short "$tip") although the repo's workflows run on every pull_request; the merge commit is on origin" >&2
       return 2
     fi
     _merge_pr "$n" "$url" "$tip" "$repo" "" "$def"; rc=$?

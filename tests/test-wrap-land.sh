@@ -2388,6 +2388,66 @@ out="$(pg_land pg5 GH_STUB_PR_42="$PG_RED")"; rc=$?
 chk "PG5: exits 0" "$rc"
 chk "PG5: no statusCheckRollup read" "$(grep -q 'statusCheckRollup' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk_has "PG5: merged" "$out" "merged #42 ("
+
+# --with-ci on a repo with no `ci` label: share#55 and #60 merged with test and lint pending
+# because the label path was the only one that waited. The cases below run the land with the
+# gate on and the label list empty (the stub's default), an unfiltered pull_request workflow
+# committed, and the carry bound lifted so a pending check can turn green.
+echo "--- PW1: --with-ci, the check list is empty right after the push and never fills: no merge"
+pg_build pw1 "" "$PG_WF"
+out="$(pg_land pw1 KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=30 GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PW1: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PW1: says no check ever registered" "$out" "MERGE REFUSED #42: no checks registered"
+chk_no "PW1: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+chk "PW1: the empty list was re-read, not trusted once" "$([ "$(cat "$GH_STUB_CALLS.view-42" 2>/dev/null || echo 0)" -ge 5 ]; echo $?)"
+chk "PW1: the worktree stays" "$([ -d "$PG_WT" ]; echo $?)"
+
+echo "--- PW2: --with-ci, a pending check blocks the merge until it turns pass"
+pg_build pw2 "" "$PG_WF"
+out="$(pg_land pw2 KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=300 \
+  GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' \
+  GH_STUB_PR_42_2='{"number":42,"statusCheckRollup":[{"name":"test","status":"IN_PROGRESS","conclusion":""},{"name":"lint","status":"QUEUED","conclusion":""}]}' \
+  GH_STUB_PR_42_4='{"number":42,"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"lint","status":"IN_PROGRESS","conclusion":""}]}' \
+  GH_STUB_PR_42_5='{"number":42,"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"lint","status":"COMPLETED","conclusion":"SUCCESS"}]}')"; rc=$?
+chk "PW2: exits 0" "$rc"
+chk "PW2: the rollup was read until both checks passed (5+ reads)" "$([ "$(cat "$GH_STUB_CALLS.view-42" 2>/dev/null || echo 0)" -ge 5 ]; echo $?)"
+chk_has "PW2: merged" "$out" "merged #42 ("
+
+echo "--- PW3: --with-ci, a failing check refuses with exit 2 and no merge call"
+pg_build pw3 "" "$PG_WF"
+out="$(pg_land pw3 KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=300 \
+  GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}' \
+  GH_STUB_PR_42_2='{"number":42,"statusCheckRollup":[{"name":"test","status":"IN_PROGRESS","conclusion":""}]}' \
+  GH_STUB_PR_42_3='{"number":42,"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"FAILURE","completedAt":"2026-01-01T00:00:00Z"},{"name":"lint","status":"COMPLETED","conclusion":"SUCCESS"}]}')"; rc=$?
+chk "PW3: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PW3: names the failed check" "$out" "MERGE REFUSED #42: checks failed: test"
+chk_no "PW3: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- PW3b: --with-ci, a cancelled check refuses; a check still pending at the bound refuses"
+pg_build pw3b "" "$PG_WF"
+out="$(pg_land pw3b KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=300 \
+  GH_STUB_PR_42='{"number":42,"statusCheckRollup":[{"name":"test","status":"COMPLETED","conclusion":"CANCELLED","completedAt":"2026-01-01T00:00:00Z"}]}')"; rc=$?
+chk "PW3b: cancelled exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PW3b: cancelled names the check" "$out" "checks failed: test"
+chk_no "PW3b: cancelled never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+pg_build pw3c "" "$PG_WF"
+out="$(pg_land pw3c KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=30 \
+  GH_STUB_PR_42='{"number":42,"statusCheckRollup":[{"name":"test","status":"IN_PROGRESS","conclusion":""}]}')"; rc=$?
+chk "PW3b: a timeout exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "PW3b: a timeout says still pending" "$out" "MERGE REFUSED #42: checks still pending after 30s"
+chk_no "PW3b: a timeout never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- PW4: --with-ci, all checks pass: merges"
+pg_build pw4 "" "$PG_WF"
+out="$(pg_land pw4 KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=300 GH_STUB_PR_42="$PG_GREEN")"; rc=$?
+chk "PW4: exits 0" "$rc"
+chk_has "PW4: merged" "$out" "merged #42 ("
+
+echo "--- PW5: --with-ci on a repo with no pull_request workflow (no CI at all) merges at once"
+pg_build pw5 "" $'on:\n  push:\n    branches: [main]\njobs:\n  x:\n    runs-on: [self-hosted]'
+out="$(pg_land pw5 KIT_WRAP_CI_ON_MERGE=1 KIT_WRAP_CARRY_CHECKS_SECS=300 GH_STUB_PR_42='{"number":42,"statusCheckRollup":[]}')"; rc=$?
+chk "PW5: exits 0" "$rc"
+chk_has "PW5: merged" "$out" "merged #42 ("
 } # end sec_prgate
 
 sec_proofbody() {
