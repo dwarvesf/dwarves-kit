@@ -33,6 +33,12 @@ dispatcher runs through and writes into the prompt in its own words.
   full run. The brief names a wall-clock budget in minutes; past it the worker stops, commits
   what is green, and reports. A goal file never prescribes N full-suite runs, and a brief that
   quotes one is a defect in the brief, not an instruction.
+- State the fast loop. While iterating, run only the test sections the change touches (or the
+  repo's documented subset mechanism); run the full check once, before opening the PR. Wait on
+  CI with one blocking call (`gh run watch <id> --exit-status` or `gh pr checks <pr> --watch`),
+  never a `sleep` poll loop. After a merge, do not hold the sub-goal open for the main-branch CI
+  run unless the repo's contract says so: hand off, let the next cycle start, and act only if
+  main turns red.
 - Require an activity-log line (the repo's LAB_LOG or equivalent).
 - Commit, but never push.
 - Report in N lines or fewer.
@@ -69,6 +75,10 @@ dispatcher runs through and writes into the prompt in its own words.
   everything, and briefs that prescribed full runs, so a worker set `KIT_RUN_ALL=1` and walked
   past the `--all` refusal. A 2026-10-01 wave also ran full-suite negative controls at load 11
   to 19. The affected-only rule, the history lookup and a stated wall-clock budget close all three.
+- **Fast loop**: one 185-minute sub-goal in a 12-sub-goal run spent 57 minutes on 14 full runs
+  of a 10-minute suite and 33 minutes in `sleep` loops polling CI, against 53 minutes of model
+  time. A section-scoped inner loop, one full run before the PR, a blocking CI wait and no
+  hold on the post-merge main run remove all three.
 - **Activity-log line**: the log is the index across every worker's output; a change with no
   log line is invisible to anyone scanning what happened this session.
 - **Commit but never push**: a worker's commit is reviewable before it becomes a push the
