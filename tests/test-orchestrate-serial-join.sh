@@ -69,12 +69,18 @@ run_serial() {  # dir
   ( bash "$ORCH" run "$1/work/mega" ) >| "$1/out.txt" 2>&1
 }
 
-# ---- levels: no deps is 0, a dependent is one deeper than its deepest dependency, a cycle is capped
+# ---- levels: no deps is 0, a dependent is one deeper than its deepest dependency, a cycle ends
 mk_case levels tiered; D=$CASE_DIR
-lv() { bash -c 'source "$1"; _sg_level "$2" "$3"' _ "$ORCH" "$D/work/mega/ROADMAP.md" "$1"; }
+lvl_of() { bash -c 'source "$1"; _sg_levels "$2"' _ "$ORCH" "$1" | awk -F'\t' -v i="$2" '$1 == i {print $2}'; }
+lv() { lvl_of "$D/work/mega/ROADMAP.md" "$1"; }
 [ "$(lv SG-01)" = 0 ] && [ "$(lv SG-02)" = 0 ] && [ "$(lv SG-03)" = 1 ] && pass "level: independent sub-goals are level 0, a dependent of both is level 1" || fail "level: $(lv SG-01) $(lv SG-02) $(lv SG-03)"
-printf -- '- [ ] SG-01 node , auto , depends SG-02 , PR #11\n- [ ] SG-02 node , auto , depends SG-01 , PR #12\n' > "$D/cycle.md"
-[ "$(bash -c 'source "$1"; _sg_level "$2" SG-01' _ "$ORCH" "$D/cycle.md")" -ge 1 ] && pass "level: a dependency cycle ends (capped), never loops" || fail "level: cycle did not end"
+printf -- '- [ ] SG-01 node , auto , PR #11\n- [ ] SG-02 node , auto , depends SG-01 , PR #12\n- [ ] SG-03 node , auto , depends SG-02 , PR #13\n- [ ] SG-04 node , auto , depends SG-01 SG-03 , PR #14\n' > "$D/chain.md"
+[ "$(lvl_of "$D/chain.md" SG-03)" = 2 ] && [ "$(lvl_of "$D/chain.md" SG-04)" = 3 ] && pass "level: a chain reaches level 2 and a diamond takes its deepest dependency (level 3)" || fail "level: chain $(lvl_of "$D/chain.md" SG-03) $(lvl_of "$D/chain.md" SG-04)"
+# a cycle with fan-out is exponential for a recursive walk; the table must end at once
+printf -- '- [ ] SG-01 node , auto , depends SG-02 SG-03 , PR #11\n- [ ] SG-02 node , auto , depends SG-01 SG-03 , PR #12\n- [ ] SG-03 node , auto , depends SG-01 SG-02 , PR #13\n' > "$D/cycle.md"
+( lvl_of "$D/cycle.md" SG-01 > "$D/cycle.out" ) & cpid=$!
+n=0; while kill -0 "$cpid" 2>/dev/null && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+if kill -0 "$cpid" 2>/dev/null; then kill -9 "$cpid" 2>/dev/null; fail "level: a fan-out cycle did not end in 10s"; else pass "level: a three-node fan-out cycle ends at once"; fi
 
 # ---- green: one suite run per level, after the level's last sub-goal; every sub-goal dispatches
 mk_case green tiered; D=$CASE_DIR
@@ -92,10 +98,37 @@ run_serial "$D"; rc=$?
 if [ "$rc" = 1 ] && [ "$(runs)" = 1 ] && [ "$(dispatched "$D")" = "SG-01 SG-02 " ] && grep -q 'RED' "$D/out.txt" && grep -q 'new failure: a and b conflict' "$D/out.txt"; then pass "serial join: a red level join halts the loop before the next level dispatches, naming the new failure"
 else fail "serial red: rc=$rc runs=$(runs) dispatched='$(dispatched "$D")' out: $(tr '\n' ' ' < "$D/out.txt")"; fi
 [ "$(events "$D")" = "-:blocked " ] && pass "serial join: one blocked event for the level" || fail "serial red: events '$(events "$D")'"
-
+[ "$(git -C "$D/work" worktree list | grep -c kit-join || true)" = 0 ] && pass "serial join: a red join leaves no throwaway worktree either" || fail "serial red: a worktree is left"
 # ---- the join is not run while the level still has an unchecked sub-goal
 if [ "$(grep -c 'level 0 complete' "$D/out.txt")" = 1 ] && [ "$(grep -n 'running SG-02' "$D/out.txt" | cut -d: -f1)" -lt "$(grep -n 'level 0 complete' "$D/out.txt" | cut -d: -f1)" ]; then pass "serial join: level 0 is joined once, after SG-02, not after SG-01"
 else fail "serial red: order: $(grep -n 'running\|level 0' "$D/out.txt" | tr '\n' ' ')"; fi
+# a re-run after the halt joins the level again before it dispatches anything
+: > "$STUB_LOG"
+run_serial "$D"; rc=$?
+if [ "$rc" = 1 ] && [ "$(runs)" = 1 ] && [ "$(dispatched "$D")" = "SG-01 SG-02 " ]; then pass "serial join: a re-run after a red halt joins the level again and dispatches nothing"
+else fail "serial red rerun: rc=$rc runs=$(runs) dispatched='$(dispatched "$D")' out: $(tr '\n' ' ' < "$D/out.txt")"; fi
+
+# ---- a dependent listed first runs first (the serial pick ignores depends); level 1 waits for level 0
+mk_case order tiered; D=$CASE_DIR
+nf_mega "$D" SG-03:feat/node-c:13 SG-01:feat/node-a2:11 SG-02:feat/node-b2:12
+sed -i.bak 's/^- \[ \] SG-03 node , auto ,/- [ ] SG-03 node , auto , depends SG-01 SG-02 ,/' "$D/work/mega/ROADMAP.md"; rm -f "$D/work/mega/ROADMAP.md.bak"
+run_serial "$D"; rc=$?
+l0=$(grep -n 'level 0 complete' "$D/out.txt" | cut -d: -f1); l1=$(grep -n 'level 1 complete' "$D/out.txt" | cut -d: -f1); r2=$(grep -n 'running SG-02' "$D/out.txt" | cut -d: -f1)
+if [ "$rc" = 0 ] && [ "$(runs)" = 2 ] && [ -n "$l0" ] && [ -n "$l1" ] && [ "$r2" -lt "$l0" ] && [ "$l0" -lt "$l1" ]; then pass "serial join: a level-1 node that ran first is joined only after level 0 closes, level 0 then level 1"
+else fail "serial order: rc=$rc runs=$(runs) r2=$r2 l0=$l0 l1=$l1 out: $(tr '\n' ' ' < "$D/out.txt")"; fi
+
+# ---- a stale base is not a green: origin unreachable fails closed
+mk_case stale tiered; D=$CASE_DIR
+git -C "$D/work" remote set-url origin "$D/no-such-origin.git"
+run_serial "$D"; rc=$?
+[ "$rc" = 1 ] && [ "$(runs)" = 0 ] && grep -q "not origin's current tip" "$D/out.txt" && pass "serial join: an unreachable origin (stale base) halts the loop without running the suite" || fail "serial stale: rc=$rc runs=$(runs) out: $(tr '\n' ' ' < "$D/out.txt")"
+
+# ---- the executed count may not drop below the last green level's, even when every failure is known
+mk_case count tiered; D=$CASE_DIR
+printf '10\n8\n' > "$D/seq"
+STUB_COUNT_SEQ="$D/seq" STUB_FAIL="Skim settings panel wrong" run_serial "$D"; rc=$?
+if [ "$rc" = 1 ] && [ "$(runs)" = 2 ] && [ -f "$D/work/mega/.orchestrate/join-level-0.ok" ] && [ ! -f "$D/work/mega/.orchestrate/join-level-1.ok" ]; then pass "serial join: level 1 with fewer executed checks than level 0 is red even though its failure is known"
+else fail "serial count: rc=$rc runs=$(runs) markers: $(ls "$D/work/mega/.orchestrate" | tr '\n' ' ') out: $(tr '\n' ' ' < "$D/out.txt")"; fi
 
 # ---- a failure on the lead's known list does not stop the loop
 mk_case known tiered; D=$CASE_DIR
