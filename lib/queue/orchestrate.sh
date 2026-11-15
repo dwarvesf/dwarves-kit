@@ -1007,19 +1007,58 @@ _step_pause() {
 # redaction. Two independent, small mitigations, neither touching the stream FORMAT:
 STREAM_RETENTION_DAYS="${STREAM_RETENTION_DAYS:-14}"
 
-# Redact secret-shaped substrings from a captured stream/session-log file, IN PLACE, via a
-# write-temp-then-`mv` (never `sed -i`: GNU vs BSD `-i` take incompatible args, and an in-place
-# edit that dies mid-write must not truncate the original). Applied right after each write
-# completes (both `_run_one_session`'s stream-json/plain paths and `_run_session_watchdog`'s
-# capture path), so the window a secret sits UNREDACTED on disk is one session's write, not
-# indefinite. Best-effort: a missing/empty file or a `mktemp`/`sed` failure is a silent no-op
-# (redaction failing must never fail the sub-goal it is auxiliary to). Patterns cover the common
-# API-key/token shapes (OpenAI/Anthropic/GitHub/GitLab/Slack `PREFIX-`/`PREFIX_` tokens, AWS access
-# keys, bearer tokens) -- deliberately conservative (over-redact, never under-redact) since this is
-# a leak-prevention control, not a display filter.
-_redact_secrets_file() {  # file
-  local f="$1" tmp
+# Portable inode number (empty if the file is absent). Same GNU-first order and digit guard as
+# `_mtime` above, for the same reason.
+_inode() {
+  local i
+  i=$(stat -c %i "$1" 2>/dev/null || stat -f %i "$1" 2>/dev/null)
+  case "$i" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$i" ;; esac
+}
+
+# Record WHO owns a stream file the moment its session is spawned. Call right after the spawner
+# truncated it (`: > "$slog"`), before the child starts writing; prints the claim
+# "<inode>:<token>" for the caller to hand to `_redact_secrets_file`. The token is a fresh
+# per-spawn string written to the sidecar "$slog.owner"; the next spawn onto the same path
+# overwrites it, so a stale session can tell a newer one took over. An inode alone is not enough:
+# a re-truncate (`: > "$slog"`) keeps the inode, so only the token sees a restarted run.
+_stream_claim() {  # slog -> "<inode>:<token>"
+  local slog="$1" token
+  token="$$.${BASHPID:-$$}.${RANDOM}${RANDOM}.$(date +%s)"
+  printf '%s' "$token" > "$slog.owner" 2>/dev/null || true
+  printf '%s:%s' "$(_inode "$slog")" "$token"
+}
+
+# Redact secret-shaped substrings from a captured stream/session-log file, IN PLACE. Applied right
+# after each write completes (both `_run_one_session`'s stream-json/plain paths and
+# `_run_session_watchdog`'s capture path), so the window a secret sits UNREDACTED on disk is one
+# session's write, not indefinite. Best-effort: a missing/empty file or a `mktemp`/`sed` failure is
+# a silent no-op (redaction failing must never fail the sub-goal it is auxiliary to). Patterns
+# cover the common API-key/token shapes (OpenAI/Anthropic/GitHub/GitLab/Slack `PREFIX-`/`PREFIX_`
+# tokens, AWS access keys, bearer tokens) -- deliberately conservative (over-redact, never
+# under-redact) since this is a leak-prevention control, not a display filter.
+#
+# Two guards against clobbering a file that is not this session's any more:
+#  1. Ownership (optional 2nd arg = the claim `_stream_claim` printed at spawn). Skip with a stderr
+#     note when the path's inode differs from the claimed one, or the owner token in "$f.owner" is
+#     no longer ours (a newer run re-truncated the path: same inode, new token). Signal chosen:
+#     inode + per-spawn token, because a truncate preserves the inode and an orchestrator restart
+#     mid-wave leaves the OLD run's watchdog alive to redact the path the NEW run now owns. No claim
+#     -> no guard (callers that never spawned the file).
+#  2. Keep the inode. The rewrite is `cat "$tmp" > "$f"`, never `mv`: a rename swaps in a new inode
+#     and detaches any live writer (its fd keeps feeding the unlinked old file: lost transcript,
+#     lost token telemetry, and a mtime that never advances for the stall watchdog). The redacted
+#     copy is fully built in a temp file first, and the original is only written when the content
+#     actually changed, so a sed/mktemp failure never touches it (never `sed -i`: GNU vs BSD `-i`
+#     take incompatible args). Residual: the window between the check and the write is not atomic.
+_redact_secrets_file() {  # file [claim]
+  local f="$1" claim="${2:-}" tmp
   [ -n "$f" ] && [ -s "$f" ] || return 0
+  if [ -n "$claim" ]; then
+    if [ "$(_inode "$f")" != "${claim%%:*}" ] || [ "$(cat "$f.owner" 2>/dev/null)" != "${claim#*:}" ]; then
+      echo "[orchestrate] [redact] skipped $f: no longer owned by this session (replaced or re-truncated by a newer run)" >&2
+      return 0
+    fi
+  fi
   tmp=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX" 2>/dev/null) || return 0
   if sed -E \
       -e 's/(sk|gho|ghp|ghu|ghs|ghr|glpat)[_-][A-Za-z0-9_-]{8,}/[REDACTED]/g' \
@@ -1027,10 +1066,9 @@ _redact_secrets_file() {  # file
       -e 's/AKIA[0-9A-Z]{16}/[REDACTED]/g' \
       -e 's/([Bb]earer)[[:space:]]+[A-Za-z0-9._-]{10,}/\1 [REDACTED]/g' \
       "$f" > "$tmp" 2>/dev/null; then
-    mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
-  else
-    rm -f "$tmp"
+    cmp -s "$tmp" "$f" || cat "$tmp" > "$f" 2>/dev/null || echo "[orchestrate] [redact] WARN: in-place rewrite of $f failed" >&2
   fi
+  rm -f "$tmp"
 }
 
 # Prune `.orchestrate/*.stream.jsonl` and `*.session.log` files older than $STREAM_RETENTION_DAYS
@@ -1102,6 +1140,8 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
     slog="$logdir/${id}.session.log"
   fi
   : > "$slog"
+  local claim; claim=$(_stream_claim "$slog")   # who owns this path; see _redact_secrets_file
+  _WD_CLAIM="$claim"
   _say "[orchestrate] [watchdog] $id: output -> $slog (stall=${WATCHDOG_STALL_SECS}s, poll=${WATCHDOG_POLL_SECS}s; advisory, never kills)"
   if [ "$capture" = 1 ]; then
     # shellcheck disable=SC2086 # rflags + CLAUDE_FLAGS are operator/goal config; word-splitting is intended.
@@ -1122,7 +1162,7 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
     fi
   done
   wait "$spid"; local rc=$?
-  _redact_secrets_file "$slog"   # redact before it's surfaced (cat) or returned to the caller
+  _redact_secrets_file "$slog" "$claim"   # redact before it's surfaced (cat) or returned to the caller
   cat "$slog"
   _WD_SLOG=""
   [ "$capture" = 1 ] && _WD_SLOG="$slog"
@@ -1209,7 +1249,7 @@ _run_one_session() {  # dir id pfile route_flags stream
   # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
   # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
   # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
-  local rc=0 slog="" wd_capture=0
+  local rc=0 slog="" claim="" wd_capture=0
 
   # Multi-vendor branch. The harness is re-read from the goal file here rather than threaded
   # in as a 6th positional, because `route_flags` reaches this function through FOUR call sites
@@ -1234,7 +1274,7 @@ _run_one_session() {  # dir id pfile route_flags stream
   # TURN_CAP=0 -> the loop runs exactly once, byte-identical to before.
   local seg=1 cur_pfile="$pfile" seg_pfile=""
   while :; do
-    rc=0; slog=""
+    rc=0; slog=""; claim=""
     if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
       # Watchdog path (opt-in). Token accounting: mirror the same capture gate the
       # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
@@ -1245,7 +1285,7 @@ _run_one_session() {  # dir id pfile route_flags stream
       # The watchdog stays the LEASE (alerts, never kills); it runs per segment under the cap.
       [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$TURN_CAP" -gt 0 ] && wd_capture=1
       _run_session_watchdog "$dir" "$id" "$cur_pfile" "$route_flags$cap_flags" "$wd_capture" || rc=$?
-      slog="$_WD_SLOG"
+      slog="$_WD_SLOG"; claim="$_WD_CLAIM"
     elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$TURN_CAP" -gt 0 ]; then
       # Capture stream-json when the operator wants a live tail (--stream) OR the deterministic
       # handoff needs the transcript (DETERMINISTIC_HANDOFF=1) OR lean token capture is on
@@ -1255,6 +1295,7 @@ _run_one_session() {  # dir id pfile route_flags stream
       # transcript lands in the FILE only and never reaches the conductor's stdout (s3).
       local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
       slog="$logdir/${id}.stream.jsonl"
+      : > "$slog"; claim=$(_stream_claim "$slog")   # truncate first so the claimed inode is the one claude writes
       # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags + cap_flags are operator/goal config; word-splitting is intended.
       if [ "$stream" = 1 ]; then
         _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
@@ -1275,7 +1316,7 @@ _run_one_session() {  # dir id pfile route_flags stream
     # live `--stream` terminal tee above already happened by this point -- redacting the FILE closes
     # the at-rest exposure, the primary risk this fix targets; a live-tee filter would need a
     # process-substitution rewrite of the stream FORMAT plumbing, out of scope for this sweep).
-    [ -n "$slog" ] && _redact_secrets_file "$slog"
+    [ -n "$slog" ] && _redact_secrets_file "$slog" "$claim"
     _ROS_SLOG="$slog"
 
     # ---- segment gate (TURN_CAP>0) ----
