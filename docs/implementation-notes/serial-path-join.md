@@ -1,0 +1,13 @@
+# serial-path-join: implementation notes
+
+Spec: `docs/specs/SPEC-421-tiered-verification.md` rule 4 (serial path joins per DAG level). Follow-up to implementation note D9 of `tiered-verification.md`. Only deltas from the spec.
+
+## Delta
+
+- S1. The spec says the serial join runs "once per DAG level" and the wave join runs before the merge. The serial loop has no conductor-side merge: each worker merges its own PR through `mega-merge.sh`. So the serial join cannot pin a pre-merge head. It runs after the level's merges, on the base tree, and gates the next level. A red level is already on the base; the join stops the run from building the next level on it. Open for the operator: a join that holds the level's merges back needs the workers to stop merging in tiered mode, which changes the worker prompt and how the box is grounded.
+- S2. The wave join compares a base run with a merged run. The serial join has no pre-level tree to run, so it judges one run against the lead's committed known-failures list (`known-failures.sh classify` with no `--known-from`). A crash with no parsed failure is red. There is no `--base-count`, so the executed-count floor is not applied.
+- S3. Level = 0 with no `depends`, else 1 + the deepest dependency (cap 50 for a cycle). The join fires when the sub-goal that just completed leaves no unchecked sub-goal in its own level, once per level per run. The serial pick is ROADMAP order and ignores `depends`, so levels can complete out of order; each level still joins once, when its last node completes.
+- S4. `[mega] verify` is read once per run, at the first completed sub-goal, from the base ref (`_verify_base` then `_verify_tiered`). A run outside a git repo skips the join. With `verify = "off"` the only added cost is that one config read.
+- S5. A tiered run with no `[test] join_cmd` at the base halts at the first level close, like the wave join. An unresolvable base falls back to HEAD the way `_verify_base` does; the wave path's fail-closed stop on an unreadable base is not copied, so a serial run in a repo with no readable base commit reads `verify` from HEAD.
+- S6. The join reuses `_join_run` (scrubbed environment, background run), `_wave_join_cleanup`, `_wave_join_interrupted` (a `_JOIN_LEVEL` switch picks its wording) and `known-failures.sh`. It does not reuse `_wave_join` or `_wave_join_run`, which are built around pinned PR heads and a second merged tree.
+- S7. If a repo's merge posture leaves the PRs unmerged (`per-pr-review`), the base has not got the level's work and the join tests main without it. The join does not check that a level's PRs are merged.
