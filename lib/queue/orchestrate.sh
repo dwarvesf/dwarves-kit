@@ -2345,7 +2345,7 @@ _sg_pr() {  # roadmap id
   _sg_line "$1" "$2" | sed -nE 's/.*PR #([0-9]+).*/\1/p' | head -1
 }
 
-# ---- Tiered verification join ([mega] verify = "tiered", docs/specs/SPEC-421-tiered-verification.md) ----
+# ---- Tiered verification join ([mega] verify = "tiered"; docs/WORKFLOW.md "Tiered verification") ----
 # Inside a tiered mega-goal every node verifies on the `affected` selection only. The full suite runs once
 # per wave, here, on the MERGED tree, against a baseline this join measures itself. Config is read from the
 # base ref (`kit_config_get_at`), never from a node's branch or the working tree.
