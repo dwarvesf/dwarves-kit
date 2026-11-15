@@ -1444,6 +1444,29 @@ assert_exit "gate: undeclared ## Touches -> REJECT (not assumed-empty)" 2 "$?"
 GATE_PLAN=$(bash "$GATE" plan "$GT/spec-a.md" "$GT/spec-b.md" "$GT/spec-asub.md" 2>/dev/null)
 assert_output_contains "gate plan: spec-asub waits on spec-a (overlap serialized)" "WAIT.*spec-asub" "$GATE_PLAN"
 
+# literal paths in ## Touches are an exact prefix (segment-boundary compare), not unprovable.
+printf '# l1\n## Touches\n- `docs/implementation-notes/share-bar.md`\n' > "$GT/spec-lit1.md"
+printf '# l2\n## Touches\n- `docs/implementation-notes/share-foo.md`\n' > "$GT/spec-lit2.md"
+printf '# l3\n## Touches\n- `docs/implementation-notes/share-bar.md`\n' > "$GT/spec-lit3.md"
+printf '# d\n## Touches\n- `docs/implementation-notes/**`\n' > "$GT/spec-dir.md"
+printf '# t\n## Touches\n- `docs/../lib/x.md`\n' > "$GT/spec-trav.md"
+printf '# s\n## Touches\n- `docs/implementation-notes/share-*.md`\n' > "$GT/spec-lglob.md"
+bash "$GATE" disjoint "$GT/spec-lit1.md" "$GT/spec-lit2.md" >/dev/null 2>&1
+assert_exit "gate: two disjoint literal doc paths -> disjoint (waves can form)" 0 "$?"
+bash "$GATE" disjoint "$GT/spec-lit1.md" "$GT/spec-lit3.md" >/dev/null 2>&1
+assert_exit "gate: the same literal path in both -> overlap (serialize)" 1 "$?"
+bash "$GATE" disjoint "$GT/spec-lit1.md" "$GT/spec-dir.md" >/dev/null 2>&1
+assert_exit "gate: a literal file under the other's dir/** -> overlap" 1 "$?"
+bash "$GATE" disjoint "$GT/spec-lit1.md" "$GT/spec-a.md" >/dev/null 2>&1
+assert_exit "gate: a literal path vs an unrelated dir/** -> disjoint" 0 "$?"
+bash "$GATE" disjoint "$GT/spec-lit1.md" "$GT/spec-lglob.md" >/dev/null 2>&1
+assert_exit "gate: a literal path vs a real glob (share-*.md) -> overlap (still unprovable)" 1 "$?"
+bash "$GATE" disjoint "$GT/spec-lit1.md" "$GT/spec-trav.md" >/dev/null 2>&1
+assert_exit "gate: a literal with a .. segment stays unprovable -> overlap" 1 "$?"
+assert_output_contains "gate touches: a literal path prints as itself, no ? marker" "^docs/implementation-notes/share-bar.md$" "$(bash "$GATE" touches "$GT/spec-lit1.md" 2>/dev/null)"
+GATE_PLAN_LIT=$(bash "$GATE" plan "$GT/spec-lit1.md" "$GT/spec-lit2.md" 2>/dev/null)
+assert_output_not_contains "gate plan: disjoint literal specs both run PARALLEL (no WAIT)" "WAIT" "$GATE_PLAN_LIT"
+
 # drift guard: a throwaway git repo with goal branches + a hands-off list.
 GD=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drift.XXXXXX") || exit 1
 git -C "$GD" init -q

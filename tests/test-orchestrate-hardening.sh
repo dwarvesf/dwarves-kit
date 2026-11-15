@@ -289,6 +289,27 @@ else
   fail "ID-098: no kill-window call for SG-01's completed pane -- window would be left orphaned"; cat "$STATE_098/calls.log" 2>/dev/null
 fi
 
+# ============================ SECTION 4: _wave_gate admits sub-goals whose ## Touches are literal paths ============================
+# A sub-goal that writes only its own notes file declares it as a literal path. The gate used to mark
+# that unprovable, so every pair overlapped and a wave never formed.
+WG="$TMP/wave-literal"; mkdir -p "$WG/goals"
+cat > "$WG/ROADMAP.md" <<'EOF'
+# Mega-goal: literal touches fixture
+## Sub-goals
+- [ ] SG-01 first , auto , PR #__
+- [ ] SG-02 second , auto , PR #__
+- [ ] SG-03 third , auto , PR #__
+EOF
+printf '## Touches\n- docs/implementation-notes/one.md\n' > "$WG/goals/01-one.md"
+printf '## Touches\n- docs/implementation-notes/two.md\n' > "$WG/goals/02-two.md"
+printf '## Touches\n- docs/implementation-notes/one.md\n' > "$WG/goals/03-three.md"
+wg_out=$(WAVE_CAP=3 _wave_gate "$WG" "$WG/ROADMAP.md" | tr '\t\n' '  ')
+if [ "$wg_out" = "run SG-01 run SG-02 defer SG-03 " ]; then
+  pass "literal ## Touches: disjoint literal paths run together, a repeated literal path defers"
+else
+  fail "literal ## Touches: expected 'run SG-01 run SG-02 defer SG-03', got '$wg_out'"
+fi
+
 echo ""
 echo "=== $((total - fails))/$total passed, $fails failed ==="
 [ "$fails" -eq 0 ]

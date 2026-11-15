@@ -272,7 +272,7 @@ Optional; expected for full-lane specs that touch an external provider, data los
 - [thing explicitly excluded and why]
 
 ## Touches
-Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs this spec will write, one per line. Form is constrained to `dir/**` or `dir/sub/**`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/gate/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
+Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs or literal file paths this spec will write, one per line. Form is `dir/**`, `dir/sub/**`, or an exact path such as `docs/notes/x.md`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/gate/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
 - path/to/area/**
 - another/area/**
 

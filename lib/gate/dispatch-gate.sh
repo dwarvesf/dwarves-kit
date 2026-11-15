@@ -8,9 +8,10 @@
 # drift guard then checks the real diff stayed inside the declared globs and never
 # touched a lead-owned shared surface.
 #
-# `## Touches` is constrained to directory-prefix globs (`dir/**`, `dir/sub/**`).
-# Anything fancier (`*.md`, `**/x`, `a/*.ext`, brace globs) is NOT a clean prefix and
-# forces a conservative "cannot prove disjoint" (= overlap = serialize).
+# `## Touches` takes directory-prefix globs (`dir/**`, `dir/sub/**`) and literal paths
+# (`docs/notes/x.md`, no glob metacharacter), which are an exact prefix. Anything fancier
+# (`*.md`, `**/x`, `a/*.ext`, brace globs) is NOT a clean prefix and forces a conservative
+# "cannot prove disjoint" (= overlap = serialize).
 #
 # The hands-off shared-surface list is NOT hardcoded here: it is extracted from
 # WORKFLOW.md at runtime (single source, no drift), the same list test-meta.sh reads.
@@ -33,7 +34,9 @@ WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives i
 # --- prefix extraction ------------------------------------------------------
 
 # Normalize ONE glob to a directory prefix. A clean directory-prefix glob (`dir/**`,
-# `dir/sub/**`) -> the prefix with the trailing `/**` dropped. Anything else (`*.md`,
+# `dir/sub/**`) -> the prefix with the trailing `/**` dropped. A literal path (no `*?[{`,
+# no `.`/`..` segment, not absolute) -> itself: prefix_overlap compares on segment
+# boundaries, so a file overlaps only itself or an ancestor dir. Anything else (`*.md`,
 # `**/x`, `a/*.ext`, a brace glob) -> the glob verbatim with a leading "?" marker so
 # callers treat it as unprovable (forces conservative overlap). This is the single
 # source for the prefix rule, shared by gate_touches (spec `## Touches` lists) and
@@ -42,6 +45,9 @@ gate_normalize_glob() {
   local g="$1"
   if printf '%s' "$g" | grep -qE '^[A-Za-z0-9._/-]+/\*\*$'; then
     printf '%s\n' "${g%/\*\*}"
+  elif printf '%s' "$g" | grep -qE '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$' \
+       && ! printf '%s' "$g" | grep -qE '(^|/)\.\.?(/|$)'; then
+    printf '%s\n' "$g"
   else
     printf '?%s\n' "$g"
   fi
