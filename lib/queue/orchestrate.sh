@@ -2345,6 +2345,108 @@ _sg_pr() {  # roadmap id
   _sg_line "$1" "$2" | sed -nE 's/.*PR #([0-9]+).*/\1/p' | head -1
 }
 
+# ---- Tiered verification join ([mega] verify = "tiered", docs/specs/SPEC-421-tiered-verification.md) ----
+# Inside a tiered mega-goal every node verifies on the `affected` selection only. The full suite runs once
+# per wave, here, on the MERGED tree, against a baseline this join measures itself. Config is read from the
+# base ref (`kit_config_get_at`), never from a node's branch or the working tree.
+
+# The ref a wave merges into: origin's default branch, else the run worktree's branch.
+_verify_base() {  # repo
+  local b; b=$(_kit_mc_base_ref "$1" 2>/dev/null) || b=""
+  [ -n "$b" ] || b=$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$b" ] || b=HEAD
+  printf '%s' "$b"
+}
+
+# 0 when [mega] verify is "tiered" at <base>.
+_verify_tiered() {  # repo base
+  [ "$(kit_config_get_at "$1" "$2" mega.verify off)" = tiered ]
+}
+
+# _wave_join <megadir> <repo> <base> <id>... : the join. Pins each PR head (gh), runs the join command
+# (`[test] join_cmd` at the base) on the base tree in a throwaway worktree, merges the pinned heads in a
+# second throwaway worktree, runs it there, and compares the two runs. Returns 0 when the merged run is
+# green or fails only on what the base run already failed; 1 otherwise (nothing may merge). On 0 the
+# pinned heads are in _JOIN_HEADS, one per id in order.
+_JOIN_HEADS=()
+_wave_join() {
+  local megadir="$1" repo="$2" base="$3"; shift 3
+  local roadmap="$megadir/ROADMAP.md" gh="${MEGA_MERGE_GH:-gh}" kf="$LIB_ROOT/gate/known-failures.sh"
+  local id pr sha cmd bsha tmp rc=0
+  _JOIN_HEADS=()
+  cmd=$(kit_config_get_at "$repo" "$base" test.join_cmd "")
+  if [ -z "$cmd" ]; then
+    _emit_event "$megadir" wave blocked "converge: join has no [test] join_cmd at the base"
+    echo "[orchestrate] [join] [mega] verify is tiered but [test] join_cmd is not set at $base; nothing merges." >&2
+    return 1
+  fi
+  for id in "$@"; do
+    pr=$(_sg_pr "$roadmap" "$id")
+    sha=$(cd "$repo" && "$gh" pr view "$pr" --json headRefOid -q .headRefOid 2>/dev/null) || sha=""
+    if [ "${#sha}" -ne 40 ]; then
+      _emit_event "$megadir" "$id" blocked "converge: join cannot read the head of PR #$pr"
+      echo "[orchestrate] [join] cannot read the head commit of PR #$pr ($id); nothing merges." >&2
+      return 1
+    fi
+    case "$sha" in *[!0123456789abcdef]*) echo "[orchestrate] [join] PR #$pr head is not a commit id; nothing merges." >&2; return 1 ;; esac
+    if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
+      git -C "$repo" fetch -q origin "+refs/pull/$pr/head:refs/kit/join-pr-$pr" >/dev/null 2>&1 || :
+      git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null || {
+        _emit_event "$megadir" "$id" blocked "converge: join cannot fetch the head of PR #$pr"
+        echo "[orchestrate] [join] head $sha of PR #$pr ($id) is not in the repo and could not be fetched; nothing merges." >&2
+        return 1
+      }
+    fi
+    _JOIN_HEADS+=("$sha")
+  done
+  bsha=$(git -C "$repo" rev-parse --verify -q "$base^{commit}") || { echo "[orchestrate] [join] cannot resolve the base '$base'; nothing merges." >&2; return 1; }
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/kit-join.XXXXXX") || return 1
+  _wave_join_run "$megadir" "$repo" "$base" "$bsha" "$tmp" "$cmd" "$kf" || rc=$?
+  git -C "$repo" worktree remove --force "$tmp/base" >/dev/null 2>&1 || :
+  git -C "$repo" worktree remove --force "$tmp/merged" >/dev/null 2>&1 || :
+  git -C "$repo" worktree prune >/dev/null 2>&1 || :
+  rm -rf "$tmp"
+  [ "$rc" = 0 ] || _JOIN_HEADS=()
+  return "$rc"
+}
+
+_wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HEADS)
+  local megadir="$1" repo="$2" base="$3" bsha="$4" tmp="$5" cmd="$6" kf="$7" sha brc mrc cls pc
+  git -C "$repo" worktree add --detach -q "$tmp/base" "$bsha" >/dev/null 2>&1 \
+    && git -C "$repo" worktree add --detach -q "$tmp/merged" "$bsha" >/dev/null 2>&1 \
+    || { echo "[orchestrate] [join] cannot create the join worktrees; nothing merges." >&2; return 1; }
+  # The base run first: its failure set is the join's own baseline (never a ledger line).
+  _say "[orchestrate] [join] full suite on the base tree ($base) ..."
+  brc=0; ( cd "$tmp/base" && bash -c "$cmd" ) >| "$tmp/base.log" 2>&1 || brc=$?
+  for sha in "${_JOIN_HEADS[@]}"; do
+    if ! git -C "$tmp/merged" -c user.name=kit-join -c user.email=kit-join@localhost merge --no-ff --no-edit -q "$sha" >/dev/null 2>&1; then
+      _emit_event "$megadir" wave blocked "converge: join cannot merge head ${sha:0:12} into the base"
+      echo "[orchestrate] [join] head ${sha:0:12} does not merge cleanly into $base with the rest of the wave; nothing merges." >&2
+      return 1
+    fi
+  done
+  _say "[orchestrate] [join] full suite on the merged tree (${#_JOIN_HEADS[@]} head(s)) ..."
+  mrc=0; ( cd "$tmp/merged" && bash -c "$cmd" ) >| "$tmp/merged.log" 2>&1 || mrc=$?
+  if [ "$mrc" = 0 ]; then
+    _say "[orchestrate] [join] green."
+    return 0
+  fi
+  bash "$kf" names "$tmp/base.log" "$repo" "$base" >| "$tmp/base.set" 2>/dev/null
+  pc=$(bash "$kf" count "$tmp/base.log" "$repo" "$base" 2>/dev/null)
+  cls=$(bash "$kf" classify "$tmp/merged.log" "$repo" "$base" --exit "$mrc" --known-from "$tmp/base.set" ${pc:+--prev-count "$pc"} 2>"$tmp/cls.err")
+  if [ "$cls" = known ]; then
+    _say "[orchestrate] [join] merged tree fails only what the base tree already failed (base exit $brc); green."
+    return 0
+  fi
+  _emit_event "$megadir" wave blocked "converge: join red on the merged tree (exit $mrc)"
+  {
+    echo "[orchestrate] [join] RED: the merged wave fails where the base tree did not (merged exit $mrc, base exit $brc); nothing merges. The lead routes it."
+    sed 's/^/    /' "$tmp/cls.err"
+    bash "$kf" names "$tmp/merged.log" "$repo" "$base" 2>/dev/null | grep -vxFf "$tmp/base.set" | sed 's/^/    new failure: /'
+  } >&2
+  return 1
+}
+# -----------------------------------------------------------------------------------------------
+
 # _wave_converge <megadir> [<id>...]: sequence the merges of a landed wave. With explicit ids it merges
 # exactly those; with none, it reads the just-landed set from the global `_WAVE_LANDED` (populated by
 # `_wave_run`). Steps:
@@ -2427,34 +2529,65 @@ _wave_converge() {  # megadir [id...] [--peers id...]
   #    (the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
   #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
   #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
+  #    [mega] verify = "tiered": the join runs first (full suite on the merged tree), and the hook
+  #    gets each joined head as `--expect-head <sha>`. A head that moved since (hook exit 75) reruns
+  #    the join for the sub-goals not yet merged, once; a second refusal stops the wave.
   local lockdir="$megadir/.orchestrate/flip.lock"
   local pr rc branch rid state lane="${WAVE_MERGE_LANE:-full}"
-  for id in "${ordered[@]}"; do
-    pr=$(_sg_pr "$roadmap" "$id")
-    if [ -z "$pr" ]; then
-      _say "[orchestrate] [converge] $id has no real PR yet (placeholder); skipping its merge (real PR/merge wiring is deferred)."
-      continue
+  local tiered=0 joins=0 todo=( "${ordered[@]}" ) mergeable pins=() extra i k moved
+  _verify_tiered "$repo" "$base" && tiered=1
+  while :; do
+    pins=(); mergeable=()
+    if [ "$tiered" = 1 ]; then
+      for id in "${todo[@]}"; do [ -n "$(_sg_pr "$roadmap" "$id")" ] && mergeable+=("$id"); done
+      if [ "${#mergeable[@]}" -gt 0 ]; then
+        joins=$((joins + 1))
+        _wave_join "$megadir" "$repo" "$base" "${mergeable[@]}" || return 1
+        pins=( "${_JOIN_HEADS[@]}" )
+      fi
     fi
-    branch=$(_sg_branch "$(_goalfile "$megadir" "$id")" "$id"); rid="${branch#*/}"; [ -n "$rid" ] || rid="$id"
-    _lock "$lockdir" || { echo "[orchestrate] [converge] could not acquire the flip lock to merge $id" >&2; return 1; }
-    rc=0
-    # shellcheck disable=SC2086 # WAVE_MERGE_CMD is operator config; word-splitting is intended (mirrors CLAUDE_FLAGS).
-    $WAVE_MERGE_CMD "$pr" "$rid" "$lane" || rc=$?
-    _unlock "$lockdir"
-    if [ "$rc" != 0 ]; then
-      _emit_event "$megadir" "$id" blocked "converge: merge hook failed (PR #$pr, rc $rc)"
-      echo "[orchestrate] [converge] $id merge hook failed (PR #$pr, rc $rc); stopping convergence (no self-claim)." >&2
-      return "$rc"
-    fi
-    # The hook exiting 0 is not a merge (the default hook is a dry run). Ask GitHub.
-    state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""
-    if [ "$state" = MERGED ]; then
-      _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
-      _say "[orchestrate] [converge] $id merged (PR #$pr)."
-      continue
-    fi
-    _emit_event "$megadir" "$id" merge-dry-run "converge: PR #$pr NOT merged (hook exit 0, PR state '${state:-unreadable}'); not recorded as merged"
-    _say "[orchestrate] [converge] $id PR #$pr is not merged (state '${state:-unreadable}'): a dry run or an unconfirmed merge; NOT recorded as merged. A real merge needs a WAVE_MERGE_CMD that passes --execute to mega-merge."
+    moved=0; k=0
+    for ((i = 0; i < ${#todo[@]}; i++)); do
+      id="${todo[$i]}"
+      pr=$(_sg_pr "$roadmap" "$id")
+      if [ -z "$pr" ]; then
+        _say "[orchestrate] [converge] $id has no real PR yet (placeholder); skipping its merge (real PR/merge wiring is deferred)."
+        continue
+      fi
+      extra=()
+      if [ "$tiered" = 1 ]; then extra=(--expect-head "${pins[$k]}"); k=$((k + 1)); fi
+      branch=$(_sg_branch "$(_goalfile "$megadir" "$id")" "$id"); rid="${branch#*/}"; [ -n "$rid" ] || rid="$id"
+      _lock "$lockdir" || { echo "[orchestrate] [converge] could not acquire the flip lock to merge $id" >&2; return 1; }
+      rc=0
+      # shellcheck disable=SC2086 # WAVE_MERGE_CMD is operator config; word-splitting is intended (mirrors CLAUDE_FLAGS).
+      $WAVE_MERGE_CMD "$pr" "$rid" "$lane" ${extra[@]+"${extra[@]}"} || rc=$?
+      _unlock "$lockdir"
+      if [ "$rc" = 75 ] && [ "$tiered" = 1 ]; then
+        _emit_event "$megadir" "$id" blocked "converge: PR #$pr head moved since the join"
+        if [ "$joins" -ge 2 ]; then
+          echo "[orchestrate] [converge] $id PR #$pr head moved again after the rerun; stopping convergence (no self-claim). Nothing unjoined was merged." >&2
+          return 1
+        fi
+        _say "[orchestrate] [converge] $id PR #$pr head moved since the join; rerunning the join for ${#todo[@]} sub-goal(s) from $id."
+        todo=( "${todo[@]:$i}" ); moved=1
+        break
+      fi
+      if [ "$rc" != 0 ]; then
+        _emit_event "$megadir" "$id" blocked "converge: merge hook failed (PR #$pr, rc $rc)"
+        echo "[orchestrate] [converge] $id merge hook failed (PR #$pr, rc $rc); stopping convergence (no self-claim)." >&2
+        return "$rc"
+      fi
+      # The hook exiting 0 is not a merge (the default hook is a dry run). Ask GitHub.
+      state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""
+      if [ "$state" = MERGED ]; then
+        _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
+        _say "[orchestrate] [converge] $id merged (PR #$pr)."
+        continue
+      fi
+      _emit_event "$megadir" "$id" merge-dry-run "converge: PR #$pr NOT merged (hook exit 0, PR state '${state:-unreadable}'); not recorded as merged"
+      _say "[orchestrate] [converge] $id PR #$pr is not merged (state '${state:-unreadable}'): a dry run or an unconfirmed merge; NOT recorded as merged. A real merge needs a WAVE_MERGE_CMD that passes --execute to mega-merge."
+    done
+    [ "$moved" = 1 ] || break
   done
   return 0
 }
@@ -2751,6 +2884,20 @@ cmd_run() {
     auto|cmux|kitty|wezterm|ghostty|iterm|terminal|none) ;;
     *) echo "orchestrate: PANE_VIEWER must be one of: ${PANE_VIEWER_ALLOWED// /|} (got: '$PANE_VIEWER')" >&2; return 64 ;;
   esac
+
+  # A tiered run joins at a wave barrier; a rolling wave has none, so the combination is refused up
+  # front, before any dispatch. Only a rolling run pays for the config read.
+  if [ "${WAVE_ROLLING:-0}" = 1 ]; then
+    local _vrepo _vbase
+    _vrepo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || _vrepo=""
+    if [ -n "$_vrepo" ]; then
+      _vbase=$(_verify_base "$_vrepo")
+      if _verify_tiered "$_vrepo" "$_vbase"; then
+        echo "orchestrate: [mega] verify = \"tiered\" does not support rolling waves (WAVE_ROLLING=1); unset WAVE_ROLLING or set verify = \"off\"" >&2
+        return 64
+      fi
+    fi
+  fi
 
   # Orca backend: the ONLY place orca-backend.sh is sourced on the run path. Everything below this
   # branch is the untouched default path.

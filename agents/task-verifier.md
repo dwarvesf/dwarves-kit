@@ -63,6 +63,7 @@ Run the project's test suite and **record the run as a re-runnable artifact**. A
   counts, the failing assertion, the summary line). These go in the `Verification record`
   block of your verdict (see Output format).
 - If tests fail, capture the failure output verbatim.
+- **Tiered mega-goal node.** The lead resolves the scope with `lib/gate/known-failures.sh suite` and names it in your input (normally `affected`: the narrowest tests that cover the change). Run exactly that selection, never the whole suite, and never read the node's own config for it. You cannot run the script and do not judge a failure known yourself: report a red run as a FAIL with its full output; the lead runs `known-failures.sh classify` on it and routes a `known` result.
 - **If no runnable check exists** (subjective prose, design judgment, a doc with no
   assertion), do NOT pass it silently and do NOT call it a soft warning. Record the
   verdict line as `[NO EXECUTABLE CHECK: <reason>]`. An honest no-check is allowed; a

@@ -42,6 +42,7 @@ Detect the test runner and execute:
 - Rust: `cargo test`
 
 If `kit_config_get test.suite full` (`lib/config/kit-config.sh`) is `affected`, run only the narrowest tests that cover the change (in the kit repo `bin/test-affected`) and note that the full suite runs on the schedule.
+In a tiered mega-goal node (`[mega] verify = "tiered"` at the base), resolve the scope with `bash lib/gate/known-failures.sh suite <root> <base> <goal-file>` instead of the `kit_config_get` read above and run what it names (`affected`: the narrowest tests that cover the change). A red run that `bash lib/gate/known-failures.sh classify <log> <root> <base> --exit <n> [--prev-count <n>]` prints `known` for does not stop the ship: every failure is on the lead's known-failures list at the base and the executed count did not drop. Name the known failures in the summary.
 If tests fail: STOP. Show the failures. Ask if the user wants to fix them first.
 If no test runner found: WARN but continue.
 

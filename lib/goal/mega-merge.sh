@@ -13,7 +13,7 @@
 #                                           re-implements or loosens the ship-gate's own
 #                                           required-gate logic. Exit 1 + the gaps otherwise.
 #
-#   merge <pr> <rid> <lane> [--execute] [--posture=<auto-to-final|per-pr-review>]
+#   merge <pr> <rid> <lane> [--execute] [--posture=<auto-to-final|per-pr-review>] [--expect-head <sha>]
 #                                           action. Runs `gate` FIRST; a failing or missing
 #                                           gate REFUSES unconditionally (prints BLOCKED,
 #                                           logs it, exits nonzero, never touches `gh`) --
@@ -44,9 +44,12 @@
 # opened draft/labelled at creation). Defense-in-depth, not a
 # replacement for the routing.
 #
+# --expect-head <sha> (the tiered wave join): refuse, exit 75, when the PR head read from GitHub is not <sha>,
+# before any other check and without touching `gh pr merge`.
+#
 # Subcommands:
 #   gate  <rid> <lane>
-#   merge <pr> <rid> <lane> [--execute] [--posture=<val>]
+#   merge <pr> <rid> <lane> [--execute] [--posture=<val>] [--expect-head <sha>]
 set -uo pipefail
 
 MM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -408,11 +411,14 @@ merge() {
     ''|*[!0-9]*) echo "merge: <pr> must be a bare PR number (got '$pr')" >&2; return 64 ;;
   esac
 
-  local execute=0 posture_flag="" arg
-  for arg in "$@"; do
+  local execute=0 posture_flag="" expect_head="" arg
+  while [ $# -gt 0 ]; do
+    arg="$1"; shift
     case "$arg" in
       --execute) execute=1 ;;
       --posture=*) posture_flag="${arg#--posture=}" ;;
+      --expect-head=*) expect_head="${arg#--expect-head=}" ;;
+      --expect-head) expect_head="${1:-}"; [ $# -gt 0 ] && shift ;;
     esac
   done
   local posture; posture="$(_resolve_posture "$posture_flag")"
@@ -427,6 +433,15 @@ merge() {
     echo "BLOCKED: cannot read PR #$pr head commit (gh unavailable/offline); failing closed and refusing auto-merge. Verify + merge manually if intended." >&2
     _log "$rid" "BLOCKED merge pr=$pr (head unreadable, fail-closed)"
     return 1
+  fi
+
+  # A wave join (orchestrate.sh, [mega] verify = "tiered") ran the full suite on this exact head. A head
+  # that moved since is a different commit than the one that was joined: refuse it (exit 75, which the
+  # caller reads as "rerun the join"). Compared as read, so a malformed expectation also refuses.
+  if [ -n "$expect_head" ] && [ "$head" != "$expect_head" ]; then
+    echo "BLOCKED: PR #$pr head moved since the wave join (joined $expect_head, now $head); refusing to merge an unjoined head, rerun the join." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (head moved since the join)"
+    return 75
   fi
 
   # CODE-LEVEL gate/held-final exclusion, checked BEFORE the gate so a
@@ -581,5 +596,5 @@ case "$cmd" in
   gate)  gate "$@" ;;
   merge) merge "$@" ;;
   mark)  mark "$@" ;;
-  *) echo "usage: mega-merge.sh {gate <rid> <lane>|merge <pr> <rid> <lane> [--execute] [--posture=<auto-to-final|per-pr-review>]|mark <pr> [repo]}" >&2; exit 64 ;;
+  *) echo "usage: mega-merge.sh {gate <rid> <lane>|merge <pr> <rid> <lane> [--execute] [--posture=<auto-to-final|per-pr-review>] [--expect-head <sha>]|mark <pr> [repo]}" >&2; exit 64 ;;
 esac
