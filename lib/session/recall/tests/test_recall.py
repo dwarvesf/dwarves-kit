@@ -1131,9 +1131,8 @@ class TestRecall(unittest.TestCase):
         write("bbb-2", 1_700_000_200, name("old-name", "bbb-2"), name("fix-feed-defects-phase", "bbb-2"))
         # custom-title only
         write("ccc-3", 1_700_000_300, {"type": "custom-title", "customTitle": "titled-only", "sessionId": "ccc-3"})
-        # a prose mention of the key inside a tool result is not a name record
-        write("ddd-4", 1_700_000_400, {"type": "user", "message": {"role": "user", "content": [
-            {"type": "tool_result", "content": 'rg said "agentName":"land-session-merges-wrap" here'}]}})
+        # the same key on a record that is not a name record (a subagent attachment) is not a name
+        write("ddd-4", 1_700_000_400, {"type": "attachment", "agentName": "land-session-merges-wrap"})
         # a wrapper whose prompt only quotes the name: found by a query search, never by --name
         write("eee-5", 1_700_000_500, {"type": "user", "message": {"role": "user",
               "content": "wrap the session land-session-merges-wrap"}})
@@ -1147,7 +1146,7 @@ class TestRecall(unittest.TestCase):
             code, out, _ = self._run_main(["--name", "land-session-merges-wrap", "--all", "--json"])
             self.assertEqual(code, 0)
             files = [os.path.basename(x["file"]) for x in json.loads(out)["sessions"]]
-            self.assertEqual(files, ["aaa-1.jsonl"])  # not ddd-4 (prose), not eee-5 (wrapper prompt)
+            self.assertEqual(files, ["aaa-1.jsonl"])  # not ddd-4 (other record type), not eee-5 (wrapper prompt)
             files = [os.path.basename(x["file"]) for x in json.loads(
                 self._run_main(["--name", "Fix-Feed-Defects-Phase", "--all", "--json"])[1])["sessions"]]
             self.assertEqual(files, ["bbb-2.jsonl"])  # case-insensitive, last rename wins
