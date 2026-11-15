@@ -1,7 +1,7 @@
 # Spec: tiered verification for mega-goal runs (node, wave join, release)
 
 Generated: 2026-11-15
-Status: DRAFT (revision 2: v1 cut to phase 1 after three REVISE reviews)
+Status: DRAFT (revision 3: rescoped to cheap re-runs after the confirmation review)
 Lane: full (the build touches `lib/gate/`, `lib/queue/orchestrate.sh` and the verification pipeline in `commands/execute.md`, all enforcement surfaces)
 Depth: standard (every re-verification point below was read live in the tree and in the two mega-goal skills; the Spacedown numbers come from one run on clean main)
 Type: spec-feature
@@ -45,145 +45,92 @@ Rough cost today, from the rows above and the 76 s figure (an estimate, not a me
 
 ## Solution (v1)
 
-Two moves remove the per-step repeats. First, the kit script, not the builder, runs a node's checks once and writes the proof. Second, every later step in the same node reuses that run while the tree is unchanged. A recorded baseline stops a pre-existing failure from blocking a node. The full suite runs once per wave, inside the existing converge step.
+Make every re-run cheap; never skip a check on the strength of a record. Every existing step still runs, but inside a mega-goal node each run is narrow, so a repeat costs seconds instead of 76. The full suite runs once per wave, on the merged tree, inside the existing converge step.
 
 ```
- node (kit script, after the build)        wave join (lead, in _wave_converge)       release (lead)
- +----------------------------------+      +--------------------------------------+  +------------------+
- | node-proof.sh run <node>         |      | pin node heads, merge in a throwaway |  | /kit:battery     |
- |  clean worktree at Head          |      | worktree, pin the merged tree        |  | negative control |
- |  node_map cmds + Smoke + negctl  |      | full suite (baseline-aware)          |  | release build    |
- |  parse failures from full log    |      | re-run every node's Smoke + non-suite|  +------------------+
- |  write record, key = HEAD^{tree} |      | commands                             |
- +----------------------------------+      | green: WAVE_MERGE_CMD, landed tree   |
-     |  same tree?  task-verifier, ship,   |   must equal joined tree, else rejoin|
-     |  sampled recheck reuse the run      | red: bisect by merge prefix, else    |
-     |  risky? fresh-context recheck       |   escalate                           |
-     |  1 in N non-risky: cheap re-run     +--------------------------------------+
-     v
-  push gate (proof-ledger.sh check) sees a record with a green mark and a NEGATIVE CONTROL
+ node (every existing step still runs)            wave join (lead, in _wave_converge)
+ +-------------------------------------+          +------------------------------------------+
+ | execute 3.1   -> affected tests     |          | full suite on the BASE tree -> baseline  |
+ | task-verifier -> affected tests     |  wave    | merge the wave heads, pin each head SHA  |
+ | recheck       -> affected tests     | -------> | full suite on the MERGED tree            |
+ | ship step 2   -> affected tests     |  done    | new failures? red: stop, no merge        |
+ | known failures (base file) never    |          | green: WAVE_MERGE_CMD with the pinned    |
+ |   consume fix retries               |          |   head; head moved? rejoin, never land   |
+ +-------------------------------------+          +------------------------------------------+
+                                                    release: /kit:battery, negative control, build
 ```
 
-| Level | Who runs it | Runs | When |
-|---|---|---|---|
-| Node done | `node-proof.sh run`, called by the lead's execute step | the `node_map` commands for the touched paths, the node's new tests, its `Smoke:` line, its `Negative control:` | once per node tree |
-| Wave join | the lead, inside `_wave_converge` | the full suite, every node's `Smoke:` and non-suite commands again, one fresh-context review of the merged diff | once per wave (once per DAG level on the serial path) |
-| Release | the lead | `/kit:battery`, negative control, release build | once per release |
-
-The mode is `[mega] verify = "off" | "baseline" | "tiered"`, read at the base commit (rule 4). `baseline` turns on rule 3 alone, so the pilot can measure each part. `off` is today's flow.
+The mode is `[mega] verify = "off" | "tiered"`, read at the base commit. `off` is today's flow.
 
 ## Rules
 
-1. **The kit writes the proof.** `node-proof.sh run <node>` checks out Head in a clean throwaway worktree, runs the node's commands itself, and writes the record: each `Command:`, `Exit:`, the sha256 of the FULL output, the parsed failure set, and a `Writer: node-proof.sh <version>` line. It also appends a `node-proof` ledger line with the same output hashes. `trust` refuses any record whose hashes and key do not match a ledger line the script wrote. A builder never writes or edits a record. One non-risky node in N (`[mega] rerun_sample`, default 5, keyed on the rid like `recheck-sample.sh`) is re-run by the script, without an agent, and must reproduce the recorded failure set.
-2. **Same-tree reuse inside one node.** The key is `git rev-parse HEAD^{tree}`. The task-verifier pass (`commands/execute.md:168`), the sampled recheck (`commands/execute.md:186-194`) and ship's test step (`commands/ship.md:36-46`) read the record when the key equals the current tree, and judge from it instead of running the checks again. A different tree means a new `node-proof.sh run`, never a partial reuse. This is the change that removes the per-step re-verification.
-3. **Baseline-aware verdicts.** The script parses failures from the full log with `[test] failure_line` (one capture group: the name) and counts executed checks with `[test] count_line`. A failure is matched by name plus the sha256 of its whole line. Verdicts: `PASS` when exit 0 and no failures; `PASS (baseline)` only when the failure set is non-empty, every entry is in the baseline, and the executed count is at least the baseline's count; `FAIL` for any new failure, and for a non-zero exit with no parsed failure (a crash is never masked); `INCONCLUSIVE` when `failure_line` or `count_line` is missing. The baseline is a lead-only record, one per base tree, written by `node-proof.sh baseline record` on a throwaway worktree at the base. A green join's failure set becomes the next wave's baseline. The execute retry loop (`commands/execute.md:177-181`) never opens on `PASS (baseline)`.
-4. **Trust config is read at the base commit.** `node_map`, `failure_line`, `count_line`, `recheck_paths`, `verify` and `rerun_sample` come from `git show <base>:.kit.toml`, the operator and kit-root layers as-is, the same split `_negctl_required` uses (`lib/gate/proof-ledger.sh:410-417`). A node whose diff changes any of these keys is risky and runs the full suite instead of its `node_map` commands.
-5. **Risk is the highest of three signals.** (a) The class the lead writes in the goal file before dispatch (`Risk: none | behavioral | stateful | security`). (b) The path floor: `lane-classify.sh floor` with `extra_hard_paths` and `recheck_paths` read at the base. (c) A scan of the added lines for the data-loss signatures and the `stateful` words in `proof-classes.tsv`. A node that touches a path outside its `## Touches` plan is risky. A risky node gets `kit:recheck-verifier` in a fresh context, which re-executes the record's commands.
-6. **The wave join lives in `_wave_converge`** (`lib/queue/orchestrate.sh:2367`), before `WAVE_MERGE_CMD`. It pins each node's head SHA, merges the heads onto the base in a throwaway worktree, pins the merged tree, runs the full suite (baseline-aware) and re-runs every node's `Smoke:` line and non-suite commands. Green: the existing merge path lands the PRs; afterwards the landed tree must equal the joined tree, or the join runs again on the landed tree. Red: bisect by merge prefix (join the first k nodes, k = 1, 2, ...) to the first red prefix and route the finding to that node; if no prefix isolates it, escalate to the human. The serial path (no wave formed) joins once per DAG level. Tiered mode refuses to start with `WAVE_ROLLING=1` in v1.
-7. **Push-gate mapping.** Each node goal file carries `Negative control: <mutate-cmd>` against the narrowest test. `node-proof.sh run` runs it through `lib/gate/negctl.sh` and writes the `NEGATIVE CONTROL` block into the record, so `proof-ledger.sh check` (`:606-607`, `:653`) passes on real evidence. An `INCONCLUSIVE` verdict stops the node and goes to the lead before any push; it never passes (the gate also refuses it, `:655`).
-8. **Isolated slots.** Parallel nodes each get their own `HOME` and macOS preferences domain per slot, set the way `negctl.sh --slot-env` sets a per-slot variable (`[test] slot_env`). Two nodes never share app state.
-
-## Proof record
-
-A run file in the existing convention (`docs/verification/README.md`, stage 3), written by the script at `docs/verification/<spec-slug>/runs/node-<node-slug>.md` and committed by the lead with the node's branch.
-
-| Field | Value |
-|---|---|
-| `Writer:` | `node-proof.sh <version>` |
-| `Node:` | sub-goal id and slug |
-| `Key:` | `HEAD^{tree}` at Head |
-| `Head:` / `Base:` | commit SHAs |
-| `Config:` | the base commit the trust keys were read at |
-| `Scope:` | touched paths |
-| `Command:` / `Exit:` / `Output-sha256:` / `Output (excerpt):` | one block per command |
-| `Executed:` | the `count_line` count |
-| `Failures:` | `name | line-sha256` per parsed failure |
-| `Baseline:` | baseline id (base tree) and its count |
-| `Risk:` | the level and which signal set it |
-| `NEGATIVE CONTROL` | the negctl block |
-| `Verdict:` | `PASS`, `PASS (baseline)`, `INCONCLUSIVE`, `FAIL` |
-
-Ledger lines (through `ledger_append`, keyed by the shared repo root like the proof overrides): `node-proof | <node> | <key> | <output hashes> | <verdict>`, `baseline | <base-tree> | <count> | <failure set>`, and `suite-run | <node> | <start> | <end>` for every suite execution (the pilot metric reads these).
+1. **Node scope is `affected`.** In a tiered mega-goal node, every verification step runs the `affected` selection the kit already has (`kit.toml:355`; `commands/execute.md:167` defines it: the tests that reference the changed paths, else the smallest command that fails if the change is wrong). The lead sets it per node with a `Test-suite: affected` line in the goal file (the node brief carries it verbatim); the repo default is read from `git show <base>:.kit.toml`, never from the node's branch. Execute 3.1, the task-verifier pass (`commands/execute.md:168`), the recheck sample (`commands/execute.md:186-194`) and ship's test step (`commands/ship.md:36-46`) all still run. Nothing is skipped and no record is trusted.
+2. **Known failures are a lead-committed file in the target repo.** Default `tests/known-failures.txt`, path set by `[test] known_failures` at the base. One test name per line, read with `git show <base>:<path>`. A run whose failures are all listed, whose executed count is non-zero and at least the last full run's, does not consume fix retries (`commands/execute.md:177-181`) and does not stop ship. A non-zero exit with no parsed failure is a failure (a crash is never masked). A node diff that touches the file fails the node's gate unless the lead declared the change in the goal file (`Known-failures: edit <reason>`). Failure names and the executed count come from `[test] failure_line` and `[test] count_line`, read at the base; without them a red run is a plain failure.
+3. **The wave join runs the full suite once per wave, on the merged tree.** Inside `_wave_converge` (`lib/queue/orchestrate.sh:2367`), before `WAVE_MERGE_CMD`: run the full suite on the base tree in a throwaway worktree to get this join's own baseline (never a ledger line), merge the wave's heads in a second throwaway worktree with each head SHA pinned, and run the full suite there. A failure not in the base run's set stops the wave: nothing merges and the lead routes it. Green: `WAVE_MERGE_CMD` receives each pinned head, and `mega-merge.sh` merges with `--match-head-commit <pinned>`. A PR head that moved since the join refuses the merge and the join reruns; it never lands an unjoined head.
+4. **Rolling waves are refused in v1.** `orchestrate.sh run` exits with a message when `verify = "tiered"` and `WAVE_ROLLING=1`. With no wave formed (serial path), the join runs once per DAG level.
+5. **The build branch is `feat/tiered-verification`**, so `spec_for_slug` finds this spec and its lane. The `skipped` rows appended on rid `tiered-verification` already cancel the spec-only overrides; the build records its own gates.
 
 ## Technical Design
 
-- **New `lib/gate/node-proof.sh`.** Verbs: `run <node>`, `trust <node>` (exit 0 reuse, 1 re-run, one reason line), `risk <node>`, `baseline record|show`, `classify <log>` (the verdict from a full log and a baseline), `join <wave>` (called by `_wave_converge`). Bash and git; reuses `negctl.sh` (throwaway worktrees, `--slot-env`), `lane-classify.sh floor`, `proof-classes.sh`, `ledger_append`, `kit-config.sh`.
-- **`commands/execute.md` Step 3.** In `tiered` mode Step 3.1 is `node-proof.sh run`; Steps 3.2 and the recheck read the record when `trust` exits 0; the retry loop skips `PASS (baseline)`; the recheck decision is rule 5 plus the 1-in-N re-run of rule 1.
-- **`agents/task-verifier.md`.** Node mode: given a record with a matching key, judge criteria from it; do not run the suite.
-- **`commands/ship.md` Step 2.** Reads the record on a matching key; stops on `FAIL` and `INCONCLUSIVE` only.
-- **`lib/queue/orchestrate.sh`.** `_wave_converge` calls `node-proof.sh join` before `WAVE_MERGE_CMD` and checks the landed tree after; the serial path joins per DAG level; `run` refuses `tiered` with `WAVE_ROLLING=1`; no `node-proof.sh` call when the mode is `off`.
-- **`commands/mega.md`.** Goal-file fields `Risk:`, `Smoke:`, `Negative control:`; the levels and the trust rule.
-- **`commands/battery.md`.** The baseline ingredient reads `node-proof.sh baseline show`.
-- **`kit.toml` and `lib/config/module-registry.md`.** New keys `[mega] verify`, `[mega] recheck_paths`, `[mega] rerun_sample`, `[test] node_map`, `[test] failure_line`, `[test] count_line`, `[test] slot_env`, and any `KIT_*` env read, registered so `tests/test-config-registry.sh` and the naming lints pass.
-- **Docs.** `docs/WORKFLOW.md` mega section, `docs/verification/README.md` (the node record), `CHANGELOG.md`.
-- **Companion edits in dotfiles.** `megagoal-agent-drive/SKILL.md:19`, `:52` and `plan-for-mega-goal/references/invocation-template.md:137-140`, `:157-158` point at the levels instead of per-task and per-merge re-runs.
+- **`commands/execute.md` Step 3 and `commands/ship.md` Step 2.** Read the node's `Test-suite:` line, falling back to `[test] suite` at the base; read the known-failures file at the base; the retry loop and ship's stop skip a run that is all-known with a non-dropping count.
+- **`agents/task-verifier.md`, `agents/recheck-verifier.md`.** Run the same `affected` selection the lead names; apply the known-failures rule.
+- **`lib/gate/known-failures.sh` (new, small).** `read <root> <base>`, `classify <log> <root> <base>` (prints `pass`, `known`, `fail`), `guard <root> <base> <goal-file>` (exit 1 when the diff touches the file without a declaration). Bash and git only.
+- **`lib/queue/orchestrate.sh`.** `_wave_converge` gains the join before the merge loop and passes the pinned head as an extra arg to `WAVE_MERGE_CMD`; `run` refuses `tiered` with rolling waves; the serial path joins per DAG level. No new call happens when `verify = "off"`.
+- **`lib/goal/mega-merge.sh`.** `merge` accepts `--expect-head <sha>` and refuses when the fetched head differs (it already pins and passes `--match-head-commit`, `:457-538`).
+- **`kit.toml`, `lib/config/module-registry.md`.** `[mega] verify`, `[test] known_failures`, `[test] failure_line`, `[test] count_line`, registered for `tests/test-config-registry.sh`.
+- **`commands/mega.md`, `docs/WORKFLOW.md`, `CHANGELOG.md`.** The goal-file lines and the join. Companion dotfiles edits: `megagoal-agent-drive/SKILL.md:19`, `:52` and `plan-for-mega-goal/references/invocation-template.md:137-140`, `:157-158` point at the join instead of per-task and per-merge full runs.
 
 ## Task Breakdown
 
 | Task | Files | Acceptance |
 |---|---|---|
-| T0: golden first | commit the orchestrator dry-run output from `master` as a golden under `tests/fixtures/`, BEFORE any `orchestrate.sh` edit | AC10 |
-| T1: fixture | `tests/lib/node-fixture.sh` | used by T2 to T4 |
-| T2: run, trust, classify, baseline, risk | `lib/gate/node-proof.sh`, `tests/test-node-proof.sh` | AC1 to AC6 |
-| T3: execute, verifier, ship | `commands/execute.md`, `agents/task-verifier.md`, `commands/ship.md` | AC7 |
-| T4: join | `lib/queue/orchestrate.sh`, `tests/test-orchestrate-tiered.sh` | AC8, AC9 |
-| T5: config, mega, battery, docs | `kit.toml`, `lib/config/module-registry.md`, `commands/mega.md`, `commands/battery.md`, `docs/WORKFLOW.md`, `docs/verification/README.md`, `CHANGELOG.md` | AC11 |
-| T6: skills | dotfiles `megagoal-agent-drive`, `plan-for-mega-goal` | R7 to R9 replaced |
-| T7: pilot | Spacedown release 1 | AC12 |
+| T0: golden first | commit the orchestrator dry-run output from `master` under `tests/fixtures/` before any `orchestrate.sh` edit | AC6 |
+| T1: known failures | `lib/gate/known-failures.sh`, `tests/test-known-failures.sh` | AC2, AC3 |
+| T2: node scope | `commands/execute.md`, `commands/ship.md`, the two agents | AC1 |
+| T3: join and merge | `lib/queue/orchestrate.sh`, `lib/goal/mega-merge.sh`, `tests/test-orchestrate-tiered.sh` | AC4, AC5 |
+| T4: config and docs | `kit.toml`, `lib/config/module-registry.md`, `commands/mega.md`, `docs/WORKFLOW.md`, `CHANGELOG.md` | AC7 |
+| T5: skills | dotfiles `megagoal-agent-drive`, `plan-for-mega-goal` | R7 to R9 replaced |
+| T6: pilot | Spacedown release 1 | AC8 |
 
 ## Test plan
 
-**Fixture** `tests/lib/node-fixture.sh`: a repo with a stub suite whose checks, failures, count and exit code come from env (`STUB_FAIL`, `STUB_COUNT`, `STUB_EXIT`, `STUB_CRASH`); a node branch; a base that moves on a file the node does not touch; and a semantic-conflict pair (each node green alone, red merged). Node cases go in `tests/test-node-proof.sh`, orchestrator cases in a new `tests/test-orchestrate-tiered.sh`.
+Fixture `tests/lib/node-fixture.sh`: a repo with a stub suite driven by env (failures, executed count, exit code, crash), a node branch, and a semantic-conflict pair (each node green alone, red merged).
 
-| # | AC | Cases |
+| # | Case | Check |
 |---|---|---|
-| P1 | AC1 | `run-writes-record-and-ledger`; `trust-refuses-hand-written-record`; `trust-refuses-edited-output-hash`; `rerun-sample-reproduces` |
-| P2 | AC2 | `reuse-same-tree`; `rerun-on-new-tree` (one commit after the run) |
-| P3 | AC3 | `baseline-known-passes`; `crash-not-masked` (exit 1, no parsed failure = FAIL); `swap-blocks` (one fixed plus one new); `name-collision` (same name, different line hash = new); `count-drop-blocks` (fewer executed checks than the baseline); `flaky` (a baseline failure that passes counts as fixed, never as new); `stale-baseline-after-wave` (the next wave reads the green join's set); `no-pattern-inconclusive` |
-| P4 | AC4 | `config-read-at-base` (a working-tree `.kit.toml` edit is ignored); `config-diff-is-risky` (a diff to a trust key runs the full suite) |
-| P5 | AC5 | `risk-declared`, `risk-floor-base-config`, `risk-added-lines`, `risk-outside-touches`, `plain-code-not-risky` |
-| P6 | AC6 | `negctl-block-written`; `inconclusive-stops-before-push` |
-| P7 | AC8 | `join-once-per-wave`; `join-semantic-conflict-red`; `join-bisect-owner`; `join-bisect-escalates`; `landed-tree-mismatch-rejoins`; `serial-joins-per-level`; `rolling-refused` |
-| P8 | AC9 | `slots-isolated` (two parallel nodes see different `HOME` and preferences domain) |
-| P9 | AC10 | `tiered-off-golden` (dispatch and prompt output equal the T0 golden; a shim on `PATH` records zero `node-proof.sh` calls) |
-| P10 | regressions | `bash tests/run-all.sh --changed` exit 0 |
+| C1 | `node-runs-affected` | a tiered node's execute, verifier and ship steps each run the affected selection, never the full suite (stub records its invocations) |
+| C2 | `known-failures-read-at-base` | a branch edit to `tests/known-failures.txt` does not change `classify`; the base copy decides |
+| C3 | `known-failures-edit-guarded` | a node diff touching the file fails `guard`; with `Known-failures: edit` declared it passes |
+| C4 | `known-failure-no-retry` | an all-known run with a non-dropping count does not open the retry loop; a dropped count does |
+| C5 | `crash-not-masked` | exit 1 with no parsed failure classifies `fail` |
+| C6 | `join-once-merged-tree` | one wave runs the full suite twice (base, merged) and only in `_wave_converge`; the semantic-conflict pair goes red and nothing merges |
+| C7 | `join-head-moved-refused` | a PR head moved after the join: `mega-merge.sh merge --expect-head` refuses, the join reruns, nothing lands |
+| C8 | `rolling-refused` | `verify = "tiered"` with `WAVE_ROLLING=1` exits non-zero before any dispatch |
+| C9 | `tiered-off-golden` | `verify = "off"`: orchestrator output equals the T0 golden |
 
-**Negative controls**, each through `lib/gate/negctl.sh` with the named suite as the test command; each mutation must turn its named case red:
-
-| Trust rule | Mutation | Case that must go red |
-|---|---|---|
-| script-written check | `trust` skips the ledger-hash match | `trust-refuses-hand-written-record` |
-| baseline classify | `classify` treats any non-zero exit with a baseline as `PASS (baseline)` | `crash-not-masked` |
-| risk floor | `risk` drops the path floor | `risk-floor-base-config` |
-| base-config read | config read from the working tree | `config-read-at-base` |
-| join | `_wave_converge` skips `node-proof.sh join` | `join-semantic-conflict-red` |
+Negative control, through `lib/gate/negctl.sh` with `bash tests/test-known-failures.sh` as the test command: make `read` use the branch copy (`git show HEAD:<path>`) instead of the base. C2 must go red.
 
 ## After state
 
-In a `tiered` mega-goal run, the kit script runs each node's checks once and writes the proof; the task verifier, the recheck and ship reuse it while the tree holds. A failure already on the base is recorded once and never blocks a node or burns a retry. The full suite runs at most once per node (only on a `node_map` miss), once per wave and once per release. Only risky nodes and a 1-in-N sample pay for a re-run. With the mode `off`, the orchestrator's output is unchanged.
+In a tiered mega-goal run every existing verification step still runs, but on the affected tests only, so repeats cost seconds. A failure listed in the lead's known-failures file never burns a retry or stops ship, and a node cannot edit that list unannounced. The full suite runs once per wave on the merged tree, against a baseline it measured itself, and only the joined head can land. With `verify = "off"` nothing changes.
 
 ## Acceptance Criteria (global)
 
 | AC | Check |
 |---|---|
-| AC1 `trust` accepts only records `node-proof.sh run` wrote; the 1-in-N re-run reproduces the failure set | P1 |
-| AC2 a record is reused only on an equal `HEAD^{tree}` | P2 |
-| AC3 the verdict rules of rule 3 hold for every baseline case | P3 |
-| AC4 trust keys are read at the base; a diff to them makes the node risky | P4 |
-| AC5 each risk signal alone marks a node risky; plain code does not | P5 |
-| AC6 the record carries a negctl block; `INCONCLUSIVE` stops before push | P6 |
-| AC7 at most one full-suite run per node, only on a `node_map` miss, checked from the `suite-run` ledger lines | P3 fixture run plus the pilot ledger |
-| AC8 the join runs once per wave (per level when serial), catches the semantic conflict, finds the owner by merge-prefix bisect or escalates, and rejoins on a landed-tree mismatch | P7 |
-| AC9 parallel slots are isolated | P8 |
-| AC10 mode `off`: orchestrator output equals the golden committed from `master` before any `orchestrate.sh` edit, and no `node-proof.sh` call happens | P9 |
-| AC11 every new key and `KIT_*` read is registered | `tests/test-config-registry.sh` |
-| AC12 the pilot metric is reported as specified | the pilot record |
-| AC13 each negative control turns its case red | `docs/verification/tiered-verification.md` |
+| AC1 every node verification step runs the affected selection | C1 |
+| AC2 known failures are read at the base and a node cannot change them undeclared | C2, C3, negative control |
+| AC3 all-known runs with a non-dropping count consume no retry; a crash is a failure | C4, C5 |
+| AC4 the join runs the full suite once per wave on the merged tree with its own base run, and catches the semantic conflict | C6 |
+| AC5 only the pinned head merges; a moved head reruns the join; rolling waves are refused | C7, C8 |
+| AC6 `verify = "off"` leaves orchestrator output unchanged | C9 |
+| AC7 new keys are registered | `tests/test-config-registry.sh` |
+| AC8 the pilot metric is reported | the pilot record |
 
 ## Verification
 
 ```bash
-bash tests/test-node-proof.sh
+bash tests/test-known-failures.sh
 bash tests/test-orchestrate-tiered.sh
 bash tests/test-orchestrate.sh
 bash tests/test-config-registry.sh
@@ -192,45 +139,43 @@ bash tests/run-all.sh --changed
 
 ## Pilot: Spacedown release 1
 
-The first tiered mega-goal. Repo `dwarvesf/spacedown`, base `286ef79`, baseline 1 known failure (`Skim settings panel or its persistence wrong`).
+The first tiered mega-goal. Repo `dwarvesf/spacedown`, base `286ef79`, known failure `Skim settings panel or its persistence wrong` (the lead commits `tests/known-failures.txt` before wave 1).
 
-| Node | Work | Smoke |
+| Node | Work | Note |
 |---|---|---|
-| 0 | contract node: the shared interfaces, plus a section filter for `tests/smoke.sh` (one 1,644-line script with no subset flag today) so `node_map` can name sections | `bash tests/smoke.sh --only contract` |
-| 1 | box-diagram fix plus woff2 fonts | render the box fixture; the font files load |
-| 2 | size trim | the size budget script node 2 adds |
-| 3 | CLI renders through the Quick Look JS core via `osascript -l JavaScript` | render `tests/fixture/fixture.md` through the CLI and diff against the Quick Look output |
-| 4 | X-ray | its smoke section |
-| 5 | present mode | its smoke section |
-| 6 | settings (the baseline failure's area; may turn it green) | its smoke section |
-| 7 | onboarding | its smoke section |
-| 8 | landing page | `scripts/layout-check` on the landing page |
+| 0 | contract node: shared interfaces, plus a section filter for `tests/smoke.sh` (one 1,644-line script with no subset flag today) | without it `affected` has nothing narrower than the whole suite to select |
+| 1 | box-diagram fix plus woff2 fonts | |
+| 2 | size trim | adds the size budget check |
+| 3 | CLI renders through the Quick Look JS core via `osascript -l JavaScript` | |
+| 4 | X-ray | |
+| 5 | present mode | |
+| 6 | settings | the known failure's area; a fix is declared with `Known-failures: edit` |
+| 7 | onboarding | |
+| 8 | landing page | |
 
-Wave join: `bash tests/smoke.sh` (baseline-aware), `scripts/layout-check` on the reading fixtures, the size budget. Release: `/kit:battery`, negative control, release build. Spacedown config: `failure_line = '^  FAIL: (.*)$'`, `count_line` from the `smoke: N passed, M FAILED` summary, `node_map` from smoke sections (node 0 writes it), `recheck_paths` for the entitlements and sandbox files, `slot_env` for `HOME` and the app's preferences domain.
+Wave join: `bash tests/smoke.sh`, `scripts/layout-check` on the reading fixtures, the size budget. Release: `/kit:battery`, negative control, release build. Config: `failure_line = '^  FAIL: (.*)$'`, `count_line` from the `smoke: N passed, M FAILED` summary.
 
-**Metric.** Three arms on the same host: `off` (today), `baseline`, `tiered`, measured in that order of introduction so each part's benefit shows. Nodes 1 and 6 run at least 3 times per arm, arms alternating in order between runs, compared by median. Suite seconds come from the `suite-run` ledger lines; agent seconds come from the run ledger's OUTCOME durations minus suite seconds; both are reported apart. "Merge-ready" is the end point; a node that ends `PARTIAL` after the retry cap counts as merge-ready at that point, and the count of PARTIAL endings is reported per arm. Pass: the `tiered` median is at most half the `off` median for both nodes, and no node in `baseline` or `tiered` is blocked or retried by the baseline failure. Also reported: what the wave joins caught that node runs missed.
+**Metric.** Two arms, `off` and `tiered`, on the same host. Nodes 1 and 6 run 3 times per arm, arms alternating, compared by median. Reported per node: suite seconds (summed test-command wall time) and agent seconds (node wall time minus suite seconds), apart. Pass: the `tiered` median node wall time is at most half the `off` median for both nodes, and no node in `tiered` spends a retry on the known failure.
 
-## Out of Scope
+## Out of Scope (v2)
 
-Deferred to v2, with the reason:
+The reviews showed each of these needs its own enforcement surface (a script or hook that checks it), not a rule in a command file:
 
-- **Cross-rebase key** (a key over the touched paths' blobs that survives a rebase). It trusts a node's result on a tree it never ran on; the reviews showed a moved base can change a node's behavior through an untouched file. v1 keys on the whole tree and lets the join cover merges.
-- **Skip-unchanged on re-runs** (the old rule 6). It depends on the cross-rebase key.
-- **A Merkle chain over DAG edges** (a node's key folding in its parents' keys). Only needed once keys cross rebases.
-- **Checkbox auto-flip and a reopen verb.** The ROADMAP box stays the lead's manual, PR-grounded flip; automating it and reopening a node after a red join need their own design.
+- **Script-written proof records:** a builder or agent can still forge what a record or ledger line says until a hook verifies the writer.
+- **Trust and the `trust` verb:** skipping a check on a record is safe only when a hook enforces the match at every consumer.
+- **Tree keys (`HEAD^{tree}` or cross-rebase):** only useful once trust exists.
+- **Skip-unchanged on re-runs:** depends on keys and trust.
+- **Risk classes beyond today's:** declared class, added-line scan and out-of-plan paths each need a gate that reads base config, not the node's.
+- **A ledger-held baseline:** a ledger line can be forged; v1 measures the join's baseline itself and keeps node baselines in a committed file.
 
-Also out:
-
-- **The push gate is not left unchanged by accident.** The first draft said the existing gate accepts a node record as is; it does not, because a behavioral change needs a `NEGATIVE CONTROL` block (`proof-ledger.sh:653`) that the old record lacked. Rule 7 supplies it from a real negctl run. `proof-ledger.sh` itself is not modified.
-- Changing the lane floor or the hard-path kinds; risk reads them, never widens or narrows them.
-- `/kit:execute` outside a mega-goal; cross-repo nodes; CI (the levels are local by contract).
-- Per-node `/kit:spec` and `/kit:spec-validate` cost: planning, not verification, not measured here.
+Also out: changing the lane floor, hard-path kinds or `proof-ledger.sh`; `/kit:execute` outside a mega-goal; cross-repo nodes; CI; per-node `/kit:spec` cost.
 
 ## Touches
 
 ```
 lib/gate/**
 lib/queue/**
+lib/goal/**
 lib/config/**
 commands/**
 agents/**
@@ -240,30 +185,13 @@ kit.toml
 CHANGELOG.md
 ```
 
-## Gate ledger for this spec
-
-The draft PR carried 12 `spec-only draft PR` overrides on rid `tiered-verification`. They are superseded by `skipped` rows appended after this revision, so they cannot satisfy a later build push on that rid. The build branch is `feat/tiered-verify-build`, rid `tiered-verify-build`, and records its own gates.
-
 ## Decision Log
 
-Three reviews (overall, security, test plan) returned REVISE. The lead cut v1 to the advisor's phase 1 and moved proof-writing from the builder to the kit script.
-
-Taken:
-
-- Builder-written proof is self-attestation; a script-written record with output hashes and a ledger match replaces it (rule 1). A cheap 1-in-N script re-run stays for non-risky nodes.
-- The cross-rebase key trusted results on unrun trees; v1 keys on `HEAD^{tree}` and reuses only within one tree (rule 2). Skip-unchanged, the Merkle chain and the box flip go to v2 with it.
-- The baseline matched by name only and could mask a crash or a swap; now name plus line hash, a crash with no parsed failure is FAIL, the executed count must not drop, and the baseline is lead-only per base tree (rule 3).
-- Trust config read from the working tree lets a node rewrite its own rules; now read at the base, and a diff to it is risky (rule 4).
-- Risk from paths alone missed declared intent and dangerous added lines; now the highest of three signals, plus out-of-plan paths (rule 5).
-- A join placed outside the merge path could disagree with what lands; now inside `_wave_converge` with pinned heads and a landed-tree check; rolling waves refused in v1 (rule 6).
-- The record would not pass the push gate honestly and the Out-of-Scope claim said it would; rule 7 adds a real negative control and the claim is corrected.
-- Parallel nodes shared `HOME` and app preferences; rule 8 isolates them.
-- AC7 rewritten to a ledger check; AC10 scoped to orchestrator output plus zero `node-proof.sh` calls with a golden from `master` committed first; AC8 names the merge-prefix bisect; one negative control per trust rule; the five named baseline cases; the shared fixture and a separate orchestrator suite; config keys registered.
-- The pilot metric had one run per arm and mixed suite and agent time; now three arms, at least 3 runs each, alternating, by median, suite and agent seconds apart, PARTIAL handled, `suite-run` ledger lines.
-- The gate overrides on the spec rid could leak to the build; superseded by `skipped` rows and the build gets its own rid.
-
-Rejected: none of the relayed findings.
-
-Residual risk, stated rather than solved: rule 1 stops an honest builder from shortcutting the proof, but an agent with shell access could still append a forged ledger line. The 1-in-N re-run and the risk-class recheck are the check on that; a signed ledger is not in v1.
-
-Kept from the first draft: the three levels, the opt-in mode, the Spacedown pilot, and the pilot threshold (half the wall clock), which is this spec's pick, not the owner's.
+- **Round 1** (overall, security, test plan reviews): REVISE. Revision 2 moved proof-writing to a kit script and added trust, tree keys, risk signals and a ledger baseline.
+- **Round 2** (confirmation review): REVISE with 3 new highs (trust was never enforced by a script or hook; the build rid missed its spec; the rule-4 precedent `_negctl_required` reads the project config from the node's own tree) and 2 partly open (forged baseline ledger lines; a push landing between join and merge).
+- **Rescope, not another fold.** Each round cleared criticals and opened new ones in the trust machinery. v1 drops trust entirely: every check still runs, each run is narrow. That removes the whole class of skip-on-record attacks instead of patching it.
+- **How each round-2 high is closed:** no trust to enforce (rule 1); the build branch is `feat/tiered-verification` (rule 5); every config and known-failures read is `git show <base>:...`, never the node's tree (rules 1 and 2); no ledger baseline, the join measures its own (rule 3); the merge passes the joined head with `--match-head-commit` and a moved head reruns the join (rule 3).
+- **Known failures in a committed file** instead of a ledger: the lead's edit is reviewed in a PR, a node's edit is caught by a diff guard.
+- **Rejected:** none of the relayed findings.
+- **Cost accepted:** each repeat still runs. The bet is that `affected` makes repeats cheap enough; the pilot measures it. If it does not, v2's trust work gets its own spec.
+- The pilot threshold (half the node wall time) is this spec's pick, not the owner's.
