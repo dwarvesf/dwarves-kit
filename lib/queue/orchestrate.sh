@@ -23,7 +23,8 @@
 #                  one `claude -p` per sub-goal (also MEGA_BACKEND=orca; the flag wins; allowed:
 #                  claude|orca). lib/queue/orca-backend.sh is sourced ONLY then; the default path never
 #                  loads it and never calls $ORCA_CMD.
-#   orchestrate.sh status <dir>       derived per-sub-goal state under the Orca backend (TSV)
+#   orchestrate.sh status <dir>       derived per-sub-goal state under the Orca backend (TSV); with no Orca
+#                  run, a read-only claude-backend report (roadmap counts, running sub-goals, last events, driver)
 #   orchestrate.sh orca-reset <dir>   stop and release this run's Orca Dispatches, block its Tasks
 #   Env (robustness, advisory): WATCHDOG_STALL_SECS>0 backgrounds each session + flags it
 #   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
@@ -3156,13 +3157,122 @@ cmd_pane_exec() {  # megadir id pfile route_flags donefile
   return "$rc"
 }
 
+# ---- claude-backend status ------------------------------------------------------------------
+# `status` on a dir with no Orca run (the default claude backend): a compact, READ-ONLY report in
+# place of the "no Orca run" line. No writes, no locks. Four parts: roadmap counts, the sub-goals
+# whose latest event is still executing (stream file size + age, live session state), the last 5
+# events, and whether a driver for this dir is alive. Every process probe degrades to "skip" when
+# the tool is missing (lsof, ps eww, /proc).
+
+# The session holding <stream> open, as "pid<TAB>stat", or empty. Source: `lsof -t <stream>` (the
+# session's stdout redirect or its tee holds the file open), the one signal that maps a stream to a
+# process without a pid ledger. A `claude` command wins over a tee/shell holder; else the first holder.
+_status_session() {  # stream-file
+  local pids pid cmd first="" pick=""
+  command -v lsof >/dev/null 2>&1 || return 0
+  pids=$(lsof -t "$1" 2>/dev/null || true)
+  for pid in $pids; do
+    [ -n "$first" ] || first="$pid"
+    cmd=$(ps -o command= -p "$pid" 2>/dev/null || true)
+    case "$cmd" in *claude*) pick="$pid"; break ;; esac
+  done
+  [ -n "$pick" ] || pick="$first"
+  [ -n "$pick" ] || return 0
+  printf '%s\t%s\n' "$pick" "$(ps -o stat= -p "$pick" 2>/dev/null | tr -d ' ')"
+}
+
+# Pid of a live `orchestrate.sh run <dir>` driver for this dir (abs or as-given spelling), or empty.
+_status_driver() {  # dir
+  local abs line pid cmd
+  abs=$(cd "$1" 2>/dev/null && pwd) || abs="$1"
+  while IFS= read -r line; do
+    pid=${line%% *}; cmd=${line#* }
+    [ "$pid" = "$$" ] && continue
+    case "$cmd" in
+      *orchestrate.sh\ run\ *) ;;
+      *) continue ;;
+    esac
+    case "$cmd" in
+      *"$abs"*|*"$1"*) printf '%s' "$pid"; return 0 ;;
+    esac
+  done < <(ps -axo pid=,command= 2>/dev/null | sed -E 's/^ +//')
+  return 0
+}
+
+# WAVE_CAP / WAVE_ROLLING of a live process, from /proc or `ps eww` ("K=V K=V"); empty if unreadable.
+_status_driver_env() {  # pid
+  local blob
+  if [ -r "/proc/$1/environ" ]; then
+    blob=$(tr '\0' '\n' < "/proc/$1/environ" 2>/dev/null || true)
+  else
+    blob=$(ps eww -o command= -p "$1" 2>/dev/null | tr ' ' '\n' || true)
+  fi
+  printf '%s\n' "$blob" | grep -E '^WAVE_(CAP|ROLLING)=' | sort | tr '\n' ' ' | sed 's/ $//' || true
+}
+
+cmd_status_claude() {  # dir
+  local dir="$1" roadmap="$1/ROADMAP.md" ef total done_n open now
+  local live_rows="" id since slog size age mt sess pid stat flags
+  ef=$(_events_file "$dir"); now=$(date +%s)
+  total=$(_subgoals "$roadmap" | wc -l | tr -d ' ')
+  done_n=$(_subgoals "$roadmap" | awk -F'\t' '$3==1{n++} END{print n+0}')
+  open=$(_subgoals "$roadmap" | awk -F'\t' '$3==0{printf "%s%s", (n++?" ":""), $1}')
+  _say "claude backend status: $dir"
+  _say "roadmap: done $done_n / $total; open: ${open:-none}"
+  if [ -f "$ef" ]; then
+    # Last event per id; running = executing or stalled with nothing later (flip/shipped/blocked/merged end it).
+    live_rows=$(awk -F'\t' '$2!="" && $2!="-" {s[$2]=$3; if($3=="executing") t[$2]=$1; if(!($2 in o)) {o[$2]=++n; k[n]=$2}}
+      END{for(i=1;i<=n;i++){id=k[i]; if(s[id]=="executing"||s[id]=="stalled") printf "%s\t%s\n", id, t[id]}}' "$ef")
+  fi
+  if [ -z "$live_rows" ]; then
+    _say "running: none"
+  else
+    _say "running:"
+    while IFS=$'\t' read -r id since; do
+      [ -n "$id" ] || continue
+      slog="$dir/.orchestrate/${id}.stream.jsonl"; flags=""
+      if [ ! -f "$slog" ]; then
+        _say "  $id  since ${since:-?}  stream none"
+        continue
+      fi
+      size=$(wc -c < "$slog" | tr -d ' '); mt=$(_mtime "$slog"); [ -n "$mt" ] || mt=$now; age=$((now - mt))
+      if [ "$WATCHDOG_STALL_SECS" -gt 0 ] && [ "$age" -ge "$WATCHDOG_STALL_SECS" ]; then flags=" STALE"; fi
+      sess=$(_status_session "$slog")
+      if [ -z "$sess" ]; then
+        _say "  $id  since ${since:-?}  stream ${size}B age ${age}s$flags"
+        continue
+      fi
+      pid=${sess%%$'\t'*}; stat=${sess#*$'\t'}
+      case "$stat" in T*) flags="$flags STOPPED" ;; esac
+      _say "  $id  since ${since:-?}  stream ${size}B age ${age}s  pid $pid state ${stat:-?}$flags"
+    done < <(printf '%s\n' "$live_rows")
+  fi
+  _say "last events:"
+  if [ -s "$ef" ]; then
+    tail -n 5 "$ef" | awk -F'\t' '{printf "  %s  %s  %s  %s\n", $1, $2, $3, $4}'
+  else
+    _say "  none"
+  fi
+  pid=$(_status_driver "$dir")
+  if [ -z "$pid" ]; then
+    _say "driver: no driver"
+  else
+    flags=$(_status_driver_env "$pid")
+    _say "driver: pid $pid alive${flags:+ ($flags)}"
+  fi
+  return 0
+}
+
 main() {
   local cmd="${1:-}"; shift 2>/dev/null || true
   case "$cmd" in
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
-    status) _orca_load && cmd_status "$@" ;;
+    status) _orca_load && {
+      # No Orca run for an existing roadmap: the claude backend's own status (Orca path untouched).
+      if [ -f "${1:-}/ROADMAP.md" ] && [ ! -f "$(_orca_dir "$1")/run" ]; then cmd_status_claude "$1"; else cmd_status "$@"; fi
+    } ;;
     orca-reset) _orca_load && { [ -f "${1:-}/ROADMAP.md" ] || { echo "usage: orchestrate.sh orca-reset <megagoal-dir>" >&2; exit 64; }; orca_reset "$1"; } ;;
     _pane-exec) cmd_pane_exec "$@" ;;
     # Subagent panes: read-only tmux tail windows over background-subagent transcripts.
