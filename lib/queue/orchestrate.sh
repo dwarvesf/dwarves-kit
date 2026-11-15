@@ -666,6 +666,15 @@ _wave_gate() {  # megadir roadmap [running-id...]
   while IFS=$'\t' read -r id policy; do
     [ -n "$id" ] || continue
     case "$running" in *" $id "*) continue ;; esac
+    # Rolling admission's dependency hold (`_WAVE_GATE_HOLD`, unset otherwise): a candidate whose
+    # `depends` names a wave member that has not converged is deferred before it takes a slot.
+    if [ -n "${_WAVE_GATE_HOLD:-}" ]; then
+      ok=1
+      for a in $(_sg_line "$roadmap" "$id" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true); do
+        case " $_WAVE_GATE_HOLD " in *" $a "*) ok=0 ;; esac
+      done
+      [ "$ok" = 1 ] || { printf '%s\t%s\n' defer "$id"; continue; }
+    fi
     decision=defer
     # A `gate` / `gate!` sub-goal is NEVER admitted to a wave. This is
     # what makes the wave-path chain-hold work: the gate sub-goal is not run, so anything that
@@ -1969,6 +1978,8 @@ _wave_spawn() {  # megadir roadmap repo mega_abs id
     # created, before the pane's command exits, so there is no pid to `wait` on here -- the pane
     # writes its own exit code to $donefile instead (the reap loop polls it, see below).
     donefile=$(mktemp -u "${TMPDIR:-/tmp}/kit.XXXXXX")
+    # The abort trap runs between commands, so it may have fired during the setup above.
+    [ "${_WAVE_ABORTED:-0}" = 1 ] && { rm -f "$pfile"; return 1; }
     if ! _pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"; then
       echo "[orchestrate] [wave] [mux] $id: tmux pane spawn failed; marking wave failed." >&2
       _emit_event "$megadir" "$id" blocked "wave: tmux pane spawn failed"
@@ -2007,6 +2018,7 @@ _wave_spawn() {  # megadir roadmap repo mega_abs id
     # NC_SKIP_WAVE_DETACH=1 is a TEST-ONLY negative control (same pattern as NC_SKIP_WAVE_TOKENS): it
     # restores the pre-fix spawn so a test can prove the stop; never an operator flag.
     [ "${NC_SKIP_WAVE_DETACH:-0}" = 1 ] || { command -v perl >/dev/null 2>&1 && [ -x "$ORCH_DIR/detach-run" ] && detach_cmd="$ORCH_DIR/detach-run"; }
+    [ "${_WAVE_ABORTED:-0}" = 1 ] && { rm -f "$pfile"; return 1; }
     set -m
     ( cd "$wt" 2>/dev/null && KIT_DETACH_CMD="$CLAUDE_CMD" CLAUDE_CMD="$detach_cmd" \
         _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
@@ -2019,6 +2031,11 @@ _wave_spawn() {  # megadir roadmap repo mega_abs id
   _WAVE_IDS+=("$id")
   _WAVE_DONEFILES+=("$donefile")
   _WAVE_PFILES+=("$pfile")
+  # An abort that fired after the spawn but before the pid was recorded never saw this member.
+  if [ "${_WAVE_ABORTED:-0}" = 1 ]; then
+    if [ -n "$pid" ]; then kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+    else "$TMUX_CMD" kill-window -t "$(_mux_session_name "$megadir"):$id" 2>/dev/null || true; fi
+  fi
   return 0
 }
 
@@ -2059,6 +2076,11 @@ _wave_spawn() {  # megadir roadmap repo mega_abs id
 #     ROADMAP order. The same-file guard keeps its meaning: the landed member is compared against
 #     every member whose run OVERLAPPED its own (tracked as spawn/reap ticks), i.e. the ones admission
 #     claimed were disjoint. A dependent that ran strictly after its parent may edit the parent's files.
+#     Caveat: the guard diffs against the LOCAL base, so it goes vacuous for a peer once that peer's
+#     merge is pulled into the local base (its three-dot diff empties); it is a belt over dispatch-gate.
+#   * Dependency hold. A box flip is not completion proof (a session flips before it exits and may
+#     still exit nonzero), so a candidate whose `depends` names a wave member that has not CONVERGED
+#     is deferred (`_WAVE_GATE_HOLD`). A dep outside this wave was complete before the wave started.
 #   * Fail-closed. A member that exits nonzero or lands unflipped, a refused spawn, a convergence
 #     failure, or an abort all stop admission for the rest of this call; running siblings drain (never
 #     killed, except by the abort handler) and `_wave_run` returns nonzero, so cmd_run halts as today.
@@ -2100,7 +2122,7 @@ _wave_run() {  # megadir roadmap
   # Rolling bookkeeping (read only when WAVE_ROLLING=1): one tick per spawn and per reap; member i ran
   # over [wave_t0[i], wave_t1[i]] (t1 = 0 while running). `_WAVE_ABORTED` (set by `_wave_abort`) and
   # `_WAVE_CONVERGE_FAILED` (read by cmd_run for its halt message) are globals.
-  local tick=0 wave_t0=() wave_t1=() roll_stop=0
+  local tick=0 wave_t0=() wave_t1=() roll_stop=0 wave_conv=" " hold=""
   _WAVE_ABORTED=0
   _WAVE_CONVERGE_FAILED=0
 
@@ -2111,6 +2133,7 @@ _wave_run() {  # megadir roadmap
   local decision id
   while IFS=$'\t' read -r decision id; do
     [ "$decision" = run ] || continue
+    [ "$_WAVE_ABORTED" = 0 ] || break
     _wave_spawn "$megadir" "$roadmap" "$repo" "$mega_abs" "$id"
     case $? in
       0) wave_done+=(0); tick=$((tick + 1)); wave_t0+=("$tick"); wave_t1+=(0); spawned=$((spawned + 1)) ;;
@@ -2121,6 +2144,7 @@ _wave_run() {  # megadir roadmap
   # Empty wave (nothing admitted, or every admitted box already checked): not a failure unless a
   # worktree setup already failed above.
   if [ "$spawned" = 0 ]; then
+    [ "$_WAVE_ABORTED" = 1 ] && wave_failed=1
     trap - INT TERM
     return "$wave_failed"
   fi
@@ -2195,7 +2219,7 @@ _wave_run() {  # megadir roadmap
       fi
 
       # Rolling admission (design above). Off: nothing below runs and the wave stays a barrier.
-      [ "$WAVE_ROLLING" = 1 ] || continue
+      [ "${WAVE_ROLLING:-0}" = 1 ] || continue
       # 1. Converge THIS member before its slot is refilled. Peers for the same-file guard: landed
       #    members whose run overlapped this one (this member spawned before they were reaped).
       if [ "$rc" = 0 ] && [ "$box" = 1 ] && [ "$wave_failed" = 0 ] && [ "$_WAVE_ABORTED" = 0 ]; then
@@ -2206,7 +2230,9 @@ _wave_run() {  # megadir roadmap
           case " ${_WAVE_LANDED[*]+${_WAVE_LANDED[*]}} " in *" ${_WAVE_IDS[$j]} "*) ;; *) continue ;; esac
           [ "${wave_t0[$i]}" -lt "${wave_t1[$j]}" ] && peers+=("${_WAVE_IDS[$j]}")
         done
-        if ! _wave_converge "$megadir" "$id" --peers ${peers[@]+"${peers[@]}"}; then
+        if _wave_converge "$megadir" "$id" --peers ${peers[@]+"${peers[@]}"}; then
+          wave_conv="$wave_conv$id "
+        else
           wave_failed=1; _WAVE_CONVERGE_FAILED=1
           echo "[orchestrate] [wave] [rolling] convergence failed for $id; admitting nothing more, draining siblings, then failing." >&2
         fi
@@ -2218,9 +2244,13 @@ _wave_run() {  # megadir roadmap
         _say "[orchestrate] [wave] [rolling] a gate! sub-goal is ready; admitting nothing more (the wave drains, then it runs alone)."
         continue
       fi
-      running=()
+      # A ROADMAP box is not proof a member finished: a session flips before it exits, and may still
+      # exit nonzero. So every wave member that has not CONVERGED (running, flipped-but-running, or
+      # landed-unconverged) holds its dependents back. A dep outside this wave was complete before it.
+      running=(); hold=""
       for j in $(seq 0 $((spawned - 1))); do
         [ "${wave_done[$j]}" = 0 ] && running+=("${_WAVE_IDS[$j]}")
+        case "$wave_conv" in *" ${_WAVE_IDS[$j]} "*) ;; *) hold="$hold${_WAVE_IDS[$j]} " ;; esac
       done
       while IFS=$'\t' read -r decision cand; do
         [ "$decision" = run ] || continue
@@ -2232,11 +2262,14 @@ _wave_run() {  # megadir roadmap
              _say "[orchestrate] [wave] [rolling] $cand admitted into a freed slot (still running: ${running[*]+${running[*]}})" ;;
           1) wave_failed=1; break ;;
         esac
-      done < <(_wave_gate "$megadir" "$roadmap" ${running[@]+"${running[@]}"})
+      done < <(_WAVE_GATE_HOLD="$hold" _wave_gate "$megadir" "$roadmap" ${running[@]+"${running[@]}"})
     done
     [ "$remaining" -gt 0 ] && sleep "${WAVE_POLL_SECS:-0.2}"
   done
 
+  # An abort can land after the last member was reaped (during its per-member converge, say); the
+  # members all looked fine, but the run must still stop.
+  [ "$_WAVE_ABORTED" = 1 ] && wave_failed=1
   trap - INT TERM
   return "$wave_failed"
 }
@@ -2762,7 +2795,7 @@ cmd_run() {
           # failure halts the loop (no self-claim). At WAVE_CAP=1 this block is unreachable,
           # so the serial path stays byte-identical. Rolling admission converged each member as it
           # landed, inside `_wave_run`, so there is nothing left to converge here.
-          if [ "$WAVE_ROLLING" != 1 ] && ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
+          if [ "${WAVE_ROLLING:-0}" != 1 ] && ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
             echo "[orchestrate] [wave] convergence flagged a same-file cross-wave conflict or a merge failure; halting (no self-claim)." >&2
             return 1
           fi

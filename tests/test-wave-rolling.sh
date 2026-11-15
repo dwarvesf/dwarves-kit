@@ -12,6 +12,12 @@
 #   (e) WAVE_CAP=1: the switch changes nothing (stdout, prompts, events identical on and off)
 #   (f) the switch resolves from [mega].wave_rolling and defaults off
 #   (g) convergence runs per landed member, before its slot is refilled, and stays fail-closed
+#   (h) a flipped box is not completion: a dependent waits for its parent to exit AND converge (h1),
+#       and never runs on a parent that flipped then failed (h2)
+#   (i) aborts: TERM during the last member's converge halts the run (i1); TERM while a refill is
+#       spawning starts nothing new and the driver exits (i2)
+#   (j) rolling-only branches: a refused refill spawn halts admission (j1), a gate! that becomes ready
+#       mid-wave stops admission (j2), WAVE_CAP=3 refills two slots in one pass without overshoot (j3)
 #
 # Real `orchestrate.sh run` against a throwaway git repo (real worktrees), mock claude, no network.
 # Run: bash tests/test-wave-rolling.sh   (exit 0 = pass, 1 = fail)
@@ -64,6 +70,8 @@ goal() {  # megadir id touches-glob
 #   AFTER_<id>=<other>    block until <other> has ended (then 1s more), or WAIT_SECS pass, before finishing
 #   HANG_IDS    ids that hang forever (sleep child), writing "<pid> <child>" to $TMP/hang.<id>
 #   COMMIT_<id>=<file>  commit <file> on the member's branch (only inside a worktree under $TMP)
+#   FLIPFIRST_<id>=<other>  flip the box FIRST (logging "flipped <id>"), then linger until <other> starts or
+#                           WAIT_SECS pass, then exit FLIPRC_<id> (default 0): a session alive after its flip
 # Every session appends "start <id>" / "end <id>" to $EVENTS (append order is the timeline) and keeps
 # its prompt in $PROMPTS/<id>.<n>.
 cat > "$TMP/claude" <<'MOCK'
@@ -89,6 +97,13 @@ if [ -n "$after" ]; then
   i=0; max=$(( ${WAIT_SECS:-5} * 10 ))
   while ! grep -qx "end $after" "$EVENTS" && [ "$i" -lt "$max" ]; do sleep 0.1; i=$((i + 1)); done
   sleep 1
+fi
+flipvar="FLIPFIRST_${id//-/_}"; ff="${!flipvar:-}"
+if [ -n "$ff" ]; then
+  bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1; echo "flipped $id" >> "$EVENTS"
+  i=0; max=$(( ${WAIT_SECS:-5} * 10 ))
+  while ! grep -qx "start $ff" "$EVENTS" && [ "$i" -lt "$max" ]; do sleep 0.1; i=$((i + 1)); done
+  rcvar="FLIPRC_${id//-/_}"; echo "end $id" >> "$EVENTS"; exit "${!rcvar:-0}"
 fi
 commitvar="COMMIT_${id//-/_}"; cfile="${!commitvar:-}"
 if [ -n "$cfile" ]; then
@@ -277,6 +292,130 @@ if [ "$RC" != 0 ] && grep -q 'SAME-FILE cross-wave edit' "$TMP/g2.out" && grep -
   pass "(g2) two members that ran together both edited same.txt: SG-02 is refused (not merged); SG-03 landing after it is not converged and its slot is not refilled; the run halts"
 else
   fail "(g2) rc=$RC timeline: $(tr '\n' ' ' < "$MG2/.events")"; tail -20 "$TMP/g2.out"
+fi
+
+# ============ (h) a flipped box is not completion ============
+# h1: SG-01 flips, then keeps running; SG-02 lands. SG-03 (depends SG-01) must wait for SG-01 to exit and
+# converge. SG-01 lingers until SG-03 starts (the thing that must not happen) or 3s pass.
+MH1=$(mk_mega roll-h1 '- [ ] SG-01 parent lingers , auto , PR #11
+- [ ] SG-02 fast , auto , PR #12
+- [ ] SG-03 child , auto , depends SG-01 , PR #13')
+goal "$MH1" SG-01 'lib/a/**'; goal "$MH1" SG-02 'lib/b/**'; goal "$MH1" SG-03 'lib/c/**'
+run_case "$MH1" "$TMP/h1.out" WAVE_CAP=2 WAVE_ROLLING=1 FLIPFIRST_SG_01=SG-03 WAIT_SECS=3 \
+  WAVE_MERGE_CMD="$TMP/merge-rec" MEGA_MERGE_GH="$TMP/gh-merged"
+if [ "$RC" = 0 ] && [ "$(boxes "$MH1")" = 3 ] && before "$MH1/.events" "end SG-01" "start SG-03" \
+   && before "$MH1/.events" "merge PR 11" "start SG-03"; then
+  pass "(h1) SG-01 flipped but was still running: its dependent SG-03 started only after SG-01 exited and merged"
+else
+  fail "(h1) rc=$RC boxes=$(boxes "$MH1") timeline: $(tr '\n' ' ' < "$MH1/.events")"; tail -15 "$TMP/h1.out"
+fi
+# h2: SG-02 flips, lingers, exits 1. SG-01 lands meanwhile. SG-03 (depends SG-02) must never run.
+MH2=$(mk_mega roll-h2 '- [ ] SG-01 lands while SG-02 lingers , auto , PR #__
+- [ ] SG-02 flips then fails , auto , PR #__
+- [ ] SG-03 needs SG-02 , auto , depends SG-02 , PR #__')
+goal "$MH2" SG-01 'lib/a/**'; goal "$MH2" SG-02 'lib/b/**'; goal "$MH2" SG-03 'lib/c/**'
+run_case "$MH2" "$TMP/h2.out" WAVE_CAP=2 WAVE_ROLLING=1 FLIPFIRST_SG_02=SG-03 FLIPRC_SG_02=1 WAIT_SECS=3
+if [ "$RC" != 0 ] && ! grep -q 'start SG-03' "$MH2/.events" && before "$MH2/.events" "end SG-01" "end SG-02" \
+   && grep -q 'SG-02	blocked	wave session exited nonzero (1)' "$MH2/.orchestrate/events.log"; then
+  pass "(h2) SG-02 flipped then exited 1: SG-03 never ran on the failed, unconverged parent; the run halted"
+else
+  fail "(h2) rc=$RC timeline: $(tr '\n' ' ' < "$MH2/.events")"; tail -15 "$TMP/h2.out"
+fi
+
+# ============ (i) aborts ============
+# i1: TERM to the driver from inside the merge hook of the LAST member to land (SG-02). SG-03 must not run.
+printf '#!/usr/bin/env bash\necho "merge PR $1" >> "$EVENTS"\n[ "$1" = 12 ] && kill -TERM $PPID\nexit 0\n' > "$TMP/merge-kill"; chmod +x "$TMP/merge-kill"
+MI1=$(mk_mega roll-i1 '- [ ] SG-01 a , auto , PR #11
+- [ ] SG-02 b lands last , auto , PR #12
+- [ ] SG-03 after both , auto , depends SG-01 SG-02 , PR #13')
+goal "$MI1" SG-01 'lib/a/**'; goal "$MI1" SG-02 'lib/b/**'; goal "$MI1" SG-03 'lib/c/**'
+run_case "$MI1" "$TMP/i1.out" WAVE_CAP=2 WAVE_ROLLING=1 AFTER_SG_02=SG-01 WAIT_SECS=4 \
+  WAVE_MERGE_CMD="$TMP/merge-kill" MEGA_MERGE_GH="$TMP/gh-merged"
+if [ "$RC" != 0 ] && grep -q '^merge PR 12$' "$MI1/.events" && ! grep -q 'start SG-03' "$MI1/.events" \
+   && grep -q 'aborted' "$TMP/i1.out"; then
+  pass "(i1) TERM during the last member's converge: the run halts (rc $RC), the next cycle never starts SG-03"
+else
+  fail "(i1) rc=$RC timeline: $(tr '\n' ' ' < "$MI1/.events")"; tail -15 "$TMP/i1.out"
+fi
+# i2: TERM fires from inside the SPEC reserve hook while the refill for SG-03 is being spawned (third
+# reserve call: SG-01, SG-02, then SG-03). Nothing may spawn after the abort, and the driver must exit.
+MI2=$(mk_mega roll-i2 '- [ ] SG-01 fast , auto , PR #__
+- [ ] SG-02 hangs , auto , PR #__
+- [ ] SG-03 child hangs , auto , depends SG-01 , PR #__')
+goal "$MI2" SG-01 'lib/a/**'; goal "$MI2" SG-02 'lib/b/**'; goal "$MI2" SG-03 'lib/c/**'
+cat > "$TMP/spec-kill" <<'K'
+#!/usr/bin/env bash
+n=$(( $(cat "$TMP/i2.calls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$TMP/i2.calls"
+[ "$n" = 3 ] && kill -TERM "$(cat "$TMP/i2.pid")"
+echo 900
+K
+chmod +x "$TMP/spec-kill"
+mkdir -p "$MI2/.prompts"; : > "$MI2/.events"; rm -f "$TMP/i2.calls" "$TMP/hang.SG-02" "$TMP/hang.SG-03"
+env ORCH="$ORCH" TMP="$TMP" MEGADIR="$MI2" EVENTS="$MI2/.events" PROMPTS="$MI2/.prompts" CLAUDE_CMD="$TMP/claude" \
+  SPEC_NEXT_CMD="$TMP/spec-kill" WAVE_CAP=2 WAVE_ROLLING=1 HANG_IDS="SG-02 SG-03" bash "$ORCH" run "$MI2" > "$TMP/i2.out" 2>&1 < /dev/null &
+opid=$!; echo "$opid" > "$TMP/i2.pid"
+k=0; while alive "$opid" && [ "$k" -lt 200 ]; do sleep 0.1; k=$((k + 1)); done
+if alive "$opid"; then
+  fail "(i2) the driver is still alive 20s after the abort (waiting on a session spawned after it?) timeline: $(tr '\n' ' ' < "$MI2/.events")"
+  kill -TERM "$opid" 2>/dev/null; sleep 1
+else
+  wait "$opid" 2>/dev/null; irc=$?
+  m2=""; [ -s "$TMP/hang.SG-02" ] && read -r m2 g2 < "$TMP/hang.SG-02"
+  if [ "$irc" != 0 ] && ! grep -q 'start SG-03' "$MI2/.events" && [ ! -e "$TMP/hang.SG-03" ] \
+     && [ -n "$m2" ] && ! alive "$m2" && ! alive "$g2" && [ "$(cat "$TMP/i2.calls")" = 3 ]; then
+    pass "(i2) TERM mid refill spawn: SG-03 was never started, SG-02 killed with its grandchild, the driver exited rc $irc"
+  else
+    fail "(i2) rc=$irc calls=$(cat "$TMP/i2.calls" 2>/dev/null) timeline: $(tr '\n' ' ' < "$MI2/.events")"; tail -15 "$TMP/i2.out"
+  fi
+fi
+for f in "$TMP/hang.SG-02" "$TMP/hang.SG-03"; do [ -s "$f" ] && { read -r a b < "$f"; kill -KILL "$a" "$b" 2>/dev/null; }; done
+
+# ============ (j) rolling-only branches ============
+# j1: the refill candidate is refused pre-flight (off-allowlist Model:): admission halts, SG-02 drains.
+MJ1=$(mk_mega roll-j1 '- [ ] SG-01 fast , auto , PR #__
+- [ ] SG-02 slow , auto , PR #__
+- [ ] SG-03 bad model , auto , depends SG-01 , PR #__
+- [ ] SG-04 also ready , auto , depends SG-01 , PR #__')
+goal "$MJ1" SG-01 'lib/a/**'; goal "$MJ1" SG-02 'lib/b/**'; goal "$MJ1" SG-03 'lib/c/**'; goal "$MJ1" SG-04 'lib/d/**'
+printf 'Model: sonet\n' >> "$MJ1/goals/03-SG-03.md"
+run_case "$MJ1" "$TMP/j1.out" WAVE_CAP=2 WAVE_ROLLING=1 WAITFOR_SG_02=SG-04 WAIT_SECS=3
+if [ "$RC" != 0 ] && ! grep -qE 'start SG-0[34]' "$MJ1/.events" && grep -q '^- \[x\] SG-02' "$MJ1/ROADMAP.md" \
+   && grep -q 'SG-03	blocked	wave: rejected pre-flight by routing' "$MJ1/.orchestrate/events.log"; then
+  pass "(j1) refill spawn refused (bad Model:): nothing else admitted, SG-02 drained, the run halted"
+else
+  fail "(j1) rc=$RC timeline: $(tr '\n' ' ' < "$MJ1/.events")"; tail -15 "$TMP/j1.out"
+fi
+# j2: a gate! becomes ready when SG-01 lands: SG-04 (also ready, a free slot) must not be admitted.
+MJ2=$(mk_mega roll-j2 '- [ ] SG-01 fast , auto , PR #__
+- [ ] SG-02 slow , auto , PR #__
+- [ ] SG-03 review all , gate! , depends SG-01 , PR #__
+- [ ] SG-04 ready too , auto , depends SG-01 , PR #__')
+goal "$MJ2" SG-01 'lib/a/**'; goal "$MJ2" SG-02 'lib/b/**'; goal "$MJ2" SG-03 'lib/c/**'; goal "$MJ2" SG-04 'lib/d/**'
+run_case "$MJ2" "$TMP/j2.out" WAVE_CAP=2 WAVE_ROLLING=1 MEGA_GATE_DISPATCH=0 WAITFOR_SG_02=SG-04 WAIT_SECS=3
+if [ "$RC" = 0 ] && ! grep -qE 'start SG-0[34]' "$MJ2/.events" && grep -q '\[rolling\] a gate! sub-goal is ready' "$TMP/j2.out" \
+   && grep -q 'STOP (gate!)' "$TMP/j2.out" && grep -q '^- \[x\] SG-02' "$MJ2/ROADMAP.md"; then
+  pass "(j2) gate! became ready mid-wave: SG-04 not admitted into the free slot, SG-02 drained, the loop stopped for the human"
+else
+  fail "(j2) rc=$RC timeline: $(tr '\n' ' ' < "$MJ2/.events")"; tail -15 "$TMP/j2.out"
+fi
+# j3: WAVE_CAP=3. SG-01 lands with only SG-02 running: two slots free, three candidates. SG-03 and SG-04
+# are admitted in one pass, SG-05 only when a slot frees. SG-02/SG-03 linger until SG-05 starts, so an
+# overshoot shows as 4 sessions alive at once.
+MJ3=$(mk_mega roll-j3 '- [ ] SG-01 fast , auto , PR #__
+- [ ] SG-02 slow , auto , PR #__
+- [ ] SG-03 c , auto , depends SG-01 , PR #__
+- [ ] SG-04 d fast , auto , depends SG-01 , PR #__
+- [ ] SG-05 e , auto , depends SG-01 , PR #__')
+goal "$MJ3" SG-01 'lib/a/**'; goal "$MJ3" SG-02 'lib/b/**'; goal "$MJ3" SG-03 'lib/c/**'; goal "$MJ3" SG-04 'lib/d/**'; goal "$MJ3" SG-05 'lib/e/**'
+run_case "$MJ3" "$TMP/j3.out" WAVE_CAP=3 WAVE_ROLLING=1 WAITFOR_SG_02=SG-05 WAITFOR_SG_03=SG-05 WAIT_SECS=6
+peak=$(awk '/^start /{n++; if(n>m)m=n} /^end /{n--} END{print m+0}' "$MJ3/.events")
+if [ "$RC" = 0 ] && [ "$(boxes "$MJ3")" = 5 ] && [ "$peak" -le 3 ] \
+   && grep -q '\[rolling\] SG-03 admitted into a freed slot (still running: SG-02)' "$TMP/j3.out" \
+   && grep -q '\[rolling\] SG-04 admitted into a freed slot (still running: SG-02)' "$TMP/j3.out" \
+   && before "$MJ3/.events" "end SG-04" "start SG-05"; then
+  pass "(j3) WAVE_CAP=3: one landing refilled two slots in one pass, SG-05 waited for a free slot, peak $peak sessions"
+else
+  fail "(j3) rc=$RC boxes=$(boxes "$MJ3") peak=$peak timeline: $(tr '\n' ' ' < "$MJ3/.events")"; tail -15 "$TMP/j3.out"
 fi
 
 echo "---"
