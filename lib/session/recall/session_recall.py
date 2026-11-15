@@ -1091,9 +1091,67 @@ def render_orca(rows, truncated: bool = False) -> str:
     return "\n".join(lines)
 
 
+# --- --name: sessions by their /rename name ----------------------------------
+
+_NAME_KEYS = ((b'"agentName":"', "agent-name", "agentName"),
+              (b'"customTitle":"', "custom-title", "customTitle"))
+
+
+def _last_name_record(mm, needle: bytes, rtype: str, field: str):
+    """The value of the LAST `rtype` record in the mapped transcript, or None. Walks back
+    from the end by raw byte search, so a 180 MB transcript costs one memrchr, not a parse.
+    A hit inside quoted prose (a tool result that mentions the key) fails the type check
+    and the walk continues to the previous occurrence."""
+    end = len(mm)
+    for _ in range(64):
+        pos = mm.rfind(needle, 0, end)
+        if pos < 0:
+            return None
+        start = mm.rfind(b"\n", 0, pos) + 1
+        stop = mm.find(b"\n", pos)
+        line = mm[start:stop if stop >= 0 else len(mm)]
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            entry = None
+        if isinstance(entry, dict) and entry.get("type") == rtype and isinstance(entry.get(field), str):
+            return entry[field]
+        end = pos
+    return None
+
+
+def session_names(path: str):
+    """Current names of one transcript: the last `agent-name` and the last `custom-title`
+    record, which `/rename` writes into the session's own JSONL. [] when it holds none."""
+    import mmap
+    try:
+        with open(path, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            names = [_last_name_record(mm, n, t, f) for n, t, f in _NAME_KEYS]
+    except (OSError, ValueError):  # unreadable or empty file
+        return []
+    return [n for n in names if n]
+
+
+def find_by_name(files, name: str, limit: int):
+    """[(mtime, file, 1, opening_ask)] newest first for transcripts whose current name
+    equals `name` (case-insensitive, exact). Stops at `limit` rows."""
+    want = name.strip().lower()
+    rows = []
+    for f in sorted(files, key=lambda x: -os.path.getmtime(x)):
+        if len(rows) >= limit:
+            break
+        if want in (n.strip().lower() for n in session_names(f)):
+            try:
+                ask = opening_ask(iter_entries(f))
+            except OSError:
+                ask = ""
+            rows.append((os.path.getmtime(f), f, 1, ask))
+    return rows
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    file = project = tail = final = replies = fence_tag = out_path = written = session = subagents = None
+    file = project = tail = final = replies = fence_tag = out_path = written = session = subagents = name = None
     search_all = as_json = sessions = artifacts = orca = False
     max_chars = None  # --orca reply cap; None = ORCA_REPLY_CHARS
     limit = None  # None = mode picks its own default (10 tail, 50 otherwise)
@@ -1101,6 +1159,7 @@ def main(argv=None) -> int:
     query_parts = []
     usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
              "[--sessions] [--limit N] [--json] [--tail PREFIX] "
+             "[--name NAME [--file F | --project SLUG | --all] [--limit N] [--json]] "
              "[--subagents PREFIX [<filter>] [--project SLUG | --file F] [--json]] "
              "[--final FILE [--fence TAG] [--json] [--out FILE] [--max-bytes N]] "
              "[--replies FILE] "
@@ -1123,6 +1182,8 @@ def main(argv=None) -> int:
             tail = next(it, None)
         elif a == "--subagents":
             subagents = next(it, None)
+        elif a == "--name":
+            name = next(it, None)
         elif a == "--final":
             final = next(it, None)
         elif a == "--replies":
@@ -1195,6 +1256,26 @@ def main(argv=None) -> int:
     if max_chars is not None and not orca:
         sys.stderr.write(usage)
         return 2
+    if name is not None:
+        # --name takes a /rename name, --file or --project or --all, --limit, --json
+        if (not name.strip() or name.startswith("-") or query or sessions or artifacts or orca
+                or tail is not None or final is not None or replies is not None or written is not None
+                or session is not None or subagents is not None or fence_tag is not None
+                or out_path is not None or max_bytes != FINAL_MAX_BYTES or max_chars is not None):
+            sys.stderr.write(usage)
+            return 2
+        rows = find_by_name(resolve_files(file=file, project=project, search_all=search_all),
+                            name, limit or 50)
+        if as_json:
+            payload = {"data_marker": DATA_MARKER, "project_dirs": project_dirs or [],
+                       "sessions": [{"file": f, "mtime": int(m), "matches": n, "opening_ask": ask}
+                                    for m, f, n, ask in rows]}
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        else:
+            sys.stdout.write(render_sessions(rows, f"name {name}", limit or 50, project_dirs) + "\n")
+            if not rows:
+                sys.stderr.write(f"no session named {name!r}\n")
+        return 0
     if orca:
         # --orca takes only --json and --max-chars; every other mode flag is a conflict
         if (query or file is not None or project is not None or search_all or sessions or artifacts

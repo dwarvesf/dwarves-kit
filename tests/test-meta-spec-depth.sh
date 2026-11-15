@@ -435,6 +435,17 @@ assert_eq "wrap.md carries the inactive-host STATE row (knob resolves as true)" 
 RC=0; grep -qF 'sweep will also see this session' "$WRAPF" || RC=1
 assert_eq "wrap.md carries the explicit-distill override FYI" 0 $RC
 
+echo ""
+echo "=== wrap.md scans the target session's transcript when wrapping another session ==="
+RC=0; grep -qF '**Wrapping another session.**' "$WRAPF" || RC=1
+assert_eq "wrap.md carries the wrapping-another-session rule" 0 $RC
+RC=0; grep -qF 'session recall --name' "$WRAPF" || RC=1
+assert_eq "wrap.md resolves the target by its /rename name" 0 $RC
+RC=0; grep -qF 'session recall --subagents' "$WRAPF" || RC=1
+assert_eq "wrap.md lists the target's subagent transcripts with the existing verb" 0 $RC
+RC=0; grep -qF 'The lead never reads a transcript into its own context.' "$WRAPF" || RC=1
+assert_eq "wrap.md keeps the transcript out of the lead's context" 0 $RC
+
 # Validate by size: a small normal-lane spec records an override instead of the 7-reviewer round;
 # the battery review leg rides Sonnet on normal and Opus on full.
 BATTERY_CMD_F="$KIT_DIR/commands/battery.md"
