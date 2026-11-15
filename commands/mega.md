@@ -193,6 +193,13 @@ so the existing driver can walk it unmodified):
   (`bash tests/run-all.sh --times p95`), never a fresh full run; and a `Wall budget:` line
   states the worker's minutes. A goal file never prescribes N full-suite runs: a measurement
   that seems to need one is a history query, or a sub-goal for the nightly job.
+  **The goal file also carries the fast-loop rule** (`docs/patterns/worker-brief.md`): while
+  iterating, run only the test sections the change touches (`bash tests/test-<name>.sh`, or the
+  repo's documented subset mechanism) and run the repo's full check once, before opening the PR
+  (in this kit that is `run-all.sh --changed`, never `--all`). Wait on CI with ONE blocking
+  call, `gh run watch <id> --exit-status` or `gh pr checks <pr> --watch`, never a `sleep` poll
+  loop. After the merge, do not hold the sub-goal open for the main-branch CI run unless the
+  repo's contract says so: hand off, let the next cycle start, and act only if main turns red.
   **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
   will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
   `lib/gate/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
