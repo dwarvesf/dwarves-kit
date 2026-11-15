@@ -376,6 +376,44 @@ chk "zero-check no-label repo: exits 0" "$rc"
 chk_no "zero-check no-label repo: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit"
 chk_has "zero-check no-label repo: merges as before" "$out" "merged #83 ("
 
+echo "--- merge --with-ci on a repo with no ci label waits for the checks GitHub has not registered yet"
+# share#55 and #60 merged with test and lint pending: with no `ci` label the sync returned
+# early and nothing waited, so the gate read the empty rollup of a head seconds old. The
+# checkout carries an unfiltered pull_request workflow for these cases. Reads: 1 draft check,
+# 2 eligibility, 3 the register wait sees nothing, 4 pending, 5 green, 6 the settled re-read.
+mkdir -p "$TMPD/clone-scan-main/.github/workflows"
+printf 'on:\n  pull_request:\njobs:\n  x:\n    runs-on: [self-hosted]\n' > "$TMPD/clone-scan-main/.github/workflows/pr.yml"
+PW_PEND='[{"name":"test","status":"IN_PROGRESS","conclusion":""}]'
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 95)" \
+  GH_STUB_PR_95="$(zc_json 95 CLEAN '[]')" \
+  GH_STUB_PR_95_4="{\"number\":95,\"statusCheckRollup\":$PW_PEND}" \
+  GH_STUB_PR_95_5="{\"number\":95,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_95_6="$(zc_json 95 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --with-ci --pr 95 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci register-wait: exits 0" "$rc"
+chk "merge --with-ci register-wait: the empty rollup and the pending check were both read past" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-95" 2>/dev/null || echo 0)" -ge 6 ]; echo $?)"
+chk_no "merge --with-ci register-wait: no label edit" "$(cat "$GH_STUB_CALLS")" "pr edit"
+chk_has "merge --with-ci register-wait: merged once green" "$out" "merged #95 ("
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 96)" \
+  GH_STUB_PR_96="$(zc_json 96 CLEAN '[]')" \
+  "$WRAP" merge --apply --with-ci --pr 96 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci never-registers: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "merge --with-ci never-registers: names the refusal" "$out" "FAILED merge #96: no checks registered"
+chk_no "merge --with-ci never-registers: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 97)" \
+  GH_STUB_PR_97="$(zc_json 97 CLEAN '[]')" \
+  GH_STUB_PR_97_4="$(zc_json 97 CLEAN '[{"name":"test","status":"COMPLETED","conclusion":"FAILURE","completedAt":"2026-01-01T00:00:00Z"}]')" \
+  "$WRAP" merge --apply --with-ci --pr 97 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci red: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_no "merge --with-ci red: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+mv "$TMPD/clone-scan-main/.github" "$TMPD/pw-wf-discard"
+
 echo "--- zero-check --pr: a head that already reports checks never probes the labels"
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
 out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[{"name":"ci"}]' GH_STUB_OPEN_PRS="$(zc_open 84)" \
