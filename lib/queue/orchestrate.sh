@@ -2499,7 +2499,7 @@ _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HE
   return 1
 }
 
-# ---- Tiered verification, serial path (SPEC-421 rule 4) ----
+# ---- Tiered verification, serial path (docs/specs, tiered-verification rule 4) ----
 # The serial loop never merges: each worker merges its own PR, so there is no pre-merge head to pin and
 # no base run to diff against. A tiered serial run joins once per DAG level instead, at the top of every
 # cycle, before the next sub-goal dispatches: a level is joined when every sub-goal at that level or a
@@ -3153,7 +3153,7 @@ cmd_run() {
 
   _SERIAL_TIERED=""
   while :; do
-    # A tiered run joins every due DAG level before anything dispatches (SPEC-421 rule 4); a no-op unless
+    # A tiered run joins every due DAG level before anything dispatches (tiered verification, rule 4); a no-op unless
     # `[mega] verify = "tiered"`. A red join halts the loop, and a re-run joins the level again first.
     if ! _serial_level_join "$dir" "$roadmap"; then
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
