@@ -81,18 +81,17 @@ FAIL C2: classify newfail -> 'known'
 ```
 
 ## Test plan coverage
-
-| # | Case | Run |
-|---|---|---|
-| C1 | node-runs-affected | `tests/test-known-failures.sh`, "C1" checks. Resolver and doc wiring only: the node steps are agent prompts, see implementation notes D6 |
-| C2 | known-failures-read-at-base | `tests/test-known-failures.sh`, "C2" checks; red under the negative control |
-| C3 | known-failures-edit-guarded | `tests/test-known-failures.sh`, "C3" checks |
-| C4 | known-failure-no-retry | `tests/test-known-failures.sh`, "C4" checks |
-| C5 | crash-not-masked | `tests/test-known-failures.sh`, "C5" checks |
-| C6 | join-once-merged-tree | `tests/test-orchestrate-tiered.sh`, "C6" checks (semantic pair red, two suite runs, nothing merged) |
-| C7 | join-head-moved-refused | `tests/test-orchestrate-tiered.sh`, "C7" checks (hook refusal plus rerun, `mega-merge.sh --expect-head`) |
-| C8 | rolling-refused | `tests/test-orchestrate-tiered.sh`, "C8" checks |
-| C9 | tiered-off-golden | `tests/test-orchestrate-tiered.sh`, "C9" checks against `tests/fixtures/orchestrate-golden/off.txt` |
+| Row | Run / skip reason |
+|---|---|
+| 1 | node-runs-affected: `tests/test-known-failures.sh`, "C1" checks. Resolver and doc wiring only: the node steps are agent prompts, see implementation notes D6 |
+| 2 | known-failures-read-at-base: `tests/test-known-failures.sh`, "C2" checks; red under the negative control |
+| 3 | known-failures-edit-guarded: `tests/test-known-failures.sh`, "C3" checks |
+| 4 | known-failure-no-retry: `tests/test-known-failures.sh`, "C4" checks |
+| 5 | crash-not-masked: `tests/test-known-failures.sh`, "C5" checks |
+| 6 | join-once-merged-tree: `tests/test-orchestrate-tiered.sh`, "C6" checks (semantic pair red, two suite runs, nothing merged) |
+| 7 | join-head-moved-refused: `tests/test-orchestrate-tiered.sh`, "C7" checks (hook refusal plus rerun, `mega-merge.sh --expect-head`) |
+| 8 | rolling-refused: `tests/test-orchestrate-tiered.sh`, "C8" checks |
+| 9 | tiered-off-golden: `tests/test-orchestrate-tiered.sh`, "C9" checks against `tests/fixtures/orchestrate-golden/off.txt` |
 
 ## Reproduce
 
