@@ -76,5 +76,57 @@ reset; MEGA_MERGE_GH=/nonexistent/gh _wave_converge "$MG" SG-01 >/dev/null 2>&1
 grep -q '^- \[ \] SG-01 alpha , auto , PR #11$' "$MG/ROADMAP.md" \
   && pass "ROADMAP line unchanged after a dry run" || fail "ROADMAP changed: $(cat "$MG/ROADMAP.md")"
 
+# 7-8. The same-file guard measures each branch against the branch the PRs merge into (origin's
+# default), not the run worktree's HEAD. The run branch stays on an old commit while origin/main
+# advances; branches cut from the advanced main must not "overlap" on files they only inherited.
+# mk_stale_case <name> <fileA> <fileB>: bare origin, a work clone parked on chore/run at the first
+# commit, origin/main advanced by commits touching shared files, two sub-goal branches cut from the
+# advanced main (each adds its own file). The work clone fetches only the two branches after the
+# advance, so its origin/main is stale until converge refreshes it.
+mk_stale_case() {
+  local name="$1" fa="$2" fb="$3" d="$TMP/$1" i g
+  mkdir -p "$d"
+  git init -q --bare "$d/origin.git"
+  git clone -q "$d/origin.git" "$d/work" 2>/dev/null
+  git clone -q "$d/origin.git" "$d/push" 2>/dev/null
+  for g in work push; do
+    git -C "$d/$g" config user.email t@example.com; git -C "$d/$g" config user.name test
+  done
+  git -C "$d/push" checkout -q -b main
+  for i in 1 2 3; do echo "v0 $i" > "$d/push/shared$i.txt"; done
+  git -C "$d/push" add -A; git -C "$d/push" commit -q -m "chore: base"
+  git -C "$d/push" push -q origin main 2>/dev/null
+  git -C "$d/origin.git" symbolic-ref HEAD refs/heads/main
+  git -C "$d/work" fetch -q origin 2>/dev/null
+  git -C "$d/work" checkout -q -b chore/run origin/main   # the run worktree branch: never advances
+  for i in 1 2 3; do
+    echo "v1 $i" > "$d/push/shared$i.txt"; git -C "$d/push" commit -q -am "chore: advance $i"
+  done
+  git -C "$d/push" push -q origin main 2>/dev/null
+  git -C "$d/push" checkout -q -b "feat/$name-a"; echo a > "$d/push/$fa"; git -C "$d/push" add -A; git -C "$d/push" commit -q -m "feat: a"
+  git -C "$d/push" checkout -q main
+  git -C "$d/push" checkout -q -b "feat/$name-b"; echo b > "$d/push/$fb"; git -C "$d/push" add -A; git -C "$d/push" commit -q -m "feat: b"
+  git -C "$d/push" push -q origin "feat/$name-a" "feat/$name-b" 2>/dev/null
+  git -C "$d/work" fetch -q origin "feat/$name-a:feat/$name-a" "feat/$name-b:feat/$name-b" 2>/dev/null
+  mkdir -p "$d/work/mega/goals"
+  printf '# Mega-goal: stale\n## Sub-goals\n- [ ] SG-01 alpha , auto , PR #21\n- [ ] SG-02 beta , auto , PR #22\n' > "$d/work/mega/ROADMAP.md"
+  printf '# SG-01: alpha\n**Branch:** feat/%s-a\n' "$name" > "$d/work/mega/goals/01-SG-01.md"
+  printf '# SG-02: beta\n**Branch:** feat/%s-b\n' "$name" > "$d/work/mega/goals/02-SG-02.md"
+}
+
+# 7. disjoint branches off an advanced main: no overlap (fails on a HEAD-based base: the stale
+# merge-base makes both branches show main's three advanced files)
+mk_stale_case disj a-only.txt b-only.txt
+out=$(GH_STATE=OPEN _wave_converge "$TMP/disj/work/mega" SG-01 SG-02 2>&1 >/dev/null); rc=$?
+if [ "$rc" = 0 ] && ! printf '%s' "$out" | grep -q 'SAME-FILE'; then pass "stale run branch, disjoint sub-goals: no overlap (rc 0)"
+else fail "stale run branch, disjoint sub-goals: rc=$rc out='$(printf '%s' "$out" | tr '\n' ' ')'"; fi
+
+# 8. control: two branches that both edit one file are still flagged, and only that file
+mk_stale_case same common.txt common.txt
+out=$(_wave_converge "$TMP/same/work/mega" SG-01 SG-02 2>&1 >/dev/null); rc=$?
+files=$(printf '%s\n' "$out" | sed -n 's/^    //p' | tr '\n' ' ')
+[ "$rc" = 1 ] && [ "$files" = "common.txt " ] \
+  && pass "same-file edit still flagged: only common.txt (rc 1)" || fail "same-file control: rc=$rc files='$files'"
+
 echo "---"; [ "$fails" = 0 ] && echo "All wave-converge tests passed." || echo "$fails failed."
 exit "$fails"

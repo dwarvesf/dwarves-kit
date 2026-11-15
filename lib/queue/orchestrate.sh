@@ -159,6 +159,10 @@ _SG_BOX_RE="$(box_re open done)"
 CONFIG_LIB="${CONFIG_LIB:-$LIB_ROOT/config/kit-config.sh}"
 # shellcheck source=lib/config/kit-config.sh
 [ -f "$CONFIG_LIB" ] && . "$CONFIG_LIB"
+# `_kit_mc_base_ref`: the remote-tracking ref of the default branch (best-effort fetch), used as
+# the converge guard's base. Idempotent if a caller already sourced it.
+# shellcheck source=lib/config/merge-command.sh
+. "$LIB_ROOT/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
 
 # _kit_bool01 <val> <default01> -- normalize a TOML `true`/`false` (or already-0/1) config
 # value to the `0`/`1` shape orchestrate.sh's env-var knobs use; anything else (unset, typo)
@@ -2346,8 +2350,12 @@ _sg_pr() {  # roadmap id
 # `_wave_run`). Steps:
 #   1. Order the target ids by ROADMAP position (NOT argv order) , merges land in ROADMAP order.
 #   2. SAME-FILE cross-wave guard (belt-and-suspenders over dispatch-gate's PRE-admission
-#      disjointness): diff each landed branch vs the base; if two branches changed the SAME
-#      file, FLAG (event + message + nonzero) and REFUSE to merge , never silently land a clean-but-
+#      disjointness): diff each landed branch vs the base, the branch the sub-goal PRs merge into
+#      (origin's default branch, refreshed by a quiet best-effort fetch), NOT the run worktree's
+#      HEAD: that branch never advances while PRs squash-merge into main, so against it every
+#      branch would show all of main's intervening changes as its own. With no remote ref (no
+#      origin, e.g. a unit-test repo) the base falls back to the run worktree's HEAD. If two
+#      branches changed the SAME file, FLAG (event + message + nonzero) and REFUSE to merge , never silently land a clean-but-
 #      wrong merge. A file appearing from >=2 branches (union `sort | uniq -d`) is the overlap.
 #   3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, through `$WAVE_MERGE_CMD`. A
 #      sub-goal with no real PR (placeholder `#__`) is SKIPPED (merge wiring deferred), not failed.
@@ -2375,7 +2383,8 @@ _wave_converge() {  # megadir [id...] [--peers id...]
 
   local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
   [ -n "$repo" ] || { echo "[orchestrate] [converge] '$megadir' is not inside a git repo; cannot converge." >&2; return 64; }
-  local base; base=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$base" ] || base=HEAD
+  local base; base=$(_kit_mc_base_ref "$repo" 2>/dev/null) || base=""
+  [ -n "$base" ] || base=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$base" ] || base=HEAD
 
   # 1. Order the targets by ROADMAP position. Walk `_subgoals` (ROADMAP order) and keep those in the
   #    target set; membership via a space-padded string match (bash-3.2 has no assoc arrays).
