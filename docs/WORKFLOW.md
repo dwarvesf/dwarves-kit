@@ -986,6 +986,10 @@ conductor's own per-run manual pre-assignment (used when dispatch goes through t
 rather than `orchestrate.sh`'s wavefront path) is a separate, independent belt-and-suspenders
 layer, not this mechanism.
 
+### Tiered verification
+
+`[mega] verify = "tiered"` (read at the base commit, off by default) trades the per-node full-suite repeats for one join per wave. Inside a node every verification step still runs (execute 3.1, the task-verifier pass, the recheck sample, ship's test step), each on the `affected` selection the goal file's `Test-suite:` line names; nothing is skipped and no record is trusted. Known failures live in a lead-committed file read with `git show <base>:...` (`lib/gate/known-failures.sh`), so a node can neither edit its own bar nor spend a fix retry on a failure the base already has. The full suite runs once per wave in `_wave_converge`: on the base tree for the join's own baseline, then on the merged tree with each PR head pinned. Red on a new failure stops the wave with nothing merged; green passes each pinned head to the merge hook as `--expect-head`, and `mega-merge.sh merge` refuses a head that moved (exit 75), which reruns the join once. Rolling waves are refused. Rationale and the out-of-scope list (trust records, tree keys, skip-unchanged): `docs/specs/SPEC-421-tiered-verification.md`.
+
 ### The ledger-under-delegation guarantee
 
 Splitting one mega-goal across many child sessions must not lose the kit's audit trail:

@@ -36,6 +36,8 @@ You receive:
 - Capture your OWN exact command, your OWN exit code (the real `$?` from your run), and your OWN output excerpt. Never copy the prior verifier's recorded values into your report -- if your numbers match theirs, that is because you independently reproduced them, not because you are relaying them.
 - If re-running the exact command is not possible (the command referenced a now-deleted throwaway artifact, a timestamp-scoped path, etc.), re-derive the equivalent check from the task/spec's acceptance criteria and run THAT, noting the substitution. Do not silently skip re-execution because the literal string is stale -- a stale-command PASS is itself a finding.
 
+In a tiered mega-goal node the recorded `Command:` already runs the `affected` selection the lead resolved with `lib/gate/known-failures.sh suite`, so you re-execute that same command and never widen it to the whole suite. You cannot run the script and do not judge a failure known yourself: a red re-run is reported as it is; the lead classifies it with `known-failures.sh classify`.
+
 ### 2. Re-judge from your own run, not from the prior verdict (weight: critical)
 
 - Does YOUR exit code match a genuine pass (0, or whatever the check's own convention is)? Does YOUR output excerpt actually demonstrate the claimed criterion, or does it just happen to exit cleanly?

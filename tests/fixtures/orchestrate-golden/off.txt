@@ -1,0 +1,35 @@
+== run --dry-run
+[plan] mega-goal: <TMP>/repo/mega
+  (turn ceiling: 300 turns/segment, up to 10 segments per sub-goal; TURN_CAP=0 disables)
+  -> SG-01 (auto)  [model: inherit, effort: inherit]  [prompt: POINTER_PROMPT + goal-file + no-handoff]
+  -> SG-02 (auto)  [model: inherit, effort: inherit]  [prompt: POINTER_PROMPT + goal-file + no-handoff]
+  -> SG-03 (gate, dispatch then hold for human merge)  [model: inherit, effort: inherit]  [prompt: POINTER_PROMPT + goal-file + no-handoff]
+  == STOP at SG-03 (gate: human review) ==
+  -> (when all boxes are checked) TIER-4 mega-close: no-orphan sweep + 3 independent verifier sessions (claude -p x3: integration-verifier / review-team / advisor, fail-closed aggregated), then HOLD the human gate [TIER4_CLOSE=1]
+== converge: merged
+[orchestrate] [converge] SG-01 merged (PR #11).
+[orchestrate] [converge] SG-02 merged (PR #12).
+rc=0
+-- events
+SG-01	merged	converge: PR #11 merged (one-at-a-time under the flip lock)
+SG-02	merged	converge: PR #12 merged (one-at-a-time under the flip lock)
+-- hook argv
+11 alpha full
+12 beta full
+== converge: dry-run
+[orchestrate] [converge] SG-01 PR #11 is not merged (state 'OPEN'): a dry run or an unconfirmed merge; NOT recorded as merged. A real merge needs a WAVE_MERGE_CMD that passes --execute to mega-merge.
+[orchestrate] [converge] SG-02 PR #12 is not merged (state 'OPEN'): a dry run or an unconfirmed merge; NOT recorded as merged. A real merge needs a WAVE_MERGE_CMD that passes --execute to mega-merge.
+rc=0
+-- events
+SG-01	merge-dry-run	converge: PR #11 NOT merged (hook exit 0, PR state 'OPEN'); not recorded as merged
+SG-02	merge-dry-run	converge: PR #12 NOT merged (hook exit 0, PR state 'OPEN'); not recorded as merged
+-- hook argv
+11 alpha full
+12 beta full
+== converge: hook-failure
+[orchestrate] [converge] SG-01 merge hook failed (PR #11, rc 3); stopping convergence (no self-claim).
+rc=3
+-- events
+SG-01	blocked	converge: merge hook failed (PR #11, rc 3)
+-- hook argv
+11 alpha full

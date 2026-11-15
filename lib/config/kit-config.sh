@@ -104,6 +104,19 @@ kit_config_tracked_clean() {
 # file is absent there. A copy at a base is committed by definition.
 kit_config_show_at() { git -C "$1" show "$2:.kit.toml" 2>/dev/null; }
 
+# kit_config_get_at <repo-root> <rev> <section.key> [default] -- the value committed in .kit.toml at <rev>,
+# else operator, else kit-root, else default. The working tree and the project overlay are never read,
+# so a node branch cannot change what a gate reads from the base.
+kit_config_get_at() {
+  local repo="$1" rev="$2" dotkey="$3" def="${4:-}" tmp v
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit-cfg-at.XXXXXX")" || { kit_config_get_root "$dotkey" "$def"; return 0; }
+  kit_config_show_at "$repo" "$rev" >| "$tmp"
+  v="$(_kit_toml_get "$tmp" "${dotkey%.*}" "${dotkey##*.}")"
+  rm -f "$tmp"
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  kit_config_get_root "$dotkey" "$def"
+}
+
 # --- self-test: `bash lib/config/kit-config.sh selftest` (ponytail: one runnable check) ---
 # EXECUTED-directly guard: a sourced file inherits the CALLER's "$@". Without this, any
 # verb-taking CLI that sources this lib and is invoked with `selftest` (e.g. `queue.sh
