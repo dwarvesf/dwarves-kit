@@ -3,10 +3,13 @@
 # Every read is `git show <base>:...`, never the node's tree, so a node cannot edit its own bar.
 #
 #   read     <root> <base>                 the known failure names at <base>, one per line
-#   classify <log> <root> <base> [--exit <n>] [--prev-count <n>] [--known-from <file>]
+#   classify <log> <root> <base> [--exit <n>] [--prev-count <n>] [--base-count <n>] [--known-from <file>]
 #                                          prints pass | known | fail; exit 0 for pass and known, 1 for fail.
 #                                          known = the run exited non-zero, every failure parsed from the log is
 #                                          listed, and the executed count is non-zero and not below --prev-count.
+#                                          --base-count <n> is the base run's executed count: known also needs a
+#                                          count of at least <n>, and a --base-count with no usable number is
+#                                          not proven (fail), so the failure lines are never trusted alone.
 #                                          --exit defaults to non-zero: a caller that forgets it cannot get `pass`.
 #                                          --known-from replaces the committed list (the wave join passes the
 #                                          failure set of its own base run).
@@ -80,13 +83,14 @@ cmd_count() {
 }
 
 cmd_classify() {
-  local log="${1:-}" root="${2:-}" base="${3:-}" ex=1 prev="" kfrom="" known names n c
-  [ -n "$log" ] && [ -n "$root" ] && [ -n "$base" ] || { echo "usage: known-failures.sh classify <log> <root> <base> [--exit <n>] [--prev-count <n>] [--known-from <file>]" >&2; return 64; }
+  local log="${1:-}" root="${2:-}" base="${3:-}" ex=1 prev="" kfrom="" known names n c bc="" bc_set=0
+  [ -n "$log" ] && [ -n "$root" ] && [ -n "$base" ] || { echo "usage: known-failures.sh classify <log> <root> <base> [--exit <n>] [--prev-count <n>] [--base-count <n>] [--known-from <file>]" >&2; return 64; }
   shift 3
   while [ $# -gt 0 ]; do
     case "$1" in
       --exit) ex="${2:-}"; shift 2 ;;
       --prev-count) prev="${2:-}"; shift 2 ;;
+      --base-count) bc_set=1; bc="${2:-}"; shift 2 ;;
       --known-from) kfrom="${2:-}"; shift 2 ;;
       *) echo "known-failures.sh classify: unknown argument '$1'" >&2; return 64 ;;
     esac
@@ -109,6 +113,10 @@ EOF
   c="$(cmd_count "$log" "$root" "$base")"
   case "$c" in ''|*[!0-9]*|0) _kf_fail "executed count missing or zero"; return 1 ;; esac
   if [ -n "$prev" ] && [ "$c" -lt "$prev" ]; then _kf_fail "executed count dropped from $prev to $c"; return 1; fi
+  if [ "$bc_set" -eq 1 ]; then
+    case "$bc" in ''|*[!0-9]*) _kf_fail "the base run's executed count is unavailable, so this run is not proven"; return 1 ;; esac
+    if [ "$c" -lt "$bc" ]; then _kf_fail "executed count $c is below the base run's $bc"; return 1; fi
+  fi
   echo "known"
 }
 

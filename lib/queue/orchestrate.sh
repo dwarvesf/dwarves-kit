@@ -2400,12 +2400,49 @@ _wave_join() {
   done
   bsha=$(git -C "$repo" rev-parse --verify -q "$base^{commit}") || { echo "[orchestrate] [join] cannot resolve the base '$base'; nothing merges." >&2; return 1; }
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/kit-join.XXXXXX") || return 1
+  # An interrupt mid-join stops the suite, removes the throwaway worktrees, marks the wave failed and
+  # leaves the run with a signal exit code; nothing merges. The prior INT/TERM traps come back after.
+  _JOIN_TMP="$tmp"; _JOIN_REPO="$repo"; _JOIN_MEGADIR="$megadir"
+  local old_int old_term
+  old_int=$(trap -p INT); old_term=$(trap -p TERM)
+  trap '_wave_join_interrupted 130' INT
+  trap '_wave_join_interrupted 143' TERM
   _wave_join_run "$megadir" "$repo" "$base" "$bsha" "$tmp" "$cmd" "$kf" || rc=$?
-  git -C "$repo" worktree remove --force "$tmp/base" >/dev/null 2>&1 || :
-  git -C "$repo" worktree remove --force "$tmp/merged" >/dev/null 2>&1 || :
-  git -C "$repo" worktree prune >/dev/null 2>&1 || :
-  rm -rf "$tmp"
+  trap - INT TERM
+  [ -z "$old_int" ] || eval "$old_int"; [ -z "$old_term" ] || eval "$old_term"
+  _wave_join_cleanup "$repo" "$tmp"
   [ "$rc" = 0 ] || _JOIN_HEADS=()
+  return "$rc"
+}
+
+_wave_join_cleanup() {  # repo tmp
+  git -C "$1" worktree remove --force "$2/base" >/dev/null 2>&1 || :
+  git -C "$1" worktree remove --force "$2/merged" >/dev/null 2>&1 || :
+  git -C "$1" worktree prune >/dev/null 2>&1 || :
+  rm -rf "$2"
+}
+
+_JOIN_PID=""
+_wave_join_interrupted() {  # exit-code
+  [ -z "$_JOIN_PID" ] || { pkill -TERM -P "$_JOIN_PID" 2>/dev/null; kill -TERM "$_JOIN_PID" 2>/dev/null; } || :
+  _wave_join_cleanup "$_JOIN_REPO" "$_JOIN_TMP"
+  _emit_event "$_JOIN_MEGADIR" wave blocked "converge: join interrupted; nothing merged"
+  echo "[orchestrate] [join] interrupted; the throwaway worktrees are removed and nothing merged." >&2
+  exit "$1"
+}
+
+# _join_run <dir> <cmd> <log>: the join command in <dir> with the config and ledger overrides of this
+# shell scrubbed (a PR head's test code must not see which config or ledger the conductor reads). It runs
+# in the background and is waited on, so a signal reaches the trap at once.
+_join_run() {
+  local dir="$1" cmd="$2" log="$3" v unset_args=() rc=0
+  for v in $(env | sed -n 's/^\(KIT_CONFIG_[A-Za-z0-9_]*\)=.*/\1/p') KIT_PROJECT_ROOT KIT_LEDGER_DIR DWARVES_KIT_LOG_DIR DWARVES_KIT; do
+    unset_args+=(-u "$v")
+  done
+  ( cd "$dir" && exec env "${unset_args[@]}" bash -c "$cmd" ) >| "$log" 2>&1 &
+  _JOIN_PID=$!
+  wait "$_JOIN_PID" || rc=$?
+  _JOIN_PID=""
   return "$rc"
 }
 
@@ -2416,7 +2453,7 @@ _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HE
     || { echo "[orchestrate] [join] cannot create the join worktrees; nothing merges." >&2; return 1; }
   # The base run first: its failure set is the join's own baseline (never a ledger line).
   _say "[orchestrate] [join] full suite on the base tree ($base) ..."
-  brc=0; ( cd "$tmp/base" && bash -c "$cmd" ) >| "$tmp/base.log" 2>&1 || brc=$?
+  brc=0; _join_run "$tmp/base" "$cmd" "$tmp/base.log" || brc=$?
   for sha in "${_JOIN_HEADS[@]}"; do
     if ! git -C "$tmp/merged" -c user.name=kit-join -c user.email=kit-join@localhost merge --no-ff --no-edit -q "$sha" >/dev/null 2>&1; then
       _emit_event "$megadir" wave blocked "converge: join cannot merge head ${sha:0:12} into the base"
@@ -2425,14 +2462,14 @@ _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HE
     fi
   done
   _say "[orchestrate] [join] full suite on the merged tree (${#_JOIN_HEADS[@]} head(s)) ..."
-  mrc=0; ( cd "$tmp/merged" && bash -c "$cmd" ) >| "$tmp/merged.log" 2>&1 || mrc=$?
+  mrc=0; _join_run "$tmp/merged" "$cmd" "$tmp/merged.log" || mrc=$?
   if [ "$mrc" = 0 ]; then
     _say "[orchestrate] [join] green."
     return 0
   fi
   bash "$kf" names "$tmp/base.log" "$repo" "$base" >| "$tmp/base.set" 2>/dev/null
   pc=$(bash "$kf" count "$tmp/base.log" "$repo" "$base" 2>/dev/null)
-  cls=$(bash "$kf" classify "$tmp/merged.log" "$repo" "$base" --exit "$mrc" --known-from "$tmp/base.set" ${pc:+--prev-count "$pc"} 2>"$tmp/cls.err")
+  cls=$(bash "$kf" classify "$tmp/merged.log" "$repo" "$base" --exit "$mrc" --known-from "$tmp/base.set" --base-count "$pc" 2>"$tmp/cls.err")
   if [ "$cls" = known ]; then
     _say "[orchestrate] [join] merged tree fails only what the base tree already failed (base exit $brc); green."
     return 0
@@ -2534,7 +2571,7 @@ _wave_converge() {  # megadir [id...] [--peers id...]
   #    the join for the sub-goals not yet merged, once; a second refusal stops the wave.
   local lockdir="$megadir/.orchestrate/flip.lock"
   local pr rc branch rid state lane="${WAVE_MERGE_LANE:-full}"
-  local tiered=0 joins=0 todo=( "${ordered[@]}" ) mergeable pins=() extra i k moved
+  local tiered=0 joins=0 todo=( "${ordered[@]}" ) mergeable pins=() extra i k moved landed
   _verify_tiered "$repo" "$base" && tiered=1
   while :; do
     pins=(); mergeable=()
@@ -2578,6 +2615,16 @@ _wave_converge() {  # megadir [id...] [--peers id...]
         _emit_event "$megadir" "$id" blocked "converge: merge hook failed (PR #$pr, rc $rc)"
         echo "[orchestrate] [converge] $id merge hook failed (PR #$pr, rc $rc); stopping convergence (no self-claim)." >&2
         return "$rc"
+      fi
+      # A hook that ignores --expect-head would merge whatever head it finds. Read the head back: it must
+      # still be the joined one, or the wave stops here (the hook is not trusted to have honored the pin).
+      if [ "$tiered" = 1 ]; then
+        landed=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json headRefOid -q .headRefOid 2>/dev/null) || landed=""
+        if [ "$landed" != "${pins[$((k - 1))]}" ]; then
+          _emit_event "$megadir" "$id" blocked "converge: PR #$pr head is ${landed:0:12}, not the joined ${pins[$((k - 1))]:0:12}; stopping"
+          echo "[orchestrate] [converge] $id PR #$pr: the head after the merge command is not the joined head; stopping convergence (no self-claim). Check what landed." >&2
+          return 1
+        fi
       fi
       # The hook exiting 0 is not a merge (the default hook is a dry run). Ask GitHub.
       state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""

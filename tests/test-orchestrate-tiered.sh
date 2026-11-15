@@ -50,7 +50,7 @@ mk_case semantic tiered; D=$CASE_DIR
 converge "$D" SG-01 SG-02; rc=$?
 if [ "$rc" = 1 ] && [ "$(runs)" = 2 ] && [ "$(hooklines)" = 0 ]; then pass "C6: the semantic-conflict pair is red on the merged tree, two suite runs, nothing merged"
 else fail "C6: rc=$rc runs=$(runs) hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"; fi
-if [ "$(sed -n 1p "$STUB_LOG" | grep -c 'cwd=.*/base$')" = 1 ] && [ "$(sed -n 2p "$STUB_LOG" | grep -c 'cwd=.*/merged$')" = 1 ]; then pass "C6: the first run is the base tree, the second the merged tree"
+if [ "$(grep '^suite' "$STUB_LOG" | sed -n 1p | grep -c 'cwd=.*/base$')" = 1 ] && [ "$(grep '^suite' "$STUB_LOG" | sed -n 2p | grep -c 'cwd=.*/merged$')" = 1 ]; then pass "C6: the first run is the base tree, the second the merged tree"
 else fail "C6: run order: $(cat "$STUB_LOG")"; fi
 grep -q 'new failure: a and b conflict' "$D/out.txt" && pass "C6: the new failure is named" || fail "C6: no named failure: $(cat "$D/out.txt")"
 [ "$(events "$D")" = "wave:blocked " ] && pass "C6: one blocked event for the wave, no merged event" || fail "C6: events '$(events "$D")'"
@@ -113,6 +113,50 @@ EOF
 converge "$D" SG-01 SG-02; rc=$?
 if [ "$rc" = 1 ] && [ "$(runs)" = 4 ] && ! grep -q 'SG-02:merged' <<<"$(events "$D")"; then pass "C7: a head that keeps moving stops the wave after one rerun, SG-02 never merged"
 else fail "C7 moving: rc=$rc runs=$(runs) events '$(events "$D")'"; fi
+
+# A hook that ignores --expect-head and merges whatever it finds: the head is read back and the wave stops.
+mk_case ignores tiered; D=$CASE_DIR
+nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four; nf_node "$D" feat/node-d2 d2.txt four-again
+nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
+git -C "$D/work" rev-parse feat/node-d2 > "$D/heads/12.new"
+cat > "$D/hook" <<EOF
+#!/usr/bin/env bash
+# ignores --expect-head: the head moves and the command still exits 0
+echo "\$*" >> "\$HOOK_LOG"
+[ "\$1" = 12 ] && cp "$D/heads/12.new" "\$NF_HEADS/12"
+exit 0
+EOF
+converge "$D" SG-01 SG-02; rc=$?
+if [ "$rc" = 1 ] && grep -q 'not the joined head' "$D/out.txt" && [ "$(events "$D")" = "SG-01:merged SG-02:blocked " ]; then pass "C7: a hook that ignores --expect-head and lands another head stops the wave, SG-02 never recorded merged"
+else fail "C7 ignored pin: rc=$rc events '$(events "$D")' out: $(tr '\n' ' ' < "$D/out.txt")"; fi
+
+# The join command sees none of the conductor's config or ledger overrides.
+mk_case scrub tiered; D=$CASE_DIR
+nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
+nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
+KIT_LEDGER_DIR="$TMP/ledger" DWARVES_KIT_LOG_DIR="$TMP/logs" converge "$D" SG-01 SG-02; rc=$?
+if [ "$rc" = 0 ] && [ "$(grep -c '^env cfg= op= proj= ledger= logdir=$' "$STUB_LOG")" = 2 ]; then pass "C6: join_cmd runs with KIT_CONFIG_*, KIT_PROJECT_ROOT, KIT_LEDGER_DIR and DWARVES_KIT_LOG_DIR scrubbed (both runs)"
+else fail "C6 scrub: rc=$rc env lines: $(grep '^env' "$STUB_LOG" | tr '\n' '|')"; fi
+
+# A merged run with a lower executed count than the base run is not proven, even when every failure is known.
+mk_case lowcount tiered; D=$CASE_DIR
+nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
+nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
+STUB_FAIL="Skim settings panel wrong" STUB_COUNT=10 STUB_COUNT_MERGED=8 converge "$D" SG-01 SG-02; rc=$?
+[ "$rc" = 1 ] && [ "$(hooklines)" = 0 ] && pass "C6: a merged run with fewer executed checks than the base run is red" || fail "C6 lowcount: rc=$rc hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"
+
+# An interrupt mid-join: the throwaway worktrees go, the wave is marked failed, nothing merges.
+mk_case interrupt tiered; D=$CASE_DIR
+nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
+nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
+STUB_SLEEP=30 bash -c 'source "$1"; shift; _wave_converge "$@"' _ "$ORCH" "$D/work/mega" SG-01 SG-02 >| "$D/out.txt" 2>&1 &
+jpid=$!
+n=0; until grep -q '^suite' "$STUB_LOG" 2>/dev/null || [ "$n" -ge 100 ]; do sleep 0.2; n=$((n + 1)); done
+kill -TERM "$jpid" 2>/dev/null; wait "$jpid" 2>/dev/null; rc=$?
+left=$(git -C "$D/work" worktree list | grep -c 'kit-join' || true)
+if [ "$rc" = 143 ] && [ "$left" = 0 ] && [ "$(hooklines)" = 0 ] && [ "$(events "$D")" = "wave:blocked " ] && grep -q 'interrupted' "$D/out.txt"; then pass "C6: SIGTERM mid-join removes the throwaway worktrees, marks the wave blocked and merges nothing (exit 143)"
+else fail "C6 interrupt: rc=$rc worktrees-left=$left hook=$(hooklines) events '$(events "$D")' out: $(tr '\n' ' ' < "$D/out.txt")"; fi
+pkill -f "$D/work" 2>/dev/null || true
 
 # mega-merge itself: --expect-head refuses a moved head before anything else, and never reaches gh
 mkdir -p "$TMP/mm-bin"

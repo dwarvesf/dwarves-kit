@@ -108,6 +108,18 @@ out=$(cls green)
 out=$(bash "$KF" classify "$TMP/green.log" "$W" "$BASE" 2>/dev/null)
 [ "$out" = fail ] && pass "C4: with no --exit given, a clean log is not pass" || fail "C4: no --exit -> '$out'"
 
+out=$(cls known --base-count 149)
+[ "$out" = known ] && pass "C4: a count equal to the base run's (149) is known" || fail "C4: base-count equal -> '$out'"
+out=$(cls known --base-count 150)
+[ "$out" = fail ] && pass "C4: a count below the base run's (149 under 150) is fail even though every failure is known" || fail "C4: base-count above -> '$out'"
+out=$(cls known --base-count "")
+[ "$out" = fail ] && pass "C4: with no usable base count the run is not proven (fail)" || fail "C4: empty base-count -> '$out'"
+git -C "$D/push" checkout -q -b base-nocount main 2>/dev/null
+grep -v '^count_line' "$D/push/.kit.toml" > "$TMP/nocount.toml"; cp "$TMP/nocount.toml" "$D/push/.kit.toml"; nf_git "$D/push" commit -q -am "chore: no count_line"
+git -C "$D/push" push -q origin base-nocount 2>/dev/null; git -C "$W" fetch -q origin 2>/dev/null
+out=$(bash "$KF" classify "$TMP/known.log" "$W" origin/base-nocount --exit 1 2>/dev/null)
+[ "$out" = fail ] && pass "C4: a suite with no count line is not proven even when its failures are known" || fail "C4: no count_line -> '$out'"
+
 # ---- C5 crash-not-masked
 out=$(cls crash)
 [ "$out" = fail ] && [ "$(rc_of crash)" = 1 ] && pass "C5: exit 1 with no parsed failure is fail" || fail "C5: crash -> '$out'"
