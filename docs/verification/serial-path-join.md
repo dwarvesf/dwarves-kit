@@ -1,6 +1,6 @@
 # Verification -- serial-path-join
 
-The serial path of a tiered mega-goal joins once per DAG level (spec: `docs/specs/SPEC-421-tiered-verification.md` rule 4; deltas: `docs/implementation-notes/serial-path-join.md`). The join runs after the level's merges, on the base tree, and halts the loop before the next level on a red result.
+The serial path of a tiered mega-goal joins once per DAG level (spec: `docs/specs/SPEC-421-tiered-verification.md` rule 4; deltas: `docs/implementation-notes/serial-path-join.md`). The join runs at the top of each cycle on the base tree, after the level's merges, and halts the loop on a red result before the next level dispatches.
 
 ## Green run
 
@@ -9,13 +9,19 @@ Command: bash tests/test-orchestrate-serial-join.sh
 Exit: 0
 Output:
   PASS level: independent sub-goals are level 0, a dependent of both is level 1
-  PASS level: a dependency cycle ends (capped), never loops
+  PASS level: a chain reaches level 2 and a diamond takes its deepest dependency (level 3)
+  PASS level: a three-node fan-out cycle ends at once
   PASS serial join: three sub-goals in two levels run the suite twice, once per level, and all dispatch
   PASS serial join: each run is on the base tree in a throwaway worktree, level 0 then level 1
   PASS serial join: no throwaway worktree is left
   PASS serial join: a red level join halts the loop before the next level dispatches, naming the new failure
   PASS serial join: one blocked event for the level
+  PASS serial join: a red join leaves no throwaway worktree either
   PASS serial join: level 0 is joined once, after SG-02, not after SG-01
+  PASS serial join: a re-run after a red halt joins the level again and dispatches nothing
+  PASS serial join: a level-1 node that ran first is joined only after level 0 closes, level 0 then level 1
+  PASS serial join: an unreachable origin (stale base) halts the loop without running the suite
+  PASS serial join: level 1 with fewer executed checks than level 0 is red even though its failure is known
   PASS serial join: a failure the known-failures list names does not stop the loop
   PASS serial join: a crash with no parsed failure is red, never read as known
   PASS serial join: a tiered run with no join_cmd halts at the first level close
@@ -23,7 +29,7 @@ Output:
   PASS serial join: with verify = off no suite runs and nothing about a join is printed
   ---
   All serial join tests passed.
-Verdict: PASS (13 checks)
+Verdict: PASS (19 checks)
 ```
 
 ```
@@ -53,44 +59,56 @@ Output:
 Verdict: PASS (9 checks)
 ```
 
+```
+Command: bash tests/test-known-failures.sh
+Exit: 0
+Output:
+  ---
+  All known-failures tests passed.
+Verdict: PASS (25 checks)
+```
+
 ## Fails without the change
 
-The new suite against the previous `lib/queue/orchestrate.sh` (`git show HEAD~1:lib/queue/orchestrate.sh`): 10 of the 13 checks go red (the level helper is missing and no join runs), the `verify = off` and no-leftover-worktree checks stay green.
+The new suite against `lib/queue/orchestrate.sh` as it is on master (`git show origin/master:lib/queue/orchestrate.sh`): 14 of the 19 checks go red (no level table, no join). The checks that stay green are the ones that assert nothing runs (`verify = off`, the fan-out cycle bound on the new helper's absence, the known-list pass-through, no leftover worktree).
 
 ```
-Command: git show <base>:lib/queue/orchestrate.sh > lib/queue/orchestrate.sh && bash tests/test-orchestrate-serial-join.sh
-Exit: 1
+Command: git show origin/master:lib/queue/orchestrate.sh > lib/queue/orchestrate.sh && bash tests/test-orchestrate-serial-join.sh
+Exit: 14
 Output:
-  FAIL level: cycle did not end
   FAIL serial green: rc=0 runs=0 dispatched='SG-01 SG-02 SG-03 '
   FAIL serial red: rc=0 runs=0 dispatched='SG-01 SG-02 SG-03 '
+  FAIL serial red rerun: rc=0 runs=0 dispatched='SG-01 SG-02 SG-03 '
+  FAIL serial order: rc=0 runs=0
+  FAIL serial stale: rc=0 runs=0
   FAIL serial crash: rc=0 dispatched='SG-01 SG-02 SG-03 '
-  FAIL serial nocmd: rc=0 runs=0
-  FAIL serial interrupt: rc=0 left=0 events '' dispatched='SG-01 SG-02 SG-03 '
-  10 failed.
+  14 failed.
 Verdict: PASS (the new tests are red on the old code)
 ```
 
 ## Negative control
 
-`lib/gate/negctl.sh` with `bash tests/test-orchestrate-serial-join.sh` as the test command, three mutations of the new code, each restored and re-run green.
+`lib/gate/negctl.sh` with `bash tests/test-orchestrate-serial-join.sh` as the test command. Six one-line mutations of the new code; each ran green before, red under the mutation, green after the restore.
 
-| Mutation | Result under mutation |
+| Mutation | Red under mutation |
 |---|---|
-| A red level join returns 0 (`_serial_join` final `return 1` becomes `return 0`) | RED, 3 failed (the loop runs on through the red level, two blocked events, a crash is not halted) |
-| The join never fires (`_SERIAL_TIERED` forced to 0) | RED, 8 failed (no suite run, nothing halts, no interrupt, no join_cmd refusal) |
-| The join fires after every sub-goal (the unchecked-sibling guard removed) | RED, 4 failed (level 0 is joined after SG-01, the red level is joined late) |
+| A red join in `_serial_join_run` returns 0, so the loop goes on | 6 failed |
+| The join is never enabled (`_SERIAL_TIERED` forced to 0) | 12 failed |
+| A level joins before every lower level is checked (the `minpending` break removed) | 7 failed |
+| The green marker is ignored, so a level joins on every cycle | 2 failed |
+| The executed-count floor removed (`--prev-count` dropped) | 1 failed (the count check) |
+| The origin-tip check disabled (a stale base is accepted) | 1 failed (the stale-base check) |
 
 ```
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-orchestrate-serial-join.sh" "bash <mutate-N.sh>"
 Exit: 0
 Output:
   Exit: 0 (green before mutation)
-  Exit: 2 (under mutation, RED expected)
+  Exit: 6 (under mutation, RED expected)
   Exit: 0 (green after restore)
   Verdict: PASS
 ```
 
 ## Reproduce
 
-`bash tests/test-orchestrate-serial-join.sh && bash tests/test-orchestrate-tiered.sh && bash tests/test-orchestrate.sh && bash tests/test-wave-converge.sh`
+`bash tests/test-orchestrate-serial-join.sh && bash tests/test-orchestrate-tiered.sh && bash tests/test-orchestrate.sh && bash tests/test-wave-converge.sh && bash tests/test-known-failures.sh`
