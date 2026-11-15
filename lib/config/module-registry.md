@@ -120,6 +120,7 @@ real reader consumes it today (all rows below are, except where noted).
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | WAVE_CAP | mega.wave_cap | `2` | [impl] | mega | Max concurrent sub-goals admitted per wave. |
+| WAVE_ROLLING | mega.wave_rolling | `0` (off) | [impl] | mega | Rolling wave admission: a landed member is converged at once and its slot refilled from the recomputed ready set (disjoint from every running member, up to WAVE_CAP), instead of idling until the wave's slowest member ends. |
 | TIER4_CLOSE | mega.tier4_close | `true` | [impl] | mega | Enables the Tier-4 mega-close auto-verify+hold sequence. |
 | MULTIPLEXER | mega.multiplexer | `0` (off) | [impl] | mega | Opt-in wave pane multiplexing; only engages when a wave actually admits >=1 sub-goal concurrently. |
 | MEGA_MERGE_POSTURE | mega.mega_merge_posture | `"auto-to-final"` | [impl] | mega | `"auto-to-final"` or `"per-pr-review"` merge posture. |

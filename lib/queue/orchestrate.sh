@@ -47,6 +47,10 @@
 # nothing about completion: the driver never flips a box itself, so a retry advances only when a
 # session flips the box (or the merged PR carries it). Serial path only; a wave sub-goal still halts.
 #
+# Rolling waves (env WAVE_ROLLING=0 default; [mega].wave_rolling): a wave is a barrier by default. With
+# it on, a member that lands is converged at once and its slot is refilled from the recomputed ready set
+# (disjoint from every running member, up to WAVE_CAP). Design: the block above `_wave_run`.
+#
 # Gate sub-goals (env MEGA_GATE_DISPATCH=1 default): a `gate` / `gate!` sub-goal is DISPATCHED like
 # an `auto` one, its prompt carries the held-PR contract (open the PR as a DRAFT, `mega-merge.sh
 # mark` it, never merge it, never flip the box), and the loop HOLDS afterwards for the human merge,
@@ -218,6 +222,16 @@ FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
 # Precedence: env wins outright; else the config layer's [mega].wave_cap (project > kit-root);
 # else the hardcoded 2 below (kit_config_get's own caller-default arg).
 WAVE_CAP="${WAVE_CAP:-$(kit_config_get mega.wave_cap 2)}"
+
+# Rolling wave admission (default 0/off). Off: a wave is a barrier, `_wave_run` blocks until its
+# slowest member ends before the next cycle admits anything, so a finished slot idles behind it. On:
+# when a member lands (box flipped, grounded as before) it is converged at once, the ready set is
+# recomputed, and newly ready sub-goals that prove disjoint from every member STILL RUNNING take the
+# free slot(s), up to WAVE_CAP. Design and the safety properties it keeps: the block above `_wave_run`.
+# Never consulted at WAVE_CAP=1 (cmd_run's wave block is unreachable there).
+# Precedence: env wins; else [mega].wave_rolling (project > kit-root, "true"/"false" normalized);
+# else off (0).
+WAVE_ROLLING="${WAVE_ROLLING:-$(_kit_bool01 "$(kit_config_get mega.wave_rolling)" 0)}"
 
 # Wave-convergence merge hook. After a wave lands its sub-goals on their worktree
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
@@ -626,8 +640,15 @@ _goalfile() {
 # bash-3.2 safe: no assoc-arrays; the admitted set is a plain
 # array of goal-file paths, empty-guarded `${arr[@]+"${arr[@]}"}` (mega-merge.sh:224).
 # Process-sub (not a pipe) feeds the loop so the admitted state lives in THIS shell, not a subshell.
-_wave_gate() {  # megadir roadmap
+#
+# Optional trailing <running-id>... (rolling admission): those members are still in flight. They
+# pre-seed the admitted set (they hold slots under the cap, and every candidate must prove disjoint
+# from each of them) and are never candidates themselves (their boxes are unchecked, so they are in
+# the ready set). A running member with no goal file cannot be proven disjoint from anything, so it
+# fills the cap and nothing is admitted. With no running ids the output is unchanged.
+_wave_gate() {  # megadir roadmap [running-id...]
   local megadir="$1" roadmap="$2"
+  shift 2
   local cap="${WAVE_CAP:-1}"
   # Defensive numeric guard: a non-numeric/empty cap would make the `-lt` test emit a bash integer
   # error. The parse-time rejection of `<1`/non-numeric WAVE_CAP is the wiring boundary; this
@@ -636,9 +657,24 @@ _wave_gate() {  # megadir roadmap
   case "$cap" in ''|*[!0-9]*) cap=1 ;; esac
   local gate="$LIB_ROOT/gate/dispatch-gate.sh"
   local admitted_files=() admitted_n=0
-  local id policy gf a decision ok
+  local id policy gf a decision ok running=" " r rgf
+  for r in "$@"; do
+    running="$running$r "
+    rgf=$(_goalfile "$megadir" "$r")
+    if [ -n "$rgf" ]; then admitted_files+=("$rgf"); admitted_n=$((admitted_n + 1)); else admitted_n="$cap"; fi
+  done
   while IFS=$'\t' read -r id policy; do
     [ -n "$id" ] || continue
+    case "$running" in *" $id "*) continue ;; esac
+    # Rolling admission's dependency hold (`_WAVE_GATE_HOLD`, unset otherwise): a candidate whose
+    # `depends` names a wave member that has not converged is deferred before it takes a slot.
+    if [ -n "${_WAVE_GATE_HOLD:-}" ]; then
+      ok=1
+      for a in $(_sg_line "$roadmap" "$id" | grep -oE 'depends[^,]*' | grep -oE "$BOX_SG_RE" || true); do
+        case " $_WAVE_GATE_HOLD " in *" $a "*) ok=0 ;; esac
+      done
+      [ "$ok" = 1 ] || { printf '%s\t%s\n' defer "$id"; continue; }
+    fi
     decision=defer
     # A `gate` / `gate!` sub-goal is NEVER admitted to a wave. This is
     # what makes the wave-path chain-hold work: the gate sub-goal is not run, so anything that
@@ -1855,6 +1891,9 @@ cmd_pane_tail() {  # jsonl formatter
 # `${arr[@]+...}` keeps `set -u` happy when the trap fires before any PID is recorded.
 _wave_abort() {
   local p ok=1
+  # Set first: the reap loop resumes after this handler returns, and a member that exited 0 just
+  # before the signal must not be converged or open a slot that rolling admission refills.
+  _WAVE_ABORTED=1
   for p in ${_WAVE_PIDS[@]+"${_WAVE_PIDS[@]}"}; do
     [ -n "$p" ] || continue   # a muxed entry has no reapable pid; handled below instead
     kill -TERM -- -"$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || ok=0
@@ -1884,6 +1923,163 @@ _wave_abort() {
   return 130
 }
 
+# _wave_spawn <megadir> <roadmap> <repo> <mega_abs> <id>: stand up ONE admitted wave member and start
+# its session in the background, recording it in the global reap map (`_WAVE_PIDS` / `_WAVE_IDS` /
+# `_WAVE_DONEFILES` / `_WAVE_PFILES`, index-aligned). Shared by the initial wave and rolling
+# admission, so a member admitted into a freed slot goes through the exact same worktree, routing,
+# prompt, SPEC reservation, event, detach-run and mux path as one admitted at wave start.
+# Returns 0 spawned, 1 refused pre-flight (its blocked event already emitted; the caller marks the
+# wave failed), 2 box already checked (idempotent skip). Must run in the caller's shell, never in a
+# command substitution: the reap map and the `$!` job live there.
+_wave_spawn() {  # megadir roadmap repo mega_abs id
+  local megadir="$1" roadmap="$2" repo="$3" mega_abs="$4" id="$5"
+  local gf branch wt route_flags rmodel reffort pfile pid donefile checked route_out route_rc
+  # Idempotent resume: a box already checked is skipped, never re-run.
+  checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
+  [ "$checked" = 1 ] && { _say "[orchestrate] [wave] $id already checked; skipping (idempotent)."; return 2; }
+
+  gf=$(_goalfile "$megadir" "$id")
+  branch=$(_sg_branch "$gf" "$id")
+  if ! wt=$(_wave_worktree "$repo" "$id" "$branch"); then
+    echo "[orchestrate] [wave] $id: worktree setup failed; marking wave failed." >&2
+    # Review-fix FIX 6: every other _wave_run failure path emits an event (the replay source of
+    # truth); this one previously only echoed to stderr.
+    _emit_event "$megadir" "$id" blocked "wave: worktree setup failed"
+    return 1
+  fi
+
+  # Per-sub-goal model/effort routing (matches cmd_run); absent hint -> no flag -> inherit.
+  # `route_out=$(_route "$gf")` assigns `$?` from `_route` itself (a simple command-
+  # substitution assignment, unlike `< <(...)` process substitution above it, which reflects
+  # `read`'s exit status instead) -- an off-allowlist `Model:` tier is rejected HERE, before this
+  # sub-goal's session ever spawns, same as a worktree-setup failure just above.
+  route_flags=""
+  route_out=$(_route "$gf"); route_rc=$?
+  IFS=$'\t' read -r rmodel reffort <<<"$route_out"
+  if [ "$route_rc" != 0 ]; then
+    # Generic like the serial path -- _route rejects both an off-allowlist model tier and
+    # an unknown/not-enabled harness, each already reasoned to stderr.
+    _emit_event "$megadir" "$id" blocked "wave: rejected pre-flight by routing (model tier or harness gate)"
+    return 1
+  fi
+  [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
+  [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+
+  pfile=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")
+  _build_prompt "$megadir" "$id" > "$pfile"
+  # Flip-contract injection (WAVE sessions only, activation). A wave session runs in its
+  # own worktree , a separate checkout , so editing ROADMAP.md there flips only the worktree's
+  # copy, invisible to the driver, which reads the SHARED mega-goal-dir ROADMAP. Tell the session
+  # to flip via the lock-guarded CLI against the shared ABSOLUTE path instead. Appended AFTER
+  # `_build_prompt` so the SERIAL path's prompt is untouched (serial stays byte-identical).
+  {
+    printf '\n\n---\nWAVE SESSION , SHARED-ROADMAP FLIP CONTRACT (read carefully)\n'
+    printf 'You run in an ISOLATED git worktree for sub-goal %s. Do the work here, then mark\n' "$id"
+    printf 'completion by running EXACTLY this command (do NOT hand-edit ROADMAP.md , your worktree\n'
+    printf 'copy is invisible to the orchestrator):\n\n    %s flip %s %s\n\n' "$ORCH_DIR/orchestrate.sh" "$mega_abs" "$id"
+    printf 'It flips your box in the SHARED ROADMAP under a lock. The orchestrator advances only\n'
+    printf 'once your box is flipped there (grounded completion; no self-claim).\n'
+  } >> "$pfile"
+
+  # Reserved SPEC number injection. Claim a number atomically at DISPATCH , before
+  # this worker (and its siblings) can race `spec-next next` at spec-time , and tell the worker
+  # to use exactly it. Best-effort: a reserve failure leaves no block, and the worker falls back
+  # to computing its own number (the reservation ledger it would then scan already folds in any
+  # sibling claims, so even the fallback is collision-safe). Appended AFTER the flip-contract so
+  # the serial path's prompt stays byte-identical (this whole block is WAVE-only).
+  local reserved_spec
+  if reserved_spec="$(_wave_reserve_spec)"; then
+    {
+      printf '\n\n---\nRESERVED SPEC NUMBER\n'
+      printf 'This wave dispatch reserved SPEC-%s for your sub-goal. When you run /kit:spec (or\n' "$reserved_spec"
+      printf 'call lib/spec/spec-next.sh), USE SPEC-%s , it is already claimed for you under a lock, so\n' "$reserved_spec"
+      printf 'no sibling wave worker can take it. Do NOT re-derive a different number.\n'
+    } >> "$pfile"
+    _say "[orchestrate] [wave] $id reserved SPEC-$reserved_spec"
+  else
+    _say "[orchestrate] [wave] $id: SPEC reservation unavailable; worker will self-compute (degraded, still scan-safe)."
+  fi
+  _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
+  # Mirror the serial path's START/rid emission (cmd_run calls `_emit_start` right after
+  # its own `executing` event, see line ~1811). Before this fix, `_wave_run`'s spawn loop emitted
+  # ONLY `executing` and never `_emit_start`, so every wave dispatch was invisible to
+  # lane-telemetry (zero START/rid records, even though the serial path tracked every run). Same
+  # advisory behavior as serial: `_emit_start` itself WARNs-and-skips (does not abort the spawn)
+  # when the goal file has no `**Branch:**` header to derive a rid from -- pinned to stay
+  # advisory (a `?`-rid run is degraded-but-runnable, not corrupt), so no change needed here
+  # beyond adding the call. NC_SKIP_WAVE_START=1 is a TEST-ONLY escape hatch (negative
+  # control, same pattern as NC_SKIP_WAVE_TOKENS above): it disables just this call so a test can
+  # prove the causal effect (same wave scenario, but the pre-fix-equivalent code path records
+  # ZERO START lines). Unset/0 in every real invocation; never documented as an operator flag.
+  [ "${NC_SKIP_WAVE_START:-0}" = 1 ] || _emit_start "$megadir" "$id"
+
+  if [ "$MULTIPLEXER" = 1 ]; then
+    # Host the REAL session inside a tmux pane instead of a plain background job (the
+    # off-by-default path below is untouched). `tmux new-window` returns as soon as the window is
+    # created, before the pane's command exits, so there is no pid to `wait` on here -- the pane
+    # writes its own exit code to $donefile instead (the reap loop polls it, see below).
+    donefile=$(mktemp -u "${TMPDIR:-/tmp}/kit.XXXXXX")
+    # The abort trap runs between commands, so it may have fired during the setup above.
+    [ "${_WAVE_ABORTED:-0}" = 1 ] && { rm -f "$pfile"; return 1; }
+    if ! _pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"; then
+      echo "[orchestrate] [wave] [mux] $id: tmux pane spawn failed; marking wave failed." >&2
+      _emit_event "$megadir" "$id" blocked "wave: tmux pane spawn failed"
+      rm -f "$pfile"
+      return 1
+    fi
+    pid=""
+    _say "[orchestrate] [wave] [mux] spawned $id in tmux pane $(_mux_session_name "$megadir"):$id (worktree $wt)"
+    # Push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
+    # inside (one surface per session per run) and best-effort (always rc 0) -- a viewer failure
+    # never marks the wave failed. Scoped INSIDE the MULTIPLEXER=1 branch: with the multiplexer
+    # off there is no tmux session to attach, so the default path stays byte-identical.
+    _viewer_open "$megadir"
+  else
+    # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
+    # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
+    # path (deterministic-handoff regen is), so losing it in the subshell is fine. The
+    # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
+    #
+    # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
+    # becomes its OWN PROCESS GROUP (pgid == the job's pid), so `_wave_abort` can signal the WHOLE
+    # group -- the backgrounded subshell wrapper AND its `claude -p` grandchild -- via a negative-pid
+    # `kill`. Without this, `kill "$p"` reaches only the wrapper; the grandchild reparents to init and
+    # survives an abort (confirmed live: the prior "no orphaned children" claim was false). Scoped
+    # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
+    # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
+    # the only portable no-setsid way to get a fresh process group.
+    #
+    # That group still sits on the operator's controlling terminal, and a background group that
+    # touches it is stopped by SIGTTOU: claude's first Bash use sources the user's zshrc, which runs
+    # `stty`, and the whole session froze (state T) for an hour. So the `claude` command inside the
+    # subshell is swapped for lib/queue/detach-run, which runs the real one (KIT_DETACH_CMD) in its own
+    # session with no controlling terminal and forwards TERM/INT/HUP to it, keeping `_wave_abort`'s
+    # group kill whole. The serial path calls `$CLAUDE_CMD` directly and is untouched. No perl: run as-is.
+    local detach_cmd="$CLAUDE_CMD"
+    # NC_SKIP_WAVE_DETACH=1 is a TEST-ONLY negative control (same pattern as NC_SKIP_WAVE_TOKENS): it
+    # restores the pre-fix spawn so a test can prove the stop; never an operator flag.
+    [ "${NC_SKIP_WAVE_DETACH:-0}" = 1 ] || { command -v perl >/dev/null 2>&1 && [ -x "$ORCH_DIR/detach-run" ] && detach_cmd="$ORCH_DIR/detach-run"; }
+    [ "${_WAVE_ABORTED:-0}" = 1 ] && { rm -f "$pfile"; return 1; }
+    set -m
+    ( cd "$wt" 2>/dev/null && KIT_DETACH_CMD="$CLAUDE_CMD" CLAUDE_CMD="$detach_cmd" \
+        _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
+    pid=$!
+    set +m
+    donefile=""
+    _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
+  fi
+  _WAVE_PIDS+=("$pid")
+  _WAVE_IDS+=("$id")
+  _WAVE_DONEFILES+=("$donefile")
+  _WAVE_PFILES+=("$pfile")
+  # An abort that fired after the spawn but before the pid was recorded never saw this member.
+  if [ "${_WAVE_ABORTED:-0}" = 1 ]; then
+    if [ -n "$pid" ]; then kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+    else "$TMUX_CMD" kill-window -t "$(_mux_session_name "$megadir"):$id" 2>/dev/null || true; fi
+  fi
+  return 0
+}
+
 # _wave_run <megadir> <roadmap>: spawn the admitted wave, reap on completion, drain on sibling fail.
 # Computes the admitted set via `_wave_gate` (its `run<TAB>id` lines). For each admitted sub-goal:
 #   * skip an already-checked box (idempotent resume, invariant 1),
@@ -1905,6 +2101,36 @@ _wave_abort() {
 #
 # Returns 0 iff every admitted sub-goal completed with a flipped box; nonzero otherwise (incl. a
 # worktree-setup failure). An empty admitted set (all deferred / all already checked) is a no-op 0.
+#
+# Rolling admission (WAVE_ROLLING=1). Design:
+#   * Admission. After a member lands (rc 0 AND its box flipped in the shared ROADMAP, the same
+#     grounded check), the driver re-reads ROADMAP and calls `_wave_gate` with the still-running ids:
+#     they hold their slots, and a candidate is admitted only when dispatch-gate proves it disjoint
+#     from EVERY running member, up to WAVE_CAP. Admitted members go through `_wave_spawn`, the same
+#     path as the initial wave (worktree, routing, prompt, SPEC reservation, detach-run, mux).
+#     Admission happens only while at least one member is still running: once the wave drains, control
+#     returns to cmd_run, whose next cycle recomputes from scratch (wave if >=2 admit, else the serial
+#     body with its no-claim retry), so the serial semantics are untouched.
+#   * Convergence runs PER LANDED MEMBER, before its freed slot is refilled, so a dependent admitted
+#     into that slot is dispatched after its dependency's merge step, the same order the barrier gave.
+#     Merges therefore land in completion order (one at a time under the flip lock, as before), not
+#     ROADMAP order. The same-file guard keeps its meaning: the landed member is compared against
+#     every member whose run OVERLAPPED its own (tracked as spawn/reap ticks), i.e. the ones admission
+#     claimed were disjoint. A dependent that ran strictly after its parent may edit the parent's files.
+#     Caveat: the guard diffs against the LOCAL base, so it goes vacuous for a peer once that peer's
+#     merge is pulled into the local base (its three-dot diff empties); it is a belt over dispatch-gate.
+#   * Dependency hold. A box flip is not completion proof (a session flips before it exits and may
+#     still exit nonzero), so a candidate whose `depends` names a wave member that has not CONVERGED
+#     is deferred (`_WAVE_GATE_HOLD`). A dep outside this wave was complete before the wave started.
+#   * Fail-closed. A member that exits nonzero or lands unflipped, a refused spawn, a convergence
+#     failure, or an abort all stop admission for the rest of this call; running siblings drain (never
+#     killed, except by the abort handler) and `_wave_run` returns nonzero, so cmd_run halts as today.
+#     A member that lands after the failure is not converged, same as a failed barrier wave. A ready
+#     `gate!` also stops admission (the wave quiesces; cmd_run's next cycle dispatches it).
+#   * Kept as is: no self-claim (the driver never flips a box), the flip lock, per-member worktrees,
+#     the abort/group-kill handler (every admitted pid is in `_WAVE_PIDS`; a reaped pid is blanked so
+#     an abort hours later never signals a recycled pid's group), detach-run, the serial-only
+#     no-claim retry. WAVE_CAP=1 never reaches this function from cmd_run.
 _wave_run() {  # megadir roadmap
   local megadir="$1" roadmap="$2"
   local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
@@ -1934,159 +2160,32 @@ _wave_run() {  # megadir roadmap
   _WAVE_MUX_MEGADIR="$megadir"
   local wave_done=()
   local wave_failed=0 spawned=0
+  # Rolling bookkeeping (read only when WAVE_ROLLING=1): one tick per spawn and per reap; member i ran
+  # over [wave_t0[i], wave_t1[i]] (t1 = 0 while running). `_WAVE_ABORTED` (set by `_wave_abort`) and
+  # `_WAVE_CONVERGE_FAILED` (read by cmd_run for its halt message) are globals.
+  local tick=0 wave_t0=() wave_t1=() roll_stop=0 wave_conv=" " hold=""
+  _WAVE_ABORTED=0
+  _WAVE_CONVERGE_FAILED=0
 
   # Reap/kill the wave PID set on an abort so no `claude -p` (mock) child is orphaned. Cleared
   # before the normal return paths below.
   trap '_wave_abort' INT TERM
 
-  local decision id gf branch wt route_flags rmodel reffort pfile pid donefile checked route_out route_rc
+  local decision id
   while IFS=$'\t' read -r decision id; do
     [ "$decision" = run ] || continue
-    # Idempotent resume: a box already checked is skipped, never re-run.
-    checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
-    [ "$checked" = 1 ] && { _say "[orchestrate] [wave] $id already checked; skipping (idempotent)."; continue; }
-
-    gf=$(_goalfile "$megadir" "$id")
-    branch=$(_sg_branch "$gf" "$id")
-    if ! wt=$(_wave_worktree "$repo" "$id" "$branch"); then
-      echo "[orchestrate] [wave] $id: worktree setup failed; marking wave failed." >&2
-      # Review-fix FIX 6: every other _wave_run failure path emits an event (the replay source of
-      # truth); this one previously only echoed to stderr.
-      _emit_event "$megadir" "$id" blocked "wave: worktree setup failed"
-      wave_failed=1
-      continue
-    fi
-
-    # Per-sub-goal model/effort routing (matches cmd_run); absent hint -> no flag -> inherit.
-    # `route_out=$(_route "$gf")` assigns `$?` from `_route` itself (a simple command-
-    # substitution assignment, unlike `< <(...)` process substitution above it, which reflects
-    # `read`'s exit status instead) -- an off-allowlist `Model:` tier is rejected HERE, before this
-    # sub-goal's session ever spawns, same as a worktree-setup failure just above.
-    route_flags=""
-    route_out=$(_route "$gf"); route_rc=$?
-    IFS=$'\t' read -r rmodel reffort <<<"$route_out"
-    if [ "$route_rc" != 0 ]; then
-      # Generic like the serial path -- _route rejects both an off-allowlist model tier and
-      # an unknown/not-enabled harness, each already reasoned to stderr.
-      _emit_event "$megadir" "$id" blocked "wave: rejected pre-flight by routing (model tier or harness gate)"
-      wave_failed=1
-      continue
-    fi
-    [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
-    [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
-
-    pfile=$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")
-    _build_prompt "$megadir" "$id" > "$pfile"
-    # Flip-contract injection (WAVE sessions only, activation). A wave session runs in its
-    # own worktree , a separate checkout , so editing ROADMAP.md there flips only the worktree's
-    # copy, invisible to the driver, which reads the SHARED mega-goal-dir ROADMAP. Tell the session
-    # to flip via the lock-guarded CLI against the shared ABSOLUTE path instead. Appended AFTER
-    # `_build_prompt` so the SERIAL path's prompt is untouched (serial stays byte-identical).
-    {
-      printf '\n\n---\nWAVE SESSION , SHARED-ROADMAP FLIP CONTRACT (read carefully)\n'
-      printf 'You run in an ISOLATED git worktree for sub-goal %s. Do the work here, then mark\n' "$id"
-      printf 'completion by running EXACTLY this command (do NOT hand-edit ROADMAP.md , your worktree\n'
-      printf 'copy is invisible to the orchestrator):\n\n    %s flip %s %s\n\n' "$ORCH_DIR/orchestrate.sh" "$mega_abs" "$id"
-      printf 'It flips your box in the SHARED ROADMAP under a lock. The orchestrator advances only\n'
-      printf 'once your box is flipped there (grounded completion; no self-claim).\n'
-    } >> "$pfile"
-
-    # Reserved SPEC number injection. Claim a number atomically at DISPATCH , before
-    # this worker (and its siblings) can race `spec-next next` at spec-time , and tell the worker
-    # to use exactly it. Best-effort: a reserve failure leaves no block, and the worker falls back
-    # to computing its own number (the reservation ledger it would then scan already folds in any
-    # sibling claims, so even the fallback is collision-safe). Appended AFTER the flip-contract so
-    # the serial path's prompt stays byte-identical (this whole block is WAVE-only).
-    local reserved_spec
-    if reserved_spec="$(_wave_reserve_spec)"; then
-      {
-        printf '\n\n---\nRESERVED SPEC NUMBER\n'
-        printf 'This wave dispatch reserved SPEC-%s for your sub-goal. When you run /kit:spec (or\n' "$reserved_spec"
-        printf 'call lib/spec/spec-next.sh), USE SPEC-%s , it is already claimed for you under a lock, so\n' "$reserved_spec"
-        printf 'no sibling wave worker can take it. Do NOT re-derive a different number.\n'
-      } >> "$pfile"
-      _say "[orchestrate] [wave] $id reserved SPEC-$reserved_spec"
-    else
-      _say "[orchestrate] [wave] $id: SPEC reservation unavailable; worker will self-compute (degraded, still scan-safe)."
-    fi
-    _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
-    # Mirror the serial path's START/rid emission (cmd_run calls `_emit_start` right after
-    # its own `executing` event, see line ~1811). Before this fix, `_wave_run`'s spawn loop emitted
-    # ONLY `executing` and never `_emit_start`, so every wave dispatch was invisible to
-    # lane-telemetry (zero START/rid records, even though the serial path tracked every run). Same
-    # advisory behavior as serial: `_emit_start` itself WARNs-and-skips (does not abort the spawn)
-    # when the goal file has no `**Branch:**` header to derive a rid from -- pinned to stay
-    # advisory (a `?`-rid run is degraded-but-runnable, not corrupt), so no change needed here
-    # beyond adding the call. NC_SKIP_WAVE_START=1 is a TEST-ONLY escape hatch (negative
-    # control, same pattern as NC_SKIP_WAVE_TOKENS above): it disables just this call so a test can
-    # prove the causal effect (same wave scenario, but the pre-fix-equivalent code path records
-    # ZERO START lines). Unset/0 in every real invocation; never documented as an operator flag.
-    [ "${NC_SKIP_WAVE_START:-0}" = 1 ] || _emit_start "$megadir" "$id"
-
-    if [ "$MULTIPLEXER" = 1 ]; then
-      # Host the REAL session inside a tmux pane instead of a plain background job (the
-      # off-by-default path below is untouched). `tmux new-window` returns as soon as the window is
-      # created, before the pane's command exits, so there is no pid to `wait` on here -- the pane
-      # writes its own exit code to $donefile instead (the reap loop polls it, see below).
-      donefile=$(mktemp -u "${TMPDIR:-/tmp}/kit.XXXXXX")
-      if ! _pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"; then
-        echo "[orchestrate] [wave] [mux] $id: tmux pane spawn failed; marking wave failed." >&2
-        _emit_event "$megadir" "$id" blocked "wave: tmux pane spawn failed"
-        wave_failed=1
-        rm -f "$pfile"
-        continue
-      fi
-      pid=""
-      _say "[orchestrate] [wave] [mux] spawned $id in tmux pane $(_mux_session_name "$megadir"):$id (worktree $wt)"
-      # Push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
-      # inside (one surface per session per run) and best-effort (always rc 0) -- a viewer failure
-      # never marks the wave failed. Scoped INSIDE the MULTIPLEXER=1 branch: with the multiplexer
-      # off there is no tmux session to attach, so the default path stays byte-identical.
-      _viewer_open "$megadir"
-    else
-      # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
-      # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
-      # path (deterministic-handoff regen is), so losing it in the subshell is fine. The
-      # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
-      #
-      # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
-      # becomes its OWN PROCESS GROUP (pgid == the job's pid), so `_wave_abort` can signal the WHOLE
-      # group -- the backgrounded subshell wrapper AND its `claude -p` grandchild -- via a negative-pid
-      # `kill`. Without this, `kill "$p"` reaches only the wrapper; the grandchild reparents to init and
-      # survives an abort (confirmed live: the prior "no orphaned children" claim was false). Scoped
-      # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
-      # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
-      # the only portable no-setsid way to get a fresh process group.
-      #
-      # That group still sits on the operator's controlling terminal, and a background group that
-      # touches it is stopped by SIGTTOU: claude's first Bash use sources the user's zshrc, which runs
-      # `stty`, and the whole session froze (state T) for an hour. So the `claude` command inside the
-      # subshell is swapped for lib/queue/detach-run, which runs the real one (KIT_DETACH_CMD) in its own
-      # session with no controlling terminal and forwards TERM/INT/HUP to it, keeping `_wave_abort`'s
-      # group kill whole. The serial path calls `$CLAUDE_CMD` directly and is untouched. No perl: run as-is.
-      local detach_cmd="$CLAUDE_CMD"
-      # NC_SKIP_WAVE_DETACH=1 is a TEST-ONLY negative control (same pattern as NC_SKIP_WAVE_TOKENS): it
-      # restores the pre-fix spawn so a test can prove the stop; never an operator flag.
-      [ "${NC_SKIP_WAVE_DETACH:-0}" = 1 ] || { command -v perl >/dev/null 2>&1 && [ -x "$ORCH_DIR/detach-run" ] && detach_cmd="$ORCH_DIR/detach-run"; }
-      set -m
-      ( cd "$wt" 2>/dev/null && KIT_DETACH_CMD="$CLAUDE_CMD" CLAUDE_CMD="$detach_cmd" \
-          _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
-      pid=$!
-      set +m
-      donefile=""
-      _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
-    fi
-    _WAVE_PIDS+=("$pid")
-    _WAVE_IDS+=("$id")
-    _WAVE_DONEFILES+=("$donefile")
-    _WAVE_PFILES+=("$pfile")
-    wave_done+=(0)
-    spawned=$((spawned + 1))
+    [ "$_WAVE_ABORTED" = 0 ] || break
+    _wave_spawn "$megadir" "$roadmap" "$repo" "$mega_abs" "$id"
+    case $? in
+      0) wave_done+=(0); tick=$((tick + 1)); wave_t0+=("$tick"); wave_t1+=(0); spawned=$((spawned + 1)) ;;
+      1) wave_failed=1 ;;
+    esac
   done < <(_wave_gate "$megadir" "$roadmap")
 
   # Empty wave (nothing admitted, or every admitted box already checked): not a failure unless a
   # worktree setup already failed above.
   if [ "$spawned" = 0 ]; then
+    [ "$_WAVE_ABORTED" = 1 ] && wave_failed=1
     trap - INT TERM
     return "$wave_failed"
   fi
@@ -2097,7 +2196,7 @@ _wave_run() {  # megadir roadmap
   # failed but does NOT break the loop: in-flight siblings DRAIN to completion (never killed).
   # A muxed index (`_WAVE_DONEFILES[i]` non-empty) has no reapable pid -- `tmux
   # new-window` already returned -- so that index polls for its donefile instead of `kill -0`.
-  local remaining="$spawned" i rc box donefile mux
+  local remaining="$spawned" i rc box donefile mux pid j cand peers=() running=()
   while [ "$remaining" -gt 0 ]; do
     for i in $(seq 0 $((spawned - 1))); do
       [ "${wave_done[$i]}" = 1 ] && continue
@@ -2111,6 +2210,8 @@ _wave_run() {  # megadir roadmap
         rc=0; wait "$pid" 2>/dev/null || rc=$?    # exited -> reap the cached status
       fi
       wave_done[i]=1
+      _WAVE_PIDS[i]=""   # reaped: an abort must not signal this (possibly recycled) pid's group
+      tick=$((tick + 1)); wave_t1[i]=$tick
       remaining=$((remaining - 1))
       rm -f "${_WAVE_PFILES[$i]}" 2>/dev/null
       box=$(_subgoals "$roadmap" | awk -F'\t' -v x="$id" '$1==x {print $3}')
@@ -2157,10 +2258,59 @@ _wave_run() {  # megadir roadmap
         fi
         _say "[orchestrate] [wave] $id complete (box checked)."
       fi
+
+      # Rolling admission (design above). Off: nothing below runs and the wave stays a barrier.
+      [ "${WAVE_ROLLING:-0}" = 1 ] || continue
+      # 1. Converge THIS member before its slot is refilled. Peers for the same-file guard: landed
+      #    members whose run overlapped this one (this member spawned before they were reaped).
+      if [ "$rc" = 0 ] && [ "$box" = 1 ] && [ "$wave_failed" = 0 ] && [ "$_WAVE_ABORTED" = 0 ]; then
+        peers=()
+        for j in $(seq 0 $((spawned - 1))); do
+          [ "$j" = "$i" ] && continue
+          [ "${wave_t1[$j]}" != 0 ] || continue   # still running: it compares against this one when it lands
+          case " ${_WAVE_LANDED[*]+${_WAVE_LANDED[*]}} " in *" ${_WAVE_IDS[$j]} "*) ;; *) continue ;; esac
+          [ "${wave_t0[$i]}" -lt "${wave_t1[$j]}" ] && peers+=("${_WAVE_IDS[$j]}")
+        done
+        if _wave_converge "$megadir" "$id" --peers ${peers[@]+"${peers[@]}"}; then
+          wave_conv="$wave_conv$id "
+        else
+          wave_failed=1; _WAVE_CONVERGE_FAILED=1
+          echo "[orchestrate] [wave] [rolling] convergence failed for $id; admitting nothing more, draining siblings, then failing." >&2
+        fi
+      fi
+      # 2. Refill free slots while the wave is healthy and something is still running.
+      [ "$wave_failed" = 0 ] && [ "$_WAVE_ABORTED" = 0 ] && [ "$roll_stop" = 0 ] && [ "$remaining" -gt 0 ] || continue
+      if [ -n "$(_ready_set "$roadmap" | awk -F'\t' '$2=="gate!"{print $1; exit}')" ]; then
+        roll_stop=1
+        _say "[orchestrate] [wave] [rolling] a gate! sub-goal is ready; admitting nothing more (the wave drains, then it runs alone)."
+        continue
+      fi
+      # A ROADMAP box is not proof a member finished: a session flips before it exits, and may still
+      # exit nonzero. So every wave member that has not CONVERGED (running, flipped-but-running, or
+      # landed-unconverged) holds its dependents back. A dep outside this wave was complete before it.
+      running=(); hold=""
+      for j in $(seq 0 $((spawned - 1))); do
+        [ "${wave_done[$j]}" = 0 ] && running+=("${_WAVE_IDS[$j]}")
+        case "$wave_conv" in *" ${_WAVE_IDS[$j]} "*) ;; *) hold="$hold${_WAVE_IDS[$j]} " ;; esac
+      done
+      while IFS=$'\t' read -r decision cand; do
+        [ "$decision" = run ] || continue
+        [ "$_WAVE_ABORTED" = 0 ] || break
+        _wave_spawn "$megadir" "$roadmap" "$repo" "$mega_abs" "$cand"
+        case $? in
+          0) wave_done+=(0); tick=$((tick + 1)); wave_t0+=("$tick"); wave_t1+=(0)
+             spawned=$((spawned + 1)); remaining=$((remaining + 1))
+             _say "[orchestrate] [wave] [rolling] $cand admitted into a freed slot (still running: ${running[*]+${running[*]}})" ;;
+          1) wave_failed=1; break ;;
+        esac
+      done < <(_WAVE_GATE_HOLD="$hold" _wave_gate "$megadir" "$roadmap" ${running[@]+"${running[@]}"})
     done
     [ "$remaining" -gt 0 ] && sleep "${WAVE_POLL_SECS:-0.2}"
   done
 
+  # An abort can land after the last member was reaped (during its per-member converge, say); the
+  # members all looked fine, but the run must still stop.
+  [ "$_WAVE_ABORTED" = 1 ] && wave_failed=1
   trap - INT TERM
   return "$wave_failed"
 }
@@ -2203,16 +2353,21 @@ _sg_pr() {  # roadmap id
 # bash-3.2: no assoc arrays (membership via a space-padded string match); arrays empty-guarded
 # `${arr[@]+"${arr[@]}"}` (mega-merge.sh:224). Returns 0 iff every mergeable sub-goal's hook
 # succeeded and no same-file overlap was found; nonzero on an overlap flag or a merge-hook failure.
-_wave_converge() {  # megadir [id...]
+# `--peers <id>...` (rolling admission): extra branches that join the step-2 same-file guard but are
+# NOT merged here (they already converged when they landed). Without it, unchanged.
+_wave_converge() {  # megadir [id...] [--peers id...]
   local megadir="$1"; shift 2>/dev/null || true
   local roadmap="$megadir/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "[orchestrate] [converge] no ROADMAP.md in '$megadir'" >&2; return 64; }
 
   # Target set: explicit args, else the just-landed set from `_wave_run`.
-  local targets=()
-  if [ "$#" -gt 0 ]; then
-    targets=("$@")
-  else
+  local targets=() peers=() _arg _in_peers=0
+  for _arg in "$@"; do
+    if [ "$_arg" = --peers ]; then _in_peers=1
+    elif [ "$_in_peers" = 1 ]; then peers+=("$_arg")
+    else targets+=("$_arg"); fi
+  done
+  if [ "${#targets[@]}" -eq 0 ]; then
     targets=( ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"} )
   fi
   [ "${#targets[@]}" -gt 0 ] || { _say "[orchestrate] [converge] no landed wave sub-goals to converge (no-op)."; return 0; }
@@ -2240,6 +2395,14 @@ _wave_converge() {  # megadir [id...]
       _wave_branch_files "$repo" "$base" "$branch" | sort -u
     done | sort | uniq -d
   )
+  # Peers are compared against the targets only, never against each other: two peers may have run one
+  # after the other (a parent and its dependent) and legitimately share a file.
+  if [ "${#peers[@]}" -gt 0 ]; then
+    local tfiles pfiles
+    tfiles=$(for id in "${ordered[@]}"; do _wave_branch_files "$repo" "$base" "$(_sg_branch "$(_goalfile "$megadir" "$id")" "$id")"; done | sort -u)
+    pfiles=$(for id in "${peers[@]}"; do _wave_branch_files "$repo" "$base" "$(_sg_branch "$(_goalfile "$megadir" "$id")" "$id")"; done | sort -u)
+    overlap=$(printf '%s\n%s\n' "$overlap" "$(comm -12 <(printf '%s\n' "$tfiles") <(printf '%s\n' "$pfiles"))" | grep -v '^$' | sort -u)
+  fi
   if [ -n "$overlap" ]; then
     _emit_event "$megadir" "wave" blocked "converge: same-file cross-wave edit"
     {
@@ -2671,14 +2834,19 @@ cmd_run() {
           # Converge the landed wave: merge its sub-goals ONE AT A TIME under the flip
           # lock, in ROADMAP order, via the mockable hook. A same-file cross-wave edit or a merge-hook
           # failure halts the loop (no self-claim). At WAVE_CAP=1 this block is unreachable,
-          # so the serial path stays byte-identical.
-          if ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
+          # so the serial path stays byte-identical. Rolling admission converged each member as it
+          # landed, inside `_wave_run`, so there is nothing left to converge here.
+          if [ "${WAVE_ROLLING:-0}" != 1 ] && ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
             echo "[orchestrate] [wave] convergence flagged a same-file cross-wave conflict or a merge failure; halting (no self-claim)." >&2
             return 1
           fi
           continue
         fi
-        echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2
+        if [ "${_WAVE_CONVERGE_FAILED:-0}" = 1 ]; then
+          echo "[orchestrate] [wave] convergence flagged a same-file cross-wave conflict or a merge failure; halting (no self-claim)." >&2
+        else
+          echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2
+        fi
         return 1
       fi
       # Wait-vs-complete termination guard (Edge case 1). Reached only when

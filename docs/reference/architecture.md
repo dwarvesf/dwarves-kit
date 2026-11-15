@@ -457,6 +457,10 @@ a deterministic segment handoff that re-dispatches the SAME sub-goal; `0` disabl
 `NOCLAIM_RETRIES` (default **1**, `[mega].noclaim_retries`; a serial sub-goal whose session exits 0 with
 its box unflipped is re-dispatched in a fresh session that many times before the loop halts; `0` halts at once; a box
 checked on origin with no `PR #<n>` is never retried, and only a session's own flip ever advances the loop).
+`WAVE_ROLLING` (default **off**, `[mega].wave_rolling`; a wave stops being a barrier: when a member lands it is
+converged at once and its slot is refilled from the recomputed ready set, admitting only sub-goals dispatch-gate proves
+disjoint from every member still running, up to `WAVE_CAP`; merges land in completion order; any member failure,
+convergence failure, abort or ready `gate!` stops admission and the wave drains; never read at `WAVE_CAP=1`).
 The ceiling pairs with the stall watchdog, which is the LEASE (`WATCHDOG_STALL_SECS` alerts on
 a lapsed lease and never kills; only the ceiling stops a segment). Full design +
 exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `history/2026-10-27:docs/verification/orchestrate-wavefront.md`.
