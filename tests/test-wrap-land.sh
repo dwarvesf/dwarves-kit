@@ -128,6 +128,24 @@ chk "land deleted the branch on origin too" \
   "$(git -C "$TMPD/ld-bare-ok" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
 chk_has "land reports the origin delete" "$out" "deleted feat/land on origin"
 
+echo "--- gh --delete-branch removes the worktree during the merge: the tree verify runs against the main checkout"
+build_land rmwt
+RREPO="$TMPD/ld-repo-rmwt"; RWT="$(cd "$RREPO/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$RWT" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-rmwt" \
+  GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main GH_STUB_MERGE_RM_WORKTREE=1 "$WRAP" land "$RWT" 2>&1)"; rc=$?
+chk "rmwt: the worktree was gone before the verify (the stub removed it at merge)" "$([ ! -e "$RWT" ]; echo $?)"
+chk_no "rmwt: the verify is never UNVERIFIABLE for a missing worktree directory" "$out" "UNVERIFIABLE"
+chk_no "rmwt: the verify never cd's into the vanished worktree" "$out" "cannot change to"
+chk_has "rmwt: the verify still proves the tree (verified)" "$out" "tree verified"
+chk "rmwt: land exits 0" "$rc"
+chk_has "rmwt: the tidy reports the worktree already removed" "$out" "was already removed by the merge"
+chk "rmwt: the local branch is deleted" \
+  "$(git -C "$RREPO" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "rmwt: the origin branch is deleted" \
+  "$(git -C "$TMPD/ld-bare-rmwt" rev-parse --verify feat/land >/dev/null 2>&1 && echo 1 || echo 0)"
+chk_has "rmwt: the summary says the worktree is removed" "$out" "worktree=removed"
+
 echo "--- --no-pull: the merge and tidy still happen, the main checkout is never written"
 build_land nopull
 NREPO="$TMPD/ld-repo-nopull"; NREPO_P="$(cd "$NREPO" && pwd -P)"; NWT="$(cd "$NREPO/wt" && pwd -P)"

@@ -2,20 +2,15 @@
 
 
 # _tree_fetch <repo> <def> -- fetch origin/<def> for _tree_verify. A failed fetch is retried once
-# after KIT_WRAP_FETCH_RETRY_SECS (default 2), then tried again against the repo's common git
-# dir (the main repo, when <repo> is a linked worktree). Silent on success; on failure prints
-# the trimmed git stderr of the attempts, one line, and returns 1.
+# after KIT_WRAP_FETCH_RETRY_SECS (default 2). Silent on success; on failure prints the trimmed
+# git stderr of the attempts, one line, and returns 1. <repo> must be a directory that still
+# exists: callers pass the main checkout, never a linked worktree, which the merge can remove.
 _tree_fetch() {
-  local repo="$1" def="$2" e1 e2 e3 common
+  local repo="$1" def="$2" e1 e2
   e1="$(git -C "$repo" fetch -q origin "$def" 2>&1 >/dev/null)" && return 0
   sleep "${KIT_WRAP_FETCH_RETRY_SECS:-2}"
   e2="$(git -C "$repo" fetch -q origin "$def" 2>&1 >/dev/null)" && return 0
-  common="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null)"
-  if [ -n "$common" ]; then
-    case "$common" in /*) ;; *) common="$repo/$common" ;; esac
-    e3="$(git --git-dir="$common" fetch -q origin "$def" 2>&1 >/dev/null)" && return 0
-  fi
-  printf '%s' "${e2:-$e1}${e3:+ | main repo: $e3}" | tr '\n' ' ' | cut -c1-300
+  printf '%s' "${e2:-$e1}" | tr '\n' ' ' | cut -c1-300
   return 1
 }
 
@@ -1020,7 +1015,10 @@ _land_run() {
     echo "     MERGE FAILED #${n}: state is '${state:-unknown}', not MERGED" >&2; return 2
   fi
   _LAND_STEP=verify
-  local tv; tv="$(_tree_verify "$wt" "$def" "$tip" "$sha")"
+  # Against the main checkout, never <wt>: gh's `--delete-branch` local cleanup removes the
+  # linked worktree that has the PR branch checked out, so <wt> may be gone by now. The PR head
+  # and the merge commit sit in the object store the two share.
+  local tv; tv="$(_tree_verify "$repo" "$def" "$tip" "$sha")"
   case "$tv" in
     OK) echo "     merged #${n} (${sha}): tree verified"
         _LAND_KIND=merged _LAND_REF="#${n} ($(_short "$sha"))" ;;
@@ -1047,7 +1045,12 @@ _land_run() {
   # reused `type/` prefix, same stripped slug) and overwriting it would misattribute the
   # line. A failed derive or record never fails the land: one line instead, naming the
   # command to run by hand.
-  local land_rid; land_rid="$(cd "$wt" && bash "$GATE_LEDGER_SH" rid 2>/dev/null)" || land_rid=""
+  local land_rid=""
+  if [ -d "$wt" ]; then
+    land_rid="$(cd "$wt" && bash "$GATE_LEDGER_SH" rid 2>/dev/null)" || land_rid=""
+  else
+    echo "     ship-gate record skipped: ${wt} is already gone (gh --delete-branch removes it); if a spec cycle ran, record it by hand: bash ${GATE_LEDGER_SH} record <rid> Ship ran \"shipping pr=#${n} via=land\""
+  fi
   if [ -n "$land_rid" ]; then
     local land_ledger
     if land_ledger="$(bash "$GATE_LEDGER_SH" show "$land_rid" 2>/dev/null)"; then
@@ -1091,6 +1094,11 @@ _land_run() {
 # another name, and that one is deleted on origin; the local branch keeps its own name.
 _land_tidy() {
   local repo="$1" wt="$2" branch="$3" def="$4" url="$5" tip="$6" probe="${7:-}" allowed="${8:-}" obranch="${9:-$branch}"
+  # gh's `--delete-branch` local cleanup removes the linked worktree (and the local branch)
+  # during the merge. With <wt> gone, git reads go through the main checkout and the removal
+  # steps below only confirm what already happened.
+  local gone=0 gdir="$wt"
+  [ -d "$wt" ] || { gone=1; gdir="$repo"; }
   # Mirrors _apply_origin_branches: leased to the tip land itself pushed, skipped when an
   # open PR still bases off this branch (deleting it would close that PR), and never fails
   # land, since the merge is already verified.
@@ -1098,7 +1106,7 @@ _land_tidy() {
     echo "     ${obranch} left on origin (wrap.delete_merged_remote_branches=false)"
   else
     if [ -z "$probe" ]; then
-      git -C "$wt" ls-remote --exit-code origin "refs/heads/${obranch}" >/dev/null 2>&1
+      git -C "$gdir" ls-remote --exit-code origin "refs/heads/${obranch}" >/dev/null 2>&1
       [ "$?" -eq 2 ] && probe=absent
     fi
     local base_open
@@ -1112,7 +1120,7 @@ _land_tidy() {
     case "$base_open" in
       skip) ;;
       0)
-        if git -C "$wt" push -q origin "--force-with-lease=refs/heads/${obranch}:${tip}" ":refs/heads/${obranch}" 2>/dev/null; then
+        if git -C "$gdir" push -q origin "--force-with-lease=refs/heads/${obranch}:${tip}" ":refs/heads/${obranch}" 2>/dev/null; then
           echo "     deleted ${obranch} on origin"
         else
           echo "     FAILED delete ${obranch} on origin (protected, no permission, or pushed since land read it)"
@@ -1148,6 +1156,28 @@ _land_tidy() {
   # discards a dirty tree and `-D` a newer commit, so both are re-read right before the
   # removal. A mismatch skips only the removal; what already ran stands.
   # Any status line outside <allowed> refuses and names its path; an unreadable status does too.
+  if [ "$gone" = 1 ]; then
+    git -C "$repo" worktree prune >/dev/null 2>&1
+    _wt_cleared "$repo" "$wt" || { echo "     FAILED remove worktree ${wt}: git still lists it, so ${branch} stays" >&2; return 2; }
+    echo "     worktree ${wt} was already removed by the merge"
+    _LAND_WT=removed
+    if git -C "$repo" rev-parse -q --verify "refs/heads/${branch}" >/dev/null 2>&1; then
+      if [ "$(git -C "$repo" rev-parse "refs/heads/${branch}" 2>/dev/null)" != "$tip" ]; then
+        echo "     ${branch} changed since it was checked; branch left in place" >&2
+        return 2
+      fi
+      if git -C "$repo" branch -D "$branch" >/dev/null 2>&1; then
+        echo "     deleted ${branch}"
+      else
+        echo "     FAILED delete ${branch}" >&2
+        return 2
+      fi
+    else
+      echo "     ${branch} was already deleted by the merge"
+    fi
+    [ "$blocked" = 0 ] || return 2
+    return 0
+  fi
   local st_now st_rc line extra="" detail=""
   st_now="$(git -C "$wt" status --porcelain 2>/dev/null)"; st_rc=$?
   [ "$st_rc" -eq 0 ] || detail=" (status unreadable)"
