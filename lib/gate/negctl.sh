@@ -295,14 +295,21 @@ if [ "$par_n" -gt 0 ]; then
   }
   # Job control gives each worker its own process group, so an interrupt can kill the worker,
   # its negctl and the suite under it together; a bare TERM would wait out a minutes-long suite.
+  # Under host load bash can lose its setpgid race with the forked worker and print "child
+  # setpgid (N to N): Operation not permitted" on stderr; the group still exists, so the line is
+  # noise that would leak into the reported output. Spawn-time stderr goes to a file and every
+  # line except that one is replayed after the workers finish.
   set -m
-  for ((k = 0; k < workers; k++)); do
-    par_worker "$k" </dev/null &
-    par_pids+=("$!")
-  done
+  {
+    for ((k = 0; k < workers; k++)); do
+      par_worker "$k" </dev/null &
+      par_pids+=("$!")
+    done
+  } 2>"$par_tmp/spawn.err"
   set +m
   wait
   par_pids=()
+  grep -v 'child setpgid (' "$par_tmp/spawn.err" >&2 || true
 
   par_rc=0
   for ((i = 0; i < total; i++)); do
