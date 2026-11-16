@@ -274,6 +274,13 @@ case "$sub" in
         if [ "${GH_STUB_MERGE_DELETES_BRANCH:-0}" = "1" ] && [ -n "${GH_STUB_LAND_REMOTE:-}" ]; then
           git -C "$GH_STUB_LAND_REMOTE" update-ref -d "refs/heads/${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null
         fi
+        # gh's own `--delete-branch` local cleanup removes the linked worktree that has the PR's
+        # branch checked out ("Removed worktree <path>"), so the directory is gone before the
+        # caller's next step. GH_STUB_MERGE_RM_WORKTREE=1 stands in for that.
+        if [ "${GH_STUB_MERGE_RM_WORKTREE:-0}" = "1" ] && [ -n "${GH_STUB_LAND_REPO:-}" ] && [ "$rc" -eq 0 ]; then
+          rw_common="$(git -C "$GH_STUB_LAND_REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+          git --git-dir="$rw_common" worktree remove -f -f "$GH_STUB_LAND_REPO" >/dev/null 2>&1
+        fi
         exit "$rc" ;;
     esac
     exit 1 ;;
