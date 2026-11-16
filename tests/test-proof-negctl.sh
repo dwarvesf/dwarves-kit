@@ -688,5 +688,18 @@ if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && [ "$(grep -c '^run$
   ok "no test run saw INT/TERM ignored beyond the inherited baseline"
 else no "rc=$RC base=$(cat "$SIGBASE") extra=$SIGEXTRA siglog=$(cat "$SIGLOG") out=$OUT"; fi
 
+echo "[57] --parallel drops bash's benign 'child setpgid' job-control warning from the output, keeps other spawn-time stderr"
+# bash prints the warning when it loses its setpgid race under host load; it cannot be forced, so a
+# BASH_ENV stub makes the spawned worker's `export` write the warning plus one real error line to
+# the worker's inherited stderr, the same fd the warning lands on. Only the parent shell has par_tmp set.
+STUB="$TMP/setpgid-stub.sh"
+printf 'export() {\n  if [ -n "${par_tmp:-}" ]; then\n    echo "negctl.sh: child setpgid (1 to 1): Operation not permitted" >&2\n    echo "negctl.sh: real spawn error" >&2\n  fi\n  builtin export "$@"\n}\n' > "$STUB"
+SER="$(for m in "$M1" "$M2" "$M3"; do bash "$NC" "$PREPO" "bash test.sh" "$m" 2>&1; done)"
+OUT="$(BASH_ENV="$STUB" TMPDIR="$PTMP" bash "$NC" --parallel 3 --slot-env SLOT_PORT=100:10 "$PREPO" "bash test.sh" "$M1" "$M2" "$M3" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && ! grep -q 'setpgid' <<<"$OUT" && [ "$(grep -c '^negctl.sh: real spawn error$' <<<"$OUT")" -eq 3 ] \
+   && [ "$(grep -v '^negctl.sh: real spawn error$' <<<"$OUT")" = "$SER" ] && [ "$(copies_left)" -eq 0 ] && clean "$PREPO"; then
+  ok "setpgid warning filtered, the three real error lines kept, serial-equal blocks, no copies left"
+else no "rc=$RC out=$OUT"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
