@@ -987,6 +987,36 @@ out="$(bash -c 'source "$1/lib/wrap/wrap-common.sh"; source "$1/lib/wrap/wrap-la
 chk_has "tree-verify: _tree_verify names an unreachable head unverifiable" "$out" \
   "UNVERIFIABLE the PR head is not a local object"
 
+echo "--- _tree_verify fetch: retried once, then the main repo, and a final failure names git's own stderr"
+TVF_WT="$TMPD/tv-fetch-wt"
+git -C "$TVM" worktree add -q --detach "$TVF_WT" origin/main
+TVF_OID="$(git -C "$TVF_WT" rev-parse HEAD)"
+TVF_REAL="$(command -v git)"
+mkdir -p "$TMPD/fakegit"
+# fake git: FAKE_FETCH=once fails the first fetch only; wt fails every fetch that runs under -C
+# (the worktree attempts) but lets --git-dir through; all fails every fetch with a message.
+cat > "$TMPD/fakegit/git" <<GITEOF
+#!/bin/bash
+case " \$* " in *" fetch "*)
+  case "\${FAKE_FETCH:-}" in
+    once) if [ ! -e "$TMPD/fakegit/seen" ]; then : > "$TMPD/fakegit/seen"; echo "fatal: transient boom" >&2; exit 128; fi ;;
+    wt) [ "\${1:-}" = "-C" ] && { echo "fatal: worktree fetch boom" >&2; exit 128; } ;;
+    all) printf 'fatal: unable to read\nsecond line\n' >&2; exit 128 ;;
+  esac ;;
+esac
+exec "$TVF_REAL" "\$@"
+GITEOF
+chmod +x "$TMPD/fakegit/git"
+tvf() { PATH="$TMPD/fakegit:$PATH" KIT_WRAP_FETCH_RETRY_SECS=0 FAKE_FETCH="$1" bash -c \
+  'source "$1/lib/wrap/wrap-common.sh"; source "$1/lib/wrap/wrap-land.sh"; _tree_verify "$2" main "$3" "$3"' _ \
+  "$KIT_DIR" "$TVF_WT" "$TVF_OID" 2>&1; }
+rm -f "$TMPD/fakegit/seen"
+chk_has "tree-verify fetch: a transient first failure is retried and verifies" "$(tvf once)" "OK"
+chk_has "tree-verify fetch: a worktree-only failure falls back to the main repo" "$(tvf wt)" "OK"
+out="$(tvf all)"
+chk_has "tree-verify fetch: a persistent failure is UNVERIFIABLE" "$out" "UNVERIFIABLE fetch of main failed"
+chk_has "tree-verify fetch: the reason carries git's stderr on one line" "$out" "fatal: unable to read second line"
+
 echo "--- scoped match: another PR landed on main meanwhile, only the touched path must agree"
 build_tv_repo scoped
 TVS="$TMPD/tv-clone-scoped"; TVS_OID="$(git -C "$TVS" rev-parse feat/tv)"
