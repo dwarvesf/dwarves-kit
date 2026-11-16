@@ -1,14 +1,32 @@
 # wrap-land.sh -- the land verb and its helpers; sourced by lib/wrap/wrap.sh.
 
 
+# _tree_fetch <repo> <def> -- fetch origin/<def> for _tree_verify. A failed fetch is retried once
+# after KIT_WRAP_FETCH_RETRY_SECS (default 2), then tried again against the repo's common git
+# dir (the main repo, when <repo> is a linked worktree). Silent on success; on failure prints
+# the trimmed git stderr of the attempts, one line, and returns 1.
+_tree_fetch() {
+  local repo="$1" def="$2" e1 e2 e3 common
+  e1="$(git -C "$repo" fetch -q origin "$def" 2>&1 >/dev/null)" && return 0
+  sleep "${KIT_WRAP_FETCH_RETRY_SECS:-2}"
+  e2="$(git -C "$repo" fetch -q origin "$def" 2>&1 >/dev/null)" && return 0
+  common="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null)"
+  if [ -n "$common" ]; then
+    case "$common" in /*) ;; *) common="$repo/$common" ;; esac
+    e3="$(git --git-dir="$common" fetch -q origin "$def" 2>&1 >/dev/null)" && return 0
+  fi
+  printf '%s' "${e2:-$e1}${e3:+ | main repo: $e3}" | tr '\n' ' ' | cut -c1-300
+  return 1
+}
+
 # _tree_verify <repo> <def> <head_oid> <merge_oid> -- "OK", "MISMATCH <n>", or
 # "UNVERIFIABLE <reason>". Proves the merge commit gh named sits on the default branch and
 # applied exactly the PR's net change: for every path either side touched, the merge
 # commit's own diff equals the PR's diff from its merge-base. Whole trees are not compared,
 # because a PR that landed on the default branch in between is not the mismatch this guards.
 _tree_verify() {
-  local repo="$1" def="$2" head_oid="$3" merge_oid="$4" tip parent base p n=0
-  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "UNVERIFIABLE fetch of ${def} failed"; return; }
+  local repo="$1" def="$2" head_oid="$3" merge_oid="$4" tip parent base p n=0 ferr
+  ferr="$(_tree_fetch "$repo" "$def")" || { echo "UNVERIFIABLE fetch of ${def} failed: ${ferr:-no git output}"; return; }
   tip="$(git -C "$repo" rev-parse "origin/${def}" 2>/dev/null)"
   [ -n "$tip" ] || { echo "UNVERIFIABLE origin/${def} did not resolve"; return; }
   git -C "$repo" cat-file -e "${head_oid}^{commit}" 2>/dev/null || {
