@@ -282,10 +282,82 @@ else exit 0; fi
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
 CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*(cd|pushd)[[:space:]]+[^&;|]+' | head -1 \
   | sed -E 's/^[[:space:]]*(cd|pushd)[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
+CD_FROM_LINE=0; [ -n "$CDDIR" ] && CD_FROM_LINE=1
 if [ -z "$CDDIR" ]; then   # `git -C <dir> push` ships that repo
   CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' | head -1 | awk '{print $NF}' || true)
 fi
-case "$CDDIR" in *'$'*) CDDIR="" ;; esac   # variables cannot be resolved: fall back
+# _cd_var_target <name>: a line-start `cd $NAME` (or `${NAME}`, either one double-quoted) names the
+# literal path NAME was given earlier in the same command, read only where the run is certain: one
+# assignment `NAME=/abs` (or unquoted `NAME=~/x`) as its own command at a line start or after `;`, NAME
+# nowhere else, the cd ending at `;` `&&` `||` or the line end, one cd/pushd/popd word in the command,
+# no IFS or other git directory selector, and nothing above the cd line that can make it conditional,
+# move it, or set NAME another way: no quote, `\`, `#`, `$`, paren, brace, heredoc, compound keyword,
+# eval, source, unset or push, and no line ending in `|` or `&`. The target must be a git work tree with
+# a commit. Anything else prints nothing, today's fallback. It reads the raw command; with no `<<` or `\`
+# above the cd line, those lines are the same in CMD_CODE. A dead child prints nothing too.
+_cd_var_target() {
+  local _p
+  _p=$(printf '%s\n' "$CMD_RAW" | env LC_ALL=C _CDV_NAME="$1" awk '
+    function word(t, w,   n, i, off, b, a) {   # whole-word occurrences of w in t
+      n = 0; off = 0
+      while ((i = index(substr(t, off + 1), w)) > 0) {
+        i += off; b = (i > 1) ? substr(t, i - 1, 1) : ""; a = substr(t, i + length(w), 1)
+        if (b !~ /[A-Za-z0-9_]/ && a !~ /[A-Za-z0-9_]/) n++
+        off = i
+      }
+      return n
+    }
+    function cont(i,   j) {   # the last non-blank line above line i ends in | or & (a list goes on)
+      for (j = i - 1; j >= 1; j--) if (L[j] ~ /[^ \t]/) return (L[j] ~ /[|&][ \t]*$/)
+      return 0
+    }
+    { L[NR] = $0 }
+    END {
+      nm = ENVIRON["_CDV_NAME"]
+      if (nm !~ /^[A-Za-z_][A-Za-z0-9_]*$/) exit
+      if (nm ~ /^(_|IFS|PWD|OLDPWD|HOME|CDPATH|RANDOM|SRANDOM|SECONDS|LINENO|UID|EUID|PPID|BASHPID|GROUPS|FUNCNAME|HISTCMD|EPOCHSECONDS|EPOCHREALTIME|BASH.*|ZSH.*|status|pipestatus|argv|path|cdpath|fpath|options)$/) exit
+      for (i = 1; i <= NR; i++) if (L[i] ~ /^[ \t]*(cd|pushd)[ \t]/) { c = i; break }
+      if (!c || cont(c)) exit
+      t = L[c]; sub(/^[ \t]*(cd|pushd)[ \t]+/, "", t)
+      F[1] = "$" nm; F[2] = "${" nm "}"; F[3] = "\"" F[1] "\""; F[4] = "\"" F[2] "\""
+      for (k = 1; k <= 4; k++)
+        if (substr(t, 1, length(F[k])) == F[k] && substr(t, length(F[k]) + 1) ~ /^[ \t]*($|;|&&|\|\|)/) ok = 1
+      if (!ok || word(L[c], nm) != 1) exit
+      for (i = 1; i <= NR; i++) {
+        d += word(L[i], "cd") + word(L[i], "pushd") + word(L[i], "popd"); o += word(L[i], nm)
+        if (L[i] ~ /IFS|GIT_DIR|GIT_WORK_TREE|--git-dir|--work-tree|core\.worktree|(^|[ \t])-C/) exit
+        if (L[i] ~ /HOME/) home_seen = 1
+      }
+      if (d != 1 || o != 2) exit
+      for (i = 1; i < c; i++) {
+        if (L[i] ~ "[\"\047`\\\\(){}#$]" || index(L[i], "<<")) exit
+        if (L[i] ~ /(^|[^A-Za-z0-9_])(if|then|else|elif|fi|do|done|for|while|until|case|esac|select|function|coproc|eval|source|unset|push|gh)([^A-Za-z0-9_]|$)/) exit
+        if (L[i] ~ /(^|[;&|])[ \t]*\.([ \t]|$)/) exit
+        if (word(L[i], nm)) a = i
+      }
+      if (!a || cont(a)) exit
+      if (!match(L[a], "(^|;)[ \t]*" nm "=[^ \t;]*[ \t]*(;|$)")) exit
+      v = substr(L[a], RSTART, RLENGTH); sub("^;?[ \t]*" nm "=", "", v); sub(/[ \t]*;?$/, "", v)
+      if (v !~ /^(\/|~\/)[A-Za-z0-9._\/@%+,=-]*$/) exit
+      if (v ~ /^~/) {
+        if (home_seen || ENVIRON["HOME"] !~ /^\//) exit
+        v = ENVIRON["HOME"] substr(v, 2)
+      }
+      print v
+    }') || return 0
+  [ -n "$_p" ] || return 0
+  [ -n "$(git -C "$_p" rev-parse --show-toplevel 2>/dev/null)" ] || return 0
+  git -C "$_p" rev-parse -q --verify HEAD >/dev/null 2>&1 || return 0
+  printf '%s' "$_p"
+}
+_CDV_RE='^\$([A-Za-z_][A-Za-z0-9_]*)$|^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$'
+case "$CDDIR" in *'$'*)   # a variable resolves only through _cd_var_target; else fall back
+  _CDV=""
+  if [ "$CD_FROM_LINE" = 1 ] && [[ $CDDIR =~ $_CDV_RE ]]; then
+    _CDV=$(_cd_var_target "${BASH_REMATCH[1]}${BASH_REMATCH[2]}")
+  fi
+  CDDIR="$_CDV" ;;
+esac
 CDDIR="${CDDIR/#\~/$HOME}"
 case "$CDDIR" in ""|/*) ;; *) CDDIR="$REAL_CWD/$CDDIR" ;; esac
 # Test affordance: print the resolved cd-target and exit (never set outside tests).
