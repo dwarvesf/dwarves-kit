@@ -6,7 +6,7 @@
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
-#   wrap.sh merge [--apply] [--no-pull] [--pr N [--rebase-stacked]] [--with-ci] [--verify C] <repo>|--repo <owner>/<name>   merges ONE own green PR (--pr: a named draft; --repo: no checkout, gh-only, local steps skipped)
+#   wrap.sh merge [--apply] [--no-pull] [--pr N [--rebase-stacked]] [--with-ci] [--verify C] <repo>|--repo <owner>/<name>   merges ONE own green PR (--pr: a named draft; --repo: no checkout, gh-only, local steps skipped); --apply --pr N exits 4 when N was not merged
 #   wrap.sh land  <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify C]   one hand-made worktree, landed
 #   wrap.sh land  <worktree> <worktree>... [--with-ci] [--no-pull] [--verify C]   several, one at a time in order, stopping at the first failure; --title, --body-file and --draft refuse (64)
 #   wrap.sh land  <worktree> --draft [--title T] [--body-file F]   push, open a draft PR, stop: no merge, no tidy
