@@ -143,7 +143,7 @@ chk_has "held: merges once gated" "$out" "merged #22 ("
 echo "=== merge --rebase-stacked: a rebase conflict refuses by name and touches nothing ==="
 build_stack conf --conflict
 out="$(sk_run 23 conf --apply --pr 23 --rebase-stacked)"; rc=$?
-chk "conflict: exits 0 without merging" "$rc"
+chk "conflict: exits 4 without merging" "$([ "$rc" -eq 4 ]; echo $?)"
 chk_has "conflict: names the conflicting file" "$out" "REFUSED #23: rebasing stack/b onto origin/main conflicts in: b.txt; aborted, nothing pushed"
 chk "conflict: origin stack/b untouched" "$([ "$(sk_remote_b conf)" = "$SK_B" ]; echo $?)"
 chk "conflict: no leased push" "$([ "$(sk_force_pushes)" -eq 0 ]; echo $?)"

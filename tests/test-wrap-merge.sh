@@ -338,6 +338,25 @@ chk_has "merge --pr dry run still gates the draft as a draft" "$out" "SKIP #41 a
 chk_no "merge --pr dry run calls gh pr ready" "$(cat "$GH_STUB_CALLS")" "pr ready"
 chk "merge --pr dry run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
+# (e) --pr N --apply that does not merge the named PR exits 4, so `wrap merge --apply --pr N
+# && <deploy>` cannot read a SKIP as a merge. Bare and dry-run forms keep exit 0. A caller that
+# chained on exit 0 once dispatched a preview deploy of the old code after a pending-checks SKIP.
+PEND_OPEN='[{"number":43,"title":"pending pr","headRefName":"feat/pending"}]'
+PEND_PR_43='{"number":43,"title":"pending pr","headRefName":"feat/pending","headRefOid":"4343434343434343434343434343434343434343","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"},{"status":"PENDING"}]}'
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$PEND_OPEN" GH_STUB_PR_43="$PEND_PR_43" \
+  "$WRAP" merge --apply --pr 43 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --apply --pr on a pending-checks PR exits 4" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_has "merge --apply --pr on a pending-checks PR still names the SKIP" "$out" "SKIP #43 pending pr: checks are pending or failing"
+chk "merge --apply --pr on a pending-checks PR calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+out="$(GH_STUB_OPEN_PRS="$PEND_OPEN" GH_STUB_PR_43="$PEND_PR_43" \
+  "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --apply without --pr, nothing eligible: exits 0" "$rc"
+chk_has "merge --apply without --pr, nothing eligible: says so" "$out" "nothing eligible to merge."
+out="$(GH_STUB_OPEN_PRS="$PEND_OPEN" GH_STUB_PR_43="$PEND_PR_43" \
+  "$WRAP" merge --pr 43 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --pr 43 dry run on a pending-checks PR exits 0" "$rc"
+
 # ===========================================================================
 echo "=== merge: one bounded re-merge when GitHub conflicts on a union-marked log ==="
 # ===========================================================================

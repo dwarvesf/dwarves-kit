@@ -61,7 +61,8 @@ chk_has "merge --no-pull, a CLEAN PR held by main is skipped too" "$out" \
 chk_no "merge --no-pull, a CLEAN PR held by main: not eligible" "$out" "eligible #62"
 chk "merge --no-pull, a CLEAN PR held by main: no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 out="$(GH_STUB_OPEN_PRS="$(open_one 63)" GH_STUB_PR_63="$(clean_json 63 "$NPM_TIP")" \
-  "$WRAP" merge --apply --no-pull --pr 63 "$NPM" 2>&1)"
+  "$WRAP" merge --apply --no-pull --pr 63 "$NPM" 2>&1)"; rc=$?
+chk "merge --no-pull --pr: a PR held by main exits 4, not merged" "$([ "$rc" -eq 4 ]; echo $?)"
 chk_has "merge --no-pull --pr: the named PR is skipped by name" "$out" \
   "SKIP #63: head feat/union is checked out in the main checkout (--no-pull)"
 chk "merge --no-pull --pr: no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"

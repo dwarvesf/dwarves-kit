@@ -860,7 +860,7 @@ _stacked_recover() {
 # Only a PR whose verdict code is OK or WAIT (checks pending or failing) is labeled; a draft, a
 # conflict or a requested change would be refused anyway. Dry run prints a note and acts on
 # nothing. Sets PREP_DETAIL (the detail to gate) and PREP_ARMED (set when the label sync
-# ran). 0 continue; 3 refused with the reason printed, exit 0 as every merge refusal; 2
+# ran). 0 continue; 3 refused with the reason printed, cmd_merge then exits 4 under --apply; 2
 # failed; 130 interrupted. Runs in the current shell.
 _merge_pr_prepare() {
   local repo="$1" url="$2" def="$3" n="$4" detail="$5" apply="$6" stacked="$7" cmd="$8"
@@ -949,6 +949,11 @@ _merge_register_gate() {
   return 0
 }
 
+# Exit code of `merge --apply --pr N` when the named PR was not merged and nothing failed:
+# a SKIP, a refusal, or nothing eligible. 0 stays "merged" (or a dry run, or a bare sweep with
+# nothing to merge); 1 gh/query errors, 2 a failed write, 3 merged but the tree check disagrees.
+WRAP_MERGE_NOT_MERGED_RC=4
+
 cmd_merge() {
   local do_apply=0 repo="" count=0 pr_only="" verify="" pr_head="" slug="" rebase_stacked=0 prc ci_armed=""
   while [ $# -gt 0 ]; do
@@ -989,6 +994,9 @@ cmd_merge() {
     *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
   esac
   [ -n "$slug" ] || _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; return 64; }
+  # Naming a PR under --apply promises it merged: a chained `&& deploy` reads exit 0 as merged.
+  local skip_rc=0
+  [ "$do_apply" = 1 ] && [ -n "$pr_only" ] && skip_rc="$WRAP_MERGE_NOT_MERGED_RC"
 
   local ghs; ghs="$(_gh_state)"
   if [ "$ghs" != "ok" ]; then _gh_note "$ghs"; return 1; fi
@@ -1028,7 +1036,7 @@ cmd_merge() {
       pr_head="$(printf '%s' "$(_pr_detail "$url" "$pr_only")" | jq -r '.headRefName // ""' 2>/dev/null)"
       if [ -n "$pr_head" ] && _main_holds_branch "$repo" "$pr_head"; then
         echo "SKIP #${pr_only}: head ${pr_head} is checked out in the main checkout (--no-pull)"
-        return 0
+        return "$skip_rc"
       fi
     fi
     if [ -n "$slug" ]; then
@@ -1057,7 +1065,7 @@ cmd_merge() {
       _merge_pr_prepare "$repo" "$url" "$def" "$n" "$detail" "$do_apply" "$rebase_stacked" "$verify"; prc=$?
       case "$prc" in
         0) detail="$PREP_DETAIL"; [ -z "$PREP_ARMED" ] || ci_armed="$n" ;;
-        3) rm -rf "$jsondir"; return 0 ;;
+        3) rm -rf "$jsondir"; return "$skip_rc" ;;
         *) rm -rf "$jsondir"; return "$prc" ;;
       esac
     fi
@@ -1191,7 +1199,7 @@ cmd_merge() {
   rm -rf "$jsondir"
 
   [ "$do_apply" = 1 ] || { echo "dry run; pass --apply to merge one PR."; return 0; }
-  [ -n "$first_eligible" ] || { echo "nothing eligible to merge."; return 0; }
+  [ -n "$first_eligible" ] || { echo "nothing eligible to merge."; return "$skip_rc"; }
   [ -n "$head_oid" ] || {
     echo "FAILED merge #${first_eligible}: no head SHA to pin the merge to" >&2; return 2; }
 

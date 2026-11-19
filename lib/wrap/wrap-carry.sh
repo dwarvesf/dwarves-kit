@@ -163,7 +163,8 @@ _autoland_carry() {
   # A subshell keeps merge's globals (REMERGE_OID, SQ_PR, SQ_OID) out of this run.
   out="$( (cmd_merge --apply --pr "$n" "$repo") 2>&1)"; rc=$?
   printf '%s\n' "$out" | sed '/^[[:space:]]*$/d; s/^/       /'
-  if [ "$rc" -ne 0 ]; then FAILURES=1; return 1; fi
+  # A gate refusal (WRAP_MERGE_NOT_MERGED_RC) leaves the PR open for step 3; only a real failure counts.
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne "$WRAP_MERGE_NOT_MERGED_RC" ]; then FAILURES=1; return 1; fi
   printf '%s\n' "$out" | grep -qE '^merged #[0-9]+ \(.*\): tree verified' || {
     echo "     PR #${n} left open; wrap merge --apply --pr ${n} merges it once green"; return 1; }
   # The squash fallback landed a replacement; the original stays open unless closed here, and
