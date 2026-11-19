@@ -55,6 +55,14 @@ LIVE="$(lines "S=$S" "W=$W" 'cd $W && git status --short | head; git branch --sh
   'git add $C/catalog.md && git commit -q -m "docs(x): extend the catalog" && git push -q 2>&1 | tail -2; git log --oneline -1')"
 want_cd "live sample: the cd target resolves to the worktree" "$W" "$(cddir "$M" "$LIVE")"
 expect "live sample: W=<feature worktree>, cd \$W, push from a main cwd -> allowed" 0 "$(gate "$M" "$LIVE")"
+# The incident repo is adopted (a docs/verification marker): the live shape must not be read as a
+# default push, nor refused as a push it cannot account for.
+AM="$(newdir)"; mkrepo "$AM" main; mkdir -p "$AM/docs/verification"; echo marker > "$AM/docs/verification/README.md"
+git -C "$AM" add -A; git -C "$AM" commit -qm "chore: adopt"
+AW="$AM/.claude/worktrees/thing"; git -C "$AM" worktree add -q -b fix/thing "$AW" 2>/dev/null
+gate "$AM" "${LIVE//$W/$AW}" >/dev/null
+if grep -qF -e "lands on 'main'" -e "cannot account for" "$ERR"; then no "adopted live sample: not a default push, not unaccounted ($(head -c 300 "$ERR"))"
+else ok "adopted live sample: not a default push, not unaccounted"; fi
 expect "reverse: W=<repo on main>, cd \$W && git push -q from a feature cwd -> blocked" 2 \
   "$(gate "$F" "$(lines "W=$N" 'cd $W && git push -q')")" "lands on 'main'"
 want_cd "cd \${W} resolves" "$W" "$(cddir "$M" "$(lines "W=$W" 'cd ${W} && git push -q')")"
