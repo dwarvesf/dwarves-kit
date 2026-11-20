@@ -46,12 +46,12 @@ An earlier run of the same command, before `docs/reference/FEATURES.md` was rege
 
 ## Live command replay
 
-The command from the lead transcript (seven lines: `S=...`, `W=<worktree>`, `cd $W && git status --short | head; git branch --show-current`, then the copy, `rg` and `git add ... && git commit ... && git push -q 2>&1 | tail -2` lines), fed to the hook with cwd `/Users/tieubao/workspace/tieubao/ops-toolkit` (on main). The original worktree no longer exists, so its path was swapped for an existing feature worktree, `.claude/worktrees/ship-gate-redirect-parse` on `fix/ship-gate-redirect-parse`.
+The command from the lead transcript (seven lines: `S=...`, `W=<worktree>`, `cd $W && git status --short | head; git branch --show-current`, then the copy, `rg` and `git add ... && git commit ... && git push -q 2>&1 | tail -2` lines), fed to the hook with cwd the ops-toolkit checkout (on main). The original worktree no longer exists, so its path was swapped for an existing feature worktree, `.claude/worktrees/ship-gate-redirect-parse` on `fix/ship-gate-redirect-parse`.
 
 ```
 Command: DWARVES_KIT_PRINT_CDDIR=1, new hook and base hook, same input
 Output:
-new: [/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktrees/ship-gate-redirect-parse]
+new: [~/workspace/dwarvesf/dwarves-kit/.claude/worktrees/ship-gate-redirect-parse]
 base: []
 new verdict exit=2
 BLOCKED: proof of done. This is a 'behavioral' change; it cannot ship/merge without a matching proof-of-done entry in docs/verification/.

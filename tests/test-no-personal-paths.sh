@@ -53,10 +53,12 @@ GUARD="tests/test-kit-foldin-hooks.sh"
 OWNER="tieu""bao"   # split so this file is not itself a hit in a plain tree grep
 
 # Enumerate via `git ls-files`, not a recursive walk: it is exactly the set that
-# ships. A walk both misses force-tracked files that .gitignore also names (kit.toml
+# ships, plus untracked-but-not-ignored files (--others --exclude-standard): a proof
+# written after the last test run is untracked until committed and must not slip past
+# a local run. A walk both misses force-tracked files that .gitignore also names (kit.toml
 # is one, which is why ripgrep skipped a real leak there) and drags in local build
 # noise like __pycache__. -I skips binaries so a stale .pyc cannot fail the run.
-LEAKS="$(git ls-files -z \
+LEAKS="$(git ls-files -z --cached --others --exclude-standard \
   | xargs -0 grep -IHn -F -e "/Users/$OWNER" -e "workspace/$OWNER" -e "Hans-Air" \
       -e "mini-$OWNER" 2>/dev/null \
   | grep -v -e "^$SELF:" -e "^$GUARD:")"
