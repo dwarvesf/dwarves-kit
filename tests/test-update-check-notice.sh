@@ -29,7 +29,8 @@ unset KIT_UPDATE_CHECK
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; }
-check() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
+# check <name> <status>: only a literal 0 passes; an empty or non-numeric status is a FAIL, never a bash error.
+check() { if [ "$2" = 0 ]; then ok "$1"; else bad "$1"; fi; }
 
 # scenario <installed> <remote>: fresh state, then run the hook; sets OUT and RC.
 scenario() {
@@ -119,7 +120,9 @@ for f in hooks/hooks.json settings.json; do
   got="$(jq -r '.hooks.SessionStart[] | select(.hooks[].command | contains("kit-update-notice.sh")) | "\(.matcher)|\(.hooks[0].timeout)"' "$KIT_DIR/$f" 2>/dev/null)"
   check "$f: one SessionStart entry, matcher startup, timeout 5 (got: ${got:-none})" "$([ "$got" = "startup|5" ]; echo $?)"
 done
-check "the hook and this test have no em or en dash" "$(! LC_ALL=C grep -q $'\xe2\x80[\x93\x94]' "$HOOK" "$0"; echo $?)"
+# LC_ALL is exported inside the substitution, never set as a `LC_ALL=C grep` prefix: that prefix segfaulted bash 5.3
+# (exit 139, empty output) in a fraction of runs under the nightly's env.
+check "the hook and this test have no em or en dash" "$(export LC_ALL=C; ! grep -q $'\xe2\x80[\x93\x94]' "$HOOK" "$0"; echo $?)"
 
 echo
 echo "== $PASS passed, $FAIL failed =="
