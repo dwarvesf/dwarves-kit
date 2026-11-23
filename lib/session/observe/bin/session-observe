@@ -28,6 +28,10 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   timing    - per transcript: wall time, tool execution time (tool_use -> tool_result),
               model time (gap before each tool_use), call count, and sleep-poll time
               (Bash `sleep N`, N >= 10) plus the 5 slowest tool calls; not part of `report`
+  prompts   - what I type most: the top short prompts (1..30 chars, whitespace-collapsed
+              and lowercased) and the slash commands I TYPED, beside the count of the
+              same commands the model loaded through the Skill tool; not part of
+              `report` (it carries my own words, and `report --json` feeds vps-mon)
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -1530,6 +1534,99 @@ def run_timing(args):
     print_table(["tool", "seconds", "target"], [[c["tool"], c["duration_s"], c["target"]] for c in slowest])
 
 
+# prompts view: a "short prompt" is 1..PROMPT_MAX_LEN chars once whitespace-collapsed and lowercased.
+PROMPT_MAX_LEN = 30
+PROMPTS_TOP_DEFAULT = 20  # rows per table when --top is not given (the other views print every row)
+_CMD_NAME_RE = re.compile(r"<command-name>\s*([^<\s]+)\s*</command-name>")
+
+
+def _slash(name):
+    """Normalize a command or skill name to the `/name` form both sources share."""
+    return "/" + str(name).strip().lstrip("/")
+
+
+def prompts_session(path):
+    """One transcript -> (prompts, short, typed, loaded).
+
+    prompts = plain typed user messages (string content, not meta, not sidechain,
+              not starting with `<`); short = Counter of those that are 1..PROMPT_MAX_LEN
+              chars after whitespace-collapse + lowercase.
+    typed   = Counter of `<command-name>` slash commands the user TYPED: a user entry
+              whose string content opens with a command tag and which is neither meta
+              nor a Skill-tool expansion (no `sourceToolUseID`).
+    loaded  = Counter of commands the MODEL loaded: one per Skill tool_use id, plus any
+              `<command-name>` record carrying a `sourceToolUseID` (the harness expanding
+              a Skill tool call). The two sources share one id, so a load is counted once.
+    Sidechain entries (subagents) are skipped."""
+    prompts = 0
+    short, typed = Counter(), Counter()
+    loads = {}  # tool_use id -> command, so one load seen as tool_use + expansion counts once
+    for e in iter_entries(path):
+        if e.get("isSidechain"):
+            continue
+        msg = e.get("message")
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if e.get("type") == "assistant":
+            for b in content if isinstance(content, list) else []:
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Skill":
+                    inp = b.get("input") if isinstance(b.get("input"), dict) else {}
+                    if inp.get("skill") and b.get("id"):
+                        loads[b["id"]] = _slash(inp["skill"])
+            continue
+        if e.get("type") != "user" or not isinstance(content, str):
+            continue
+        text = content.lstrip()
+        m = _CMD_NAME_RE.search(text) if text.startswith(("<command-name>", "<command-message>")) else None
+        if m:
+            if e.get("sourceToolUseID"):
+                loads.setdefault(e["sourceToolUseID"], _slash(m.group(1)))
+            elif not e.get("isMeta"):
+                typed[_slash(m.group(1))] += 1
+            continue
+        if e.get("isMeta") or not text or text.startswith("<"):
+            continue
+        prompts += 1
+        norm = re.sub(r"\s+", " ", text).strip().lower()
+        if 1 <= len(norm) <= PROMPT_MAX_LEN:
+            short[norm] += 1
+    return prompts, short, typed, Counter(loads.values())
+
+
+def run_prompts(args):
+    """The `prompts` view: what I type most (short prompts, typed slash commands).
+    Own I/O path like timing; not part of `report` (it carries the operator's own words,
+    which must never ride the vps-mon snapshot `report --json` feeds)."""
+    files = prompts_total = 0
+    short, typed, loaded = Counter(), Counter(), Counter()
+    for path in iter_files(args):
+        files += 1
+        p, s, t, l = prompts_session(path)
+        prompts_total += p
+        short.update(s)
+        typed.update(t)
+        loaded.update(l)
+    top = args.top or PROMPTS_TOP_DEFAULT
+    short_total = sum(short.values())
+    short_rows = [[p, n, f"{100 * n / short_total:.0f}%"] for p, n in short.most_common(top)]
+    names = sorted(set(typed) | set(loaded), key=lambda c: (-typed[c], -loaded[c], c))
+    cmd_rows = [[c, typed[c], loaded[c]] for c in names[:top]]
+    if args.json:
+        print(json.dumps({"prompts": {
+            "files": files, "prompts": prompts_total, "short_total": short_total,
+            "short": [{"prompt": p, "count": n} for p, n in short.most_common(top)],
+            "commands": [{"command": c, "typed": typed[c], "model_loaded": loaded[c]} for c in names[:top]],
+        }}, indent=2))
+        return
+    print(f"# prompts  ({files} transcripts, {prompts_total} prompts, {short_total} short <= {PROMPT_MAX_LEN} chars)")
+    print_table(["prompt", "count", "share"], short_rows)
+    print()
+    print("# slash commands  (typed = you entered it; model = the model loaded the skill)")
+    print_table(["command", "typed", "model"], cmd_rows)
+    print()
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -1649,13 +1746,13 @@ def emit(args, data):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "timing", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "entry-fee", "timing", "prompts", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")
     p.add_argument("--root", help=f"transcripts root (default {DEFAULT_ROOT})")
     p.add_argument("--days", type=int, default=0, help="only files modified within N days (0 = all)")
-    p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
+    p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all; prompts: 0 = 20)")
     p.add_argument("--latency", action="store_true", help="(skills) add a per-skill total wall-time table, ranked by summed ms")
     p.add_argument("--errors", metavar="TOOL", help="(tools) group TOOL's error results by message prefix")
     p.add_argument("--since", type=int, default=60, help="(burn only) window in minutes (default 60)")
@@ -1681,6 +1778,10 @@ def main(argv=None):
 
     if args.cmd == "timing":
         run_timing(args)
+        return 0
+
+    if args.cmd == "prompts":
+        run_prompts(args)
         return 0
 
     data = collect(args)
