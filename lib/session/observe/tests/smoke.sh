@@ -670,5 +670,83 @@ top = d["slowest"][0]
 assert (top["tool"], top["duration_s"], top["target"]) == ("Bash", 60, "sleep 30; sleep 30"), top
 ' && "$CC" timing --file "$TFIX" | grep -q 'sleep 30; sleep 30'; then ok "timing numbers and text view match"; else no "timing wrong: $tjson"; fi
 
+PFIX="${DIR}/tests/fixtures/prompts"  # synthetic: proj/main.jsonl (prompts + typed + model-loaded commands), proj/old.jsonl, proj/recent.jsonl
+# Pin the --days fixtures' mtimes: old.jsonl 60 days back, the rest now (the window is a coarse file-mtime cut).
+python3 -c "
+import os, time
+now = time.time()
+d = '$PFIX/proj'
+os.utime(d + '/old.jsonl', (now - 60 * 86400,) * 2)
+for n in ('main.jsonl', 'recent.jsonl'):
+    os.utime(d + '/' + n, (now,) * 2)
+"
+
+echo "[113] prompts: short-prompt filter keeps 1..30 chars after whitespace-collapse + lowercase; drops 31 chars, empty, tag-led, meta, sidechain, list-shaped"
+pjson="$("$CC" prompts --file "$PFIX/proj/main.jsonl" --json)"
+if echo "$pjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["prompts"]
+short = {r["prompt"]: r["count"] for r in d["short"]}
+assert short == {"proceed": 2, "ok": 1, "aaaaaaaaaa bbbbbbbbbb cccccccc": 1}, short  # 30 chars in, 31 chars out, "Proceed" + "  proceed \n" merge
+assert d["prompts"] == 5 and d["short_total"] == 4, d  # 5 plain prompts, 4 short (the 31-char one is plain but not short)
+'; then ok "short prompts: proceed 2, ok 1, 30-char 1; 31-char and every excluded shape absent"; else no "prompts short filter wrong: $pjson"; fi
+
+echo "[114] prompts: typed vs model-loaded split (typed = a command-tag user entry; model = one per Skill tool_use id; the isMeta expansion entry adds nothing)"
+if echo "$pjson" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["prompts"]
+cmds = {r["command"]: (r["typed"], r["typed_sdk"], r["model_loaded"]) for r in d["commands"]}
+# demo-skill: typed twice (one through an SDK client), /clear typed once through an SDK client (so the sdk split is not symmetric with the origin-human entry), demo-skill loaded by the model once. Its Skill tool_use tu1 has a real-shape
+# expansion (isMeta, list content, sourceToolUseID, no tag) and a tag-bearing one (a shape real transcripts do not show):
+# neither adds a typed count, and the tag-bearing one repeats id tu1, so the load stays 1, not 2.
+# other-skill: Skill tool_use "/other-skill" (leading slash normalised) -> model 1, typed 0.
+# solo-skill: only a tag-bearing expansion with sourceToolUseID tu4 -> model 1, typed 0.
+assert cmds == {"/demo-skill": (2, 1, 1), "/clear": (1, 1, 0), "/other-skill": (0, 0, 1), "/solo-skill": (0, 0, 1)}, cmds
+# negative controls: a sidechain typed command, a meta command entry with no source id, and a sidechain Skill call count nowhere
+assert not {"/sub-typed", "/meta-skill", "/sub-loaded"} & set(cmds), cmds
+'; then ok "demo-skill typed 2 (sdk 1) / model 1; clear typed 1 (sdk 1); other and solo model-only; sidechain and meta entries absent"; else no "prompts typed-vs-model wrong: $pjson"; fi
+
+echo "[115] prompts: --days drops a transcript last written 60 days ago (and its prompt + command), --days 0 keeps it"
+p30="$("$CC" prompts --root "$PFIX" --days 30 --json)"
+pall="$("$CC" prompts --root "$PFIX" --json)"
+if echo "$p30" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["prompts"]
+assert d["files"] == 2, d  # main.jsonl + recent.jsonl; old.jsonl is outside the window
+prompts = {r["prompt"] for r in d["short"]}
+cmds = {r["command"] for r in d["commands"]}
+assert "fresh prompt" in prompts and "/fresh-cmd" in cmds, (prompts, cmds)
+assert "stale prompt" not in prompts and "/stale-cmd" not in cmds, (prompts, cmds)
+' && echo "$pall" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["prompts"]
+assert d["files"] == 3, d
+assert "stale prompt" in {r["prompt"] for r in d["short"]} and "/stale-cmd" in {r["command"] for r in d["commands"]}, d
+'; then ok "--days 30: 2 transcripts, stale prompt and command gone; no --days: 3 transcripts, both present"; else no "prompts --days wrong: $p30 / $pall"; fi
+
+echo "[116] prompts: --top caps each table; the text view carries both tables"
+ptop="$("$CC" prompts --file "$PFIX/proj/main.jsonl" --top 1 --json)"
+ptext="$("$CC" prompts --file "$PFIX/proj/main.jsonl")"
+if echo "$ptop" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["prompts"]
+assert [r["prompt"] for r in d["short"]] == ["proceed"] and [r["command"] for r in d["commands"]] == ["/demo-skill"], d
+' && grep -q '^# prompts' <<<"$ptext" && grep -q '^# slash commands' <<<"$ptext"; then ok "--top 1 keeps proceed and /demo-skill; text view has both tables"; else no "prompts --top/text wrong: $ptop / $ptext"; fi
+
+echo "[117] prompts stays OUT of report (the operator's own words must not ride report --json to vps-mon)"
+rtext="$("$CC" report --file "$PFIX/proj/main.jsonl")"
+if ! grep -q '^# prompts' <<<"$rtext" && "$CC" report --file "$PFIX/proj/main.jsonl" --json | python3 -c '
+import json, sys
+assert "prompts" not in json.load(sys.stdin)
+'; then ok "report text and json carry no prompts section"; else no "report leaks prompts"; fi
+
+echo "[118] prompts: a non-dict line and a non-dict message do not crash; the one valid string prompt is counted"
+pn="$("$CC" prompts --root "$NEDGE" --json)"
+if echo "$pn" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)["prompts"]
+assert d["prompts"] == 1 and [r["prompt"] for r in d["short"]] == ["real prompt one"], d  # the list-shaped prompt is not a plain string
+'; then ok "nondict-edge: 1 plain prompt counted, bad line and bad messages skipped"; else no "prompts nondict-edge wrong: $pn"; fi
+
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

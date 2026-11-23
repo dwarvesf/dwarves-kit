@@ -24,19 +24,19 @@ This is sub-goal 01 of the `cc-elevation` mega-goal (self-observability axis). S
 ## CLI contract
 
 ```
-cc-observe <skills|tools|hooks|subagents|friction|sessions|cost|burn|entry-fee|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--trend] [--detail] [--json]
+cc-observe <skills|tools|hooks|subagents|friction|sessions|cost|burn|entry-fee|timing|prompts|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--trend] [--detail] [--json]
 ```
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, `cost`, `burn`, `entry-fee`, or `report` (every view except `burn` and `entry-fee`) |
+| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, `cost`, `burn`, `entry-fee`, `timing`, `prompts`, or `report` (every view except `burn`, `entry-fee`, `timing` and `prompts`) |
 | `--file F` | none | parse a single transcript (used by tests) |
 | `--project=SLUG` | none | one project dir under the root. Slugs start with `-` (cwd-derived), so the **equals form is required**. A bare repo name that is not itself a slug matches every slug containing it, so a repo's worktrees aggregate. |
 | `--trend` | false | (`entry-fee`) add a weekly median table, newest week first |
 | `--detail` | false | (`entry-fee`) add `instructions` (per file) and `hook_success` (per SessionStart hook, SPILLED-flagged) sub-rows to the text table; `--json` always carries them |
 | `--root DIR` | `~/.claude/projects` | transcripts root (all projects) |
 | `--days N` | 0 (all) | only files modified within N days (coarse mtime window) |
-| `--top N` | 0 (all) | limit to top N rows |
+| `--top N` | 0 (all; `prompts`: 0 = 20) | limit to top N rows |
 | `--json` | false | machine-readable output (for vps-mon ingest) |
 
 **Exit codes**: 0 success; 1 `--file` not found; 2 usage error (argparse).
@@ -55,6 +55,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
    - sessions: per transcript, track first/last `timestamp` (wall-clock), tool-use count, prompt-turn count -> `classify_session` buckets it (quick/standard/deep/marathon/automation, thresholds in `ARCH`); sidechain transcripts are skipped (not Han's sessions). Prompt-turns + tool-uses are bucketed by UTC hour (`circadian`). A prompt turn whose text holds `INTERRUPT_MARK` is an interruption.
    - cost: `message.usage` (input/output/cache-read/cache-create) summed per `message.model`; `model_cost` applies the dated `PRICING` table by family substring (unknown family -> tokens counted, `$` shown as `?`). Cache-hit = cache-read / (read + create). cost-per-merged-PR is out of scope (see Non-goals).
    - entry-fee: per transcript, the FIRST main-chain assistant turn's `input + cache_creation + cache_read` is the session's MEASURED entry fee (the fixed preamble every turn re-reads). Preamble `attachment` entries are sized from their `rendered` text at 4 chars per token and keyed by `attachment.type`, an ESTIMATE labelled as one; the remainder against the measured fee is `(unattributed)` (system prompt + tool schemas, absent from the transcript). The `instructions` and `hook_success` rows carry sub-rows: `instructions` splits its component tokens across the attachment's `files` list (proportional to each file's content length, largest-remainder rounding so the sub-rows always sum to the parent row); `hook_success` splits by SessionStart hook `command` (truncated to 50 chars), flagged `SPILLED` when the hook's `content` carries the marker text `Output too large` (its stdout exceeded the harness's inline cap and only a preview reached the model). Sub-rows print in the text table only with `--detail`; `--json` carries them unconditionally under `split_components[].files` / `.hooks`. Transcripts with no main-chain assistant turn (a subagent's own run, a session with no reply) and transcripts under a `subagents/` dir contribute no row. Per-repo and weekly (`--trend`) tables carry the median measured fee. Full contract: `docs/specs/SPEC-289-observe-entry-fee.md`.
+   - prompts: over lead transcripts (sidechain skipped), user entries with STRING content. A short prompt is not `isMeta`, does not start with `<`, and is 1 to 30 characters after whitespace-collapse + lowercase. A slash command is TYPED when its `<command-name>` entry is not `isMeta` and has no `sourceToolUseID`; `sdk` counts those with `turnOrigin: sdk`. It is MODEL-LOADED when it is a Skill `tool_use` id (a `<command-name>` entry carrying a `sourceToolUseID` counts as the same id, once). In real transcripts a model load is a Skill `tool_use` plus an untagged `isMeta` expansion entry, so typed and model-loaded are different record types; the view reports them in separate columns so a Skill count is never read as a typed count. `origin.kind` is not the signal: only the `cli` and `claude-desktop` submit paths write it.
 3. Emit the requested view(s) as aligned tables, or one JSON object with `--json`.
 
 **Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. A long-text inline/condition hook (e.g. the `/goal` Stop-hook, whose command is the goal text) hashes to a stable `inline-echo:<hash>` row per unique command (`len(c) > 120` routes it there before the first-word fallback runs), so distinct goals land in distinct rows rather than fragmenting or merging by first word; see `docs/implementation-notes/02-goal-hook-collapse.md`.
@@ -66,6 +67,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
 - **No cost-per-merged-PR.** It was in SG-03's outcome but has no clean data path: transcripts span all repos while merges are per-repo, and ops-toolkit squash-merges (so `git log --merges` finds ~0). Deferred to NOTES proposed-additions; needs PR data (gh), not transcript data.
 - The `entry-fee` view's component split is an **estimate** (4 chars per token over the rendered preamble text). The API reports one usage block per turn, so a per-component token count does not exist in the data. Only the per-session total is measured.
 - Neither `burn` nor `entry-fee` is part of `report`. `report` is the weekly digest of behaviour; `burn` is a live check and `entry-fee` is a standing cost measurement.
+- `prompts` is not part of `report` either: it prints the operator's own typed words, and `report --json` feeds vps-mon. A typed command that a script sends through an SDK client cannot be told from one typed there; headless `claude -p` prompts are included.
 - No live dashboard. `--json` feeds vps-mon; rendering lives there.
 - No writes anywhere. This tool only reads.
 
@@ -114,6 +116,15 @@ Plus, against `hook-events-sample.jsonl` (a file WITH `hookInfos`: a Stop hook v
 Plus, against `hook-events-sdkcli-sample.jsonl` (a headless `entrypoint: sdk-cli` file with NO `hookInfos` anywhere):
 
 29. `hooks` still counts its Stop hook, read entirely from the `attachment` copy (negative control against a global Stop skip, which would silently zero this out).
+
+Plus, against `tests/fixtures/prompts/` (synthetic: plain prompts, typed and model-loaded commands, one old and one recent transcript):
+
+30. `prompts` short filter: 1 to 30 characters after whitespace-collapse + lowercase (a 30-character prompt in, a 31-character one out; `Proceed` and `  proceed` merge); empty, tag-led, meta, sidechain and list-shaped entries are absent.
+31. `prompts` typed vs model-loaded: a command typed twice (once through an SDK client) and loaded by the model once reads `typed 2, sdk 1, model 1`; the untagged expansion entry adds nothing, a tag-bearing expansion repeating a Skill `tool_use` id stays one load; sidechain and meta entries count nowhere.
+32. `prompts --days`: a transcript last written outside the window contributes neither its prompt nor its command; without `--days` both appear.
+33. `prompts --top N` caps each table; the text view prints both tables.
+34. `prompts` stays out of `report` text and `--json` (negative control).
+35. `prompts` survives a non-dict line and a non-dict message.
 
 Plus real-data runs (`friction --days 7`, `sessions --days 7`, `cost --days 7`) in `docs/proof-of-done.md`.
 

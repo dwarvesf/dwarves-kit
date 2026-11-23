@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-09-10T09:00:00Z","message":{"role":"user","content":"fresh prompt"}}
+{"type":"user","timestamp":"2026-09-10T09:01:00Z","message":{"role":"user","content":"<command-message>fresh-cmd</command-message>\n<command-name>/fresh-cmd</command-name>"}}

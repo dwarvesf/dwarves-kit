@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-07-01T08:00:00Z","message":{"role":"user","content":"stale prompt"}}
+{"type":"user","timestamp":"2026-07-01T08:01:00Z","message":{"role":"user","content":"<command-message>stale-cmd</command-message>\n<command-name>/stale-cmd</command-name>"}}

@@ -1,0 +1,24 @@
+{"type":"user","timestamp":"2026-09-10T08:00:00Z","message":{"role":"user","content":"Proceed"}}
+{"type":"user","timestamp":"2026-09-10T08:01:00Z","message":{"role":"user","content":"  proceed \n"}}
+{"type":"user","timestamp":"2026-09-10T08:02:00Z","message":{"role":"user","content":"OK"}}
+{"type":"user","timestamp":"2026-09-10T08:03:00Z","message":{"role":"user","content":"aaaaaaaaaa bbbbbbbbbb cccccccc"}}
+{"type":"user","timestamp":"2026-09-10T08:04:00Z","message":{"role":"user","content":"aaaaaaaaaa bbbbbbbbbb ccccccccc"}}
+{"type":"user","timestamp":"2026-09-10T08:05:00Z","message":{"role":"user","content":"   "}}
+{"type":"user","timestamp":"2026-09-10T08:06:00Z","message":{"role":"user","content":"<system-reminder>ignore</system-reminder>"}}
+{"type":"user","timestamp":"2026-09-10T08:07:00Z","message":{"role":"user","content":"meta note"},"isMeta":true}
+{"type":"user","timestamp":"2026-09-10T08:08:00Z","message":{"role":"user","content":"subagent prompt"},"isSidechain":true}
+{"type":"user","timestamp":"2026-09-10T08:09:00Z","message":{"role":"user","content":[{"type":"text","text":"list prompt"}]}}
+{"type":"user","timestamp":"2026-09-10T08:10:00Z","message":{"role":"user","content":"<command-message>demo-skill</command-message>\n<command-name>/demo-skill</command-name>"},"turnOrigin":"sdk","entrypoint":"orca"}
+{"type":"user","timestamp":"2026-09-10T08:11:00Z","message":{"role":"user","content":"<command-message>demo-skill</command-message>\n<command-name>/demo-skill</command-name>"},"origin":{"kind":"human"},"turnOrigin":"human","entrypoint":"cli"}
+{"type":"user","timestamp":"2026-09-10T08:12:00Z","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"},"turnOrigin":"sdk","entrypoint":"sdk-ts"}
+{"type":"user","timestamp":"2026-09-10T08:13:00Z","message":{"role":"user","content":"<command-message>sub-typed</command-message>\n<command-name>/sub-typed</command-name>"},"isSidechain":true}
+{"type":"user","timestamp":"2026-09-10T08:14:00Z","message":{"role":"user","content":"<command-message>meta-skill</command-message>\n<command-name>/meta-skill</command-name>"},"isMeta":true}
+{"type":"assistant","timestamp":"2026-09-10T08:15:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Skill","input":{"skill":"demo-skill"}}]}}
+{"type":"user","timestamp":"2026-09-10T08:16:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"Launching skill"}]},"sourceToolAssistantUUID":"a1"}
+{"type":"user","timestamp":"2026-09-10T08:17:00Z","message":{"role":"user","content":[{"type":"text","text":"synthetic skill body one"}]},"isMeta":true,"sourceToolUseID":"tu1"}
+{"type":"assistant","timestamp":"2026-09-10T08:18:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Skill","input":{"skill":"/other-skill"}}]}}
+{"type":"user","timestamp":"2026-09-10T08:19:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu2","content":"Launching skill"}]},"sourceToolAssistantUUID":"a2"}
+{"type":"user","timestamp":"2026-09-10T08:20:00Z","message":{"role":"user","content":[{"type":"text","text":"synthetic skill body two"}]},"isMeta":true,"sourceToolUseID":"tu2"}
+{"type":"assistant","timestamp":"2026-09-10T08:21:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu5","name":"Skill","input":{"skill":"sub-loaded"}}]},"isSidechain":true}
+{"type":"user","timestamp":"2026-09-10T08:22:00Z","message":{"role":"user","content":"<command-message>demo-skill</command-message>\n<command-name>/demo-skill</command-name>"},"isMeta":true,"sourceToolUseID":"tu1"}
+{"type":"user","timestamp":"2026-09-10T08:23:00Z","message":{"role":"user","content":"<command-message>solo-skill</command-message>\n<command-name>/solo-skill</command-name>"},"isMeta":true,"sourceToolUseID":"tu4"}
