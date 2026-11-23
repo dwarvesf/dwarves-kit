@@ -10,7 +10,7 @@
 {"type":"user","timestamp":"2026-09-10T08:09:00Z","message":{"role":"user","content":[{"type":"text","text":"list prompt"}]}}
 {"type":"user","timestamp":"2026-09-10T08:10:00Z","message":{"role":"user","content":"<command-message>demo-skill</command-message>\n<command-name>/demo-skill</command-name>"},"turnOrigin":"sdk","entrypoint":"orca"}
 {"type":"user","timestamp":"2026-09-10T08:11:00Z","message":{"role":"user","content":"<command-message>demo-skill</command-message>\n<command-name>/demo-skill</command-name>"},"origin":{"kind":"human"},"turnOrigin":"human","entrypoint":"cli"}
-{"type":"user","timestamp":"2026-09-10T08:12:00Z","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"},"entrypoint":"cli"}
+{"type":"user","timestamp":"2026-09-10T08:12:00Z","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"},"turnOrigin":"sdk","entrypoint":"sdk-ts"}
 {"type":"user","timestamp":"2026-09-10T08:13:00Z","message":{"role":"user","content":"<command-message>sub-typed</command-message>\n<command-name>/sub-typed</command-name>"},"isSidechain":true}
 {"type":"user","timestamp":"2026-09-10T08:14:00Z","message":{"role":"user","content":"<command-message>meta-skill</command-message>\n<command-name>/meta-skill</command-name>"},"isMeta":true}
 {"type":"assistant","timestamp":"2026-09-10T08:15:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Skill","input":{"skill":"demo-skill"}}]}}
