@@ -1,15 +1,17 @@
 # Verification: observe-prompts-view
 
-`session observe prompts --days N [--top K]` shows what the operator types most: the top short prompts (1 to 30 characters, whitespace-collapsed, lowercased) and the slash commands typed by hand, beside the same commands the model loaded through the Skill tool. A raw count of the `<command-name>` tag mixes typed and model-loaded commands; the split signal is `sourceToolUseID`.
+`session observe prompts --days N [--top K]` shows what the operator types most: the top short prompts (1 to 30 characters, whitespace-collapsed, lowercased) and the slash commands submitted as user turns, beside the same commands the model loaded through the Skill tool.
+
+Signal for typed vs model-loaded, from inspecting real transcripts read-only: a typed command is a string user entry carrying `<command-name>`; a model load is a Skill `tool_use` plus an untagged `isMeta` expansion entry carrying `sourceToolUseID`. They are different record types, so the view counts them in separate columns. A count of the Skill `tool_use` (the `skills` view) is what inflates a command's "typed" number when read as typed.
 
 | Check | Command | Result |
 |---|---|---|
-| Real flow on a synthetic transcript | `session-observe prompts --file tests/fixtures/prompts/proj/main.jsonl` | typed vs model columns below |
-| Real flow on live transcripts (read-only) | `session-observe prompts --days 30` | `/kit:wrap` typed 95 / model 75; `/logs-sweep` typed 0 / model 92 |
+| Real flow on a synthetic transcript | `session-observe prompts --file tests/fixtures/prompts/proj/main.jsonl` | typed / sdk / model columns below |
+| Real flow on live transcripts (read-only) | `session-observe prompts --days 30` | both tables print; typed, sdk and model differ per command |
 | Module suite | `bash lib/session/observe/tests/smoke.sh` | `smoke: all 119 passed` |
 | Report envelope | `bash lib/session/observe/tests/test-vps-report.sh` | `vps-report: all 14 passed` |
 | Changed suites | `bash tests/run-all.sh --changed --time` | `run-all: all 19 suites passed` |
-| Negative control | `lib/gate/negctl.sh` | Verdict: PASS |
+| Negative controls | `lib/gate/negctl.sh` x3 | Verdict: PASS x3 |
 
 ## Green run
 
@@ -24,50 +26,70 @@ Output:
     ok                                  1    25%
     aaaaaaaaaa bbbbbbbbbb cccccccc      1    25%
 
-  # slash commands  (typed = you entered it; model = the model loaded the skill)
-    command       typed  model
-    ------------  -----  -----
-    /demo-skill       2      1
-    /clear            1      0
-    /other-skill      0      1
-    /solo-skill       0      1
+  # slash commands  (typed = submitted as a user turn; sdk = of those, via an SDK client such as Orca; model = Skill tool loads)
+    command       typed  sdk  model
+    ------------  -----  ---  -----
+    /demo-skill       2    1      1
+    /clear            1    1      0
+    /other-skill      0    0      1
+    /solo-skill       0    0      1
 
 ```
 
-The fixture holds `/demo-skill` typed twice, one Skill `tool_use` plus its `sourceToolUseID` expansion entry (one load, not two), and a sidechain command and a meta command that count nowhere.
+The fixture holds `/demo-skill` submitted twice (one through an SDK client), loaded by the model once through a Skill `tool_use` with its real-shape expansion entry, plus a sidechain command, a meta command and a sidechain Skill call that count nowhere.
 
-## Negative control
+## Negative controls
 
-Mutation: the `sourceToolUseID` branch in `prompts_session` disabled. The expansion entries then stop counting as model loads, and the typed-vs-model test goes red.
+Three mutations, each turning one assertion red. Each block is the `negctl.sh` output with the green-before run folded to its last line.
+
+1. Skill `tool_use` branch disabled: model loads vanish, the typed-vs-model test goes red.
+2. `sourceToolUseID` guard disabled: a tag-bearing expansion entry stops counting as a load. This shape is not seen in real transcripts; the control proves the guard, not the real data.
+3. The `turnOrigin: sdk` test flipped to `human`: the `sdk` column changes, the same test goes red.
 
 ```
 Command: bash lib/session/observe/tests/smoke.sh
 Exit: 0 (green before mutation)
 Output:
-    ok: demo-skill typed 2 / model 1; clear typed 1; other and solo model-only; sidechain and meta records absent
-  [115] prompts: --days drops a transcript last written 60 days ago (and its prompt + command), --days 0 keeps it
-    ok: --days 30: 2 transcripts, stale prompt and command gone; no --days: 3 transcripts, both present
-  [116] prompts: --top caps each table; the text view carries both tables
-    ok: --top 1 keeps proceed and /demo-skill; text view has both tables
-  [117] prompts stays OUT of report (the operator's own words must not ride report --json to vps-mon)
-    ok: report text and json carry no prompts section
-  [118] prompts: a non-dict line and a non-dict message do not crash; the one valid string prompt is counted
-    ok: nondict-edge: 1 plain prompt counted, bad line and bad messages skipped
   smoke: all 119 passed
 
-Mutation: python3 -c "p='lib/session/observe/bin/session-observe';s=open(p).read();a='if e.get(\"sourceToolUseID\"):';assert a in s;open(p,'w').write(s.replace(a,'if False:',1))"
+Mutation: edit bin/session-observe: the Skill tool_use branch in prompts_session matches a tool name that never occurs
 Changed: lib/session/observe/bin/session-observe
 Exit: 1 (under mutation, RED expected)
 Output:
-  }
-  [115] prompts: --days drops a transcript last written 60 days ago (and its prompt + command), --days 0 keeps it
-    ok: --days 30: 2 transcripts, stale prompt and command gone; no --days: 3 transcripts, both present
-  [116] prompts: --top caps each table; the text view carries both tables
-    ok: --top 1 keeps proceed and /demo-skill; text view has both tables
-  [117] prompts stays OUT of report (the operator's own words must not ride report --json to vps-mon)
-    ok: report text and json carry no prompts section
-  [118] prompts: a non-dict line and a non-dict message do not crash; the one valid string prompt is counted
-    ok: nondict-edge: 1 plain prompt counted, bad line and bad messages skipped
+  smoke: 118 passed, 1 FAILED
+
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+```
+Command: bash lib/session/observe/tests/smoke.sh
+Exit: 0 (green before mutation)
+Output:
+  smoke: all 119 passed
+
+Mutation: edit bin/session-observe: the `if e.get("sourceToolUseID"):` guard in prompts_session replaced by `if False:`
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED expected)
+Output:
+  smoke: 118 passed, 1 FAILED
+
+Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+```
+Command: bash lib/session/observe/tests/smoke.sh
+Exit: 0 (green before mutation)
+Output:
+  smoke: all 119 passed
+
+Mutation: edit bin/session-observe: the `turnOrigin == "sdk"` test in prompts_session flipped to `== "human"`
+Changed: lib/session/observe/bin/session-observe
+Exit: 1 (under mutation, RED expected)
+Output:
   smoke: 118 passed, 1 FAILED
 
 Restore: git checkout HEAD -- lib/session/observe/bin/session-observe
@@ -77,7 +99,7 @@ Verdict: PASS
 
 ## Rollback
 
-`git revert` the feature commit. The view, its fixtures and its tests leave together; no other view reads any of it.
+`git revert` the feature commits. The view, its fixtures and its tests leave together; no other view reads any of it.
 
 ## Reproduce
 
