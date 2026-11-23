@@ -691,16 +691,20 @@ assert short == {"proceed": 2, "ok": 1, "aaaaaaaaaa bbbbbbbbbb cccccccc": 1}, sh
 assert d["prompts"] == 5 and d["short_total"] == 4, d  # 5 plain prompts, 4 short (the 31-char one is plain but not short)
 '; then ok "short prompts: proceed 2, ok 1, 30-char 1; 31-char and every excluded shape absent"; else no "prompts short filter wrong: $pjson"; fi
 
-echo "[114] prompts: typed vs model-loaded split (typed = command record with no sourceToolUseID; model = Skill tool_use id, deduped with its expansion record)"
+echo "[114] prompts: typed vs model-loaded split (typed = a command-tag user entry; model = one per Skill tool_use id; the isMeta expansion entry adds nothing)"
 if echo "$pjson" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)["prompts"]
-cmds = {r["command"]: (r["typed"], r["model_loaded"]) for r in d["commands"]}
-# demo-skill: typed twice; the model loaded it once (tool_use tu1 AND its expansion record share one id: 1, not 2)
-assert cmds == {"/demo-skill": (2, 1), "/clear": (1, 0), "/other-skill": (0, 1), "/solo-skill": (0, 1)}, cmds
-# negative controls: a sidechain typed command, a meta command record with no source id, and a sidechain Skill call count nowhere
+cmds = {r["command"]: (r["typed"], r["typed_sdk"], r["model_loaded"]) for r in d["commands"]}
+# demo-skill: typed twice (one through an SDK client), loaded by the model once. Its Skill tool_use tu1 has a real-shape
+# expansion (isMeta, list content, sourceToolUseID, no tag) and a tag-bearing one (a shape real transcripts do not show):
+# neither adds a typed count, and the tag-bearing one repeats id tu1, so the load stays 1, not 2.
+# other-skill: Skill tool_use "/other-skill" (leading slash normalised) -> model 1, typed 0.
+# solo-skill: only a tag-bearing expansion with sourceToolUseID tu4 -> model 1, typed 0.
+assert cmds == {"/demo-skill": (2, 1, 1), "/clear": (1, 0, 0), "/other-skill": (0, 0, 1), "/solo-skill": (0, 0, 1)}, cmds
+# negative controls: a sidechain typed command, a meta command entry with no source id, and a sidechain Skill call count nowhere
 assert not {"/sub-typed", "/meta-skill", "/sub-loaded"} & set(cmds), cmds
-'; then ok "demo-skill typed 2 / model 1; clear typed 1; other and solo model-only; sidechain and meta records absent"; else no "prompts typed-vs-model wrong: $pjson"; fi
+'; then ok "demo-skill typed 2 (sdk 1) / model 1; clear typed 1; other and solo model-only; sidechain and meta entries absent"; else no "prompts typed-vs-model wrong: $pjson"; fi
 
 echo "[115] prompts: --days drops a transcript last written 60 days ago (and its prompt + command), --days 0 keeps it"
 p30="$("$CC" prompts --root "$PFIX" --days 30 --json)"

@@ -29,8 +29,9 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               model time (gap before each tool_use), call count, and sleep-poll time
               (Bash `sleep N`, N >= 10) plus the 5 slowest tool calls; not part of `report`
   prompts   - what I type most: the top short prompts (1..30 chars, whitespace-collapsed
-              and lowercased) and the slash commands I TYPED, beside the count of the
-              same commands the model loaded through the Skill tool; not part of
+              and lowercased) and the slash commands I submitted (with how many came
+              through an SDK client), beside the count of the same commands the model
+              loaded through the Skill tool; not part of
               `report` (it carries my own words, and `report --json` feeds vps-mon)
   report    - all of the above, the weekly self-observability digest
 
@@ -1546,20 +1547,25 @@ def _slash(name):
 
 
 def prompts_session(path):
-    """One transcript -> (prompts, short, typed, loaded).
+    """One transcript -> (prompts, short, typed, sdk, loaded).
 
     prompts = plain typed user messages (string content, not meta, not sidechain,
               not starting with `<`); short = Counter of those that are 1..PROMPT_MAX_LEN
               chars after whitespace-collapse + lowercase.
-    typed   = Counter of `<command-name>` slash commands the user TYPED: a user entry
-              whose string content opens with a command tag and which is neither meta
-              nor a Skill-tool expansion (no `sourceToolUseID`).
-    loaded  = Counter of commands the MODEL loaded: one per Skill tool_use id, plus any
-              `<command-name>` record carrying a `sourceToolUseID` (the harness expanding
-              a Skill tool call). The two sources share one id, so a load is counted once.
+    typed   = Counter of `<command-name>` slash commands submitted as a user turn: a user
+              entry whose string content opens with a command tag and which is neither
+              meta nor a Skill-tool expansion (no `sourceToolUseID`).
+    sdk     = the subset of `typed` submitted through an SDK client (Orca, sdk-ts): the
+              entry carries `turnOrigin: sdk`. The rest came from a terminal or the desktop
+              client. `origin.kind` is NOT the split: it is written only for prompts a cli
+              or desktop user submits, so a terminal-typed `/model` carries no origin at all.
+    loaded  = Counter of commands the MODEL loaded: one per Skill tool_use id. In the
+              transcripts checked the harness expands a Skill call into an `isMeta` entry
+              with `sourceToolUseID` and NO `<command-name>` tag, so that entry adds
+              nothing; a runtime that does tag it is still counted once, by the same id.
     Sidechain entries (subagents) are skipped."""
     prompts = 0
-    short, typed = Counter(), Counter()
+    short, typed, sdk = Counter(), Counter(), Counter()
     loads = {}  # tool_use id -> command, so one load seen as tool_use + expansion counts once
     for e in iter_entries(path):
         if e.get("isSidechain"):
@@ -1584,6 +1590,8 @@ def prompts_session(path):
                 loads.setdefault(e["sourceToolUseID"], _slash(m.group(1)))
             elif not e.get("isMeta"):
                 typed[_slash(m.group(1))] += 1
+                if e.get("turnOrigin") == "sdk":
+                    sdk[_slash(m.group(1))] += 1
             continue
         if e.get("isMeta") or not text or text.startswith("<"):
             continue
@@ -1591,7 +1599,7 @@ def prompts_session(path):
         norm = re.sub(r"\s+", " ", text).strip().lower()
         if 1 <= len(norm) <= PROMPT_MAX_LEN:
             short[norm] += 1
-    return prompts, short, typed, Counter(loads.values())
+    return prompts, short, typed, sdk, Counter(loads.values())
 
 
 def run_prompts(args):
@@ -1599,31 +1607,32 @@ def run_prompts(args):
     Own I/O path like timing; not part of `report` (it carries the operator's own words,
     which must never ride the vps-mon snapshot `report --json` feeds)."""
     files = prompts_total = 0
-    short, typed, loaded = Counter(), Counter(), Counter()
+    short, typed, sdk, loaded = Counter(), Counter(), Counter(), Counter()
     for path in iter_files(args):
         files += 1
-        p, s, t, l = prompts_session(path)
+        p, s, t, k, l = prompts_session(path)
         prompts_total += p
         short.update(s)
         typed.update(t)
+        sdk.update(k)
         loaded.update(l)
     top = args.top or PROMPTS_TOP_DEFAULT
     short_total = sum(short.values())
     short_rows = [[p, n, f"{100 * n / short_total:.0f}%"] for p, n in short.most_common(top)]
     names = sorted(set(typed) | set(loaded), key=lambda c: (-typed[c], -loaded[c], c))
-    cmd_rows = [[c, typed[c], loaded[c]] for c in names[:top]]
+    cmd_rows = [[c, typed[c], sdk[c], loaded[c]] for c in names[:top]]
     if args.json:
         print(json.dumps({"prompts": {
             "files": files, "prompts": prompts_total, "short_total": short_total,
             "short": [{"prompt": p, "count": n} for p, n in short.most_common(top)],
-            "commands": [{"command": c, "typed": typed[c], "model_loaded": loaded[c]} for c in names[:top]],
+            "commands": [{"command": c, "typed": typed[c], "typed_sdk": sdk[c], "model_loaded": loaded[c]} for c in names[:top]],
         }}, indent=2))
         return
     print(f"# prompts  ({files} transcripts, {prompts_total} prompts, {short_total} short <= {PROMPT_MAX_LEN} chars)")
     print_table(["prompt", "count", "share"], short_rows)
     print()
-    print("# slash commands  (typed = you entered it; model = the model loaded the skill)")
-    print_table(["command", "typed", "model"], cmd_rows)
+    print("# slash commands  (typed = submitted as a user turn; sdk = of those, via an SDK client such as Orca; model = Skill tool loads)")
+    print_table(["command", "typed", "sdk", "model"], cmd_rows)
     print()
 
 
