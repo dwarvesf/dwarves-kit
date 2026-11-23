@@ -40,7 +40,7 @@ The fixture holds `/demo-skill` submitted twice (one through an SDK client), loa
 
 ## Negative controls
 
-Three mutations, each turning one assertion red. Each block is the `negctl.sh` output with the green-before run folded to its last line.
+Three mutations, each turning one assertion red. Each block is the `negctl.sh` output with each run's captured output folded to its last line.
 
 1. Skill `tool_use` branch disabled: model loads vanish, the typed-vs-model test goes red.
 2. `sourceToolUseID` guard disabled: a tag-bearing expansion entry stops counting as a load. This shape is not seen in real transcripts; the control proves the guard, not the real data.
