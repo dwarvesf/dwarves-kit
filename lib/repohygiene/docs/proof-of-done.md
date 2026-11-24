@@ -417,7 +417,7 @@ The five repos of the 2026-09-11 sweep, scanned with `--detectors 2`, before and
 
 | Repo | Before | After | Every dropped row verified live by hand |
 |---|---|---|---|
-| family-office | 3 | 0 | `_inbox/gay-chong-co-ghe-da-nang.md` cited by path at `operations/eldercare-mobility-aid-danang.md:31`; `_inbox/rename-applied-2026-05-25.log.tsv` cited at `docs/ingest/drive-dedupe-2026-09-03.md:70`; `_inbox/from-hermes/` is the bot landing zone its own README and `infra/launchd/README.md` describe |
+| a private repo | 3 | 0 | two `_inbox/` files, each cited by path from another tracked doc in the same repo; one `_inbox/` subfolder that the repo's own README describes as a bot landing zone |
 | trading | 1 | 0 | `_inbox/.DS_Store`, the only finding that repo produced in the whole sweep |
 | dfoundation | 0 | 0 | no change |
 | console-labs | 0 | 0 | no change |
