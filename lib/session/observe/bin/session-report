@@ -9,7 +9,7 @@ The metrics-snapshot POST is OPT-IN behind --snapshot (default OFF).
 WHY heartbeat-only by default (incident 2026-06-15, agent-silent false-alarm):
   POST /v1/snapshot UPSERTS a row in vps-mon's `hosts` table, and the prober's
   hardcoded `agent-silent` rule (AGENT_SILENT_THRESHOLD_SEC = 600s in
-  tools/vps-mon/worker/src/prober.ts) fires CRIT for ANY host whose last_seen
+  worker/src/prober.ts in the vps-mon repo) fires CRIT for ANY host whose last_seen
   is older than 600s. session-report runs WEEKLY (via the kit-weekly scheduler), so a
   snapshot-registered `cc-air` host looks "silent" 6 days out of 7 -> a
   guaranteed weekly false CRIT. It fired once (2026-06-15 19:50); the cc-air
@@ -34,7 +34,7 @@ identical and is unit-tested deterministically against a hand-computed expected 
 tests/test-vps-report.sh BEFORE any live POST (a wrong signature is a silent
 401, so the signer is proven offline first).
 
-Signing contract (confirmed by reading tools/vps-mon/worker/src/hmac.ts +
+Signing contract (confirmed by reading worker/src/hmac.ts +
 ingest.ts on this branch, NOT from the stale wrangler.toml comment):
   - key bytes  = the secret string's UTF-8 bytes, trailing whitespace stripped
                  (worker: keyFromSecret = encoder.encode(secret.trim());
