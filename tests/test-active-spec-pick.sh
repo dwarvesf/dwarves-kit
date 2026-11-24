@@ -5,8 +5,9 @@
 # a co-located tools/x 005 delta; a copy of 020 beta under .claude/worktrees/w. The REAL hooks and
 # lib scripts run; every answer is recorded below.
 #
-# A row marked `gap` pins today's disagreement between callers and names the task that flips it.
-# When that task lands, the row is rewritten as an `eq` on the shared answer.
+# Each caller's answer is the shared lookup's answer (lib/spec/spec-active.sh). Before the callers
+# moved onto it, these rows pinned the disagreement (compaction picked the highest number, readiness
+# called a header-less spec closed, spec-index listed worktree copies); they now pin the shared answer.
 #
 # Run: bash tests/test-active-spec-pick.sh     Exit 0 = all pass.
 set -uo pipefail
@@ -21,8 +22,6 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "PASS $1"; }
 bad() { FAIL=$((FAIL+1)); echo "FAIL $1"; }
 eq()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3' got '$2')"; fi; }
-# gap <label> <task> <got> <today's answer>: green while the disagreement still stands.
-gap() { if [ "$3" = "$4" ]; then ok "$1 [known-gap, flips in $2]"; else bad "$1 [known-gap, flips in $2] (want today's '$4' got '$3')"; fi; }
 
 _td="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; TMP="$(cd "$_td" && pwd -P)"
 cleanup() { chmod -R u+rwx "$TMP" 2>/dev/null; rm -rf "$TMP" "$APS_HOME"; }
@@ -117,10 +116,13 @@ eq "a file named by another open spec (gamma) is known" "$(drift "$F" "$F/src/ga
 eq "a file named only by the SHIPPED spec is drift" "$(drift "$F" "$F/src/alpha_only.ts")" "1"
 eq "a file named by no spec is drift" "$(drift "$F" "$F/src/unknown.ts")" "1"
 eq "a header-less spec counts as open for the guard" "$(drift "$H" "$H/src/gamma_only.ts")" "0"
-gap "drift guard from a subdirectory sees no spec and stays silent" TASK-7 "$(drift "$F/src/deep" "$F/src/deep/unknown.ts")" "0"
+eq "drift guard from a subdirectory reads the repo root's specs" "$(drift "$F/src/deep" "$F/src/deep/unknown.ts")" "1"
+eq "drift guard from a subdirectory: a file an open spec names is known" "$(drift "$F/src/deep" "$F/src/beta_only.ts")" "0"
+eq "drift guard on a partial install resolves no spec and stays silent" "$( cd "$F" && printf '{"tool_input":{"file_path":"%s"}}' "$F/src/unknown.ts" | bash "$STALE/hooks/spec-drift-guard.sh" 2>/dev/null | grep -c 'is not in any active spec' || true)" "0"
 
 echo "== spec-index =="
-gap "spec-index lists a dot-dir worktree copy as its own namespace" TASK-7 "$(index_ns "$F" | grep -c '^\.claude')" "1"
+eq "spec-index does not list a dot-dir worktree copy" "$(index_ns "$F" | grep -c '^\.claude' || true)" "0"
+eq "spec-index lists each open spec once" "$(cd "$F" && bash "$KIT_DIR/lib/spec/spec-index.sh" list | grep -c 'SPEC-020 | ')" "1"
 eq "spec-index lists the central and the co-located namespace" "$(index_ns "$F" | grep -c -e '^central docs/specs' -e '^tools/x')" "2"
 
 echo
