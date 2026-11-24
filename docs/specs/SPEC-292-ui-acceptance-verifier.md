@@ -313,7 +313,7 @@ The agent returns the acceptance-verifier grammar, with the per-criterion table 
 
 ```
 ### UI acceptance: <PR or branch>
-Head: <sha40>   Preview: <url>   Preview identity: matched | unverified | mismatch   Playwright: <version>
+Head: <first8…last8 of the head SHA>   Preview: <url>   Preview identity: matched | unverified | mismatch   Playwright: <version>
 Runner result: PASS | FAIL | NO-CHECK   Counts: <p> PASS, <f> FAIL, <n> NO-CHECK
 Agent-added rows: <n> NO-CHECK
 
@@ -633,6 +633,7 @@ Named follow-up slices, none built here. None of 292b to 292e starts before one 
 - DEC-26: hand mutations of runner code (AC-6, AC-15, AC-17 controls and the AC-9 pin-age case) run on a temp copy of `run.mjs` outside any git work tree and are recorded in the proof file. Rationale: the suite cannot mutate the real runner.
 - DEC-27: the fixture's second listener answers `GET /count` with `{"hits":N,"upgrades":N}` and does not count that request. Rationale: the spec said the listener counts hits but not how the suite reads the counts; this is the simplest read path.
 - DEC-28: the `hang-bounded` pgrep poll ends as soon as it finds nothing and has a 60 s ceiling that fails the case. Rationale: AC-6 named 15 s, which a build host at load average above 200 can miss; the assertion is "eventually none", not a speed.
+- DEC-29: the agent's report prints the head SHA as `first8…last8` and compares full values internally (the runner line and `result.json` keep the full 40 hex). Rationale: the kit's verifier agents already mask any 32+ hex token in a report, because a lead-side secret scan matches on shape and would drop the notification that carries the verdict; the agent also has no hashing tool, so it compares the runner's printed 16-hex scenario hash with the one in the brief.
 
 ## Grounding
 
