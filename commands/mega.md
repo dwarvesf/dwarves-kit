@@ -200,8 +200,9 @@ so the existing driver can walk it unmodified):
   call, `gh run watch <id> --exit-status` or `gh pr checks <pr> --watch`, never a `sleep` poll
   loop. After the merge, do not hold the sub-goal open for the main-branch CI run unless the
   repo's contract says so: hand off, let the next cycle start, and act only if main turns red.
-  **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
-  will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
+  **Include a `## Touches` section** listing the directory-prefix globs or literal file
+  paths this sub-goal will write, one per line, form `dir/**` (or `dir/sub/**`), or an
+  exact path such as `docs/notes/x.md` -- the SAME shapes
   `lib/gate/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
   **wave-eligible**: `lib/queue/orchestrate.sh` runs dep-independent sub-goals whose
   `## Touches` are provably disjoint CONCURRENTLY (default `WAVE_CAP=2`).
