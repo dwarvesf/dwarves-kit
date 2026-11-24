@@ -1188,7 +1188,7 @@ echo "=== apply: the origin sweep deletes only merged branches at their exact ti
 # on. Each case builds a fresh pair, because --apply deletes on the bare.
 OS_URL="https://github.com/o/sweep.git"
 os_pr() { # os_pr <bare> <branch> <isCrossRepository> -- one merged-PR record at the branch tip
-  printf '{"headRefName":"%s","headRefOid":"%s","isCrossRepository":%s}' "$2" "$(git -C "$1" rev-parse "$2")" "$3"
+  printf '{"headRefName":"%s","headRefOid":"%s","baseRefName":"main","mergedAt":"2026-01-01T00:00:00Z","isCrossRepository":%s}' "$2" "$(git -C "$1" rev-parse "$2")" "$3"
 }
 build_os_repo() { # build_os_repo <name> -- bare origin plus a clone on main, gh stubs exported
   local name="$1" work="$TMPD/oswork-$1" bare="$TMPD/osbare-$1" clone="$TMPD/osclone-$1" b

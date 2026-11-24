@@ -3,7 +3,7 @@
 # scratch repos and a gh shim only: `lib/goal/wt.sh close` and the `wrap apply` origin sweep.
 # Each caller's refusals are rows here, so a migration onto the shared merged check proves it
 # still refuses everything it refused before. Rows labelled known-gap pin a deletion bug that
-# the migration closes; the label names the task whose commit flips the row.
+# the migration closes; the label names the task whose commit flips the row. Both known gaps are now closed.
 # modules under test (the test-affected cache key greps this line):
 # lib/goal/wt.sh lib/wrap/wrap-common.sh lib/wrap/wrap-apply.sh lib/gate/branch-merged.sh
 #
@@ -210,9 +210,8 @@ chk "sweep: a branch with no PR record is kept (plain ancestry is not a PR)" "$(
 chk "sweep: a branch with an open PR as head is kept" "$(alive s1 openhead; echo $?)"
 chk "sweep: a branch with an open PR based on it is kept" "$(alive s1 openbase; echo $?)"
 chk "sweep: a cross-repository PR is ignored" "$(alive s1 fork; echo $?)"
-# known-gap: the sweep has no base check; a PR merged into another base qualifies today.
-SWEEP_GAP_ROW="known-gap(TASK-9): sweep with a PR merged into a non-default base"
-chk "$SWEEP_GAP_ROW" "$(! alive s1 otherbase; echo $?)"
+# The sweep once had no base check: a PR merged into another base qualified.
+chk "sweep: a PR merged into a non-default base is kept" "$(alive s1 otherbase; echo $?)"
 
 s2="$(sweep_repo s2)"; sweep_rows s2
 out="$(sweep_run s2 0)"
@@ -225,6 +224,11 @@ for m in fail garbage empty; do
   chk_has "sweep: a gh answer of '$m' skips the sweep" "$out" "SKIP origin sweep"
   chk "sweep: '$m' deletes nothing" "$(alive "s3$m" gone; echo $?)"
 done
+
+s3o="$(sweep_repo s3open)"; sweep_rows s3open; shim_set open 'not json'
+out="$(sweep_run s3open 1)"
+chk_has "sweep: an unreadable open-PR list skips the sweep" "$out" "SKIP origin sweep"
+chk "sweep: an unreadable open-PR list deletes nothing" "$(alive s3open gone; echo $?)"
 
 s4="$(sweep_repo s4)"; sweep_rows s4
 out="$(sweep_run s4 1 "otherbase")"

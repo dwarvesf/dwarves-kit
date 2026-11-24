@@ -855,25 +855,41 @@ _apply_origin_branches() {
   esac
   [ "$ghs" = "ok" ] || { echo "     SKIP origin sweep: $(_gh_note "$ghs")"; return 0; }
   url="$(_origin_url "$repo")"
-  # A failed read leaves its list empty, which jq refuses as JSON, so the sweep skips.
-  merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" \
-    --json headRefName,headRefOid,isCrossRepository 2>/dev/null)" || merged=""
+  # A failed read leaves its list empty, which is no JSON array, so the sweep skips.
+  merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" --json headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null)" || merged="" # merged-ok: the one repo-wide list branch_merged --prs-json judges
   open="$(gh pr list --repo "$url" --state open --limit "$_ORIGIN_PR_LIMIT" \
     --json headRefName,baseRefName 2>/dev/null)" || open=""
   # A full open page may hide the PR that protects a base branch, so the sweep stands down.
   if [ "$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)" = "$_ORIGIN_PR_LIMIT" ]; then
     echo "     SKIP origin sweep: ${_ORIGIN_PR_LIMIT}+ open PRs, an unread one could need a branch"; return 0
   fi
-  # One "<name> <tip>" line per eligible branch.
-  elig="$(git -C "$repo" ls-remote --heads origin 2>/dev/null \
-    | jq -R -r --argjson m "$merged" --argjson o "$open" --arg def "$def" --argjson own "$own_json" '
-        split("\t") as [$tip, $ref] | ($ref | ltrimstr("refs/heads/")) as $b
-        | select($b != $def)
-        | select($own == null or any($own[]; . == $b))
-        | select(any($m[]; .isCrossRepository == false and .headRefName == $b and .headRefOid == $tip))
-        | select(any($o[]; .headRefName == $b or .baseRefName == $b) | not)
-        | "\($b) \($tip)"' 2>/dev/null)" \
+  local heads_out protect mnames mfile b tip verdict
+  if ! printf '%s' "$merged" | jq -e 'type == "array"' >/dev/null 2>&1 \
+     || ! printf '%s' "$open" | jq -e 'type == "array"' >/dev/null 2>&1 \
+     || ! heads_out="$(git -C "$repo" ls-remote --heads origin 2>/dev/null)"; then
+    echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
+  fi
+  # One "<name> <tip>" line per eligible branch. The merged-ness of each is branch_merged's answer on
+  # the one merged-PR list read above; the sweep keeps its own guards on top: not the default branch,
+  # inside the --own scope, and no OPEN PR uses the branch as head or base.
+  protect="$(printf '%s' "$open" | jq -r '.[] | (.headRefName, .baseRefName) | select(. != null)' 2>/dev/null)" \
     || { echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0; }
+  mnames="$(printf '%s' "$merged" | jq -r '.[].headRefName // empty' 2>/dev/null | sort -u)"
+  mfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" \
+    || { echo "     SKIP origin sweep: no scratch file for the merged-PR list"; return 0; }
+  printf '%s' "$merged" > "$mfile"
+  elig=""
+  while IFS=$'\t' read -r tip b; do
+    b="${b#refs/heads/}"
+    [ -n "$tip" ] && [ -n "$b" ] && [ "$b" != "$def" ] || continue
+    if [ -n "$OWN_SET" ]; then printf '%s\n' "$OWN_BRANCHES" | grep -qxF -- "$b" || continue; fi
+    printf '%s\n' "$mnames" | grep -qxF -- "$b" || continue
+    printf '%s\n' "$protect" | grep -qxF -- "$b" && continue
+    verdict="$(branch_merged --need pr --tip "$tip" --prs-json "$mfile" "$repo" "$def" ok "$b")"
+    case "$verdict" in "SAFE squash "*) elig="${elig}${b} ${tip}"$'\n' ;; esac
+  done <<< "$heads_out"
+  rm -f "$mfile"
+  elig="${elig%$'\n'}"
   names="$(printf '%s' "$elig" | cut -d' ' -f1)"
   n="$(printf '%s' "$names" | grep -c .)"
   if [ "$n" -eq 0 ]; then echo "     no merged branches left on origin"; return 0; fi
