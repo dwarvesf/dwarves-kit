@@ -325,3 +325,28 @@ Each row answers one finding of the round 2 validation report. The spec carries 
 | S5-5 | applied in TASK-8 (rebase, then regenerate `FEATURES.md` last) |
 | S5-6 | applied in Design (Philosophy alignment, N4 bullet) |
 | S7-2 | applied in Quality requirements (4-viewport maximum stated) |
+
+## Build notes from round 3
+
+Round 3 returned APPROVED with no CRITICAL. The spec carries the nine WARNING changes (T1 to T9) and the decisions below. Read this list before coding. Line numbers are of the VALIDATED spec.
+
+Decisions already in the spec text (a builder reads the spec section, not this list):
+
+- Launch failure versus crash (spec line 243, Decision Log DEC-18): a `launch()` that throws or passes the 60 s cap is exit 2; the error text decides `browser sandbox unavailable` (matches `sandbox`) or `browser did not start`. Exit 4 is only an uncaught exception or a browser that died after launch with no row.
+- `--doctor` skips the own-path check and every scenario guard (spec line 205, DEC-19). Run it from the kit checkout.
+- The `UI_VERIFY_TEST_FAULT` hook is split: `internal-error` in TASK-1, `sandbox-unavailable` in TASK-4 (DEC-23). The sandbox fault reports the failure without starting a browser and records `launch_attempts` 1.
+- A scan that finds no run-id process after a successful launch is an unverified sandbox: every row NO-CHECK `browser sandbox unavailable`, `browser.pids` empty (DEC-21). No fault value covers this branch; it shares the row path of the sandbox fault.
+- WebSocket handling (spec line 126, DEC-24): pass an allowed host through with `connectToServer()`, close an off-list host with `ws.close()` and never connect it. `offsite.html` writes `offsite done` when both attempts settle, and the AC-4 scenario ends on `expect_text` `offsite done`.
+- Clocks (spec line 228, DEC-20): only time inside a step counts against the scenario clock and the run budget. The `hang-bounded` backstop is 100000 ms.
+- Bounds and names paragraph (spec line 220, DEC-25), which closes Buildability points 5 to 11: reason `scenario timeout`; retry per scenario and viewport; screenshot names `ac-<n>[-neg]-<width>-<name>.png`; preflight gaps of one fifth then two fifths of the step timeout; a missing `within` element is FAIL `element not found`; identity read from the document response of `target.url`; `lib/config/data-path.sh` found at `../config/data-path.sh` from the runner's real path.
+- Hand mutations (Verification section, DEC-26), which closes Buildability point 12: AC-6, AC-15 and AC-17 controls and the AC-9 pin-age case run on a temp copy of `run.mjs` outside any git work tree, with `UI_VERIFY_HOME` set, recorded in the proof file. The pin-age case puts the copy next to a temp `package.json`.
+- The live dispatch (TASK-13, AC-14, DEC-22) runs from a scratch directory outside any git work tree, after the agent is installed. Record that directory.
+
+NOTE findings, not in the spec text:
+
+- T11, suite breadth: add to the `guard-refusals` case these extra refusal rows of the same case: `schema` not 1, missing `ready.text`, a `head_sha` that is not 40 lowercase hex, a duplicate (`id`, `kind`), `steps` together with `skip`, a role outside the twelve, a string over 200 characters, `identity` with both keys (spec line 438 lists the base set). The test plan carries them as rows.
+- T11, load: the browser cases that are not about viewports (AC-1, AC-4, AC-5, AC-7) set `"viewports": [1280]`, so a loaded host runs one context per scenario, not three.
+- T13, weak scenario: a scenario with only `expect_no_text` or `expect_url` passes with little checked (spec line 204). The agent's strength check is the cover. Optional tightening if the lead wants it: a `criterion` scenario must hold at least one `expect_text`. Not applied; AC-2's mutation stays valid either way.
+- T12, applied as a contradiction fix: the Picture "also built" line and the orphan list now name the README, `package.json`, the lockfile, `--doctor`, the suite and the live record.
+- T14, applied: Grounding sample 7 now says the depth check on the rewritten header printed nothing and exited 0.
+- T15, no change: on a plain Cloudflare preview the identity is `unverified` until slice 292d, so a typical PASS carries only that printed word. The claim that the agent grant cannot set `UI_VERIFY_TEST_FAULT` rests on matcher behaviour that is in the Grounding "not sampled" list; it is not load-bearing, because the hook can only lower a result.
