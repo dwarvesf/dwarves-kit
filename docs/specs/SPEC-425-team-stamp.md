@@ -88,26 +88,30 @@ One row per brief table row. "Value" names the stamp parameter the file takes; "
 |---|---|---|---|---|---|---|
 | 1 | Agent rules | `AGENTS.md` | `files/AGENTS.md.tpl` | `tests/test-stamp-rules.sh` (kit side: line 1 marker, section anchors, no kit path, closing section) | value: default branch, door table, tags, product paths | G1 |
 | 2 | People's copy | `docs/TEAM-WORKFLOW.md` | `files/docs/TEAM-WORKFLOW.md.tpl` | `tests/test-stamp-rules.sh`; parity run by `scripts/test-pr-shape.sh` | same values as row 1 | G1 |
-| 3 | Command guard | `scripts/agent-guard.sh` | `files/scripts/agent-guard.sh.tpl` | `scripts/test-agent-guard.sh` | value: default branch | G3 |
-| 4 | Command guard | `.claude/settings.json` | `files/.claude/settings.json` (merge snippet) | `tests/test-stamp-hook.sh` (merge keeps foreign keys, idempotent) | agnostic | G3 |
-| 5 | Lessons | `scripts/agent-lessons.sh` | `files/scripts/agent-lessons.sh` | `scripts/test-agent-lessons.sh` | agnostic | G2 |
-| 6 | Lessons | `.claude/memory/MEMORY.md` plus five seed notes | `files/.claude/memory/*.md` | `scripts/test-agent-lessons.sh` (index links resolve, size under cap) | agnostic | G2 |
+| 3 | Command guard | `scripts/agent-guard.sh` | `files/scripts/agent-guard.sh.tpl` | `scripts/test-agent-guard.sh` (from `files/scripts/test-agent-guard.sh.tpl`) | value: default branch | G3 |
+| 4 | Command guard | `.claude/settings.json` | `files/.claude/settings.json` (a `jsonmerge` row: checked by entry, never by file hash) | `tests/test-stamp-hook.sh` (merge keeps foreign keys, idempotent) | agnostic | G3 |
+| 5 | Lessons | `scripts/agent-lessons.sh` | `files/scripts/agent-lessons.sh` | `scripts/test-agent-lessons.sh` (from `files/scripts/test-agent-lessons.sh`) | agnostic | G2 |
+| 6 | Lessons | `.claude/memory/MEMORY.md` plus five seed notes | `files/.claude/memory/*.md` (`seed` rows: created when absent, never drift-checked after) | `scripts/test-agent-lessons.sh` (index links resolve, size under cap) | agnostic | G2 |
 | 7 | Playbook | `.claude/skills/ship-pr/SKILL.md` | `files/.claude/skills/ship-pr/SKILL.md.tpl` | `tests/test-stamp-playbook.sh` (frontmatter keys exact, every command in it exists as a generated script) | value: default branch | G9 |
-| 8 | PR shape | `scripts/pr-shape.sh` | `files/scripts/pr-shape.sh.tpl` | `scripts/test-pr-shape.sh` | value: tags, product paths, board file, default branch | G8 |
-| 9 | PR shape | `.github/workflows/ci.yml` | `files/.github/workflows/ci.yml.tpl` | `scripts/test-check.sh` (twin parity), `actionlint` when present | agnostic: always `runs-on: [self-hosted]` | G8 |
-| 10 | Local check | `scripts/check.sh` | `files/scripts/check.sh.tpl` | `scripts/test-check.sh` | value: tags, product paths | G8 |
-| 11 | Owners | `OWNERS.md` | `files/OWNERS.md.tpl` | `scripts/test-check-owners.sh` | value: owner login; rows seeded for every generated script | G4 |
-| 12 | Owners | `scripts/check-owners.sh` | `files/scripts/check-owners.sh` | `scripts/test-check-owners.sh` | agnostic | G4 |
-| 13 | Merge guard | `scripts/pr-merge.sh` | `files/scripts/pr-merge.sh.tpl` | `scripts/test-pr-merge.sh` | value: default branch, door paths, door approver login | G7 |
+| 8 | PR shape | `scripts/pr-shape.sh` | `files/scripts/pr-shape.sh.tpl` | `scripts/test-pr-shape.sh` (from a `.tpl`) | value: tags, product paths, board file, default branch | G8a |
+| 9 | PR shape | `.github/workflows/ci.yml` | `files/.github/workflows/ci.yml.tpl` | `scripts/test-check.sh` (twin parity), `actionlint` when present | agnostic: always `runs-on: [self-hosted]` | G8b |
+| 10 | Local check | `scripts/check.sh` | `files/scripts/check.sh.tpl` | `scripts/test-check.sh` (from a `.tpl`) | value: tags, product paths | G8b |
+| 11 | Owners | `OWNERS.md` | `hook` row: `lib/stamp/owners-seed.sh`, built from the merged manifest (a `seed` file, repo-owned after the first write) | `tests/test-stamp.sh` (the seed lists every script), and in G10 `check-owners.sh` passes on a full stamp | value: owner login | G0 |
+| 12 | Owners | `scripts/check-owners.sh` | `files/scripts/check-owners.sh` | `scripts/test-check-owners.sh` (from `files/scripts/test-check-owners.sh`) | agnostic | G4 |
+| 13 | Merge guard | `scripts/pr-merge.sh` | `files/scripts/pr-merge.sh.tpl` | `scripts/test-pr-merge.sh` (from a `.tpl`) | value: default branch, door paths, door approver login | G7 |
 | 14 | Negative control | `scripts/negctl.sh` | `files/scripts/negctl.sh` | `scripts/test-negctl.sh` | agnostic | G7 |
 | 15 | Work queue | `.github/ISSUE_TEMPLATE/task.yml` | `files/.github/ISSUE_TEMPLATE/task.yml` | `tests/test-stamp-queue.sh` (YAML parses, section ids match what the script reads) | agnostic | G5 |
-| 16 | Work queue | `scripts/issues-from-rows.sh` | `files/scripts/issues-from-rows.sh.tpl` | `scripts/test-issues-from-rows.sh` | value: board file | G5 |
+| 16 | Work queue | `scripts/issues-from-rows.sh` | `files/scripts/issues-from-rows.sh.tpl` | `scripts/test-issues-from-rows.sh` (from a `.tpl`) | value: board file | G5 |
 | 17 | Work queue | `.github/pull_request_template.md` | `files/.github/pull_request_template.md` | `tests/test-stamp-queue.sh` (carries `Closes #`) | agnostic | G5 |
-| 18 | Changelog | `CHANGELOG.md` (tag list, `[Unreleased]`) | `files/CHANGELOG.md.tpl` | `scripts/test-release-notes.sh` | value: tags | G6 |
-| 19 | Changelog | `scripts/release-notes.sh` | `files/scripts/release-notes.sh.tpl` | `scripts/test-release-notes.sh` | value: tags (the team-tooling tag is `dev`) | G6 |
-| 20 | Digest | `scripts/team-digest.sh` | `files/scripts/team-digest.sh.tpl` | `scripts/test-team-digest.sh` | value: decision tag | G9 |
+| 18 | Changelog | `CHANGELOG.md` (tag list, `[Unreleased]`) | `files/CHANGELOG.md.tpl` (a `seed` row) | `scripts/test-release-notes.sh` | value: tags | G6 |
+| 19 | Changelog | `scripts/release-notes.sh` | `files/scripts/release-notes.sh.tpl` | `scripts/test-release-notes.sh` (from a `.tpl`) | value: tags (the team-tooling tag is `dev`) | G6 |
+| 20 | Digest | `scripts/team-digest.sh` | `files/scripts/team-digest.sh.tpl` | `scripts/test-team-digest.sh` (from a `.tpl`) | value: decision tag, board file | G9 |
 | 21 | Proof guide | `docs/verification/README.md` | `files/docs/verification/README.md.tpl` | `tests/test-stamp-rules.sh` | agnostic | G1 |
 | 22 | Gate config | `.kit.toml` | `files/.kit.toml` | `tests/test-stamp-rules.sh` (`proof_of_done = true`, `lane_gates = false`) | agnostic | G1 |
+
+Every test of a valued script is itself a `.tpl`, rendered with the same values, and reads them from the repo (never a literal `main`, tag or path). The kit-free run stamps with non-default values: `--default-branch master`, two custom tags, a custom product path, a door path and a board file.
+
+Row classes: `copy` (drift-checked), `seed` (created when absent, never drift-checked after: `OWNERS.md`, `CHANGELOG.md`, `.claude/memory/MEMORY.md`, and the seed notes), `jsonmerge` (`.claude/settings.json`, judged by whether the merge would add anything, so a repo or adopt adding its own entries is not drift), `hook` (a generator script's stdout, seed-once).
 
 Not generated, because the brief's table does not list them: the board-ID mint script, the doc-link check, evidence-branch rules, and any language job. The workflow carries stub language jobs as comments only (the brief: language test jobs are left to the repo).
 
@@ -115,12 +119,17 @@ Parameters, set by flags and recorded in the lock:
 
 | Flag | Default | Used by |
 |---|---|---|
-| `--default-branch` | `git symbolic-ref refs/remotes/origin/HEAD`, else `main`, else refuse | rows 1, 2, 3, 7, 8, 13 |
+| `--default-branch` | `git symbolic-ref refs/remotes/origin/HEAD`, else refuse (never a guess) | rows 1, 2, 3, 7, 8, 13 |
 | `--owner <login>` | none: refuse with the fix line | row 11 |
 | `--tags a,b,c` | `product,dev` (`dev` is always present and is the team-tooling tag) | rows 1, 8, 10, 18, 19 |
 | `--product-paths a/,b/` | `src/` | rows 8, 10 |
 | `--door-paths a,b` and `--door-approver <login>` | empty door list: the second-person rule is written, listing no path | row 13, rows 1, 2 |
-| `--board-file <path>` | empty: only `Closes #n` and `no-board-row:` satisfy the board link | rows 8, 16 |
+| `--board-file <path>` | empty: only `Closes #n` and `no-board-row:` satisfy the board link; `issues-from-rows.sh` and `team-digest.sh` print one line (`no board file set; nothing to read`) and exit 0 | rows 8, 16, 20 |
+| `--decision-tag <word>` | `decision` (the tag a board row carries when it waits on a human) | row 20 |
+
+Derived values the templates may use (read-only, computed from the flags): `TAGS_ERE`, `TAGS_COLON`, `TAGS_AWK`, `PRODUCT_ERE`, `PRODUCT_ARRAY`, `DOOR_ARRAY` (empty when no door path is set), `DOOR_CASE`, and `KIT_MARKER` (line 1 of the adopt pointer template, read at stamp time, refused unless it starts `<!-- kit:agents-pointer`). Their exact forms are fixed in `lib/stamp/README.md`.
+
+Board grammar, shared by rows 8, 16 and 20 (the file is optional; the format is the one the hand-fitted repo used): a Markdown table whose rows read `| ID-NNN | item | notes | status |`; a row is queued when its status starts with `queued`; the notes carry `#<github-login>` to assign, `Done when: <one check>` to make it ready, and `#<decision-tag> #P0` to mark a decision that waits on a human; `executing`, `shipped`, `dropped`, `parked` are the other states the digest reads. `issues-from-rows.sh` creates one issue per queued, tagged, ready row and needs the labels `ready`, `one-way-door` and `blocked` to exist: its `--apply` run first creates any that is missing with `gh label create` (idempotent), and its dry run prints that step.
 
 ### Interplay with adopt (the second reader of the same files)
 
@@ -134,11 +143,28 @@ Parameters, set by flags and recorded in the lock:
 
 A stamp run never edits adopt's managed `<!-- kit:adopt -->` block.
 
+### Picture and lock states
+
+The wiring picture is `## Picture` above. The states a file passes through, as the engine decides them from three hashes (current file, lock, rendered template):
+
+```
+                          lock lists it?
+                       no                      yes
+  file absent      ->  created              -> missing (never re-created)
+  file present
+    == template    ->  unchanged (enters lock)   current == lock ?
+    != template    ->  edited (left alone)         yes: template == current -> unchanged
+                         "not written by stamp"    yes: template != current -> older stamp -> --refresh diff -> --take
+                                                   no :                         edited (left alone), diff printed by --take, never replaced
+  seed / hook rows : absent -> created ; present -> unchanged, whatever its bytes
+  jsonmerge rows   : merge would add nothing -> unchanged ; else merged (foreign keys kept)
+```
+
 ## Technical Design
 
 ### Interfaces (I/O contract)
 
-- Inputs: `lib/stamp.sh [--check | --dry-run | --refresh | --take <path>] [flags above] <target-dir>`. `--check` exits 0 when every manifest file exists and matches the lock, else 1, writing nothing. `--dry-run` prints what would be written. Default (no mode flag) writes missing files only. `--refresh` writes nothing and prints, per file whose template changed since the lock, a unified diff and `Fix: bash lib/stamp.sh --take <path> <repo>`. `--take <path>` replaces exactly one file, and only when the file's current hash equals its lock hash (unedited); the old content is first copied to `<path>.orig`. For an edited file `--take` refuses and prints the diff between the lock's rendering and the new template with `Fix: apply the diff above by hand`; the stamp never replaces an edited file.
+- Inputs: `lib/stamp.sh [--check | --dry-run | --refresh | --take <path>] [flags above] <target-dir>`. `--check` exits 0 when every drift-checked file exists and matches the lock, every `seed` and `hook` file exists, every `jsonmerge` entry is present, and no interplay drift line is printed; else 1, writing nothing. `--dry-run` prints what would be written. Default (no mode flag) writes missing files only. `--refresh` writes nothing and prints, per file whose template changed since the lock, a unified diff and `Fix: bash lib/stamp.sh --take <path> <repo>`. `--take <path>` replaces exactly one file, and only when the file's current hash equals its lock hash (unedited); the old content is first copied to `<path>.orig`. For an edited file `--take` refuses and prints the diff between the lock's rendering and the new template with `Fix: apply the diff above by hand`; the stamp never replaces an edited file.
 - Outputs: the files in the table, `.claude/team-stamp.lock`, and report lines `created`, `unchanged`, `edited (left alone)`, `older stamp (run --refresh)`, `missing`.
 - Invariants: no write outside the target; no write through a symlink (`kit_refuse_symlink_path` over every target path and its parents); a failed run leaves the tree as found (write to a temp name, then rename); no generated file contains a path under the kit; a re-run with the same inputs prints only `unchanged`.
 
@@ -173,42 +199,43 @@ file <path> <template-id> <sha256 as written>
 Groups are independently testable and in dependency order. Files in a group are disjoint from every other group's (each group owns its own `manifest.d/NN-<group>.tsv`, so no shared manifest file), so groups on the same rung can build in parallel in separate worktrees.
 
 ```
-G0 engine ──┬─ G1 rules docs ──────────────┐
-            ├─ G2 lessons                  │
-            ├─ G3 hook                     │
-            ├─ G4 owners ──────────────────┤
-            ├─ G5 queue ───────────────────┼─ G8 CI layer ── G10 integration ── G11 gauntlet run
-            ├─ G6 changelog ───────────────┤
-            ├─ G7 merge guard, negctl      │
-            └─ G9 playbook, digest ────────┘
+G0 engine, manifest hook row, derived values, adopt interplay, owners seed
+   |
+   +-- G1 rules docs     G2 lessons     G3 hook        G4 owners check
+   +-- G5 queue          G6 changelog   G7 merge+negctl G9 playbook+digest      (rung 2, parallel)
+   |
+   +-- G8a pr-shape -- G8b check + ci                                           (rung 3, in order)
+   |
+   +-- G10 integration (cross-group tests) -- G11 gauntlet run                  (rungs 4, 5)
 ```
 
-Rung 1: G0 alone. Rung 2 (parallel, disjoint): G1, G2, G3, G4, G5, G6, G7, G9. Rung 3: G8 (needs G1 anchors, G4 owners script, G5 and G6 conventions it checks). Rung 4: G10. Rung 5: G11.
+Rung 1: G0 alone. Rung 2 (parallel, disjoint): G1, G2, G3, G4, G5, G6, G7, G9 (G9's checks that need other groups' files wait for G10). Rung 3: G8a, then G8b (G8a needs G1 anchors and G6's tag convention; G8b's twin test needs G8a). Rung 4: G10, which holds every test that needs more than one group's files. Rung 5: G11.
 
 ## Task Breakdown
 
 ### Phase 1: Foundation
 
-- [ ] TASK-G0 engine (parallel: no). Files: `lib/stamp.sh`, `lib/stamp/README.md`, `tests/test-stamp.sh`, `tests/test-stamp-kitfree.sh` (a harness callable as `bash tests/test-stamp-kitfree.sh <group>`), `tests/fixtures/team-stamp/` (a two-file fixture manifest). Done when: render with `{{KEY}}` values, `write_if_absent`, lock write, `--check`, `--dry-run`, `--refresh`, `--take`, jq merge for `.claude/settings.json`, symlink refusal, kit-path scan, the lock's three-hash drift report, all against the fixture. Test: `bash tests/test-stamp.sh && bash tests/test-stamp-kitfree.sh fixture`.
+- [ ] TASK-G0 engine (parallel: no). Files: `lib/stamp.sh`, `lib/stamp/README.md`, `lib/stamp/owners-seed.sh`, `tests/test-stamp.sh`, `tests/test-stamp-kitfree.sh`, `tests/fixtures/team-stamp/`. Done when: manifest rows of four kinds (`copy`, `seed`, `jsonmerge`, `hook`) from `manifest.d/*.tsv`; `{{KEY}}` render with the base and derived values (ERE, glob and array forms) and the kit marker; `write_if_absent`, the lock, `--check`, `--dry-run`, `--refresh`, `--take`, `--only`; the jq merge; symlink refusal; the kit-path scan; the adopt interplay code (`--take` on a known pointer hash or adopt's proof marker, the `.kit.toml` `lane_gates = true` drift line, a note for foreign kit hook entries); the owners seed built from the merged manifest by a `hook` row; a portable sha256 (`sha256sum`, else `shasum -a 256`); the README section "How a group plugs in". Test: `bash tests/test-stamp.sh && bash tests/test-stamp-kitfree.sh fixture`.
 
 ### Phase 2: Pieces (rung 2, all parallel)
 
-- [ ] TASK-G1 rules docs. Files: `templates/team-stamp/files/AGENTS.md.tpl`, `files/docs/TEAM-WORKFLOW.md.tpl`, `files/docs/verification/README.md.tpl`, `files/.kit.toml`, `manifest.d/10-rules.tsv`, `tests/test-stamp-rules.sh`. Done when: line 1 of `AGENTS.md` equals line 1 of the pointer template; sections commands, playbooks, lessons, team rules, never, closing optional-kit section with a public URL and no local path; every `AGENTS.md` heading has a matching anchor in `TEAM-WORKFLOW.md`; the proof guide states the `Command:`, `Output:`, `Exit:`, `NEGATIVE CONTROL`, `Verdict:` shape; `.kit.toml` sets `proof_of_done = true` and `lane_gates = false`; the limit sentence (a merge from the GitHub site passes everything on a plan without branch protection) is present in both docs. Test: `bash tests/test-stamp-rules.sh`.
-- [ ] TASK-G2 lessons. Files: `files/scripts/agent-lessons.sh`, `files/scripts/test-agent-lessons.sh`, `files/.claude/memory/MEMORY.md`, five seed notes under `files/.claude/memory/` (runner image has no procps, `CI=true` changes script behavior, queued run missing from filtered lists, a guard matches command text only, green checks go stale after a rule change), `manifest.d/20-lessons.tsv`, `tests/test-stamp-lessons.sh`. Done when: the script prints the index, exits 0 when it is missing, truncates with a notice past 9,000 characters; each note has `name` and `description` frontmatter and is under 1,200 characters with no personal names. Test: `bash tests/test-stamp-lessons.sh`.
-- [ ] TASK-G3 hook. Files: `files/scripts/agent-guard.sh.tpl`, `files/scripts/test-agent-guard.sh`, `files/.claude/settings.json`, `manifest.d/30-hook.tsv`, `tests/test-stamp-hook.sh`. Done when: the guard blocks (exit 2, two lines on stderr) a bare `gh pr merge`, a push to the default branch (`git push origin main`, `git push origin HEAD:main`, `git push` while on it), a commit on the default branch; allows `bash scripts/pr-merge.sh --wait 5`, `echo "gh pr merge"`, a feature-branch push and commit; reads JSON with `jq`, else `python3`, else allows with a one-line note; any internal failure exits 0; the settings merge adds a PreToolUse `Bash` entry and a SessionStart entry using `${CLAUDE_PROJECT_DIR}` and keeps foreign keys. Test: `bash tests/test-stamp-hook.sh`.
-- [ ] TASK-G4 owners. Files: `files/OWNERS.md.tpl`, `files/scripts/check-owners.sh`, `files/scripts/test-check-owners.sh`, `lib/stamp/owners-seed.sh`, `manifest.d/40-owners.tsv`, `tests/test-stamp-owners.sh`. Done when: the check fails (two-line refusal) on a tracked script, workflow or job with no row, a row pointing at a missing path, an empty owner, an agent owner with no sponsor; `owners-seed.sh` runs after every other group's files exist and adds one row per generated script. Test: `bash tests/test-stamp-owners.sh`.
-- [ ] TASK-G5 queue. Files: `files/.github/ISSUE_TEMPLATE/task.yml`, `files/.github/pull_request_template.md`, `files/scripts/issues-from-rows.sh.tpl`, `files/scripts/test-issues-from-rows.sh`, `manifest.d/50-queue.tsv`, `tests/test-stamp-queue.sh`. Done when: the form writes `Goal`, `Done when`, `Scope`, optional `Notes`; the script turns board rows into issues with `gh` faked in the test, one issue per row, idempotent on a second run, labels `ready`, `one-way-door`, `blocked`; the PR template has a `Closes #` line. Test: `bash tests/test-stamp-queue.sh`.
-- [ ] TASK-G6 changelog. Files: `files/CHANGELOG.md.tpl`, `files/scripts/release-notes.sh.tpl`, `files/scripts/test-release-notes.sh`, `manifest.d/60-changelog.tsv`, `tests/test-stamp-changelog.sh`. Done when: `[Unreleased]` carries the tag list; release notes drop `dev:` lines and refuse an untagged line with a two-line refusal. Test: `bash tests/test-stamp-changelog.sh`.
-- [ ] TASK-G7 merge guard and negctl. Files: `files/scripts/pr-merge.sh.tpl`, `files/scripts/test-pr-merge.sh`, `files/scripts/negctl.sh`, `files/scripts/test-negctl.sh`, `manifest.d/70-merge.tsv`, `tests/test-stamp-merge.sh`. Done when: with `gh` faked, the guard waits for checks, refuses a draft, a red check, a pending check at timeout, a conflict, and a change under a door path without a second person's approval (the author never counts as the second person), merges a clean PR pinned to the judged head, and `--dry-run` merges nothing; `negctl.sh` runs green, break, red, restore, green, refuses a dirty tree before mutating, refuses a "red" that is only a load or syntax error, and prints a block with `Command:`, `Output:`, `Exit:`, `NEGATIVE CONTROL`, `Verdict:`. Test: `bash tests/test-stamp-merge.sh`.
-- [ ] TASK-G9 playbook and digest. Files: `files/.claude/skills/ship-pr/SKILL.md.tpl`, `files/scripts/team-digest.sh.tpl`, `files/scripts/test-team-digest.sh`, `manifest.d/90-digest.tsv`, `tests/test-stamp-playbook.sh`. Done when: SKILL.md starts with `---` on line 1, has exactly `name` and `description`, and every `bash scripts/...` command in it names a script in the manifest; the digest prints merged PRs, open PRs, open issues with assignee, and decisions waiting, from a faked `gh`, and exits 0 with a note when `gh` is absent. Test: `bash tests/test-stamp-playbook.sh`.
+- [ ] TASK-G1 rules docs. Files: `files/AGENTS.md.tpl`, `files/docs/TEAM-WORKFLOW.md.tpl`, `files/docs/verification/README.md.tpl`, `files/.kit.toml`, `manifest.d/10-rules.tsv`, `tests/test-stamp-rules.sh`. Done when: line 1 of `AGENTS.md` is `{{KIT_MARKER}}`; sections commands, playbooks, lessons, team rules, never, and a closing optional-kit section that names only the public URL; every `AGENTS.md` heading has an anchor in `TEAM-WORKFLOW.md`; the proof guide states the `Command:`, `Output:`, `Exit:`, `NEGATIVE CONTROL`, `Verdict:` shape in the form `pr-shape` accepts; `.kit.toml` sets `proof_of_done = true` and `lane_gates = false` and its header comments name no kit path; the limit sentence (a merge from the GitHub site passes everything on a plan without branch protection), the trust-the-folder step and the optional-kit section appear in both docs, each pinned by a test. Test: `bash tests/test-stamp-rules.sh`.
+- [ ] TASK-G2 lessons. Files: `files/scripts/agent-lessons.sh`, `files/scripts/test-agent-lessons.sh`, `files/.claude/memory/MEMORY.md` and five notes (`seed` rows), `manifest.d/20-lessons.tsv`, `tests/test-stamp-lessons.sh`. Done when: the script prints the index, exits 0 when it is missing, truncates with a notice past 9,000 characters; each note has `name` and `description` frontmatter, is under 1,200 characters, carries no personal name; the guard lesson lists the guard's known misses (see G3). Test: `bash tests/test-stamp-lessons.sh`.
+- [ ] TASK-G3 hook. Files: `files/scripts/agent-guard.sh.tpl`, `files/scripts/test-agent-guard.sh.tpl`, `files/.claude/settings.json`, `manifest.d/30-hook.tsv`, `tests/test-stamp-hook.sh`. Done when: the guard blocks (exit 2, two lines on stderr) a bare `gh pr merge`, a push to the default branch (`git push origin main`, `git push origin HEAD:main`, a bare `git push` while on it), a commit on the default branch; allows `bash scripts/pr-merge.sh --wait 5`, `echo "gh pr merge"`, a feature-branch push and commit; the `Fix:` line carries the PR number parsed from the command, never the text `<number>` when a number is present; a file checkout (`git checkout README.md; git commit` on the default branch) is NOT read as a branch switch; no `python3` anywhere in the script (JSON is read with `jq`, else the command is allowed with a one-line note); every miss the build probes (`env -i git commit`, `timeout 5 git push origin main`, `git push --all`, `git push --mirror`, `gh api .../merge`, an indirect `$g pr merge`) is either blocked with a test or named in the lessons note as a known miss, and the test file holds a row per probe; the settings merge adds a PreToolUse `Bash` entry and a SessionStart entry and keeps foreign keys. Test: `bash tests/test-stamp-hook.sh`.
+- [ ] TASK-G4 owners check. Files: `files/scripts/check-owners.sh`, `files/scripts/test-check-owners.sh`, `manifest.d/40-owners.tsv` (carries the `hook` row for `OWNERS.md` built by G0's seed), `tests/test-stamp-owners.sh`. Done when: the check fails (two-line refusal) on a tracked script, workflow or job with no row, a row pointing at a missing path, an empty owner, an agent owner with no sponsor, and its tracked-path list covers `scripts/` and `.github/workflows/` of any repo (not only the stamp's own files). Test: `bash tests/test-stamp-owners.sh`.
+- [ ] TASK-G5 queue. Files: `files/.github/ISSUE_TEMPLATE/task.yml`, `files/.github/pull_request_template.md`, `files/scripts/issues-from-rows.sh.tpl`, `files/scripts/test-issues-from-rows.sh.tpl`, `manifest.d/50-queue.tsv`, `tests/test-stamp-queue.sh`. Done when: the form writes `Goal`, `Done when`, `Scope`, optional `Notes`; the script reads the board grammar above, turns queued tagged ready rows into issues with `gh` faked, one issue per row, idempotent on a second run, creates the missing labels `ready`, `one-way-door`, `blocked` on `--apply`, and with an empty `--board-file` prints one line and exits 0; the PR template has a `Closes #` line. Test: `bash tests/test-stamp-queue.sh`.
+- [ ] TASK-G6 changelog. Files: `files/CHANGELOG.md.tpl` (`seed`), `files/scripts/release-notes.sh.tpl`, `files/scripts/test-release-notes.sh.tpl`, `manifest.d/60-changelog.tsv`, `tests/test-stamp-changelog.sh`. Done when: `[Unreleased]` carries the tag list; `release-notes.sh` is awk, bash, git and coreutils only (no `python3`, no `jq`), reads the tag list from the stamped value, drops `dev:` lines, and refuses an untagged line with a two-line refusal; a test runs it with `python3` absent from `PATH`. Test: `bash tests/test-stamp-changelog.sh`.
+- [ ] TASK-G7 merge guard and negctl. Files: `files/scripts/pr-merge.sh.tpl`, `files/scripts/test-pr-merge.sh.tpl`, `files/scripts/negctl.sh`, `files/scripts/test-negctl.sh`, `manifest.d/70-merge.tsv`, `tests/test-stamp-merge.sh`. Done when: with `gh` faked, the guard waits for checks, refuses a draft, a red check, a pending check at timeout, a conflict, and a change under a door path without a second person's approval (the author never counts as the second person); merges a clean PR pinned to the judged head; `--dry-run` merges nothing; an empty door list works under bash 3.2 with `set -u` (a test runs it); the default branch and the approver login come from the stamped values, never `main` or a login typed in the script; the guard knows only the brief's behaviors (checks, draft, conflict, second person), with no `--allow-ci-change`, no stale-rules refusal and no kit merge-head environment variable; every refusal is the two-line form. `negctl.sh` runs green, break, red, restore, green, refuses a dirty tree before mutating, refuses a "red" that is only a load or syntax error (the capture shows no assertion line), and prints a block with `Command:`, `Output:`, `Exit:`, `NEGATIVE CONTROL`, `Verdict: RED, as expected` in the form `pr-shape` accepts. Test: `bash tests/test-stamp-merge.sh`.
+- [ ] TASK-G9 playbook and digest. Files: `files/.claude/skills/ship-pr/SKILL.md.tpl`, `files/scripts/team-digest.sh.tpl`, `files/scripts/test-team-digest.sh.tpl`, `manifest.d/90-digest.tsv`, `tests/test-stamp-playbook.sh`. Done when: SKILL.md starts with `---` on line 1 and has exactly the keys `name` and `description`; the digest prints merged PRs, open PRs, open issues with assignee and decisions waiting (rows tagged `#<decision-tag> #P0`) from a faked `gh`; it exits 0 with a note when `gh` is absent and when `--board-file` is empty; the date arithmetic branches on `uname -s` (GNU `date -d`, BSD `date -v`). The check that every `bash scripts/...` command in SKILL.md names a generated script waits for G10. Test: `bash tests/test-stamp-playbook.sh`.
 
-### Phase 3: CI layer (rung 3)
+### Phase 3: CI layer (rung 3, in order)
 
-- [ ] TASK-G8 CI layer. Files: `files/scripts/pr-shape.sh.tpl`, `files/scripts/test-pr-shape.sh`, `files/scripts/check.sh.tpl`, `files/scripts/test-check.sh`, `files/.github/workflows/ci.yml.tpl`, `manifest.d/80-ci.tsv`, `tests/test-stamp-ci.sh`. Done when: pr-shape checks conventional title, proof file with a `Verdict: RED` negative-control block for a behavior change (or `no-proof:` with a 10+ character reason), board link (`Closes #n`, board file changed, or `no-board-row:`), tagged changelog line for product paths (or `no-changelog:`), shellcheck on changed shell files (a missing shellcheck is a skip with a notice locally and a failure when `CI=true`), and rule parity (a PR that changes `AGENTS.md` or `docs/TEAM-WORKFLOW.md` and not the other fails unless the body has `no-rule-mirror:`); the workflow has jobs `changes` (owners check, path filter) and `pr-shape`, takes gate scripts from the base revision, and sets `permissions: contents: read`; `check.sh` runs the same steps with the same inputs. Test: `bash tests/test-stamp-ci.sh`.
+- [ ] TASK-G8a pr-shape. Files: `files/scripts/pr-shape.sh.tpl`, `files/scripts/test-pr-shape.sh.tpl`, `manifest.d/80-pr-shape.tsv`, `tests/test-stamp-pr-shape.sh`. Done when: pr-shape checks conventional title, proof file with a `Verdict: RED` negative-control block for a behavior change (or `no-proof:` with a 10+ character reason), board link (`Closes #n`, board file changed, or `no-board-row:`), tagged changelog line for product paths (or `no-changelog:`), shellcheck on changed shell files (a missing shellcheck is a skip with a notice locally and a failure when `CI=true`), and rule parity (`AGENTS.md` and `docs/TEAM-WORKFLOW.md`, `no-rule-mirror:` waives it); each failure prints the rule line then `Fix:` with that exact casing. Test: `bash tests/test-stamp-pr-shape.sh`.
+- [ ] TASK-G8b check and CI. Files: `files/scripts/check.sh.tpl`, `files/scripts/test-check.sh.tpl`, `files/.github/workflows/ci.yml.tpl`, `manifest.d/85-ci.tsv`, `tests/test-stamp-ci.sh`. Done when: the workflow has jobs `changes` (owners check, path filter) and `pr-shape`, takes gate scripts from the base revision, sets `permissions: contents: read`, picks the shellcheck asset by `uname -s` and `uname -m` and verifies its sha256 with `sha256sum` or `shasum -a 256`; `check.sh` runs the same commands with the same inputs. The twin check compares a defined set: the commands the `pr-shape` job runs that are repo scripts or lint calls (`bash scripts/*.sh`, `shellcheck`), minus the install, checkout and base-copy steps; the test asserts the set is non-empty and that each member appears in `check.sh`. Test: `bash tests/test-stamp-ci.sh`.
 
 ### Phase 4: Integration and proof
 
-- [ ] TASK-G10 integration. Files: `commands/stamp.md`, `tests/test-stamp-e2e.sh`, `tests/test-stamp-refusals.sh`, `tests/test-stamp-adopt-interplay.sh`, `CHANGELOG.md`; regenerated `docs/reference/FEATURES.md`; and the one-line mentions the docs lint demands. Done when: the full stamp on an empty git repo writes the 22 rows' files, a second run is a no-op, a kit-free pass runs every generated test with the kit absent, and every refusal passes the two-line check. Test: `bash tests/test-stamp-e2e.sh && bash tests/test-stamp-refusals.sh && bash tests/test-stamp-adopt-interplay.sh`.
+- [ ] TASK-G10 integration. Files: `commands/stamp.md`, `tests/test-stamp-e2e.sh`, `tests/test-stamp-refusals.sh`, `tests/test-stamp-adopt-interplay.sh`, `tests/test-stamp-cross.sh`, `docs/verification/team-stamp.md`, `CONTEXT.md` (the terms), `CHANGELOG.md`; regenerated `docs/reference/FEATURES.md`; and the one-line mentions the docs lint demands. Done when: the full stamp on an empty git repo writes the 22 rows' files, a second run is a no-op, a kit-free pass runs every generated test with the kit absent, every refusal passes the two-line check; and the cross-group tests pass: `check-owners.sh` passes on a full stamp (test row 24), every `bash scripts/...` command in `SKILL.md` names a generated script, every script the guard's fix lines name exists, and `negctl.sh` output is accepted by `pr-shape.sh`'s proof check. The privacy section of `tests/test-stamp-e2e.sh` follows AC14. Test: `bash tests/test-stamp-e2e.sh && bash tests/test-stamp-refusals.sh && bash tests/test-stamp-adopt-interplay.sh && bash tests/test-stamp-cross.sh`.
 - [ ] TASK-G11 gauntlet run. Files: `tests/gauntlet/team-stamp/` (card, checker, clean-room runner, Tier 1 command), `docs/verification/gauntlet/<date>-team-stamp-scratch/` (the run record). Done when: the run in "The gauntlet run" below ends with an unaided SOLID verdict. Test: `bash tests/gauntlet/team-stamp/tier1.sh`, then the engine's recorded run.
 
 ## The gauntlet run
@@ -262,10 +289,12 @@ none (no `docs/QUALITY.md` entry is touched).
 | AC9 CI refusals: pr-shape (title, proof, board link, changelog, shellcheck, parity), check-owners (no row, dead row, empty owner, no sponsor), pr-merge (draft, red, pending, conflict, door without second person, author as second person), release-notes (untagged line) each print rule then `Fix:` | the generated test of each script and `tests/test-stamp-refusals.sh` |
 | AC10 parity: a PR changing `AGENTS.md` and not `docs/TEAM-WORKFLOW.md` fails; `no-rule-mirror:` with a reason passes; both changed passes | `scripts/test-pr-shape.sh` |
 | AC11 runner: the workflow has `runs-on: [self-hosted]` only, and a scan of the template text finds no `ubuntu-`, `macos-` or `windows-` label; `actionlint` passes when installed | `tests/test-stamp-ci.sh` |
-| AC12 twin: every `run:` command of the `pr-shape` job appears in `check.sh` with the same inputs | `tests/test-stamp-ci.sh` |
+| AC12 twin: the defined command set of the `pr-shape` job (see G8b) is non-empty and every member appears in `check.sh` with the same inputs | `tests/test-stamp-ci.sh` |
 | AC13 adopt interplay: both orders in the interplay table behave as stated; `.claude/settings.json` foreign keys survive; the kit marker is line 1 of `AGENTS.md` and `adopt --check` reports adopted | `tests/test-stamp-adopt-interplay.sh` |
-| AC14 privacy: no template holds a leak-shaped string (absolute home path, email, 40-hex sha, numeric run id, `op://`), and a build-time denylist file kept outside the repo, named in `STAMP_DENYLIST_FILE`, matches nothing | `tests/test-stamp-e2e.sh` privacy section; the lead runs it with the private list |
+| AC14 privacy: the whole branch diff (templates, tests, fixtures, the proof, the gauntlet record) holds no leak-shaped string (absolute home path, email, 40-hex sha, numeric run id, `op://`) and matches no line of the denylist file kept outside the repo and named in `STAMP_DENYLIST_FILE`. Fixture shas and emails are generated at run time, never typed. The check FAILS when `STAMP_DENYLIST_FILE` is unset and `STAMP_RELEASE_CHECK=1` is set; a per-group dev run may skip with a printed notice | `tests/test-stamp-e2e.sh` privacy section; the lead runs it with the private list and `STAMP_RELEASE_CHECK=1` |
 | AC15 gauntlet: the Done run ends with an unaided SOLID verdict, Tier 1 green, and a record under `docs/verification/gauntlet/` | the run record |
+| AC17 limits and guidance: the limit sentence, the optional-kit section and the trust-the-folder step appear in both docs; `.kit.toml` sets `proof_of_done = true` and `lane_gates = false`; the vendor contract is re-read at build time and the build records the fetch in `docs/implementation-notes/team-stamp.md` | `tests/test-stamp-rules.sh`; the implementation notes |
+| AC18 repo-living files: a `seed` or `hook` file the repo edited never drifts; `--check` is clean on a healthy repo after the repo edits `OWNERS.md`, `CHANGELOG.md` and `MEMORY.md` | `tests/test-stamp.sh` |
 | AC16 negative control: making the guard allow a bare merge, making the render skip the kit-path scan, and making `write_if_absent` overwrite each turn the matching test red | `docs/verification/team-stamp.md` |
 
 ## Verification
@@ -296,6 +325,9 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 10. Kit upgrade changes a template while the repo edited the same file: `edited (left alone)` wins; `--refresh` prints the diff against the stamp's own rendering, not against the edit.
 11. The pointer worker changes line 1 of the pointer to a new version: the stamp copies whatever line 1 is, so the marker follows.
 12. The probe writes a PR body with CRLF line ends or a mention-only `#12`: pr-shape must handle both as the hand-fitted tests did (a mention is not a close).
+14. `.kit.toml` header comments or any generated comment names a kit path: the render scan refuses the run.
+15. A new repo's first PR adds its own `scripts/*` without an owner row: `check-owners.sh` fails it, as designed; the stamp's own files all have rows from the seed.
+16. A self-hosted runner that is macOS: the shellcheck install branches on `uname -s` and `uname -m`, and the digest on `uname -s`.
 13. A repo with a named runner pool edits `ci.yml` by hand: the stamp reports `edited (left alone)` and never restores `[self-hosted]`.
 
 ## Failure modes
@@ -342,6 +374,11 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 - `tests/test-stamp-e2e.sh`
 - `tests/test-stamp-refusals.sh`
 - `tests/test-stamp-adopt-interplay.sh`
+- `tests/test-stamp-cross.sh`
+- `tests/test-stamp-pr-shape.sh`
+- `docs/implementation-notes/team-stamp.md`
+- `docs/verification/team-stamp.md`
+- `CONTEXT.md`
 - `tests/fixtures/team-stamp/**`
 - `tests/gauntlet/team-stamp/**`
 - `docs/verification/gauntlet/**`
@@ -360,6 +397,10 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 - DEC-10: no module row and no kit knob. The stamp is a hand-run generator like adopt; flags carry every value.
 - DEC-11: the stamp reads line 1 of the pointer template at run time. Why: the pointer worker is changing that file, and a copied literal would go stale.
 
+- DEC-12: a `hook` row kind lets one generator script build a file from the merged manifest (the owners seed). Rejected: seeding in group G4, which runs before G8 and cannot know the CI files.
+- DEC-13: repo-living files (`OWNERS.md`, `CHANGELOG.md`, `MEMORY.md`) are `seed` rows. Rejected: lock hashes for them, which made `--check` fail on a healthy repo.
+- DEC-14: `pr-merge.sh` carries only the brief's behaviors. The hand-fitted repo's `--allow-ci-change`, stale-rules refusal and kit merge environment variable are dropped.
+
 ## Open questions
 
 1. Whether a project `settings.json` hook runs before the teammate trusts the folder (UNCONFIRMED above); the build re-reads the vendor section.
@@ -376,7 +417,7 @@ Source: this spec's ## Acceptance Criteria
 | 1 | Stamp an empty git repo with `--owner` | happy-path | AC1 | exactly the 22 rows' files plus the lock exist | `bash tests/test-stamp-e2e.sh` file-set section |
 | 2 | Second run, same flags | happy-path | AC4 | prints only `unchanged`, `git status --porcelain` unchanged | `bash tests/test-stamp.sh` |
 | 3 | Grep every generated file for kit-path patterns | security/abuse | AC2 | zero hits except line 1 of `AGENTS.md` and the public URL | `bash tests/test-stamp-kitfree.sh all` |
-| 4 | Run every generated `scripts/test-*.sh` with a stripped `PATH` and an empty `HOME` | happy-path | AC3 | all exit 0 | `bash tests/test-stamp-kitfree.sh all` |
+| 4 | Run every generated `scripts/test-*.sh` with a stripped `PATH`, an empty `HOME` and non-default values (`--default-branch master`, two custom tags, a custom product path); the run fails when it finds no test to run | happy-path | AC3 | all exit 0 and the count is above zero | `bash tests/test-stamp-kitfree.sh all` |
 | 5 | Plant a kit path in one template | failure-injection | AC2 | render aborts, nothing written | `bash tests/test-stamp.sh` scan case |
 | 6 | Edit a generated file, re-run | boundary/edge | AC5 | edit kept, `edited (left alone)` | `bash tests/test-stamp.sh` |
 | 7 | Replace a target with a symlink, re-run | security/abuse | AC5 | run refused, no write | `bash tests/test-stamp.sh` |
@@ -396,7 +437,7 @@ Source: this spec's ## Acceptance Criteria
 | 21 | pr-shape: changed script fails shellcheck; shellcheck absent with and without `CI=true` | failure-injection | AC9 | fail; absent skips locally with a notice, fails under `CI=true` | `bash scripts/test-pr-shape.sh` |
 | 22 | pr-shape: `AGENTS.md` changed alone, `docs/TEAM-WORKFLOW.md` alone, both, alone with `no-rule-mirror:` | happy-path | AC10 | first two fail, last two pass | `bash scripts/test-pr-shape.sh` |
 | 23 | check-owners: new script without a row; dead row; empty owner; agent owner with no sponsor | happy-path | AC9 | each fails with a pair; a complete table passes | `bash scripts/test-check-owners.sh` |
-| 24 | Owner seed: every generated script has a row | regression | AC9 | `check-owners.sh` passes on a fresh stamp | `bash tests/test-stamp-owners.sh` |
+| 24 | Owner seed: every generated script has a row | regression | AC9 | `check-owners.sh` passes on a full stamp (needs every group, so it runs in G10) | `bash tests/test-stamp-cross.sh` |
 | 25 | pr-merge with fake `gh`: draft, red, pending to timeout, conflict | happy-path | AC9 | each refused with a pair, none merged | `bash scripts/test-pr-merge.sh` |
 | 26 | pr-merge: door path changed, no approval; approval by the author; approval by another person | security/abuse | AC9 | first two refused, third merges | `bash scripts/test-pr-merge.sh` |
 | 27 | pr-merge: head moves after judgment | failure-injection | AC9 | merge pinned to the judged head is refused by the fake | `bash scripts/test-pr-merge.sh` |
@@ -412,6 +453,16 @@ Source: this spec's ## Acceptance Criteria
 | 37 | SKILL.md frontmatter: line 1 is `---`, keys exactly `name` and `description` | boundary/edge | AC1 | passes; a misspelled key fails the test | `bash tests/test-stamp-playbook.sh` |
 | 38 | Lessons: index over the cap; missing index | boundary/edge | AC3 | truncated with a notice; exit 0 | `bash scripts/test-agent-lessons.sh` |
 | 39 | Gauntlet Tier 1, then the probe round | happy-path | AC15 | Tier 1 green, probe unaided, SOLID | the run record |
+| 41 | negctl output piped into pr-shape's proof check | regression | AC9 | accepted: `NEGATIVE CONTROL`, `Exit:`, `Output:`, `Verdict: RED` all read | `bash tests/test-stamp-cross.sh` |
+| 42 | negctl on a mutation that only breaks syntax | failure-injection | AC9 | refused as a load or syntax error, not recorded as RED | `bash scripts/test-negctl.sh` |
+| 43 | issues-from-rows: dry run, `--apply` with a fake `gh`, second run, empty `--board-file`, missing labels | happy-path | AC9 | one issue per ready row, none on rerun, label step printed, one line and exit 0 on an empty board file | `bash scripts/test-issues-from-rows.sh` |
+| 44 | team-digest: faked `gh`, no `gh`, empty `--board-file`, GNU and BSD `date` | boundary/edge | AC9 | sections printed; exit 0 with a note otherwise | `bash scripts/test-team-digest.sh` |
+| 45 | pr-merge with an empty door list under bash 3.2 and `set -u` | boundary/edge | AC9 | runs, merges a clean PR | `bash scripts/test-pr-merge.sh` |
+| 46 | release-notes with `python3` absent from `PATH` | boundary/edge | AC3 | passes | `bash scripts/test-release-notes.sh` |
+| 47 | Docs pin the limit sentence, the optional-kit section, the trust step, and the `.kit.toml` keys | regression | AC17 | each present in both docs | `bash tests/test-stamp-rules.sh` |
+| 48 | Repo edits `OWNERS.md`, `CHANGELOG.md`, `MEMORY.md`, then `--check` | regression | AC18 | exit 0, no drift line | `bash tests/test-stamp.sh` |
+| 49 | Guard probes: `git checkout README.md; git commit` on the default branch, `env -i git commit`, `timeout 5 git push origin main`, `git push --all`, `git push --mirror`, `gh api .../merge`, `$g pr merge` | security/abuse | AC8 | each blocked with a test, or named as a known miss in the lessons note | `bash scripts/test-agent-guard.sh` |
+| 50 | Whole-diff privacy scan with the denylist | security/abuse | AC14 | fails when the list is unset under `STAMP_RELEASE_CHECK=1`; zero matches when set | `bash tests/test-stamp-e2e.sh` |
 | 40 | Negative controls: guard allows bare merge; scan skipped; overwrite enabled | regression | AC16 | the matching test goes red, restore goes green | `docs/verification/team-stamp.md` |
 
 ### Coverage notes
