@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kit fixture app</title>
+</head>
+<body>
+<main>
+  <h1>Kit fixture app</h1>
+  <label>Display name <input type="text" id="name"></label>
+  <button type="button" id="save">Save</button>
+  <p role="status" id="result"></p>
+</main>
+<script>
+  var params = new URLSearchParams(location.search);
+  var result = document.getElementById('result');
+  if (params.get('link') === 'expired') {
+    result.textContent = 'This link has expired';
+    document.getElementById('save').disabled = true;
+  }
+  document.getElementById('save').addEventListener('click', function () {
+    result.textContent = params.get('bug') === '1' ? 'Error 500' : 'Saved';
+  });
+</script>
+</body>
+</html>
