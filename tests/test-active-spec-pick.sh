@@ -82,14 +82,20 @@ for s in alpha beta gamma delta nope gam ""; do
   eq "ship-gate block == spec_for_slug for slug '$s'" "$(gate_pick "$F" "$s")" "$(spec_for_slug "$F" "$s")"
 done
 
-echo "== compaction hooks, branch feat/alpha =="
-gap "pre-compact picks the highest open spec, branch ignored" TASK-5 "$(compact_pre "$F")" "Spec: docs/specs/SPEC-030-gamma.md"
-gap "post-compact picks the highest open spec, branch ignored" TASK-5 "$(compact_post "$F")" "SPEC: docs/specs/SPEC-030-gamma.md (read before implementing)"
+H0="$TMP/f0"; mkheaderless "$H0" feat/zzz
+echo "== compaction hooks: the branch's own spec, else ambiguous, never the highest unrelated one =="
+eq "pre-compact feat/alpha: ambiguous, not the highest" "$(compact_pre "$F")" "Spec: ambiguous (SPEC-020, SPEC-030)"
+eq "post-compact feat/alpha: ambiguous, not the highest" "$(compact_post "$F")" "SPEC: ambiguous (SPEC-020, SPEC-030); state which spec before implementing"
 B="$TMP/f2"; mkfix "$B" feat/beta
-gap "pre-compact on feat/beta picks gamma, not its own spec" TASK-5 "$(compact_pre "$B")" "Spec: docs/specs/SPEC-030-gamma.md"
-gap "post-compact on feat/beta picks gamma, not its own spec" TASK-5 "$(compact_post "$B")" "SPEC: docs/specs/SPEC-030-gamma.md (read before implementing)"
-mkdir -p "$F/src/deep"
-gap "pre-compact from a subdirectory finds no spec" TASK-5 "$(cd "$F/src/deep" && compact_pre "$F/src/deep")" "No spec found (docs/specs/)"
+eq "pre-compact feat/beta: its own spec" "$(compact_pre "$B")" "Spec: docs/specs/SPEC-020-beta.md"
+eq "post-compact feat/beta: its own spec" "$(compact_post "$B")" "SPEC: docs/specs/SPEC-020-beta.md (read before implementing)"
+mkdir -p "$F/src/deep" "$B/src/deep"
+eq "pre-compact from a subdirectory uses the repo root" "$(compact_pre "$B/src/deep")" "Spec: $B/docs/specs/SPEC-020-beta.md"
+eq "post-compact from a subdirectory uses the repo root" "$(compact_post "$B/src/deep")" "SPEC: $B/docs/specs/SPEC-020-beta.md (read before implementing)"
+eq "pre-compact on a branch with no slash match and a header-less spec" "$(compact_pre "$H0")" "Spec: ambiguous (SPEC-020, SPEC-030)"
+# a kit whose lib lacks spec-active.sh (partial install): no spec resolved, the hook still runs
+STALE="$TMP/stale-kit"; mkdir -p "$STALE"; cp -R "$KIT_DIR/lib" "$KIT_DIR/hooks" "$STALE/"; rm "$STALE/lib/spec/spec-active.sh"
+eq "pre-compact on a partial install: no spec, no crash" "$( cd "$B" && rm -rf .claude/backups && echo '{}' | bash "$STALE/hooks/pre-compact-backup.sh" >/dev/null 2>&1; sed -n '/^### Active spec/,/^### Recent/p' "$B"/.claude/backups/*.md | sed -n '2p')" "No spec found (docs/specs/)"
 
 echo "== readiness =="
 eq "readiness feat/alpha: two open specs, no branch match" "$(readiness "$F")" "spec:ambiguous(SPEC-020,SPEC-030)"

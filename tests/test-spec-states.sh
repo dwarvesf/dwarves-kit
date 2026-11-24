@@ -168,10 +168,10 @@ case "$out" in *"spec:ambiguous(SPEC-001,SPEC-002,SPEC-003,SPEC-004)"*) pass "co
 pick() {  # pick <repo> <hook> <regex>
   ( cd "$1" && echo '{"session_id":"t"}' | bash "$KIT_DIR/hooks/$2" 2>/dev/null; cat .claude/backups/*.md 2>/dev/null ) | grep -oE "$3" | head -1
 }
-got="$(pick "$R" pre-compact-backup.sh 'Spec: docs/specs/SPEC-[0-9]+')"
-[ "$got" = "Spec: docs/specs/SPEC-004" ] && pass "pre-compact-backup: active spec = highest live (004)" || fail "pre-compact-backup picked: $got"
-got="$(pick "$R" post-compact-reinject.sh 'SPEC: docs/specs/SPEC-[0-9]+')"
-[ "$got" = "SPEC: docs/specs/SPEC-004" ] && pass "post-compact-reinject: active spec = highest live (004)" || fail "post-compact-reinject picked: $got"
+got="$(pick "$R" pre-compact-backup.sh 'Spec: ambiguous \([^)]*\)')"
+[ "$got" = "Spec: ambiguous (SPEC-001, SPEC-002, SPEC-003, SPEC-004)" ] && pass "pre-compact-backup: live = 001 002 003 004, branch matches none, so ambiguous" || fail "pre-compact-backup picked: $got"
+got="$(pick "$R" post-compact-reinject.sh 'SPEC: ambiguous \([^)]*\)')"
+[ "$got" = "SPEC: ambiguous (SPEC-001, SPEC-002, SPEC-003, SPEC-004)" ] && pass "post-compact-reinject: live = 001 002 003 004, branch matches none, so ambiguous" || fail "post-compact-reinject picked: $got"
 
 dg() {  # dg <repo> <file>: prints the drift warning, if any
   echo "{\"tool_input\":{\"file_path\":\"$2\"}}" | ( cd "$1" && bash "$KIT_DIR/hooks/spec-drift-guard.sh" 2>/dev/null )
