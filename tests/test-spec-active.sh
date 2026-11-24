@@ -104,6 +104,13 @@ eq "C9 the stubs never ran" "$([ -e "$TMP/stub-ran" ] && echo ran || echo none)"
 eq "AC9 one spec-status.sh pass" "$(wc -l < "$TMP/status-calls" | tr -d ' ')" "1"
 case "$(cat "$TMP/status-calls")" in live*) ok "AC9 the pass is spec-status.sh live" ;; *) bad "AC9 the pass is spec-status.sh live" ;; esac
 
+echo "== a partial install: spec-find.sh missing =="
+PK="$TMP/partial"; mkdir -p "$PK"; cp "$KIT_DIR/lib/spec/spec-active.sh" "$PK/"
+src_rc=0; bash -c ". '$PK/spec-active.sh'" >/dev/null 2>&1 || src_rc=$?
+eq "sourcing fails, so the caller takes its own fallback" "$src_rc" "1"
+cli_rc=0; bash "$PK/spec-active.sh" --slug beta "$R" >/dev/null 2>&1 || cli_rc=$?
+eq "the CLI exits 1" "$cli_rc" "1"
+
 echo "== CLI form, and sourcing under set -e / set -u =="
 eq "CLI prints the same line" "$(bash "$KIT_DIR/lib/spec/spec-active.sh" --live --branch feat/x_gamma "$R")" "branch${TAB}$R/docs/specs/SPEC-030-gamma.md"
 cli_rc=0; bash "$KIT_DIR/lib/spec/spec-active.sh" --live --branch feat/zzz "$R" >/dev/null 2>&1 || cli_rc=$?

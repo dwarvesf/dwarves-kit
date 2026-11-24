@@ -689,15 +689,16 @@ if [ -f "$ROOT/lib/codex/repin.sh" ] && [ -f "$ROOT/hooks/codex-hooks.json" ] &&
   fi
 fi
 
-# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
-# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
-# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
+# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_active is the
+# one lookup (default mode: the name pick validate-round also binds to, status-blind, root
+# docs/specs then co-located */docs/specs); only its `name` line is a pick here. A stale
+# install without spec-active.sh keeps the old root-only glob, so the hook never breaks on it.
 SPEC=""
-SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
-if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
-  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
+SACTIVE="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-active.sh"
+if [ -r "$SACTIVE" ] && source "$SACTIVE" 2>/dev/null; then
+  SPEC=$(spec_active --slug "$SLUG" "$ROOT" 2>/dev/null | awk -F'\t' '$1 == "name" { print $2; exit }')
 else
-  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true) # spec-active-ok: stale-install fallback
 fi
 # Build-ran advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is

@@ -29,9 +29,10 @@
 _SPEC_ACTIVE_DIR="${BASH_SOURCE[0]%/*}"
 case "${BASH_SOURCE[0]}" in */*) ;; *) _SPEC_ACTIVE_DIR="." ;; esac
 
+# Without spec-find.sh (a partial install) this file fails to load, so a sourcing caller takes its own fallback.
 if ! type spec_for_slug >/dev/null 2>&1; then
   # shellcheck source=lib/spec/spec-find.sh
-  . "$_SPEC_ACTIVE_DIR/spec-find.sh" 2>/dev/null || true
+  . "$_SPEC_ACTIVE_DIR/spec-find.sh" 2>/dev/null || { return 1 2>/dev/null || exit 1; }
 fi
 
 spec_active() {
