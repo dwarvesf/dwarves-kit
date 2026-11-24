@@ -54,7 +54,7 @@ Beyond the table, see [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/run-all.sh` locally before the PR. It runs the suites your diff touches plus the always-on lints, about 1 to 2 minutes. CI runs nothing on a push or a pull request, so a red suite reaches master unless you catch it here. If your change touches hook behavior, add an assertion to `tests/test-hooks.sh`.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); see "Where an ID may appear" below.
-5. Fill in the pull request template (`.github/PULL_REQUEST_TEMPLATE.md`) with the command you ran and its output.
+5. In the pull request description, say what changed, why, and how you verified it: the command you ran and its output.
 6. Update `CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial. The maintainer moves it to a versioned section at release time.
 
 ## Where an ID may appear
