@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability or gate bypass
+    url: https://github.com/dwarvesf/dwarves-kit/security/policy
+    about: Do not open a public issue. Use GitHub private vulnerability reporting, as described in SECURITY.md.

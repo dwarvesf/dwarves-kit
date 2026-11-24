@@ -1,6 +1,6 @@
 # Contributing to dwarves-kit
 
-Thanks for reading this before opening a PR. Most rejected contributions to AI-tooling repos are rejected because the contributor didn't read the contribution rules. This file is short by design.
+Thanks for reading this before opening a PR. Most rejected contributions to AI-tooling repos are rejected because the contributor didn't read the contribution rules. This file is short by design. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## If You Are an AI Agent
 
@@ -50,11 +50,12 @@ Beyond the table, see [`docs/reference/PHILOSOPHY.md`](docs/reference/PHILOSOPHY
 
 ## Process
 
-1. Open an issue first if the change is non-trivial. We may already have it on the maintainers' backlog or have rejected it before. The kit's own board, staging buffer and mega-goals live in the private `dwarves-kit-internal` repo; a maintainer links them in as a local `_meta` symlink, and a public clone has none.
+1. Open an issue first if the change is non-trivial. We may already have it on the maintainers' backlog or have rejected it before. The kit's own board, staging buffer and mega-goals live in the private `dwarves-kit-internal` repo; a maintainer links them in as a local `_meta` symlink, and a public clone has none. You do not need it: an issue and a PR are the whole contributing path.
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/run-all.sh` locally before the PR. It runs the suites your diff touches plus the always-on lints, about 1 to 2 minutes. CI runs nothing on a push or a pull request, so a red suite reaches master unless you catch it here. If your change touches hook behavior, add an assertion to `tests/test-hooks.sh`.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); see "Where an ID may appear" below.
-5. Update `CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial. The maintainer moves it to a versioned section at release time.
+5. Fill in the pull request template (`.github/PULL_REQUEST_TEMPLATE.md`) with the command you ran and its output.
+6. Update `CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial. The maintainer moves it to a versioned section at release time.
 
 ## Where an ID may appear
 
@@ -64,7 +65,7 @@ state the thing plainly: git already records which change introduced what.
 | Place | Example |
 |---|---|
 | The record that IS it | `docs/specs/SPEC-246-kit-wrap.md` referencing its own number |
-| A row or key keyed by it | a `_meta/BACKLOG.md` row; a ledger entry; `board = ["ID-420"]` that code reads |
+| A row or key keyed by it | a maintainer board row (`_meta/BACKLOG.md`, private); a ledger entry; `board = ["ID-420"]` that code reads |
 | One provenance footer, at the BOTTOM of a doc | `<!-- provenance: SPEC-246, ADR-0028 -->` |
 
 **Never** inline in prose, in a code comment mid-file, in a string the code prints, or anywhere
@@ -103,7 +104,7 @@ already tracks its kind, in the same PR:
    (no `[modules]` gate).
 4. **Evidence (skills)**: the PR body carries writing-skills RED/GREEN
    evidence (baseline failure without the skill, compliance with it).
-5. **Changelog**: step 5 above applies, a new component is always non-trivial.
+5. **Changelog**: step 6 above applies, a new component is always non-trivial.
 
 ## Plain words rule (2026-07-16)
 
@@ -128,7 +129,7 @@ hub -> board (2026-07-16, sync module), leg -> stage / Specify-Execute-Observe-G
 The still-coined terms that are too semantic-everywhere to rename yet (gate,
 lane, ledger, mega, harness) have their plain-word equivalents in
 [docs/reference/glossary.md](docs/reference/glossary.md), so a reader always has the everyday word
-even before the rename migration (ID-293) runs.
+even before the rename migration runs.
 
 ## Source
 
