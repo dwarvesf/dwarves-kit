@@ -1647,7 +1647,7 @@ echo "--- absorbed: no free descriptor never reads as absorbed"
 # Round 4: with a <(...) operand, a process that could not make a pipe lost the operand
 # entirely, grep read stdin, found nothing, and exited 1: absorbed. The comparison is pure
 # bash now. Source the real helper and starve it of descriptors, for both bash versions.
-ABS_FN="$(sed -n '/^_absorbed() {/,/^}/p' "$KIT_DIR/lib/wrap/wrap.sh")"
+ABS_FN="$(sed -n '/^_absorbed() {/,/^}/p' "$KIT_DIR/lib/gate/branch-merged.sh")"
 # The limit where git still runs but a pipe cannot be made differs per bash version, so sweep
 # it: every limit must fail closed.
 for sh in /bin/bash bash; do

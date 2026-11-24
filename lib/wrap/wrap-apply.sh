@@ -3,45 +3,6 @@
 
 _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 
-# _absorbed <repo> <default branch> <commit> -- 0 when every path the commit changed since its
-# merge base with origin/<def> is byte-identical (same blob and mode, or absent on both) at the
-# commit and on origin/<def>. It covers a subagent branch whose lead re-committed the work under
-# its own PR: new hashes, no PR for the branch, so neither other proof can ever hold. It never
-# merges: a merge would run .gitattributes drivers, and keep-ours or union can return the
-# default branch's side while the branch's edit exists nowhere else. Plain tree diffs read no
-# attributes and write no objects. Like the squash proof, it guarantees the branch's net change,
-# not content its own intermediate commits added and removed; `branch -D` prints the tip sha.
-# Callers pass a full ref or a sha, so a tag named like the branch cannot stand in for it.
-# --no-relative: diff.relative with a subdirectory <repo> would drop paths from both lists.
-_absorbed() {
-  local repo="$1" def="$2" tip="$3" main base changed differ rest path nl=$'\n'
-  # core.quotePath=true makes both lists pure ASCII: bash 5 in a UTF-8 locale truncates a
-  # string at a backslash before an invalid byte, which once dropped an overlapping path.
-  # LC_ALL=C reaches git through env, never as a bash variable: Homebrew bash 5.3 on macOS
-  # SIGSEGVs (rc 139) in setlocale when a function exit restores LC_ALL, about 1 call in 20
-  # under load, and the proof then reads as "not absorbed".
-  local -a g=(env LC_ALL=C git -C "$repo" --no-replace-objects -c core.quotePath=true)
-  main="$("${g[@]}" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
-  tip="$("${g[@]}" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
-  base="$("${g[@]}" merge-base "$main" "$tip" 2>/dev/null)" || return 1
-  changed="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
-    "$base" "$tip")" || return 1
-  [ -n "$changed" ] || return 1
-  differ="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
-    "$tip" "$main")" || return 1
-  # Both lists use git's quoted path form, one path per line, so an odd path still compares
-  # exactly. The comparison is pure bash: no pipe, file, or subprocess that could fail and read
-  # as "no overlap". A pipe into `grep -q` once read SIGPIPE's 141 as absorbed; a here-string
-  # temp file and a <(...) operand can each vanish (full disk, no free descriptor) and leave
-  # grep reading nothing. A quoted "$path" in a case pattern matches literally.
-  rest="$changed"
-  while [ -n "$rest" ]; do
-    path="${rest%%"$nl"*}"
-    case "$rest" in *"$nl"*) rest="${rest#*"$nl"}" ;; *) rest="" ;; esac
-    case "$nl$differ$nl" in *"$nl$path$nl"*) return 1 ;; esac
-  done
-  return 0
-}
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
 # `locked` file in that worktree's admin directory, the same state `worktree list` reports.
@@ -208,7 +169,7 @@ _apply_worktrees() {
     if [ "$fetch_succeeded" != 1 ]; then
       echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
     fi
-    read -r lcode _ proof <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$wtb")"
+    read -r lcode _ proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
     if [ "$lcode" != SAFE ]; then
       echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
     fi
@@ -286,8 +247,8 @@ _apply_branches() {
     # -D, not -d: the proof is wrap's own, against origin/<def>. `branch -d` judges against the
     # branch's OWN upstream (or HEAD when it has none), so it refused a branch that tracks
     # another ref or nothing even though origin/<def> already holds its tip. The proof judges the
-    # sha read above, see _merge_ladder.
-    read -r lcode lreason ldetail <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$b" "$tip")"
+    # sha read above, see branch_merged.
+    read -r lcode lreason ldetail <<< "$(branch_merged "$repo" "$def" "$ghs" "$b" "$tip")"
     case "${lcode} ${lreason}" in
       "SAFE ancestor"|"SAFE absorbed")
         run "$repo" "delete ${b} (${ldetail})" git -C "$repo" branch -D "$b" ;;
@@ -335,7 +296,7 @@ _apply_archive_unmerged() {
     echo "     SKIP archive sweep: fetch failed, stale data"; return 0
   fi
   local b tip pushed cherry n slug ref err first rl
-  # Full refs throughout, as in _merge_ladder: a tag named like the branch once made the push
+  # Full refs throughout, as in branch_merged: a tag named like the branch once made the push
   # source ambiguous, and a bare origin/<def> can resolve a tag or local branch.
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
@@ -723,7 +684,7 @@ _archive_worktree_one() {
   if [ "$WT_ST_DIRTY" = 0 ]; then
     if [ "$n" -eq 0 ]; then echo "     ${wt_s}: nothing unique, left alone"; return; fi
     if [ -n "$wtb" ]; then
-      read -r lcode _ proof <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$wtb")"
+      read -r lcode _ proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
       if [ "$lcode" = SAFE ]; then
         echo "     SKIP ${wt_s}: $(_san "$wtb") proven merged (${proof}), left for --worktrees"; return
       fi

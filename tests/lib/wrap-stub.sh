@@ -5,7 +5,7 @@
 # builders more than one suite uses. Sourced, never executed: a suite sets KIT_DIR,
 # then sources this file.
 # modules under test (the test-affected cache key greps this line):
-# lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh lib/wrap/wrap-ship.sh
+# lib/gate/branch-merged.sh lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh lib/wrap/wrap-ship.sh
 
 set -uo pipefail
 WRAP="$KIT_DIR/bin/wrap"
@@ -334,14 +334,14 @@ reword_ladder() {
   [ -n "${WRAP_LADDER_REWORDED:-}" ] && return 0
   local dir="$TMPD/reworded-ladder-kit"
   mkdir -p "$dir/bin"; cp -R "$KIT_DIR/lib" "$dir/lib"; cp "$KIT_DIR/bin/wrap" "$dir/bin/wrap"
-  sed -i.bak -e '/^_merge_ladder()/,/^}/{s/ancestor of origin/reachable from origin/g;s/content already on origin/same bytes already on origin/g;}' \
+  sed -i.bak -e '/^branch_merged()/,/^}/{s/ancestor of origin/reachable from origin/g;s/content already on origin/same bytes already on origin/g;}' \
     -e '/^_squash_verdict()/,/^}/{s/squash-merged per gh/merged via gh/g;s/no merged PR found for this head/no gh record/g;}' \
-    "$dir/lib/wrap/wrap-common.sh"
-  rm -f "$dir/lib/wrap/wrap-common.sh.bak"
-  grep -q 'reachable from origin' "$dir/lib/wrap/wrap-common.sh" \
-    && grep -q 'same bytes already on origin' "$dir/lib/wrap/wrap-common.sh" \
-    && grep -q 'merged via gh' "$dir/lib/wrap/wrap-common.sh" \
-    && grep -q 'no gh record' "$dir/lib/wrap/wrap-common.sh" \
+    "$dir/lib/gate/branch-merged.sh"
+  rm -f "$dir/lib/gate/branch-merged.sh.bak"
+  grep -q 'reachable from origin' "$dir/lib/gate/branch-merged.sh" \
+    && grep -q 'same bytes already on origin' "$dir/lib/gate/branch-merged.sh" \
+    && grep -q 'merged via gh' "$dir/lib/gate/branch-merged.sh" \
+    && grep -q 'no gh record' "$dir/lib/gate/branch-merged.sh" \
     || { echo "reword_ladder: phrase not found" >&2; return 1; }
   WRAP_LADDER_REWORDED="$dir/bin/wrap"
 }

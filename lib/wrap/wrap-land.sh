@@ -596,7 +596,7 @@ _land_run() {
   local ghs; ghs="$(_gh_state)"
   [ "$ghs" = "ok" ] || { echo "wrap.sh land: gh is ${ghs}" >&2; return 1; }
 
-  # Full refs, as _merge_ladder reads them: a tag or local branch named like origin/<def> or
+  # Full refs, as branch_merged reads them: a tag or local branch named like origin/<def> or
   # the branch resolves first as a short name, so the count and the proof could disagree.
   local fetch_failed=0
   git -C "$wt" fetch -q origin "$def" 2>/dev/null || fetch_failed=1
@@ -671,7 +671,7 @@ _land_run() {
   # than acted on. A failed fetch proves nothing either way, so it skips the check.
   local proof="" lcode lreason lphrase
   if [ "$fetch_failed" -eq 0 ]; then
-    read -r lcode lreason lphrase <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$branch")"
+    read -r lcode lreason lphrase <<< "$(branch_merged "$repo" "$def" "$ghs" "$branch")"
     case "${lcode} ${lreason}" in
       "SAFE absorbed"|"SAFE squash") proof="$lphrase" ;;
     esac
