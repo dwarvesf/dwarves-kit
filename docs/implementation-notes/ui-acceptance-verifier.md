@@ -292,3 +292,36 @@ Each row answers one finding of the round 1 validation report. The spec carries 
 - The allowed-host list is a lead-supplied list in the scenario file, not a `.kit.toml` knob (a project `.kit.toml` rides inside the pull request).
 - Unsampled in the probe and marked so in `## Grounding`: request abort, service-worker block, permissions, downloads, popups, the resolved-address check, the `playwright` library package (the probe used the test package), and the permission matcher's treatment of the grant glob.
 - Honest limit recorded: the downstream-lane bar is argued as lens-not-lane, and no consumer has run it yet, so follow-ups wait for one real consumer run.
+
+## Spec revision (round 2 answers)
+
+Each row answers one finding of the round 2 validation report. The spec carries the answer; this table only points at it. New criteria: AC-15 (`browser-sandbox`), AC-16 (`fixture-serves`), AC-17 (`internal-error`). The suite tasks were split and renumbered (old TASK-9 and TASK-10 are now TASK-9 to TASK-13).
+
+| Finding | Answer |
+|---|---|
+| S1-1 | applied with change: sandbox on, no `--no-sandbox`, NO-CHECK `browser sandbox unavailable` with no unsandboxed retry (Design, Picture, Failure modes, AC-15). The report's check lists processes while `/hang` runs, which needs a live browser at an exact moment; the runner instead scans its own run-id processes after launch and records `browser.sandbox`, `no_sandbox_seen`, `launch_attempts` in `result.json`, and a test-only fault hook covers the failed-sandbox path. |
+| S1-2 | applied with change: grant text, Failure modes row, Chosen approach and DEC-6 follow the report; the runner's own-path self-check is kept per the lead decision, scoped honestly as a guard against honest mistakes (the report notes it cannot stop planted code). Because the kit checkout is itself a git work tree, the check also refuses a run with the kit checkout as the current directory; Edge Case 15 and the README say so. The bare-command shim grant is named in Out of scope 292b, not built. |
+| S1-3 | applied in Interfaces (result.json, stdout, brief), AC-1, Task 6 |
+| S1-4 | applied in Design, Picture, AC-4, Failure modes (WebRTC), Grounding |
+| S1-5 | applied in Interfaces (result.json sanitizer) and AC-5 |
+| S2-1 | applied with change: exit 4 and the wrapper as written; the unresolvable allowed host sits in the exit 2 row and in the allow_hosts rule, not in the exit 3 row, because exit 3 means "refused, nothing written". AC-3 gains the unreadable path; AC-17 is the exit 4 case. |
+| S2-2 | applied with change: run-id marker, launch cap 60 s, `duration_ms` from launch, pgrep by run id as written. The report's flags (2000/5000/12000) do not force "a following scenario ends `run budget spent`" (one hang costs 2 s of a 12 s budget), and a clock from launch lets a loaded host decide the first row. The run budget clock now starts at the first scenario, and AC-6 uses three hang scenarios plus one normal scenario with a 5000 ms budget and asserts only the first and last row reasons, exit 2, recorded `browser.pids` and `browser.leftover_pids`, a 40 s backstop and the pgrep poll. DEC-14. |
+| S2-3 | applied in Terms, AC-7, Failure modes |
+| S3-1 | applied with change: the entry is rejected at validation as the report says, but per the lead decision its row is NO-CHECK `scenario asserts nothing` (exit 2, other entries still run) instead of exit 3 for the whole file. The case lives in AC-2 (`no-ac`). DEC-13. |
+| S3-2 | applied in Interfaces (Step semantics block); AC-1 gains an `element not found` control |
+| S3-3 | applied in Interfaces (role list), Task 1 README list, AC-11 |
+| S4-1 | applied with change: the new PASS-plus-agent-row row and the exit 4 row as written, plus an exit 3 and any-other-exit row so every exit code maps; the FAIL rows are keyed on any NO-CHECK row from the runner or the agent. Seven rows; AC-12 says seven. DEC-15. |
+| S4-2 | applied in Task Breakdown (TASK-1 depends on TASK-2, listed first; AC-2 moved to TASK-5; AC-16 for the fixture) and Picture |
+| S4-3 | applied with change: the report's TASK-9b would carry nine criteria, over the five-criterion cap, so the suite is four tasks (TASK-9 to TASK-12), each with four criteria, and the live record is TASK-13. A criterion-to-task table was added. |
+| S4-4 | applied in AC-9, AC-11 and the Grounding dry traces |
+| S4-5 | applied in AC-9 and Verification (`UI_VERIFY_REQUIRE=1`, the last-line count) |
+| S5-1 | applied in TASK-7 and AC-13 |
+| S5-2 | applied in TASK-8 (kit-health line, PHILOSOPHY paragraph); the PHILOSOPHY sentence cites the spec by path, not by bare ID |
+| S7-1 | applied in Infrastructure changes, `--doctor` output, TASK-1 README list, Failure modes, AC-9 |
+| S1-6 | skipped (NOTE): checked and acceptable, no change |
+| S2-4 | skipped (NOTE): accepted by the retry design, no change |
+| S5-3 | skipped (NOTE): advisory; the position and the gate on 292b to 292e are already in Design, and S5-2 adds the kit-health line |
+| S5-4 | applied in API changes and TASK-2 (legacy value is the empty string) |
+| S5-5 | applied in TASK-8 (rebase, then regenerate `FEATURES.md` last) |
+| S5-6 | applied in Design (Philosophy alignment, N4 bullet) |
+| S7-2 | applied in Quality requirements (4-viewport maximum stated) |
