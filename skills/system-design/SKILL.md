@@ -32,6 +32,7 @@ The engine ships with the kit in `~/.claude/dwarves-kit/lib/system-design/`: `FO
    ```
 
    `--shots <dir>` also writes one PNG per sheet (`<sheet-id>.png`, plus `cover.png`; headless Chrome and node via `shots.mjs`; `CHROME` env overrides the macOS path). `SHOT_SCALE=2` writes them at 2x for docs and Notion, and `SHOT_CLIP=figure` crops each PNG to the diagram alone (no title block or prose), `--sheets a,b` limits it.
+   `SHOT_START_MS` sets how long `shots.mjs` waits for the browser to start, in milliseconds (default `60000`, so 60 s). If Chrome has not printed its DevTools address by then, the build stops with `browser did not start within 60s: <chrome path>`. Raise it on a slow first launch, such as a fresh CI runner or a heavily loaded host.
    The build exits non-zero if a PNG is 10 KB or smaller or two PNGs share an md5.
 
    `--style <fragment.html>` adds a repo's own look: an HTML fragment (a Google Fonts `<link>` plus a `<style>` that redefines `--display`, `--body`, `--mono` or color tokens, or `--fz` to scale every diagram label (box sizes follow)) inserted after the template's styles, so it wins. Keep the fragment in the repo, such as `docs/system-design-style.html`.
