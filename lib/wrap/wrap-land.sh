@@ -1008,7 +1008,7 @@ _land_run() {
   fi
 
   local after state sha
-  after="$(gh pr view "$n" --repo "$url" --json state,mergeCommit 2>/dev/null)"
+  after="$(gh pr view "$n" --repo "$url" --json state,mergeCommit 2>/dev/null)" # merged-ok: confirms the state of the PR number this script just merged, not a branch tip
   state="$(printf '%s' "$after" | jq -r '.state // ""' 2>/dev/null)"
   sha="$(printf '%s' "$after" | jq -r '.mergeCommit.oid // ""' 2>/dev/null)"
   if [ "$state" != "MERGED" ]; then

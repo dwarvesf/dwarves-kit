@@ -309,7 +309,7 @@ _apply_archive_unmerged() {
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
       echo "     SKIP ${b}: held by a worktree"; continue
     fi
-    cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "refs/heads/${b}" 2>/dev/null)"
+    cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "refs/heads/${b}" 2>/dev/null)" # merged-ok: git cherry counts unique patches for the archive-first sweep, nothing is deleted on it alone
     n="$(printf '%s\n' "$cherry" | grep -c '^+')"
     if [ "$n" -eq 0 ]; then
       echo "     ${b}: nothing unique, left for the merged sweep"; continue
@@ -679,7 +679,7 @@ _archive_worktree_one() {
   case $'\n'"$lv" in *$'\n'[[:lower:]S]' '*)
     echo "     SKIP ${wt_s}: skip-worktree or assume-unchanged entries hide their edits"; return ;;
   esac
-  cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "$head" 2>/dev/null)"
+  cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "$head" 2>/dev/null)" # merged-ok: git cherry counts unique patches for the archive-first sweep, nothing is deleted on it alone
   n="$(printf '%s\n' "$cherry" | grep -c '^+')"
   if [ "$WT_ST_DIRTY" = 0 ]; then
     if [ "$n" -eq 0 ]; then echo "     ${wt_s}: nothing unique, left alone"; return; fi

@@ -2786,7 +2786,7 @@ _wave_converge() {  # megadir [id...] [--peers id...]
         fi
       fi
       # The hook exiting 0 is not a merge (the default hook is a dry run). Ask GitHub.
-      state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state=""
+      state=$(cd "$repo" && "${MEGA_MERGE_GH:-gh}" pr view "$pr" --json state -q .state 2>/dev/null) || state="" # merged-ok: confirms the state of the PR number this script just merged, not a branch tip
       if [ "$state" = MERGED ]; then
         _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
         _say "[orchestrate] [converge] $id merged (PR #$pr)."

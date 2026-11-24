@@ -102,8 +102,8 @@ source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missi
 # shellcheck source=lib/spec/spec-find.sh
 # A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
 if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
-  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
-  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
 fi
 # The ledger-verdict cache keys (_lane_fp, _file_id), shared with lane-telemetry's cache.
 # shellcheck source=lib/gate/ledger-key.sh

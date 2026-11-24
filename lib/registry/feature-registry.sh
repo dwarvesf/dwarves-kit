@@ -202,7 +202,7 @@ build_queries() { # stdout: one query line per feature
 load_refs() {
   local qfile="$1" rfile="$2" key spec tst disp f
   local specs=() cmds=() skills=()
-  for f in "$KIT_DIR"/docs/specs/SPEC-*.md; do [ -f "$f" ] && specs+=("$f"); done
+  for f in "$KIT_DIR"/docs/specs/SPEC-*.md; do [ -f "$f" ] && specs+=("$f"); done # spec-active-ok: the generator reads every spec of the kit itself, it picks none
   for f in "$KIT_DIR"/commands/*.md; do [ -f "$f" ] && cmds+=("$f"); done
   for f in "$KIT_DIR"/skills/*/SKILL.md; do [ -f "$f" ] && skills+=("$f"); done
   build_queries > "$qfile"
