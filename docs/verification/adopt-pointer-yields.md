@@ -78,3 +78,7 @@ Output:
 Restore: git checkout HEAD -- lib/adopt/AGENTS.pointer.md
 Exit: 0 (green after restore)
 Verdict: PASS
+
+## Rollback
+
+Revert the fix commit. The pointer text returns to the previous version, whose hash stays in `lib/adopt/agents-known.sha256`, so repos swapped to the new pointer are recognised as a known copy and can be swapped back by `--refresh --swap-agents`.
