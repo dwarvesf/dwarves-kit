@@ -282,6 +282,24 @@ STAMP_TEMPLATES="$TPLO" run "$R14" --only owners $FLAGS
 expect "the owners seed lists every script of every group, even under --only" bash -c "grep -q '^| \`scripts/a.sh\` ' '$R14/OWNERS.md' && grep -q '^| \`scripts/test-a.sh\` | Test for scripts/a.sh | @alice | |' '$R14/OWNERS.md' && grep -q '^| \`.github/workflows/ci.yml\` ' '$R14/OWNERS.md'"
 expect "the owners seed lists no row for itself" bash -c "! grep -q '^| \`OWNERS.md\`' '$R14/OWNERS.md'"
 
+# 17c. nothing a stamp writes trips a bare-hex secret scan
+hexscan() { # hexscan <file>: print any 64-hex run not directly after a digest marker
+  sed -E "s/(sha256:|sha256: |sha256=|sha256-|sha256 \"|sha256 ')[0-9a-f]{64}//g" "$1" | grep -E '[0-9a-f]{64}'
+}
+R15="$(newrepo)"; run "$R15" $FLAGS
+git -C "$R15" add -A >/dev/null 2>&1; git -C "$R15" diff --cached > "$WORK/staged.diff"
+expect "the staged stamp output is not empty" [ -s "$WORK/staged.diff" ]
+none_hex() { ! hexscan "$1" >/dev/null; }
+expect "the staged diff holds no bare 64-hex run" none_hex "$WORK/staged.diff"
+expect "the lock writes every hash as sha256:<hex>" bash -c "[ \$(grep -c '^file .* sha256:[0-9a-f]\{64\}\$' '$R15/.claude/team-stamp.lock') -eq \$(grep -c '^file ' '$R15/.claude/team-stamp.lock') ]"
+bare="$(printf 'a%.0s' $(seq 1 64))"; printf 'digest %s\n' "$bare" > "$WORK/bare.txt"; printf 'sha256:%s\n' "$bare" > "$WORK/marked.txt"
+catch_hex() { hexscan "$1" >/dev/null; }
+expect "the scan catches a bare hex (self-test)" catch_hex "$WORK/bare.txt"
+expect "the scan allows a marked digest (self-test)" none_hex "$WORK/marked.txt"
+# an older lock with bare hex still reads: rewrite R15's lock the old way and expect a clean run
+sed -E 's/ sha256:([0-9a-f]{64})$/ \1/' "$R15/.claude/team-stamp.lock" > "$WORK/old.lock"; cp "$WORK/old.lock" "$R15/.claude/team-stamp.lock"
+run "$R15"; expect "a lock with bare hex still reads as unedited" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -vc '^unchanged: ') -eq 0 ]" _ "$OUT"
+
 # 18. an empty manifest dir
 TPL8="$WORK/empty-tpl"; mkdir -p "$TPL8/manifest.d"
 STAMP_TEMPLATES="$TPL8" run "$(newrepo)" $FLAGS

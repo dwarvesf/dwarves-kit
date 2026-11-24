@@ -4,7 +4,7 @@ Writes a kit-free agent harness into a repo as plain files the repo owns. This d
 
 **Entry points**
 - `lib/stamp.sh [--check | --dry-run | --refresh | --take <path>] [--only <groups>] [value flags] <target-dir>`. Default writes what is missing, merges `.claude/settings.json`, and updates the lock. Never overwrites a file the repo edited.
-- `.claude/team-stamp.lock` in the target: the values used and one sha256 per written file. Plain text, kit-free.
+- `.claude/team-stamp.lock` in the target: the values used and one `sha256:<hex>` per written file (the marker keeps a secret scan from reading a digest as a key). Plain text, kit-free. Any hash a template carries uses the same marker form: `sha256:<hex>`, `sha256=<hex>` or `sha256: <hex>`, never a bare run of hex.
 
 **Tests**: `bash tests/test-stamp.sh` (engine, against `tests/fixtures/team-stamp/`) and `bash tests/test-stamp-kitfree.sh <group|fixture|all>`.
 

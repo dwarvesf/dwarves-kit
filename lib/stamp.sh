@@ -6,7 +6,7 @@
 # is the only kit-side part. It reads templates/team-stamp/manifest.d/*.tsv (one file per build
 # group), renders each row with a small value set, and writes only what is absent. A file the repo
 # edited is never touched. What it wrote is recorded in <target>/.claude/team-stamp.lock (plain
-# text, kit-free): the values used and one sha256 per file, so "the repo edited this" can be told
+# text, kit-free): the values used and one sha256:<hex> per file, so "the repo edited this" can be told
 # from "this is an older stamp copy".
 #
 # Usage: stamp.sh [--check | --dry-run | --refresh | --take <path>] [--only <group,group>]
@@ -90,7 +90,8 @@ done
 
 LOCK="$TARGET/$LOCK_REL"
 lock_has() { [ -f "$LOCK" ] && awk -v p="$1" '$1=="file" && $2==p {f=1} END{exit !f}' "$LOCK"; }
-lock_hash() { [ -f "$LOCK" ] && awk -v p="$1" '$1=="file" && $2==p {print $4; exit}' "$LOCK"; }
+# A lock hash is written as sha256:<hex> so a secret scan reads it as a digest; an older bare hex still reads.
+lock_hash() { [ -f "$LOCK" ] && awk -v p="$1" '$1=="file" && $2==p {sub(/^sha256:/, "", $4); print $4; exit}' "$LOCK"; }
 lock_value() { [ -f "$LOCK" ] && awk -v k="$1" '$1=="value" && $2==k {print $3; exit}' "$LOCK"; }
 
 # ---- values: flag, else lock, else default ----
@@ -348,7 +349,7 @@ write_row() { # write_row i: atomic write of the staged content, mode from the m
 }
 
 LOCK_UPDATES="$STAGE/lock-updates.txt"; : > "$LOCK_UPDATES"
-note_lock() { printf 'file %s %s %s\n' "${TGT[$1]}" "${GRP[$1]}" "$(sha256_of "$TARGET/${TGT[$1]}")" >> "$LOCK_UPDATES"; }
+note_lock() { printf 'file %s %s sha256:%s\n' "${TGT[$1]}" "${GRP[$1]}" "$(sha256_of "$TARGET/${TGT[$1]}")" >> "$LOCK_UPDATES"; }
 
 write_lock() {
   local new="$STAGE/lock.new" k v
