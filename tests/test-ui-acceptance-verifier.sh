@@ -463,7 +463,10 @@ doctor_nonode_run() {
 case_fixture_serves() {
   echo "--- fixture-serves"
   need_node fixture-serves || return 0
-  local page code count
+  local page code count file
+  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/wall.html; do
+    [ -s "$KIT_DIR/$file" ]; check "fixture file exists: $file" $?
+  done
   if ! start_fixture; then no "the fixture server printed a port line and a port2 line"; stop_fixture; return 0; fi
   case "$FIX_PORT$FIX_PORT2" in *[!0-9]*|"") no "port and port2 are numbers ($FIX_PORT, $FIX_PORT2)" ;; *) ok "the server prints a port line and a port2 line" ;; esac
   for page in index.html hostile.html offsite.html wall.html; do
