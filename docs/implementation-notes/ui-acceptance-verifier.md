@@ -350,3 +350,41 @@ NOTE findings, not in the spec text:
 - T12, applied as a contradiction fix: the Picture "also built" line and the orphan list now name the README, `package.json`, the lockfile, `--doctor`, the suite and the live record.
 - T14, applied: Grounding sample 7 now says the depth check on the rewritten header printed nothing and exited 0.
 - T15, no change: on a plain Cloudflare preview the identity is `unverified` until slice 292d, so a typical PASS carries only that printed word. The claim that the agent grant cannot set `UI_VERIFY_TEST_FAULT` rests on matcher behaviour that is in the Grounding "not sampled" list; it is not load-bearing, because the hook can only lower a result.
+
+## Build log (A1: contract, guards, fixture)
+
+Delta from the spec for the first build half (data-path entry, runner contract and guards, fixture, suite skeleton and the no-browser cases). Nothing here restates the spec.
+
+Decisions the spec did not make:
+
+- The runner never opens the install check, DNS or a browser when no entry is runnable (every entry is a `skip`, or asserts nothing, or the file has no scenarios). Those runs need no install, so they work on a host with no Playwright and the rows keep their own reasons.
+- An environment fault (`install absent`, `playwright version differs from the pin`, `preview unreachable`) is applied to the runnable rows only. A `skip` row keeps `skipped by scenario: ...` and an asserts-nothing row keeps its own reason. The spec says "every row" for a `mismatch`; the next builder decides whether a skip row should take it too (the helper is `applyEnvironmentFault`).
+- Order inside the runner: read and validate the scenario file, own-path check, `--out` check, DNS check of every allowed host (private address refuses with exit 3), then create `--out`, then the install check. An allowed host that does not resolve becomes `preview unreachable` before the install check, so it needs no Playwright to show.
+- A timeout flag above its default is a usage error (exit 3), not a silent clamp.
+- Rows that never ran carry `viewports: []`. A run with no browser records `browser.sandbox` false and `launch_attempts` 0. Top-level `reason` is the environment fault text, else `no AC` for an empty row set, else empty.
+- Exit 4 writes `result.json` with `rows: []` and `reason` `internal error: <one line>`, whatever rows existed before the fault.
+- `title` is optional, `fill.value` may be empty, and `goto` / `expect_url` paths may not hold whitespace or a backslash. `allow_hosts` entries are lowercased and may be a bracketed IPv6 literal; literal addresses are classified without DNS.
+- A stdout `row` line ends after the evidence field with trailing spaces trimmed, so an empty reason prints as two adjacent separators.
+- `UI_VERIFY_TEST_FAULT` values other than `internal-error` are ignored by the runner for now.
+- The suite takes optional case names as arguments (`bash tests/test-ui-acceptance-verifier.sh guard-refusals`), so a browser case can be run alone on a loaded host. Browser cases are looked up as `case_<name with _>` functions listed in `BROWSER_CASES` and are simply absent until written; nothing placeholder passes.
+- The doctor's "good install" exit 0 is proven with a fake install (a `node_modules/playwright/package.json` at the pin plus a `browsers/chromium-1` directory), because the doctor only reads files. It needs no real Playwright.
+- The no-node case re-runs this suite with a PATH of symlinks to common tools and no node, on three cheap cases, and the same cases again with node as the control.
+
+Seams the next builder fills (all in `lib/ui-verify/run.mjs`):
+
+- `driveBrowser(context)` is the one seam. It currently throws, so a host that has the pinned install and a runnable scenario exits 4 until it is built. It receives `{ spec, runnable, rows, timeouts, runId, outDir, installRoot, playwright }` and returns `{ outcomes: Map<rowKey, {status, reason, observed, flaky, viewports, evidence}>, identity, blocked_requests, browser, duration_ms, environmentReason }`. `spec` holds the parsed and validated file (`url` as a URL object, `allowHosts` as a Set of normalized hosts, `allowLoopback`, `headSha`, `readyText`, `viewports`, `identity` as `{kind, name}` or null). `runnable[i]` is `{ key, entry, row }`, the key being `<id>|<kind>`. `timeouts` is `{ stepMs, scenarioMs, runBudgetMs }`.
+- Helpers already there: `sanitize`, `normalizeHost`, `classifyAddress`, `inspectInstall`, `resolveInstallRoot`, `readPin`, `deriveSummary`, `emptyBrowserRecord`. The `UI_VERIFY_TEST_FAULT=sandbox-unavailable` branch belongs at the top of `driveBrowser`.
+- The suite helpers for browser cases: `browser_gate <case>` (SKIP with the doctor's reason), `start_fixture` / `stop_fixture` (sets `FIX_PORT`, `FIX_PORT2`), `run_runner`, `jget`, `mutate`, `next_out`, `$BASE`.
+
+Negative controls run in this half (hand mutations on a temp copy of `run.mjs` outside any git work tree, next to a copy of `package.json`, selected with `UI_VERIFY_RUNNER`; the case run alone each time). The in-suite controls (data-path entry removed, agent file and battery copies, MANUAL and README copies, fixture copy without `wall.html`, no-node PATH) are asserted by the suite itself.
+
+| Mutation | Case | Red line |
+|---|---|---|
+| delete the `target.url` host check | `guard-refusals` | `FAIL refused: a URL host missing from allow_hosts (exit 2, 0 stderr lines: )` |
+| delete the own-path self-check call | `guard-refusals` | `FAIL refused: a runner copy inside the scratch git repo that is the current directory (exit 2)` |
+| run `main` without the wrapper and handlers | `internal-error` | `FAIL the injected fault exits 4 (exit 1)` |
+| delete the pin compare | `doctor-and-skip` | `FAIL doctor with another installed version exits 21 (exit 0)` |
+| make a pin older than 120 days change the doctor exit | `doctor-and-skip` | `FAIL a pin 121 days old prints the bump note and still exits 0 (exit 5)` |
+| count NO-CHECK rows as PASS in the verdict | `doctor-and-skip` | `FAIL the verdict is NO-CHECK, never PASS` (and four more) |
+
+Open at the end of this half: `docs-rows` stays red on `feature-registry check` (FEATURES.md has drifted; the lead regenerates it last). The seam `driveBrowser` throws, so a host with the pinned install exits 4 on a runnable scenario until the browser half lands.
