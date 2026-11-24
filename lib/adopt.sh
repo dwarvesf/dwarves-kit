@@ -3,8 +3,8 @@
 # adopt.sh -- idempotently inject the dwarves-kit operate-contract into a target repo.
 #
 # Adoption = the per-repo trigger that makes an agent classify + pick a lane and that makes the
-# ship-gate engage. It injects a small AGENTS.md POINTER (lib/adopt/AGENTS.pointer.md: four rules
-# plus where the full contract lives) + a proof marker + pointers; it never copies the engine
+# ship-gate engage. It injects a small AGENTS.md POINTER (lib/adopt/AGENTS.pointer.md: four default rules
+# that yield to a repo's own rules, plus where the full contract lives) + a proof marker + pointers; it never copies the engine
 # (lib/, the full WORKFLOW matrix) -- the gate machinery reads those from the install
 # ($KIT_ROOT). Non-destructive: a local AGENTS.md is never overwritten (only a known unmodified
 # kit copy is replaced, and only by --refresh --swap-agents) and the proof marker never is.
