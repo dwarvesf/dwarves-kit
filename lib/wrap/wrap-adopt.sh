@@ -225,7 +225,7 @@ _adopt_preflight() {
   PF_STATUS="ok"; PF_REASONS=""; PF_NOTE=""; ADOPT_DRY=""; ADOPT_STYLE=""
   ADOPT_AO=0
   local gd cgd main_co=1 def="" cur up tpl style="" drc drf
-  local line s sp p paths wt tip otip url="" json ghrc nums ahead=""
+  local line s sp p paths wt tip otip url="" ghs t out rc unreadable nums ahead=""
   local ono=0 wtp=0 rebase_seen=0 lmb lmiss
   PF_DEF=""
 
@@ -301,18 +301,21 @@ _adopt_preflight() {
     ahead="$(git -C "$repo" rev-list --count "refs/remotes/origin/$def..refs/heads/$ADOPT_BRANCH" 2>/dev/null)"
   fi
   if [ -n "$ahead" ] && [ "$ahead" != "0" ]; then
-    json="$(gh pr list --repo "$url" --head "$ADOPT_BRANCH" --state merged \
-            --json number,headRefOid,baseRefName,mergedAt 2>/dev/null)"; ghrc=$?
-    if [ "$ghrc" -ne 0 ] || ! printf '%s' "$json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    # The merged-PR read is branch_merged --numbers: the PRs merged into the default branch at this tip.
+    # The CONFLICTING cycle pushes a merge commit, so the merged PR's head can be origin's tracking tip
+    # rather than the worktree's; both tips count. Any unreadable answer refuses the leftover.
+    tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+    otip="$(git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$ADOPT_BRANCH" 2>/dev/null)"
+    ghs="$(_gh_state)"; nums=""; unreadable=0
+    for t in "$tip" "$otip"; do
+      [ -n "$t" ] || continue
+      out="$(branch_merged --numbers --need pr --tip "$t" "$repo" "$def" "$ghs" "$ADOPT_BRANCH")"; rc=$?
+      case "$rc" in 0) nums="${nums}${out}"$'\n' ;; 1) ;; *) unreadable=1 ;; esac
+    done
+    nums="$(printf '%s' "$nums" | awk 'NF && !seen[$0]++')"
+    if [ "$unreadable" = 1 ]; then
       _pf_add "PR state unreadable; read $wt"
     else
-      tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
-      # The CONFLICTING cycle pushes a merge commit, so the merged PR's head can be
-      # origin's tracking tip rather than the worktree's; both count as a match.
-      otip="$(git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$ADOPT_BRANCH" 2>/dev/null)"
-      nums="$(printf '%s' "$json" | jq -r --arg def "$def" --arg a "$tip" --arg b "$otip" '
-        [.[] | select(.mergedAt != null and .baseRefName == $def
-                      and (.headRefOid == $a or .headRefOid == $b)) | .number] | .[]')"
       if [ -n "$nums" ]; then
         _pf_add "merged #$(printf '%s' "$nums" | tr '\n' ' ' | sed 's/ $//; s/ / #/g'); read $wt"
       else
