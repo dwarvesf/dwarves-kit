@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# proof-capture: write one image or GIF file for visual proof. Standalone: argv in, one file out.
+#   proof-capture run page <src> <out.png> [--width N] [--height N] [--wait MS] [--deadline S]
+#   proof-capture run tape <file.tape> <out.gif> [--deadline S]
+# The contract (IN, OUT, EXIT) is in ../README.md. Exit: 0 written, 1 capture failed, 64 bad input, 69 dependency missing.
+# Until every dependency check has run, only shell builtins are used, so the entry can run with an empty PATH.
+set -u
+
+usage_fail() { printf 'proof-capture: %s\n' "$1" >&2; exit 64; }
+
+usage_text() {
+  printf '%s\n' \
+    'usage: proof-capture run page <src> <out.png> [--width N] [--height N] [--wait MS] [--deadline S]' \
+    '       proof-capture run tape <file.tape> <out.gif> [--deadline S]' >&2
+  exit 64
+}
+
+# num_ok <value> <min> <max>: plain digits only, sets NUM to the decimal value.
+num_ok() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#1}" -le 6 ] || return 1
+  NUM=$((10#$1))
+  [ "$NUM" -ge "$2" ] && [ "$NUM" -le "$3" ]
+}
+
+# ---- arguments ------------------------------------------------------------------------------
+[ $# -ge 1 ] || usage_text
+[ "$1" = run ] || usage_fail "unknown verb: $1 (the only verb is run)"
+shift
+[ $# -ge 1 ] || usage_fail "missing kind: run page | run tape"
+KIND=$1
+shift
+case "$KIND" in
+  page|tape) ;;
+  *) usage_fail "unknown kind: $KIND (use page or tape)" ;;
+esac
+
+POS1=""; POS2=""; NPOS=0
+WIDTH=1280; HEIGHT=800; WAIT_MS=""; DEADLINE_FLAG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --width|--height|--wait|--deadline)
+      FLAG=$1
+      [ $# -ge 2 ] || usage_fail "$FLAG needs a value"
+      VAL=$2
+      shift 2
+      case "$FLAG" in
+        --deadline)
+          num_ok "$VAL" 1 600 || usage_fail "--deadline must be an integer from 1 to 600: $VAL"
+          DEADLINE_FLAG=$NUM ;;
+        --width|--height|--wait)
+          [ "$KIND" = page ] || usage_fail "$FLAG applies to run page only"
+          case "$FLAG" in
+            --width)  num_ok "$VAL" 1 10000 || usage_fail "--width must be an integer from 1 to 10000: $VAL"; WIDTH=$NUM ;;
+            --height) num_ok "$VAL" 1 10000 || usage_fail "--height must be an integer from 1 to 10000: $VAL"; HEIGHT=$NUM ;;
+            --wait)   num_ok "$VAL" 1 120000 || usage_fail "--wait must be an integer from 1 to 120000: $VAL"; WAIT_MS=$NUM ;;
+          esac ;;
+      esac ;;
+    -*) usage_fail "unknown flag, or a path starting with '-': $1" ;;
+    *)
+      NPOS=$((NPOS + 1))
+      case "$NPOS" in
+        1) POS1=$1 ;;
+        2) POS2=$1 ;;
+        *) usage_fail "too many arguments: $1" ;;
+      esac
+      shift ;;
+  esac
+done
+[ "$NPOS" -eq 2 ] || usage_fail "run $KIND needs an input and an output path"
+
+if [ "$KIND" = page ]; then DEADLINE=45; else DEADLINE=120; fi
+if [ -n "${PROOF_CAPTURE_DEADLINE:-}" ]; then
+  num_ok "$PROOF_CAPTURE_DEADLINE" 1 600 || usage_fail "PROOF_CAPTURE_DEADLINE must be an integer from 1 to 600: $PROOF_CAPTURE_DEADLINE"
+  DEADLINE=$NUM
+fi
+[ -z "$DEADLINE_FLAG" ] || DEADLINE=$DEADLINE_FLAG
+
+# ---- input ------------------------------------------------------------------------------------
+# pct_encode <path>: sets ENCODED. Percent first, then space, hash, question mark.
+pct_encode() {
+  local s=$1 pct='%' hash='#' q='?'
+  s=${s//$pct/%25}
+  s=${s// /%20}
+  s=${s//$hash/%23}
+  s=${s//$q/%3F}
+  ENCODED=$s
+}
+
+abs_path() {
+  case "$1" in
+    /*) ABS=$1 ;;
+    ./*) ABS="$PWD/${1#./}" ;;
+    *) ABS="$PWD/$1" ;;
+  esac
+}
+
+URL=""; TAPE_ABS=""
+if [ "$KIND" = page ]; then
+  case "$POS1" in
+    http://*|https://*|file://*) URL=$POS1 ;;
+    *)
+      SCHEME=${POS1%%:*}
+      if [ "$SCHEME" != "$POS1" ]; then
+        case "$SCHEME" in
+          ''|[!A-Za-z]*|*[!A-Za-z0-9+.-]*) ;;
+          *) usage_fail "refusing the scheme '$SCHEME:' (use a file path, http://, https:// or file://)" ;;
+        esac
+      fi
+      [ -f "$POS1" ] || usage_fail "input file not found: $POS1"
+      abs_path "$POS1"
+      pct_encode "$ABS"
+      URL="file://$ENCODED" ;;
+  esac
+else
+  [ -f "$POS1" ] || usage_fail "tape file not found: $POS1"
+  abs_path "$POS1"
+  TAPE_ABS=$ABS
+fi
+
+OUT=$POS2
+if [ -L "$OUT" ]; then usage_fail "refusing a symlink: $OUT"; fi
+if [ -d "$OUT" ]; then usage_fail "output path is a directory: $OUT"; fi
+case "$OUT" in
+  */*) OUTDIR=${OUT%/*}; [ -n "$OUTDIR" ] || OUTDIR=/ ;;
+  *) OUTDIR=. ;;
+esac
+if [ -L "$OUTDIR" ]; then usage_fail "refusing a symlink: $OUTDIR"; fi
+if [ -e "$OUTDIR" ] && [ ! -d "$OUTDIR" ]; then usage_fail "output directory is not a directory: $OUTDIR"; fi
+
+# ---- dependencies (still builtins only) ---------------------------------------------------------
+# try_candidate <item>: an absolute path or a command name; sets FOUND to an executable path.
+try_candidate() {
+  local item=$1 found
+  FOUND=""
+  case "$item" in
+    '') return 1 ;;
+    */*) found=$item ;;
+    *) found=$(command -v "$item" 2>/dev/null) || return 1 ;;
+  esac
+  case "$found" in /*) ;; *) return 1 ;; esac
+  [ -f "$found" ] && [ -x "$found" ] || return 1
+  FOUND=$found
+  return 0
+}
+
+resolve_browser() {
+  local list rest item
+  BROWSER=""
+  if [ -n "${PROOF_CAPTURE_BROWSER:-}" ]; then
+    if [ -f "$PROOF_CAPTURE_BROWSER" ] && [ -x "$PROOF_CAPTURE_BROWSER" ]; then
+      BROWSER=$PROOF_CAPTURE_BROWSER
+      return 0
+    fi
+    printf 'proof-capture: PROOF_CAPTURE_BROWSER is not an executable file: %s\n' "$PROOF_CAPTURE_BROWSER" >&2
+    exit 69
+  fi
+  if [ -n "${PROOF_CAPTURE_BROWSER_CANDIDATES:-}" ]; then
+    list=$PROOF_CAPTURE_BROWSER_CANDIDATES
+  else
+    list="google-chrome:chromium:chromium-browser:microsoft-edge:/Applications/Google Chrome.app/Contents/MacOS/Google Chrome:/Applications/Chromium.app/Contents/MacOS/Chromium:/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+  fi
+  rest="$list:"
+  while [ -n "$rest" ]; do
+    item=${rest%%:*}
+    rest=${rest#*:}
+    if try_candidate "$item"; then BROWSER=$FOUND; return 0; fi
+  done
+  printf 'proof-capture: no Chromium-family browser found; install Chrome, Chromium or Edge, or set PROOF_CAPTURE_BROWSER=<path>\n' >&2
+  exit 69
+}
+
+if [ "$KIND" = page ]; then
+  resolve_browser
+fi
+
+usage_fail "capture is not built yet"

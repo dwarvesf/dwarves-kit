@@ -28,3 +28,14 @@ For the builder of `docs/specs/SPEC-427-visual-proof-module.md`. These are warni
 - FEATURES.md is generated: `bash lib/registry/feature-registry.sh generate`, then commit the result.
 - README names the tested browser and vhs versions only after T12 has run them; do not write them from memory.
 - `docs/figures/*.png` already holds two files over 100 KB; the 100 KB bound for the fixture is the spec's own, not a repo rule.
+
+## Build deltas from the spec (T1 to T5)
+
+- Usage messages are free text, one distinct line per refusal, so a suite row can assert the message and not only exit 64 (an exit code alone proves nothing while the launch is unbuilt). A positional that starts with `-` reaches the flag branch and is refused with "unknown flag, or a path starting with '-'".
+- `PROOF_CAPTURE_DEADLINE` is validated whenever it is set and non-empty, even when `--deadline` is given (the flag still wins for the value). An out-of-range env value is an error either way.
+- `PROOF_CAPTURE_BROWSER_CANDIDATES` set to an empty string counts as unset (built-in discovery runs). Only a non-empty value replaces the list.
+- A scheme-looking input (`word:` with only letters, digits, `+`, `.`, `-` before the colon) that is not http, https or file exits 64 even if a file of that name exists; use `./name:x` for such a file.
+- An `<outdir>` that exists and is not a directory exits 64 (cheap, same class as a symlink).
+- The launch lines are wrapped in `{ ...; } 2>/dev/null`: bash prints `child setpgid ... Operation not permitted` when a fast child has already exec'd, and that notice would reach the caller's stderr.
+- The suite starts the tool in the background under job control (`set -m`) so INT reaches it; a non-interactive bash starts plain `cmd &` jobs with INT ignored. `tests/run-all.sh` was not read for how it starts a suite; the suite itself does not depend on its own INT disposition.
+- The suite's INT and TERM rows need a ready marker from the stub before the signal is sent, so the signal cannot land before launch.
