@@ -94,7 +94,7 @@ One row per brief table row. "Value" names the stamp parameter the file takes; "
 | 6 | Lessons | `.claude/memory/MEMORY.md` plus five seed notes | `files/.claude/memory/*.md` | `scripts/test-agent-lessons.sh` (index links resolve, size under cap) | agnostic | G2 |
 | 7 | Playbook | `.claude/skills/ship-pr/SKILL.md` | `files/.claude/skills/ship-pr/SKILL.md.tpl` | `tests/test-stamp-playbook.sh` (frontmatter keys exact, every command in it exists as a generated script) | value: default branch | G9 |
 | 8 | PR shape | `scripts/pr-shape.sh` | `files/scripts/pr-shape.sh.tpl` | `scripts/test-pr-shape.sh` | value: tags, product paths, board file, default branch | G8 |
-| 9 | PR shape | `.github/workflows/ci.yml` | `files/.github/workflows/ci.yml.tpl` | `scripts/test-check.sh` (twin parity), `actionlint` when present | value: runner label | G8 |
+| 9 | PR shape | `.github/workflows/ci.yml` | `files/.github/workflows/ci.yml.tpl` | `scripts/test-check.sh` (twin parity), `actionlint` when present | agnostic: always `runs-on: [self-hosted]` | G8 |
 | 10 | Local check | `scripts/check.sh` | `files/scripts/check.sh.tpl` | `scripts/test-check.sh` | value: tags, product paths | G8 |
 | 11 | Owners | `OWNERS.md` | `files/OWNERS.md.tpl` | `scripts/test-check-owners.sh` | value: owner login; rows seeded for every generated script | G4 |
 | 12 | Owners | `scripts/check-owners.sh` | `files/scripts/check-owners.sh` | `scripts/test-check-owners.sh` | agnostic | G4 |
@@ -121,7 +121,6 @@ Parameters, set by flags and recorded in the lock:
 | `--product-paths a/,b/` | `src/` | rows 8, 10 |
 | `--door-paths a,b` and `--door-approver <login>` | empty door list: the second-person rule is written, listing no path | row 13, rows 1, 2 |
 | `--board-file <path>` | empty: only `Closes #n` and `no-board-row:` satisfy the board link | rows 8, 16 |
-| `--runner-label <label>` | none: `runs-on: [self-hosted]` | row 9 |
 
 ### Interplay with adopt (the second reader of the same files)
 
@@ -139,7 +138,7 @@ A stamp run never edits adopt's managed `<!-- kit:adopt -->` block.
 
 ### Interfaces (I/O contract)
 
-- Inputs: `lib/stamp.sh [--check | --dry-run | --refresh | --take <path>] [flags above] <target-dir>`. `--check` exits 0 when every manifest file exists and matches the lock, else 1, writing nothing. `--dry-run` prints what would be written. Default (no mode flag) writes missing files only. `--refresh` writes nothing and prints, per file whose template changed since the lock, a unified diff and `Fix: bash lib/stamp.sh --take <path> <repo>`. `--take <path>` replaces exactly one file, and only when the file's current hash equals its lock hash (unedited) or the operator also passes `--force-file`; the old content is first copied to `<path>.orig`.
+- Inputs: `lib/stamp.sh [--check | --dry-run | --refresh | --take <path>] [flags above] <target-dir>`. `--check` exits 0 when every manifest file exists and matches the lock, else 1, writing nothing. `--dry-run` prints what would be written. Default (no mode flag) writes missing files only. `--refresh` writes nothing and prints, per file whose template changed since the lock, a unified diff and `Fix: bash lib/stamp.sh --take <path> <repo>`. `--take <path>` replaces exactly one file, and only when the file's current hash equals its lock hash (unedited); the old content is first copied to `<path>.orig`. For an edited file `--take` refuses and prints the diff between the lock's rendering and the new template with `Fix: apply the diff above by hand`; the stamp never replaces an edited file.
 - Outputs: the files in the table, `.claude/team-stamp.lock`, and report lines `created`, `unchanged`, `edited (left alone)`, `older stamp (run --refresh)`, `missing`.
 - Invariants: no write outside the target; no write through a symlink (`kit_refuse_symlink_path` over every target path and its parents); a failed run leaves the tree as found (write to a temp name, then rename); no generated file contains a path under the kit; a re-run with the same inputs prints only `unchanged`.
 
@@ -163,7 +162,7 @@ file <path> <template-id> <sha256 as written>
 
 1. Kit-free output: the render step scans every rendered file for the kit-path patterns below before writing and aborts the whole run on a hit. Patterns: `\.claude/dwarves-kit`, `CLAUDE_PLUGIN_ROOT`, `KIT_ROOT`, `lib/gate/`, `/bin/(gate|classify|wrap|board)`, and any absolute path under the operator's home. The only allowed kit text is line 1 of `AGENTS.md` (the marker) and the one public URL `https://github.com/dwarvesf/dwarves-kit` in `AGENTS.md`'s closing "if the kit is installed" section, which names no local path.
 2. Refusal text: every refusal prints exactly two lines, first `<tool>: <the rule in one line>`, then `Fix: <the command>`. The rule line says what is forbidden and why in plain words; the fix line is a command that can be pasted. pr-shape prints one pair per failed check. The kit-side test `tests/test-stamp-refusals.sh` runs every refusal in the generated scripts and asserts `^Fix: ` is the line right after the rule line.
-3. Runner label: the generated workflow uses `runs-on: [self-hosted]`, plus `--runner-label` appended when given. It never writes a GitHub-hosted label (`ubuntu-*`, `macos-*`, `windows-*`); `--runner-label` with one of those is refused with `Fix: use the label of your self-hosted pool`. Why: the estate rule is zero hosted-runner spend, and the org template "CI (self-hosted)" is the same shape. A repo with no self-hosted runner gets a workflow that queues and never starts, which costs nothing and fails closed; the twin `scripts/check.sh` is how a PR is checked until a runner exists. When a custom label is given the stamp also writes `.github/actionlint.yaml` declaring it (the one file beyond the brief's table, see DEC-5).
+3. Runner label: the generated workflow always has `runs-on: [self-hosted]` and never a GitHub-hosted label (`ubuntu-*`, `macos-*`, `windows-*`); a test on the template text pins that. A repo with a named pool edits its own file, and the stamp then reports it as edited and leaves it. Why: the estate rule is zero hosted-runner spend, and the org template "CI (self-hosted)" is the same shape. A repo with no self-hosted runner gets a workflow that queues and never starts, which costs nothing and fails closed; the twin `scripts/check.sh` is how a PR is checked until a runner exists.
 4. Shellcheck in CI: no hosted image can be assumed to have it. The job installs a pinned release and checks its sha256 before use, picking the asset by `uname -m` (the hand-fitted job pinned one architecture only). The build fetches both digests from the release metadata with `gh api` and records the release tag in the template; no digest is typed from memory.
 5. Idempotence: all writes go through one `write_if_absent` and one lock update. Two runs in a row produce no diff (`git status --porcelain` empty on the second).
 6. Drift: for each manifest file the stamp compares three hashes: current file, lock, and the rendered template. Current != lock means the repo edited it (`edited (left alone)`, with the line count that differs). Current == lock != template means an older stamp copy (`older stamp`). Missing means `missing` and the file is re-created on a default run only when the lock never listed it.
@@ -240,7 +239,7 @@ Cost note: the probe is Sonnet, cap 3 rounds, per `commands/gauntlet.md`.
 - [ ] Editing any generated file and re-running leaves the edit and prints `edited (left alone)`. (Today: n/a.)
 - [ ] `grep -rEn` for the kit-path patterns over a stamped repo returns only line 1 of `AGENTS.md` and the one public URL; every generated test passes with the kit absent from `PATH` and `HOME`. (Today: the adopt pointer sends an agent to `~/.claude/dwarves-kit/AGENTS.md`.)
 - [ ] A bare `gh pr merge` fed to `scripts/agent-guard.sh` exits 2 with `Fix: bash scripts/pr-merge.sh --wait <n>`. (Today: the kit's `hooks/safety-gate.sh` has no bare-merge block and is plugin-bound.)
-- [ ] The generated workflow contains no GitHub-hosted runner label and `actionlint` accepts it. (Today: none generated.)
+- [ ] The generated workflow has `runs-on: [self-hosted]` and no GitHub-hosted runner label, and `actionlint` accepts it when installed. (Today: none generated.)
 - [ ] A recorded gauntlet run under `docs/verification/gauntlet/` ends SOLID for the card above.
 - [ ] `docs/reference/FEATURES.md` lists `stamp` and `bash tests/run-all.sh --changed` is green.
 
@@ -252,17 +251,17 @@ none (no `docs/QUALITY.md` entry is touched).
 
 | AC | Check |
 |---|---|
-| AC1 file set: the manifest rows equal the 22 rows of the table above, and no file outside it is written except the lock and the optional `.github/actionlint.yaml` | `tests/test-stamp-e2e.sh` file-set section |
+| AC1 file set: the manifest rows equal the 22 rows of the table above, and no file outside it is written except the lock | `tests/test-stamp-e2e.sh` file-set section |
 | AC2 kit-free text: no rendered file matches a kit-path pattern, except line 1 of `AGENTS.md` and the one public URL | `tests/test-stamp-kitfree.sh all` (greps every generated file) |
 | AC3 kit-free run: every generated `scripts/test-*.sh` passes with `PATH` holding only git, bash, jq, coreutils and a `gh` fake, and `HOME` an empty temp dir | `tests/test-stamp-kitfree.sh all` (run section) |
 | AC4 idempotent: a second run writes nothing and prints only `unchanged` | `tests/test-stamp.sh` |
 | AC5 never overwrites: an edited file, a file replaced by a symlink, and a file with a changed mode are left as found | `tests/test-stamp.sh` |
 | AC6 drift report: `edited (left alone)`, `older stamp`, `missing` each reported with the right file, exit codes of `--check` | `tests/test-stamp.sh` |
-| AC7 upgrade offer: `--refresh` prints one diff per `older stamp` file and writes none; `--take <path>` replaces one, keeps `<path>.orig`, refuses an edited file without `--force-file` | `tests/test-stamp.sh` |
+| AC7 upgrade offer: `--refresh` prints one diff per `older stamp` file and writes none; `--take <path>` replaces one, keeps `<path>.orig`, refuses an edited file and prints the diff to apply by hand | `tests/test-stamp.sh` |
 | AC8 hook refusals: each of bare merge, push to default branch, commit on default branch prints the rule line then `Fix:` and exits 2; allowed lookalikes exit 0 | `scripts/test-agent-guard.sh` and `tests/test-stamp-refusals.sh` |
 | AC9 CI refusals: pr-shape (title, proof, board link, changelog, shellcheck, parity), check-owners (no row, dead row, empty owner, no sponsor), pr-merge (draft, red, pending, conflict, door without second person, author as second person), release-notes (untagged line) each print rule then `Fix:` | the generated test of each script and `tests/test-stamp-refusals.sh` |
 | AC10 parity: a PR changing `AGENTS.md` and not `docs/TEAM-WORKFLOW.md` fails; `no-rule-mirror:` with a reason passes; both changed passes | `scripts/test-pr-shape.sh` |
-| AC11 runner: the workflow has `runs-on: [self-hosted]` only; `--runner-label ubuntu-latest` is refused; a custom label produces `.github/actionlint.yaml`; `actionlint` passes when installed | `tests/test-stamp-ci.sh` |
+| AC11 runner: the workflow has `runs-on: [self-hosted]` only, and a scan of the template text finds no `ubuntu-`, `macos-` or `windows-` label; `actionlint` passes when installed | `tests/test-stamp-ci.sh` |
 | AC12 twin: every `run:` command of the `pr-shape` job appears in `check.sh` with the same inputs | `tests/test-stamp-ci.sh` |
 | AC13 adopt interplay: both orders in the interplay table behave as stated; `.claude/settings.json` foreign keys survive; the kit marker is line 1 of `AGENTS.md` and `adopt --check` reports adopted | `tests/test-stamp-adopt-interplay.sh` |
 | AC14 privacy: no template holds a leak-shaped string (absolute home path, email, 40-hex sha, numeric run id, `op://`), and a build-time denylist file kept outside the repo, named in `STAMP_DENYLIST_FILE`, matches nothing | `tests/test-stamp-e2e.sh` privacy section; the lead runs it with the private list |
@@ -297,6 +296,7 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 10. Kit upgrade changes a template while the repo edited the same file: `edited (left alone)` wins; `--refresh` prints the diff against the stamp's own rendering, not against the edit.
 11. The pointer worker changes line 1 of the pointer to a new version: the stamp copies whatever line 1 is, so the marker follows.
 12. The probe writes a PR body with CRLF line ends or a mention-only `#12`: pr-shape must handle both as the hand-fitted tests did (a mention is not a close).
+13. A repo with a named runner pool edits `ci.yml` by hand: the stamp reports `edited (left alone)` and never restores `[self-hosted]`.
 
 ## Failure modes
 
@@ -317,6 +317,8 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 - Language test jobs, product playbooks (`ui-change`, `device-check` and the like), the list of irreversible paths beyond the flag, and who posts the digest.
 - The digest post to a chat channel and the bot credential problem it brought (host-specific, per the brief).
 - Agents other than Claude Code get the rules file and CI only; the stamp adds no per-agent hook for them.
+- Removing foreign kit hook entries from `.claude/settings.json` (no `--drop-kit-hooks`). A repo adopted on a machine without the plugin carries kit hook commands that point under the kit; the stamp reports them and never edits them.
+- A `--runner-label` flag and an `actionlint.yaml` for a custom label: the generated workflow is always `[self-hosted]`.
 - The adopt pointer rewrite and the lane gate sizing (build steps 1 and 2 of the brief, other workers).
 - Board-ID minting, the doc-link check, evidence-branch rules, a dash check: not in the brief's table.
 
@@ -347,10 +349,10 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 ## Decision Log
 
 - DEC-1: the verb is `lib/stamp.sh` with its own templates, not an `adopt` flag. Why: `adopt` is mid-change for the pointer row and is kit-pointer shaped; a stamp must work on a repo the kit never adopted. Rejected: `adopt --team`, a template repo.
-- DEC-2: the file table of the brief is the scope: 22 rows, no board-ID mint script, no doc-link check, no dash check, no evidence-branch rules, though the hand-fitted repo has them. Why: the brief says follow the table, do not add or drop. The one addition is `.github/actionlint.yaml` when a custom runner label is given, because `actionlint` rejects an undeclared label and the check is part of AC11; flagged so the lead can strike it (DEC-5).
+- DEC-2: the file table of the brief is the scope: 22 rows, no board-ID mint script, no doc-link check, no dash check, no evidence-branch rules, though the hand-fitted repo has them. Why: the brief says follow the table, do not add or drop.
 - DEC-3: the stamp keeps a lock file of per-file hashes. Why: the kit side holds no list of what a stamp rendered for a given repo (values change the bytes), so "edited by the repo" cannot be told from "older stamp copy" without it. adopt needs no lock because its pointer is one fixed file with a fixed known-hash list. Alternative rejected: a known-hash list per value set, which grows without bound.
 - DEC-4: default `OWNERS.md` and `docs/TEAM-WORKFLOW.md` paths follow the brief (`OWNERS.md` at the root, `docs/TEAM-WORKFLOW.md`), not the hand-fitted repo's `docs/team/` placement, which came from that repo's own docs layout rule.
-- DEC-5: the runner label is `[self-hosted]` plus an optional extra label, never a hosted label (estate rule). The custom label needs an actionlint declaration file; kept as a conditional extra file.
+- DEC-5: the runner label is always `[self-hosted]`, never a hosted label (estate rule), and there is no flag for it. A repo with a named pool edits its own `ci.yml`; the stamp reports the edit as drift and leaves it.
 - DEC-6: the stamped `scripts/negctl.sh` is a kit-free sibling of `lib/gate/negctl.sh`, not a copy by path. Why: the kit's script lives under the kit and the generated files must not point there. Cost: two copies can drift; `tests/test-stamp-merge.sh` runs both against one fixture and compares the blocks' shape (the five labelled parts), not their bytes.
 - DEC-7: strip rule for the hand-fitted files: every product name, org name, repo slug, runner pool name, chat channel and person login becomes a `{{PLACEHOLDER}}` from the parameter table or is removed with the sentence around it. The token list and its replacements are in the phase report, outside the repo.
 - DEC-8: refusal format is two lines, `<tool>: <rule>` then `Fix: <command>`, unified across the guard, pr-shape, owners, merge guard and release notes. The hand-fitted scripts used three slightly different shapes.
@@ -361,7 +363,7 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 ## Open questions
 
 1. Whether a project `settings.json` hook runs before the teammate trusts the folder (UNCONFIRMED above); the build re-reads the vendor section.
-2. A repo that ran `adopt` on a machine without the plugin carries kit hook commands in `.claude/settings.json` that point under the kit. The stamp does not remove them (never edits foreign entries) and reports them. Whether the lead wants a `--drop-kit-hooks` is open.
+2. (closed, see Out of Scope) Foreign kit hook entries in `.claude/settings.json` are reported, never edited.
 3. The Done line's "passes the generated CI" is met by a local replay of the workflow's commands plus the twin; a hosted-pool run (Tier 3) needs a self-hosted runner and the operator's say-so.
 4. The shellcheck release tag and its two digests are fetched at build time; the spec fixes the method, not the values.
 
@@ -380,7 +382,7 @@ Source: this spec's ## Acceptance Criteria
 | 7 | Replace a target with a symlink, re-run | security/abuse | AC5 | run refused, no write | `bash tests/test-stamp.sh` |
 | 8 | Delete a generated file the lock lists, `--check` | boundary/edge | AC6 | `missing`, exit 1, no re-create without default run rule | `bash tests/test-stamp.sh` |
 | 9 | Change a template, `--refresh` | happy-path | AC7 | one diff per older file, nothing written | `bash tests/test-stamp.sh` |
-| 10 | `--take` an edited file without `--force-file` | boundary/edge | AC7 | refused with `Fix:` line | `bash tests/test-stamp.sh` |
+| 10 | `--take` an edited file | boundary/edge | AC7 | refused, diff printed, `Fix:` line says apply by hand; file untouched | `bash tests/test-stamp.sh` |
 | 11 | `--take` an unedited older file | happy-path | AC7 | replaced, `.orig` kept, lock updated | `bash tests/test-stamp.sh` |
 | 12 | Guard: bare `gh pr merge 7 --squash` | happy-path | AC8 | exit 2; line 1 rule; line 2 `Fix: bash scripts/pr-merge.sh --wait 7` | `bash scripts/test-agent-guard.sh` in a stamped repo |
 | 13 | Guard: `git push origin main`, `git push origin HEAD:main`, bare `git push` on main | happy-path | AC8 | each exit 2 with `Fix:` line | `bash scripts/test-agent-guard.sh` |
@@ -400,8 +402,8 @@ Source: this spec's ## Acceptance Criteria
 | 27 | pr-merge: head moves after judgment | failure-injection | AC9 | merge pinned to the judged head is refused by the fake | `bash scripts/test-pr-merge.sh` |
 | 28 | release-notes: untagged line; `dev:` line | boundary/edge | AC9 | untagged refused with a pair; `dev:` dropped from the notes | `bash scripts/test-release-notes.sh` |
 | 29 | ci.yml: scan for runner labels | security/abuse | AC11 | only `self-hosted`; none of `ubuntu-`, `macos-`, `windows-` | `bash tests/test-stamp-ci.sh` |
-| 30 | `--runner-label ubuntu-latest` | failure-injection | AC11 | refused with `Fix:` line, nothing written | `bash tests/test-stamp-ci.sh` |
-| 31 | Custom label given | happy-path | AC11 | `.github/actionlint.yaml` declares it; `actionlint` passes when installed | `bash tests/test-stamp-ci.sh` |
+| 30 | Plant `ubuntu-latest` in the workflow template text | failure-injection | AC11 | the template-text scan fails | `bash tests/test-stamp-ci.sh` |
+| 31 | `actionlint` on the rendered workflow | happy-path | AC11 | passes when installed | `bash tests/test-stamp-ci.sh` |
 | 32 | Twin parity: every `run:` command of `pr-shape` appears in `check.sh` | regression | AC12 | none missing | `bash tests/test-stamp-ci.sh` |
 | 33 | Adopt then stamp, and stamp then adopt, in a scratch repo | happy-path | AC13 | table behavior; settings foreign keys kept; `adopt --check` exit 0 | `bash tests/test-stamp-adopt-interplay.sh` |
 | 34 | Stamp over a repo whose `AGENTS.md` is its own file | boundary/edge | AC5 AC13 | file untouched, drift line with line count | `bash tests/test-stamp-adopt-interplay.sh` |
