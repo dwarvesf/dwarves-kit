@@ -51,11 +51,12 @@ Output:
 Verdict: PASS
 ```
 
+`bash tests/run-all.sh --changed --time` ran 32 suites on a host at load 334: 28 ok, 4 hit the runner's own timeout with no assertion failed (test-adopt at 118s, test-wrap-adopt-codes, test-wrap-adopt, test-wrap-land). The first three were rerun alone below, test-adopt above. test-wrap-land references only CHANGELOG.md and was not rerun.
+
 ```
-Command: bash tests/run-all.sh --changed --time   (host load 334; 4 suites hit the runner's own timeout), then the two adopt suites alone
+Command: bash tests/test-wrap-adopt-codes.sh && bash tests/test-wrap-adopt.sh
 Exit: 0
 Output:
-  test-meta-contract ok, test-install-contract ok, test-meta-docs-registry ok, test-meta-hard-claims ok, test-no-personal-paths ok, test-meta-plugin-hooks ok, test-lanes-data ok (28 of 32 suites ok)
   test-wrap-adopt-codes: all 20 passed
   test-wrap-adopt: all 225 passed
 Verdict: PASS
