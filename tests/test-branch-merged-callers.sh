@@ -125,7 +125,7 @@ chk "wt close: no PR at all refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $
 chk_has "wt close: no PR names the refusal" "$out" "refusing to close"
 chk "wt close: no PR leaves origin's branch" "$(wt_origin_has w1; echo $?)"
 
-wt_case w2; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"; shim_set state-feat_x OPEN
+wt_case w2; shim_set state-feat_x OPEN   # an open PR is never in the merged list
 out="$(wt_close)"; rc=$?
 chk "wt close: an OPEN PR refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
 
@@ -145,14 +145,25 @@ out="$(wt_close)"; rc=$?
 chk "wt close: a merged PR at the exact tip closes" "$([ "$rc" -eq 0 ] && ! wt_has_branch; echo $?)"
 chk "wt close: the exact-tip close deletes origin's branch" "$(! wt_origin_has w5; echo $?)"
 
-# known-gap: the branch holds a commit its merged PR never carried; wt.sh closes it today.
+# The branch holds a commit its merged PR never carried: wt.sh used to close it and lose the commit.
 wt_case w6; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"
 git -C "$WT_CLONE" checkout -q feat/x; echo unpushed > "$WT_CLONE/g"; git -C "$WT_CLONE" add g
 git -C "$WT_CLONE" commit -qm "feat: made after the PR merged"; B="$(git -C "$WT_CLONE" rev-parse HEAD)"
 git -C "$WT_CLONE" checkout -q master
 out="$(wt_close)"; rc=$?
-WT_GAP_ROW="known-gap(TASK-8): wt close with a commit the merged PR never carried"
-chk "$WT_GAP_ROW" "$([ "$rc" -eq 0 ] && ! wt_has_branch; echo $?)"
+chk "wt close: a commit the merged PR never carried refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+chk_has "wt close: the refusal names LEAVE tip and the PR head" "$out" "LEAVE tip $A"
+chk "wt close: the unpushed commit is still reachable from the branch" "$([ "$(git -C "$WT_CLONE" rev-parse refs/heads/feat/x)" = "$B" ]; echo $?)"
+chk "wt close: origin's branch is untouched" "$(wt_origin_has w6; echo $?)"
+
+wt_case w7; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" stack-base)]"
+out="$(wt_close)"; rc=$?
+chk "wt close: a PR merged into another base refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+chk_has "wt close: the other base is named" "$out" "LEAVE base stack-base"
+
+wt_case w8; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master true)]"
+out="$(wt_close)"; rc=$?
+chk "wt close: a fork's merged PR refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
 
 # ===========================================================================
 echo "=== wrap apply origin sweep: deletes only a merged PR's exact tip (the refusals it has today) ==="

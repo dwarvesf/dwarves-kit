@@ -11,7 +11,7 @@
 #       <type>/<slug>, gate-ledger START (lane chosen == classified), and, when
 #       an ID is given, flip its board row to claimed. Prints the worktree path.
 #   wt.sh close <slug> [type]
-#       refuses unless the branch's PR is MERGED (gh); releases the registry
+#       refuses unless the branch tip is the head of a merged PR (lib/gate/branch-merged.sh, PR rung); releases the registry
 #       claim, removes the worktree, deletes the local + remote branch, and
 #       fast-forwards the main checkout (stashing a dirty BACKLOG around the
 #       pull and restoring it).
@@ -25,6 +25,8 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "wt.sh: not in a g
 MAIN="$(git -C "$ROOT" worktree list --porcelain | awk 'NR==1 && $1=="worktree"{print $2}')"
 cd "$MAIN" || exit 2
 LIB="$MAIN/lib"
+# shellcheck source=lib/gate/branch-merged.sh
+source "$LIB/gate/branch-merged.sh" || { echo "wt.sh: lib/gate/branch-merged.sh missing or unreadable" >&2; exit 2; }
 
 usage() { sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 verb="${1:-}"; shift || true
@@ -46,8 +48,13 @@ case "$verb" in
     slug="${1:?wt.sh close <slug> [type]}"; type="${2:-feat}"
     wt="$MAIN/.claude/worktrees/$slug"; br="$type/$slug"
     git rev-parse -q --verify "refs/heads/$br" >/dev/null || { echo "wt.sh: no local branch $br" >&2; exit 1; }
-    st="$(gh pr list --state all --head "$br" --json state --jq '.[0].state' 2>/dev/null)"
-    [ "$st" = "MERGED" ] || { echo "wt.sh: refusing to close: PR for $br is '${st:-none}', not MERGED" >&2; exit 1; }
+    # The shared merged check, PR rung only: a merged PR whose head is this branch's exact tip. A commit
+    # the PR never carried, a PR into another base, or any gh failure leaves the branch in place.
+    verdict="$(branch_merged --need pr "$MAIN" master "$(_gh_state)" "$br")"
+    case "$verdict" in
+      "SAFE squash "*) ;;
+      *) echo "wt.sh: refusing to close: $br is not at the head of a merged PR (${verdict:-no answer})" >&2; exit 1 ;;
+    esac
     bash "$LIB/goal/goal-registry.sh" release "$slug" 2>/dev/null || true
     # -f -f: a single --force no-ops on a locked worktree, and the `git branch -D` below then
     # fails with "used by worktree", which reads as a second unrelated problem.
