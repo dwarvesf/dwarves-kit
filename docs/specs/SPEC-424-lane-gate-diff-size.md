@@ -1,7 +1,7 @@
 # Spec: the hard-path floor sizes a change by its diff when the change adds a workflow file
 
 Generated: 2026-11-25
-Status: DRAFT
+Status: DRAFT (revised after the security validation: allow-list grammar for Rule A)
 Lane: full (the build edits `lib/classify/lane-classify.sh` and `lib/gate/ship-rules.sh`, the push gate's own enforcement path, and narrows a hard-path trigger)
 Depth: standard (every behavior below was reproduced with the real `floor` verb on scratch repos; the decision brief and the row fix the intent)
 Type: spec-feature
@@ -41,7 +41,7 @@ Two more facts the design leans on:
 Delta only. The glossary `CONTEXT.md` is not touched.
 
 - sized-down: the floor reports no hit for a path it would otherwise report, because the diff content proves the change adds no gate or hook behavior. The full lane's phase ledger is not owed. The proof gate still applies by its own rule.
-- additive workflow: a workflow file the diff creates, with no other `.github/` path in the diff, that passes every check under "Rule A".
+- additive workflow: a workflow file the diff creates, with no other `.github/` path in the diff, whose whole text matches the closed line grammar of "Rule A". The rule sizes a small plain check workflow and nothing else; a refusal costs one phase ledger.
 
 ## Solution
 
@@ -84,23 +84,52 @@ The load-bearing dimension is the list of shapes the sizer accepts. Today it is 
 
 ## Design
 
-### Rule A: a new workflow file is sized down only when it is purely additive and read-only
+### Rule A: a new workflow file is sized down only when its whole text matches a closed line grammar
 
-All of A1 to A7 must hold for the path the loop picked. Any failure, any read error, any doubt: the floor stands.
+The first draft used a deny list over free text. A deny list has to be right about every YAML feature, and the security validation found ten holes in it (escapes, `?` keys, aliases, matrix names, job-level `uses:`, a fail-open `git show` pipe, an author-chosen read point). Rule A is now an allow list by line: each line of the file must match one production below, and a line that matches none keeps the floor. The grammar only has to be right about the lines it admits.
 
-| # | Check | Why |
+Path and diff checks. All must hold; any failure, any read error, any doubt keeps the floor.
+
+| # | Check | Closes |
 |---|---|---|
-| A1 | The raw record status is `A` (added) and the head mode is `100644`. `--no-renames` stays, so a rename is a delete plus an add and the delete keeps the floor. A symlink, an executable bit or a gitlink never qualifies. | a modified or deleted workflow changes what an existing check does |
-| A2 | The path is `.github/workflows/<name>.yml` or `.yaml`, at the repo root, no deeper directory, and it matches no other hard-path kind, no `extra_hard_paths` pattern and not the secret pattern. | a `login.yml` name or a nested path is not a shape the checks below were written for |
-| A3 | No other path in the diff is under `.github/`, whatever its status. At most one workflow is sized per diff. | a second workflow, `CODEOWNERS`, `dependabot.yml`, a composite action or an issue form each alter what CI or review does |
-| A4 | The head image is plain text: at most 200 lines, no NUL, no CR, no byte outside printable ASCII and newline. | an unreadable or hidden-byte file cannot be judged |
-| A5 | Triggers come from a closed list. The top-level `on:` key must exist and every event it names must be `push`, `pull_request` or `workflow_dispatch`. `schedule` is not on the list: a standing cron job is new behavior. | `pull_request_target`, `workflow_run`, `issue_comment` and `repository_dispatch` run with the base repo's token or secrets |
-| A6 | The file declares a top-level `permissions:` key, and the text `write`, `secrets`, `id-token`, `environment`, `deploy` or `publish` appears nowhere in it, comments included, case-insensitive. | read-only token, no secret, no deploy step: the workflow cannot change repo state or reach outside. Substring match on purpose: a false deny keeps the floor, a false allow does not |
-| A7 | No name collision with a workflow at the base. The head image's workflow `name:`, every job key under `jobs:` and every job `name:` are compared, case-insensitive and trimmed, with the same set read from every `.github/workflows/*.y*ml` at the base. Any shared name, or more than 50 base workflows, keeps the floor. | a new always-green job that borrows a required check's name would satisfy branch protection without running the real check |
+| A1 | Raw status is `A` and head mode is `100644`. A modified, deleted, renamed (`--no-renames` gives delete plus add) or symlinked workflow never qualifies. | 10 |
+| A2 | The path is `.github/workflows/<name>.yml` or `.yaml` with `<name>` in `[A-Za-z0-9._-]+`, and matches no other hard-path kind, no extra pattern and not the secret pattern. A newline in a name is folded to `?` by the scan and fails this. | 5 |
+| A3 | Exactly one path in the UNBLANKED path list matches `(^|/)\.github/`, case-insensitive. A comment-dropped `.github/` file or a `.github/*.md` beside the workflow keeps the floor. | 9 |
+| A4 | The head image is read once into a temp file under the floor's temp dir, with the exit status of `git show` tested. It must be non-empty, at most 20000 bytes, NUL-free. There is no pipe from `git show` into a test anywhere in Rule A, and every `grep` and `awk` status is tested explicitly: only the expected status admits, any other keeps the floor. | 5 |
+| A5 | The file matches the grammar below. | 1, 2, 3, 4 |
+| A6 | No collision: every name the file defines (workflow `name:`, each job key, each job `name:`) is absent from the name set read at three revisions: the merge base, `KIT_FLOOR_CONFIG_AT` when set, and the default-branch tip `origin/<default>` (if it cannot be resolved, or is not an `origin/` ref, the floor stands). The set holds, for every workflow file at that revision (at most 50 per revision, 200000 bytes each), every `name:` value, every key at indent 2 to 6, every list item and every flow-list entry (so a `workflow_run: workflows:` target counts), lowercased and trimmed, plus each value cut before ` (` and before `${{`, and the last segment after ` / `. | 3, 4, 7 |
 
-The data-loss scan still runs on the added lines of a sized workflow, because the scan reads added lines of every non-doc file after the path loop. A `drop table` line in a sized workflow still returns `full data-loss`.
+Grammar (A5). Every line is printable ASCII (space to `~`), has no trailing space, contains no backslash and no `${{`, and the file has at most 200 lines. Indentation is spaces, in steps of 2. Productions, by indent:
 
-Decision on state-changing workflows: stricter reading. A workflow that can change repo state (write permission, a trigger that carries secrets, a deploy step) still owes the full lane, by A5 and A6. Residual, accepted: any workflow runs the code it names on the runner when its trigger fires. Sizing removes the phase ledger only; the proof gate and review still apply.
+```
+any indent   blank line (zero length) | a line whose first non-space byte is "#"
+col 0        name: <plain>            once; <plain> = [A-Za-z0-9][A-Za-z0-9 ._-]*, not y n yes no on off true false null, not all digits
+             on:                      once, block style; at least one event
+             permissions:             once, followed by exactly one child  "  contents: read"
+             permissions: {}          the one brace line admitted (instead of the block form)
+             jobs:                    once; at least one job
+on, indent 2   push: | pull_request: | workflow_dispatch:      each at most once, no value
+on, indent 4   branches: | paths:     only under push or pull_request, each once per event
+on, indent 6   - <item>               item = [A-Za-z0-9._/][A-Za-z0-9._/*-]*, only under branches or paths
+jobs, indent 2 <key>:                 key = [A-Za-z0-9][A-Za-z0-9_-]*, not boolean-like, unique
+job, indent 4  name: <plain> | runs-on: <plain> | runs-on: [self-hosted(, <plain>)*] | timeout-minutes: <digits, at most 4> | steps:
+               each at most once; runs-on and steps required
+step, indent 6 "- " then one step key (a new step)
+step, indent 8 one step key:  name: <plain> | uses: actions/<[A-Za-z0-9_-]+>@<40 lowercase hex> | with: |
+               run: <single-line value> | run: | | shell: bash|sh | working-directory: <path>
+               each at most once per step; exactly one of run and uses per step; at least one step per job
+with, indent 10  <key>: <[A-Za-z0-9][A-Za-z0-9 ._/-]*>      only directly under with:
+```
+
+A single-line `run:` value starts with `[A-Za-z0-9._/-]` and continues with `[A-Za-z0-9 ._/=+,@"'$()&|;<>*-]`. It cannot hold `:`, `#`, `%`, `!`, `?`, `{`, `}`, `[`, `]`, a backtick or a backslash, so it cannot open a comment, a mapping, a flow collection, an alias, a tag or a directive.
+
+Block scalar tracking (`run: |` exactly; `|-`, `|+`, `|2` and `>` are refused). After the `run: |` line the scanner is inside the block. Rules: the first non-blank line must be indented exactly 10 spaces; every later non-blank line stays inside the block while its indent is at least 10; blank lines are zero-length; the block needs at least one content line. A non-blank line indented less than 10 ends the block, and from then on it is read as an ordinary line under the grammar above, so a line at indent 8 or less must be a legal production. A line indented 10 or more cannot be anything but block text, because YAML itself reads it as scalar content. The scanner never ends a block earlier than YAML does, so a key cannot be smuggled in as "outside" the block. Any line inside a block still obeys the byte rules (printable ASCII, no backslash, no `${{`).
+
+Not admitted, so each keeps the floor: `if:`, `env:`, `needs:`, `strategy:`, `continue-on-error:`, `secrets`, `concurrency`, `defaults`, `container`, `services`, a job-level `uses:` or `permissions:`, any `permissions:` below the top level, `schedule`, `pull_request_target`, `workflow_run`, `repository_dispatch`, any step `uses:` that is not `actions/<name>@<40-hex>`, any tab, CR, non-ASCII byte, `&`, `*` or `!` at a value start, `?` at a key start, `<<`, `{` (except the one line above), `[` (except the one `runs-on` form), `%`, `---`, `...`, and any duplicate key at any level.
+
+Residual, stated plainly. For a sized diff the phase ledger, the battery (`battery-gate.sh` prints SKIP for a small diff with no floor hit) and the mega-merge floor all drop; only the proof of done still binds. A workflow on a self-hosted runner can run a script added in the same diff, as a test file can today, and that script can do what the runner's own login can do. The grammar limits what the workflow file says; it does not limit what the code it names does. The operator accepted this in the row's Done line ("a PR adding one CI workflow file passes with a proof and no phase ledger"). Nothing else is weakened to make the rule more useful.
+
+The data-loss scan still runs on the added lines of a sized workflow and still returns `full data-loss` for a `drop table` line.
 
 ### Rule B: comment-only edits (existing, now logged)
 
@@ -125,7 +154,7 @@ floor-sized<TAB><kind><TAB><rule><TAB>-<TAB><reason><TAB>-<TAB><path>
 rule = additive-workflow | comment-only
 ```
 
-`_sr_relay` maps it to `A<TAB>[advisory] hard-path sized <kind>: <path> (<rule>)` and `L<TAB>SIZED | floor | <rid> (<kind>: <path>; <rule>)`, with the same folding of non-ASCII bytes and `|`, and the same cap (20 lines, then one count line). `_floor_check` already carries `SR_NOTICES` into the exit-0 hook message, so `hooks/ship-gate.sh` needs no change. A sized-down diff that still ends in `full ...` (a mixed diff) prints the notices and then the BLOCKED message, as exemptions do today.
+`_sr_relay` maps it to `A<TAB>[advisory] hard-path sized <kind>: <path> (<rule>)` and `L<TAB>SIZED | floor | <rid> (<kind>: <path>; <rule>)`, with the same folding of non-ASCII bytes and `|`. Rule A lines are never capped. Comment-only lines are capped at 20; the overflow writes one `[advisory]` count line and one `L` count line (`SIZED | floor | <rid> (comment-only: N more files)`), so the workflow drop is never lost behind 20 earlier drops. `_floor_check` already carries `SR_NOTICES` into the exit-0 hook message, so `hooks/ship-gate.sh` needs no change. A sized-down diff that still ends in `full ...` (a mixed diff) prints the notices and then the BLOCKED message, as exemptions do today.
 
 ### Where the config is read
 
@@ -141,13 +170,15 @@ The sizer reads none. Rule A and Rule B are constants in `lane-classify.sh`. `sh
 |---|---|
 | A workflow claims it is trivial (title, spec `Lane: tiny`, a comment saying so) | no rule reads those; a comment holding a deny word keeps the floor; `ship_rule_floor` ignores the spec lane |
 | A PR adds a workflow and turns `lane_gates` off in the same diff | the `.kit.toml` change is its own `kit-config` hit; the switch is read at the merge base |
-| A PR edits an existing workflow to weaken a check | status `M` fails A1 |
+| A PR edits an existing workflow to weaken a check | status `M` fails A1 (pinned with every name changed, so A6 cannot be the cause) |
 | A PR renames a workflow and weakens it | `--no-renames` gives a delete plus an add; the delete keeps the floor |
-| A new workflow shadows a required check name | A7 |
-| A new workflow runs on `pull_request_target` or `workflow_run`, or holds a write grant, a secret, a deploy step | A5 and A6 |
-| A hidden or odd byte, a CR, an oversized file, an unreadable blob | A4 and fail-closed reads |
+| A new workflow shadows a required check name, including a matrix name, a reusable-call name, a `workflow_run` target, or a base that predates the required workflow | A6 (three read points, prefix and last-segment variants) and the name charset |
+| A new workflow runs on `pull_request_target` or `workflow_run`, holds a write grant, a secret, a deploy step, a job-level `uses:`, an unpinned step action | the A5 grammar admits none of them |
+| A YAML escape (`"\x77rite"`), a `?` key, an alias, a tag, a second document, a flow map | the A5 grammar and the byte rules admit none of them |
+| A block scalar ends early and a key hides after it | the block tracker ends a block only where YAML does; a line outside it must be a legal production |
+| A hidden or odd byte, a CR, an oversized file, an unreadable blob, a newline in the name | A2, A4 and tested exit statuses |
 | Mixed diff: sized file plus any other hard-path change | the loop drops the sized line and looks again; any other hit decides the answer |
-| Two sized workflows in one diff | A3 |
+| Two sized workflows, or a workflow beside any `.github/` file, in one diff | A3 on the unblanked path list |
 | Sizer slow on a pathological diff | shares the 50 drop and 8 second budget of the comment-only loop; past either, the floor stands |
 | A workflow still executes arbitrary code on the runner | accepted and stated above; the phase ledger was never the control for that |
 
@@ -155,54 +186,55 @@ The sizer reads none. Rule A and Rule B are constants in `lane-classify.sh`. `sh
 
 | Task | Files | Acceptance |
 |---|---|---|
-| T1: status and mode capture | `lib/classify/lane-classify.sh` | `_floor_scan` writes a status and a head mode per path line next to `paths`, blanked and dropped in step with it by `_floor_blank` and `_floor_drop` |
-| T2: Rule A | `lib/classify/lane-classify.sh` | `_floor_workflow_additive` returns 0 only when A1 to A7 hold; the loop calls it for a `ci` pick the way it calls `_floor_comment_only`; any failure leaves the pick standing |
-| T3: audit line | `lib/classify/lane-classify.sh`, `lib/gate/ship-rules.sh` | both drop rules write `floor-sized`; `_sr_relay` turns it into an `[advisory]` and a `SIZED` log line, capped at 20 |
-| T4: tests | `tests/test-ceremony-fits-diff.sh` | each row of the test plan has a case; the suite goes red on the merge-base libs |
-| T5: docs | `lib/gate/README.md`, `docs/MANUAL.md` (floor paragraph), `docs/WORKFLOW.md` (hard-path paragraph: `ci` is exempt-proof by config, sized only by Rule A), `CHANGELOG.md`, `docs/reference/FEATURES.md` | each names Rule A and the audit line; no file claims a config key sizes the floor |
+| T1: tests first | `tests/test-ceremony-fits-diff.sh` | every Test plan row is a case; the suite is red on the merge-base libs for the sizing rows |
+| T2: status, mode and unblanked path list | `lib/classify/lane-classify.sh` | `_floor_scan` writes `status`, `hmode` and `paths.all` beside `paths` |
+| T3: Rule A | `lib/classify/lane-classify.sh` | `_floor_workflow_additive` returns 0 only when A1 to A6 hold; the grammar is one awk program; every check is one tagged line so a mutation can switch it off |
+| T4: audit line | `lib/classify/lane-classify.sh`, `lib/gate/ship-rules.sh` | both drop rules write `floor-sized`; `_sr_relay` relays it, Rule A uncapped, comment-only capped with a count line |
+| T5: mutation rows | `tests/test-ceremony-fits-diff.sh` | each finding's rows go red when that finding's tagged lines are neutralised, green on the real libs |
+| T6: docs | `lib/gate/README.md`, `docs/MANUAL.md`, `docs/WORKFLOW.md`, `CHANGELOG.md`, `docs/reference/FEATURES.md` | each says the rule sizes a small plain check workflow and nothing else; `docs/WORKFLOW.md` states the residual in plain words |
 
 ## Test plan
 
 Date: 2026-11-25
-Source: this spec's Acceptance Criteria
+Source: this spec's Acceptance Criteria and the security validation (findings 1 to 10)
 
-All rows are cases in `tests/test-ceremony-fits-diff.sh`, run with `bash tests/test-ceremony-fits-diff.sh <case>`. Fixture: scratch repo, committed `.kit.toml` with `lane_gates = true` and `extra_hard_paths = "^hooks/|^lib/gate/"`, one existing workflow and one existing hook at base.
+All rows are cases in `tests/test-ceremony-fits-diff.sh`. Fixture: scratch repo with an `origin` remote at the base, a committed `.kit.toml` (`lane_gates = true`, `extra_hard_paths = "^hooks/|^lib/gate/"`), one existing workflow, one existing hook. A refusal row asserts `floor` prints `full ci: <path>` (or the kind named). The last row, `rule-a-checks-are-load-bearing`, rebuilds the libs with each finding's tagged lines switched off and requires the rows of that finding to go RED.
 
-| # | Case | Category | Covers (AC) | Expected | Proof |
-|---|------|----------|-------------|----------|-------|
-| 1 | `floor-additive-workflow-is-sized`: add one valid workflow (`on: [push, pull_request]`, `permissions: contents: read`, one `run` step) | happy-path | AC-1 | `floor` prints nothing; stderr holds one `floor-sized ci additive-workflow` line | case PASS |
-| 2 | `ship-rule-floor-sizes-workflow-add`: `ship_rule_floor` on that diff with a ledger holding no phases | happy-path | AC-1, AC-6 | returns 0; the log holds `SIZED | floor |`; no `BLOCKED` | case PASS |
-| 3 | `sized-workflow-still-owes-proof`: `proof-ledger.sh classify` on the diff, then `check` with no proof file, then with one | happy-path | AC-3 | class `behavioral`; `check` exits 1 without a proof, 0 with a green proof carrying a negative control | case PASS |
-| 4 | `floor-hook-behavior-change-keeps-full`: `exit 2` becomes `exit 0` in `hooks/guard.sh`; and `ship_rule_floor` with a `Lane: tiny` spec | happy-path | AC-2 | `full extra: hooks/guard.sh`; BLOCKED naming the missing gates | case PASS |
-| 5 | `floor-workflow-plus-hook-change-keeps-full`: add a valid workflow and change the hook | boundary | AC-4 | `full extra: hooks/guard.sh` | case PASS |
-| 6 | `floor-workflow-plus-gate-off-keeps-full`: add a valid workflow and set `lane_gates = false` in `.kit.toml`; then `ship_rule_floor` | security | AC-4, AC-5 | `full kit-config: .kit.toml`; `ship_rule_floor` blocks (switch read at the base) | case PASS |
-| 7 | `floor-edited-workflow-keeps-full`: a `run` line changed in the existing workflow | security | AC-4 | `full ci` | case PASS |
-| 8 | `floor-renamed-workflow-keeps-full`: existing workflow removed, new name added | security | AC-4 | `full ci` | case PASS |
-| 9 | `floor-two-new-workflows-keep-full`: two valid new workflows | boundary | AC-4 | `full ci` | case PASS |
-| 10 | `floor-workflow-risky-triggers-keep-full`: `pull_request_target`, `workflow_run`, `issue_comment`, `schedule`, `repository_dispatch`, a missing `on:` | security | AC-4 | each `full ci` | case PASS |
-| 11 | `floor-workflow-state-changing-keeps-full`: `permissions: write-all`, `contents: write`, `${{ secrets.X }}`, `environment: prod`, a `deploy` step, `id-token`, no `permissions:` key | security | AC-4 | each `full ci` | case PASS |
-| 12 | `floor-workflow-claims-do-not-count`: a valid workflow whose comment says `sized, lane tiny` and holds the word `deploy`; a valid workflow with a `Lane: tiny` spec in the diff | security | AC-4 | the first `full ci`; the second sized (the claim changes nothing) | case PASS |
-| 13 | `floor-workflow-name-collision-keeps-full`: the new workflow reuses the base workflow's job key, then its job `name:`, then its workflow `name:`, in a different case | security | AC-4 | each `full ci` | case PASS |
-| 14 | `floor-workflow-odd-path-keeps-full`: `.github/workflows/sub/x.yml`, `.github/workflows/x.yml.off`, `.github/workflows/login.yml`, `.github/actions/a/action.yml`, `.github/CODEOWNERS`, `.github/dependabot.yml`, a new `.github/x.json` | boundary | AC-4 | each a hit (`full ci`, or `full auth` for `login.yml`) | case PASS |
-| 15 | `floor-workflow-odd-file-keeps-full`: symlink, mode `100755`, a CR byte, a non-ASCII byte, 201 lines, an empty file | failure-injection | AC-4 | each `full ci` | case PASS |
-| 16 | `floor-workflow-data-loss-line-keeps-full`: a valid workflow with a `drop table` line in a `run` step | security | AC-4 | `full data-loss: .github/workflows/<name>.yml` | case PASS |
-| 17 | `floor-workflow-unreadable-head-keeps-full`: the head ref cannot be read (bad head) | failure-injection | AC-4 | no sizing; the floor result matches today's | case PASS |
-| 18 | `floor-code-to-comment-keeps-full`: `if [ ... ]` becomes `# if [ ... ]` in the hook; JSON change under `.github/`; `.kit.toml` comment below code | security | AC-4 | each a hit | case PASS |
-| 19 | `floor-comment-edit-is-sized-and-logged`: reword a comment that follows a comment | regression | AC-1, AC-6 | no hit; stderr holds `floor-sized ... comment-only` | case PASS |
-| 20 | `floor-config-key-flip-keeps-full`: `wave_cap = 3`, then `lane_gates = false` | regression | AC-5 | each `full kit-config` | case PASS |
-| 21 | `sized-notices-relay-and-cap`: feed 25 `floor-sized` lines to `_sr_relay`; one with `|` and a non-ASCII byte in the path | boundary | AC-6 | 20 `A` and 20 `L` lines, one count line; the odd bytes folded to `?` | case PASS |
-| 22 | `floor-sized-mixed-flood-keeps-floor`: 51 comment-only files plus one workflow add | boundary | AC-4 | the existing cap leaves a hit (floor stands) | case PASS |
-| 23 | regression: `bash tests/test-ceremony-fits-diff.sh`, `bash tests/test-lanes-data.sh`, `bash tests/test-classify-md-inert.sh`, `bash tests/test-hooks.sh`, then `bash tests/run-all.sh --changed` | regression | AC-7 | exit 0 | the command lines |
+| # | Case | Category | Covers | Expected |
+|---|------|----------|--------|----------|
+| 1 | `floor-additive-workflow-is-sized` | happy-path | AC-1 | one plain workflow: no hit; stderr has one `floor-sized ci additive-workflow` line |
+| 2 | `ship-rule-floor-sizes-workflow-add` | happy-path | AC-1, AC-6 | `ship_rule_floor` rc 0 with a ledger that lists unmet gates; log has `SIZED | floor |` |
+| 3 | `sized-workflow-still-owes-proof` | happy-path | AC-3 | class `behavioral`; `check` fails with no proof file, passes with one |
+| 4 | `floor-hook-behavior-change-keeps-full` | happy-path | AC-2 | `full extra: hooks/guard.sh`; `ship_rule_floor` blocks even with a `Lane: tiny` spec |
+| 5 | `floor-workflow-mixed-diffs-keep-full` | security | AC-4, AC-5 | workflow plus hook change, plus `lane_gates = false`, plus a second workflow, plus a comment-only `.github/` file, plus `.github/NOTES.md`: each keeps the floor (finding 9) |
+| 6 | `floor-workflow-existing-workflow-keeps-full` | security | AC-4 | a modified workflow with every name changed; a rename with new names: each `full ci` (finding 10) |
+| 7 | `floor-workflow-escapes-keep-full` | security | AC-4 | `contents: "\x77rite"`, `"id-\x74oken": "\x77rite"`, `"${{ \x73ecrets.X }}"` (finding 1) |
+| 8 | `floor-workflow-on-block-tricks-keep-full` | security | AC-4 | `? pull_request_target`, `on: *t`, a `---` document, `on: {push: null}`, `on: [push]`, `pull_request_target:`, `schedule:` (finding 2) |
+| 9 | `floor-workflow-name-tricks-keep-full` | security | AC-4 | base job `name: test (${{ matrix.os }})`: new `name: test`, `name: test (ubuntu-latest)`, `name: build / test`, `name: ${{ 'te' }}st` (finding 3) |
+| 10 | `floor-workflow-reuse-and-privilege-keep-full` | security | AC-4 | job-level `uses: ./.github/workflows/release.yml`; `uses: foo/bar@v1`; `uses: actions/checkout@v4`; a name equal to a base `workflow_run` target (finding 4) |
+| 11 | `floor-workflow-read-failures-keep-full` | failure-injection | AC-4 | a newline in the file name; an empty file; a NUL byte; `git show` of the head fails (finding 5) |
+| 12 | `floor-workflow-collision-read-points` | security | AC-4 | a branch cut before the required workflow landed collides with the origin tip; no `origin` ref keeps the floor; a collision at `KIT_FLOOR_CONFIG_AT` (finding 7) |
+| 13 | `floor-workflow-block-scalar-cannot-smuggle` | security | AC-1, AC-4 | a `run: |` block with deeper lines is sized; a key at indent 8 or 6 after the block, a first content line at indent 12, `|-`, an empty block: each keeps the floor |
+| 14 | `floor-workflow-odd-path-keeps-full` | boundary | AC-4 | nested path, `.yml.off`, `login.yml`, `.github/actions/a/action.yml`, `CODEOWNERS`, `dependabot.yml`, a new `.github/x.json` |
+| 15 | `floor-workflow-odd-file-keeps-full` | failure-injection | AC-4 | symlink, mode 100755, CR, tab, non-ASCII, 201 lines |
+| 16 | `floor-workflow-grammar-refusals` | security | AC-4 | `if:`, `env:`, `needs:`, `strategy:`, `continue-on-error:`, job-level `permissions:`, `permissions: write-all`, `contents: write`, `secrets`, `&a`, `!!str`, `<<`, `%`, duplicate keys, `runs-on: [ubuntu]`: each keeps the floor |
+| 17 | `floor-workflow-data-loss-line-keeps-full` | security | AC-4 | a `drop table` in a `run` step: `full data-loss` |
+| 18 | `floor-code-to-comment-keeps-full` | security | AC-4 | code turned into a comment in a hook; a JSON change under `.github/`; a `.kit.toml` comment below code |
+| 19 | `floor-comment-edit-is-sized-and-logged` | regression | AC-1, AC-6 | no hit; stderr has `floor-sized ... comment-only` |
+| 20 | `floor-config-key-flip-keeps-full` | regression | AC-5 | `wave_cap = 3`, `lane_gates = false`: `full kit-config` |
+| 21 | `sized-notices-relay-and-cap` | boundary | AC-6 | 25 comment-only plus one workflow drop: the workflow `SIZED` line is present, comment lines are capped at 20 with a count line on both channels (finding 6) |
+| 22 | `floor-sized-flood-keeps-floor` | boundary | AC-4 | 51 comment-only files plus a workflow add: a hit remains |
+| 23 | `rule-a-checks-are-load-bearing` | regression | AC-1, AC-4, AC-6 | per finding, the rows above go red with its tagged lines neutralised |
+| 24 | regression: `bash tests/test-lanes-data.sh`, `bash tests/test-classify-md-inert.sh`, `bash tests/test-hooks.sh`, `bash tests/run-all.sh --changed` | regression | AC-7 | exit 0 |
 
 ### Coverage notes
 - Categories skipped: none.
-- The negative control (Verification) restores `lane-classify.sh` and `ship-rules.sh` from the merge base; rows 1, 2, 3 (via the sizing of row 2), 19 and 21 must go red.
-- Not covered by a dedicated case: the real hook end to end on a live push. Row 2 covers `ship_rule_floor`, which the hook calls unchanged.
+- The Done line end to end (real `hooks/ship-gate.sh` from the worktree, a scratch repo): one plain workflow plus a proof pushes with no phase ledger; a hook behavior change is blocked for the full lane. Captured in the proof file.
 - This is a coverage target, not an exhaustive list.
 
 ## Verification
 
-Each acceptance criterion holds, `bash tests/test-ceremony-fits-diff.sh` passes with the new cases, the negative control (`lib/gate/negctl.sh` with that command; mutation: restore `lane-classify.sh` and `ship-rules.sh` from the merge base) reports PASS, and `bash tests/run-all.sh --changed` exits 0.
+Each acceptance criterion holds, `bash tests/test-ceremony-fits-diff.sh` passes with the new cases, three negative controls through `lib/gate/negctl.sh` report PASS (remove the whole Rule A drop; remove the grammar check; remove the audit line), the mutation row shows each finding's rows red, and `bash tests/run-all.sh --changed` exits 0.
 
 ## After state
 
@@ -221,7 +253,7 @@ A PR that adds one read-only CI workflow file passes the push gate with a proof 
 ## Out of Scope
 
 - Sizing a config-key flip (Rule C): deferred, with the reasons above.
-- Sizing a modified existing workflow, a second workflow in one diff, `CODEOWNERS`, `dependabot.yml` and composite actions.
+- Sizing a modified existing workflow, a second workflow in one diff, `CODEOWNERS`, `dependabot.yml`, composite actions, and any workflow feature outside the grammar.
 - Changing `hooks/ship-gate.sh`, the proof class of `.kit.toml` diffs, `_negctl_required` or `battery-gate.sh`.
 - `//` and `/* */` comment syntax (SPEC-410's decision stands).
 
@@ -234,9 +266,12 @@ An open draft PR for an external design citation verb edits `lib/gate/ship-rules
 ## Decision Log
 
 - Scope is Rule A plus the existing Rule B logged, not the three cases in the row. The Done line names two pinned rows; the comment case already passes, and the config-key case conflicts with the proof bar (the `.kit.toml` proof class is `inert`) and with the row's own motivating edit. The smallest honest design that meets the Done line is "add the workflow-file case, log the drops, add the tests".
-- The stricter reading for state-changing workflows: a closed trigger list, an explicit read-only `permissions:` key, and a substring deny list that counts comments. A false deny costs one phase ledger; a false allow costs a gate.
+- Rule A is an allow list by line, not a deny list (lead decision after the security validation). A deny list must be right about every YAML feature; the allow list only has to be right about the lines it admits. It refuses many honest workflows on purpose: a refusal costs one phase ledger.
+- Block scalars are tracked by indentation (fixed content indent of 10), because a real workflow needs `run: |`. The tracker ends a block only at a line YAML would also treat as outside it.
+- Residual accepted by the operator (the row's Done line): a sized diff drops the phase ledger, the battery and the mega-merge floor; only the proof binds. A workflow on a self-hosted runner can run a script added in the same diff. Recorded in `docs/WORKFLOW.md`.
+- Collision names are read at three revisions and the default-branch tip must be an `origin/` ref; with none, the floor stands. This is stricter than the first draft and costs scratch repos an `origin` remote.
 - At most one sized workflow per diff, and any other `.github/` path in the diff keeps the floor. This is stricter than the Done line needs and trivial to relax later.
-- Name collision (A7) is in because a new workflow whose job reuses a required check's name defeats branch protection without touching any gate file.
+- Name collision (A6) is in because a new workflow whose job reuses a required check's name defeats branch protection without touching any gate file.
 - The sizer is constants in `lane-classify.sh`, never config, so a PR cannot widen it and the merge-base rule needs no new branch.
 - `hooks/ship-gate.sh` stays untouched: notices ride `SR_NOTICES` already. This also avoids the one-line overlap with the open design-citation PR.
 - Comment-only drops now log too, so "every decision the sizer makes" is true of both rules, not only the new one.
