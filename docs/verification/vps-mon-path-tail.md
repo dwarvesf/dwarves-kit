@@ -55,6 +55,10 @@ Verdict: PASS
 
 The mutation put the old `session-report` back. The guard named both stale lines and went red, and the restore turned it green again.
 
+## Rollback
+
+`git revert` the fix commit. The four files go back to naming the retired path; nothing is deployed and no state is written, so there is nothing else to undo.
+
 ## Not proven
 
 - Live behavior of `session-report`. Only comments and the docstring changed, so the heartbeat and snapshot paths run the same bytes as before.
