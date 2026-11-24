@@ -180,6 +180,12 @@ case_states_file_env() {
   out="$(STATES_REGISTRY="$TMPD/env-$n.toml" STATES_ROOT="$repo" STATES_TOML="$tm" "$PY" "$1" --staged 2>&1)"; rc=$?
   [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q "'bogus' is not a declared state"
 }
+case_states_file_env_relative() { # a relative STATES_REGISTRY is read against the repo root, from any directory
+  new_repo; mkdir -p "$repo/conf"; mv "$repo/_meta/states.toml" "$repo/conf/own.toml"
+  put gadgets/new/gadget.toml 'status = "bogus"\n'
+  out="$(cd "$TMPD" && env STATES_REGISTRY=conf/own.toml STATES_TOML="$tm" "$PY" "$1" --repo-root "$repo" --staged 2>&1)"; rc=$?
+  [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q "BLOCKED: state registry (conf/own.toml)"
+}
 case_repo_root_flag() { # run from an unrelated directory, name the repo by flag
   new_repo; put gadgets/new/gadget.toml 'status = "bogus"\n'
   out="$(cd "$TMPD" && env -u STATES_ROOT STATES_TOML="$tm" "$PY" "$1" --repo-root "$repo" --staged 2>&1)"; rc=$?
@@ -230,6 +236,43 @@ case_verb_entry() { # the stable entry point reaches the same engine
   [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q "'bogus' is not a declared state"
 }
 
+case_reader_strict() { # the built-in reader agrees with tomllib on valid text and refuses text it would misread
+  out="$("$PY" - "$1" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("sc_under_test", sys.argv[1])
+sc = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sc)
+good = [
+    'a = ["x\\"y", "z"]\n',
+    'a = "caf\\u00e9\\r"\n',
+    "a = 'lit # not a comment' # c\n",
+    'a = "x # y" # c\n',
+    'a = [\n "p", # one\n "q",\n]\n',
+    'b = {k = "v", n = 3}\n[t.u]\nc-d = true\n"quo ted" = "z"\n',
+]
+bad = ['a = "x", "y"\n', 'a = "abc\\"\n', 'a = "\\q"\n', 'a = "\\u12"\n', 'a = 2026-01-01\n']
+fails = []
+try:
+    import tomllib
+except ImportError:
+    tomllib = None
+for doc in good:
+    if tomllib is not None and sc.mini_toml_loads(doc) != tomllib.loads(doc):
+        fails.append("differs: " + repr(doc))
+    elif tomllib is None:
+        sc.mini_toml_loads(doc)
+for doc in bad:
+    try:
+        sc.mini_toml_loads(doc)
+        fails.append("accepted: " + repr(doc))
+    except sc.TomlError:
+        pass
+print("\n".join(fails) if fails else "OK")
+PY
+)"
+  rc=0; [ "$out" = "OK" ]
+}
+
 check() { # name fn engine
   if "$2" "$3"; then ok "$1"; else no "$1 (rc=$rc)" "$out"; fi
 }
@@ -269,6 +312,7 @@ run_rules() {
   check "--states-file with a relative path" case_states_file_relative "$e"
   check "--states-file with an absolute path" case_states_file_absolute "$e"
   check "STATES_REGISTRY env names the registry" case_states_file_env "$e"
+  check "a relative STATES_REGISTRY resolves against the repo root" case_states_file_env_relative "$e"
   check "--repo-root names the repo from any directory" case_repo_root_flag "$e"
   check "default root is the git root of the current directory" case_git_root_default "$e"
   check "--repo-root beats STATES_ROOT" case_flag_beats_env "$e"
@@ -292,6 +336,7 @@ tm="mini"; run_rules "$ENGINE"
 
 echo "== Part 2: entry point, TOML readers, importable surface, no tenant names =="
 tm=""; check "bin/board state-check reaches the engine" case_verb_entry "$ENGINE"
+check "built-in TOML reader matches tomllib on valid text and refuses what it would misread" case_reader_strict "$ENGINE"
 
 mini_vs_native="$(cd "$KIT_DIR/lib/board" && "$PY" - "$FIXREG" <<'PY'
 import sys
@@ -358,13 +403,18 @@ mutate fix-store-only case_fix_store_untouched 'for f, key, got, want in sorted(
 mutate block-exit case_undeclared 'return 1
 ' 'return 0
 '
-mutate states-file case_states_file_relative 'REGISTRY = Path(registry) if os.path.isabs(registry) else ROOT / registry' 'pass'
+mutate states-file case_states_file_relative '    if registry:
+        REGISTRY = ROOT / registry' '    if registry:
+        pass'
 mutate repo-root case_repo_root_flag '        ROOT = Path(root)' '        pass'
 mutate git-root case_git_root_default 'return Path(top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else os.getcwd())' 'return Path(os.getcwd())'
 mutate registry-label case_banner_names_registry 'f"BLOCKED: state registry ({registry_label()})"' '"BLOCKED: state registry (x)"'
 mutate prog-name case_prog_name 'PROG = os.environ.get("STATES_PROG") or "board state-check"' 'PROG = "board state-check"'
 mutate strict-exit case_all_strict_blocks 'return 1 if strict and bad else 0' 'return 0'
 mutate mini-table-nesting case_illegal_transition 'cur = cur.setdefault(_key(part), {})' 'cur = root.setdefault(_key(part), {})'
+mutate reader-closing-quote case_reader_strict '            if i != len(raw) - 1:
+                raise TomlError(f"text after a string: {raw[:30]}")' '            if False:
+                raise TomlError("x")'
 mutate mini-top-value case_store_nested_field '        if line.startswith("["):
             return None' '        if False:
             return None'

@@ -38,48 +38,81 @@ class TomlError(ValueError):
     """A TOML document the reader cannot parse."""
 
 
-def _split_top(text: str) -> list[str]:
-    """Split on commas that sit outside strings and brackets."""
-    parts, depth, quote, cur = [], 0, "", []
+def _scan(text: str):
+    """Yield (char, quote, escaped) for each char: quote is the open string delimiter or "", escaped marks a char a backslash protects."""
+    quote, skip = "", False
     for ch in text:
+        if skip:
+            skip = False
+            yield ch, quote, True
+            continue
+        if quote == '"' and ch == "\\":
+            skip = True
+            yield ch, quote, False
+            continue
+        yield ch, quote, False
         if quote:
-            cur.append(ch)
             if ch == quote:
                 quote = ""
         elif ch in "\"'":
             quote = ch
-            cur.append(ch)
-        elif ch in "[{":
-            depth += 1
-            cur.append(ch)
-        elif ch in "]}":
-            depth -= 1
-            cur.append(ch)
-        elif ch == "," and depth == 0:
-            parts.append("".join(cur))
-            cur = []
-        else:
-            cur.append(ch)
+
+
+def _split_top(text: str) -> list[str]:
+    """Split on commas that sit outside strings and brackets."""
+    parts, depth, cur = [], 0, []
+    for ch, quote, escaped in _scan(text):
+        if not quote and not escaped:
+            if ch in "[{":
+                depth += 1
+            elif ch in "]}":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+                continue
+        cur.append(ch)
     if "".join(cur).strip():
         parts.append("".join(cur))
     return parts
 
 
 def _strip_comment(line: str) -> str:
-    quote, i = "", 0
-    while i < len(line):
-        ch = line[i]
-        if quote:
-            if ch == "\\" and quote == '"':
-                i += 1
-            elif ch == quote:
-                quote = ""
-        elif ch in "\"'":
-            quote = ch
-        elif ch == "#":
-            return line[:i]
-        i += 1
+    at = 0
+    for ch, quote, escaped in _scan(line):
+        if ch == "#" and not quote and not escaped:
+            return line[:at]
+        at += 1
     return line
+
+
+_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f", '"': '"', "\\": "\\"}
+
+
+def _basic_string(raw: str) -> str:
+    out, i = [], 1
+    while i < len(raw):
+        ch = raw[i]
+        if ch == '"':
+            if i != len(raw) - 1:
+                raise TomlError(f"text after a string: {raw[:30]}")
+            return "".join(out)
+        if ch == "\\":
+            nxt = raw[i + 1:i + 2]
+            if nxt in _ESCAPES:
+                out.append(_ESCAPES[nxt])
+                i += 2
+                continue
+            width = {"u": 4, "U": 8}.get(nxt)
+            code = raw[i + 2:i + 2 + width] if width else ""
+            if not width or len(code) != width or not re.fullmatch(r"[0-9a-fA-F]+", code):
+                raise TomlError(f"unsupported escape: {raw[i:i + 3]}")
+            out.append(chr(int(code, 16)))
+            i += 2 + width
+            continue
+        out.append(ch)
+        i += 1
+    raise TomlError(f"unterminated string: {raw[:30]}")
 
 
 def _value(raw: str):
@@ -87,11 +120,12 @@ def _value(raw: str):
     if not raw:
         raise TomlError("empty value")
     if raw[0] == '"':
-        if len(raw) < 2 or raw[-1] != '"' or raw.startswith('"""'):
+        if raw.startswith('"""'):
             raise TomlError(f"unsupported string: {raw[:30]}")
-        return re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t", '"': '"', "\\": "\\"}.get(m.group(1), m.group(1)), raw[1:-1])
+        return _basic_string(raw)
     if raw[0] == "'":
-        if len(raw) < 2 or raw[-1] != "'" or raw.startswith("'''"):
+        end = raw.find("'", 1)
+        if raw.startswith("'''") or end != len(raw) - 1:
             raise TomlError(f"unsupported string: {raw[:30]}")
         return raw[1:-1]
     if raw == "true":
@@ -162,17 +196,13 @@ def mini_toml_loads(text: str) -> dict:
 
 
 def _depth(text: str) -> int:
-    depth, quote = 0, ""
-    for ch in text:
-        if quote:
-            if ch == quote:
-                quote = ""
-        elif ch in "\"'":
-            quote = ch
-        elif ch in "[{":
-            depth += 1
-        elif ch in "]}":
-            depth -= 1
+    depth = 0
+    for ch, quote, escaped in _scan(text):
+        if not quote and not escaped:
+            if ch in "[{":
+                depth += 1
+            elif ch in "]}":
+                depth -= 1
     return depth
 
 
@@ -233,7 +263,7 @@ def _find_root() -> Path:
 
 
 ROOT = _find_root()
-REGISTRY = Path(os.environ["STATES_REGISTRY"]) if os.environ.get("STATES_REGISTRY") else ROOT / "_meta" / "states.toml"
+REGISTRY = ROOT / (os.environ.get("STATES_REGISTRY") or "_meta/states.toml")
 
 
 def set_paths(root: str | None, registry: str | None) -> None:
@@ -241,10 +271,9 @@ def set_paths(root: str | None, registry: str | None) -> None:
     global ROOT, REGISTRY
     if root:
         ROOT = Path(root)
-        if not os.environ.get("STATES_REGISTRY"):
-            REGISTRY = ROOT / "_meta" / "states.toml"
+        REGISTRY = ROOT / (os.environ.get("STATES_REGISTRY") or "_meta/states.toml")
     if registry:
-        REGISTRY = Path(registry) if os.path.isabs(registry) else ROOT / registry
+        REGISTRY = ROOT / registry
 
 
 def registry_label() -> str:
