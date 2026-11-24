@@ -1,0 +1,9 @@
+# fixture manifest. Columns, tab separated: action, source, target, mode, keys
+copy	files/README.md.tpl	README.md	0644	DEFAULT_BRANCH,OWNER,TAGS
+copy	files/AGENTS.md.tpl	AGENTS.md	0644	KIT_MARKER
+copy	files/scripts/hello.sh	scripts/hello.sh	0755	-
+copy	files/scripts/test-hello.sh.tpl	scripts/test-hello.sh	0755	DEFAULT_BRANCH,TAGS
+copy	files/.kit.toml	.kit.toml	0644	-
+seed	files/OWNERS.md.tpl	OWNERS.md	0644	OWNER
+jsonmerge	files/.claude/settings.json	.claude/settings.json	0644	-
+hook	gen/targets.sh	TARGETS.md	0644	-
