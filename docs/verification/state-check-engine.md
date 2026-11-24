@@ -9,7 +9,7 @@
 | 3 | Parity, real checkout, 3 modes x 6 ways to run the engine | harness below, section A | 18 SAME, 0 DIFF | PASS |
 | 4 | Parity, planted drift, 15 scenarios on two identical copies | harness below, section B | 31 SAME, 1 DIFF (named below) | PASS |
 | 5 | Negative control, one engine rule broken | see NEGATIVE CONTROL | 7 FAIL lines, restored | PASS |
-| 6 | Changed-suite run | `bash tests/run-all.sh --changed --time` | see Changed-suite run | PASS |
+| 6 | Narrow suites for the files the diff touches, one at a time | see Narrow suite runs | all green | PASS |
 
 ## Fixture suite
 ```
@@ -144,4 +144,36 @@ The suite's own Part 3 repeats this for 23 rules in a copy of the engine, includ
 - No kit hook runs the engine. A consumer wires `bin/board state-check --staged` into its own pre-commit hook.
 - The old checker's behavior on a glob with a partial file name before `*` (`--all` finds nothing), on a failed `git` call (`--staged` reads as nothing staged), and on CRLF files is kept as is, so findings stay identical.
 
-## Changed-suite run
+## Narrow suite runs
+`tests/run-all.sh` was not run: the host was overloaded, so the lead asked for one narrow suite at a time instead, and CI for this org is down. Each suite ran in the foreground after merging the latest `origin/master`; the shared test lock was never held long enough to need `KIT_TEST_LOCK=0`.
+
+```
+Command: bash tests/test-state-check.sh
+Exit: 0
+Output (tail): == 124 run, 124 passed, 0 failed ==
+Command: bash tests/test-board-states.sh
+Exit: 0
+Output (tail): All board-states tests passed.
+Command: bash tests/test-board.sh
+Exit: 0
+Output (tail): TOTAL: 63   PASS: 62   FAIL: 0   SKIP: 1
+Command: bash tests/test-registry-verbs.sh
+Exit: 0
+Output (tail): PASS=11 FAIL=0
+Command: bash tests/test-bin-forwarders.sh
+Exit: 0
+Output (tail): test-bin-forwarders: all 48 passed, 0 skipped
+Command: bash tests/test-no-personal-paths.sh
+Exit: 0
+Output (tail): Passed: 3 / 3
+Command: bash tests/test-meta-docs-registry.sh
+Exit: 0
+Output (tail): Passed: 120 / 120
+Command: bash tests/test-meta.sh
+Exit: 0
+Output (tail): Passed: 934 / 934
+Command: bash lib/registry/feature-registry.sh check
+Exit: 0
+Output: feature-registry: docs/reference/FEATURES.md is fresh
+Verdict: PASS
+```
