@@ -177,7 +177,7 @@ stamp-version 1
 value default-branch main
 value owner <login>
 ...
-file <path> <template-id> <sha256 as written>
+file <path> <group> sha256:<hex as written>
 ```
 
 ### Where the verb lives, and why
@@ -293,6 +293,7 @@ none (no `docs/QUALITY.md` entry is touched).
 | AC13 adopt interplay: both orders in the interplay table behave as stated; `.claude/settings.json` foreign keys survive; the kit marker is line 1 of `AGENTS.md` and `adopt --check` reports adopted | `tests/test-stamp-adopt-interplay.sh` |
 | AC14 privacy: the whole branch diff (templates, tests, fixtures, the proof, the gauntlet record) holds no leak-shaped string (absolute home path, email, 40-hex sha, numeric run id, `op://`) and matches no line of the denylist file kept outside the repo and named in `STAMP_DENYLIST_FILE`. Fixture shas and emails are generated at run time, never typed. The check FAILS when `STAMP_DENYLIST_FILE` is unset and `STAMP_RELEASE_CHECK=1` is set; a per-group dev run may skip with a printed notice | `tests/test-stamp-e2e.sh` privacy section; the lead runs it with the private list and `STAMP_RELEASE_CHECK=1` |
 | AC15 gauntlet: the Done run ends with an unaided SOLID verdict, Tier 1 green, and a record under `docs/verification/gauntlet/` | the run record |
+| AC19 scan-safe digests: the lock writes every hash as `sha256:<hex>`, and any hash a generated file carries (the shellcheck pin in `ci.yml`) is `sha256=<hex>` or `sha256: <hex>`; staging a full stamp leaves no bare 64-hex run outside those markers; no template or test fixture in the kit holds a hex literal of 40 or 64 digits (digests are computed at run time) | `tests/test-stamp.sh` staged-diff scan; per group, the same scan over its stamp |
 | AC17 limits and guidance: the limit sentence, the optional-kit section and the trust-the-folder step appear in both docs; `.kit.toml` sets `proof_of_done = true` and `lane_gates = false`; the vendor contract is re-read at build time and the build records the fetch in `docs/implementation-notes/team-stamp.md` | `tests/test-stamp-rules.sh`; the implementation notes |
 | AC18 repo-living files: a `seed` or `hook` file the repo edited never drifts; `--check` is clean on a healthy repo after the repo edits `OWNERS.md`, `CHANGELOG.md` and `MEMORY.md` | `tests/test-stamp.sh` |
 | AC16 negative control: making the guard allow a bare merge, making the render skip the kit-path scan, and making `write_if_absent` overwrite each turn the matching test red | `docs/verification/team-stamp.md` |
@@ -462,6 +463,7 @@ Source: this spec's ## Acceptance Criteria
 | 47 | Docs pin the limit sentence, the optional-kit section, the trust step, and the `.kit.toml` keys | regression | AC17 | each present in both docs | `bash tests/test-stamp-rules.sh` |
 | 48 | Repo edits `OWNERS.md`, `CHANGELOG.md`, `MEMORY.md`, then `--check` | regression | AC18 | exit 0, no drift line | `bash tests/test-stamp.sh` |
 | 49 | Guard probes: `git checkout README.md; git commit` on the default branch, `env -i git commit`, `timeout 5 git push origin main`, `git push --all`, `git push --mirror`, `gh api .../merge`, `$g pr merge` | security/abuse | AC8 | each blocked with a test, or named as a known miss in the lessons note | `bash scripts/test-agent-guard.sh` |
+| 51 | Stamp a scratch repo, `git add -A`, scan the staged diff for a 64-hex run not directly after `sha256:`, `sha256: `, `sha256=`, `sha256-`, `sha256 "` or `sha256 '`; the scan flags a bare run and passes a marked one | security/abuse | AC19 | none found; scanner self-test red then green | `bash tests/test-stamp.sh` |
 | 50 | Whole-diff privacy scan with the denylist | security/abuse | AC14 | fails when the list is unset under `STAMP_RELEASE_CHECK=1`; zero matches when set | `bash tests/test-stamp-e2e.sh` |
 | 40 | Negative controls: guard allows bare merge; scan skipped; overwrite enabled | regression | AC16 | the matching test goes red, restore goes green | `docs/verification/team-stamp.md` |
 

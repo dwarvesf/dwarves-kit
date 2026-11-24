@@ -24,6 +24,8 @@ Spec: `docs/specs/SPEC-425-team-stamp.md`. Only deltas from the spec. One `## <g
 - C5. The target's `.orig` backups are guarded against symlinks like every target; a second `--take` of the same file writes `.orig.1`, never overwrites a backup.
 - C6. The validation asked to move `## Picture` under `## Design`. Kept as `## Picture` (the spec template requires that heading on a full-lane spec) and added the lock-state sketch inside `## Design`.
 
+- C7. The lock was first written with bare hex (`file <path> <group> <hex>`). A secret scan on the operator's machine reads a bare 64-hex run as a key, so the lock now writes `sha256:<hex>` (follow-up commit after the engine commit). An older lock with bare hex still reads. Every group must keep any hash it carries in the marker form (the shellcheck pin of the CI template: `sha256=<hex>`), and no template or fixture may hold a hex literal.
+
 ### Open questions
 - Q1. Test row 42 (negctl refusing a syntax-only red) and the rest of the validation's per-script rows are G7 to G9 work; the spec carries them.
 - Q2. Not re-probed by this build: the validation's guard misses `gh api .../merge`, `$g pr merge`, `env -i`, `timeout`, `git push --all/--mirror`. Seven findings were reproduced against the source (door arrays under `set -u`, python3 in release-notes, label precondition, checkout override, fixture literals, `fix:` casing, the `.kit.toml` kit header); G3 re-probes the guard cases.
