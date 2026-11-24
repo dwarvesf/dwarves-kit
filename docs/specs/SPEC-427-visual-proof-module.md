@@ -3,7 +3,7 @@
 Generated: 2026-11-25
 Status: DRAFT
 Lane: full (the diff floor: `lib/gate/proof-gate.sh` and `lib/config/modules.tsv` are enforcement-surface paths; `lane-classify.sh classify` on the task text alone says `normal`, and with `--files` it says `full`)
-Depth: standard (every kit surface this touches was read in this tree, and the two capture paths were run on this host; the grounding below holds the output)
+Depth: blind-spot (failure: the browser flag set was run on Edge and Helium only, so Chrome, Chromium and any Linux browser, which the discovery list names, may hang or write nothing in a way this host could not show)
 Type: spec-feature
 Board: ID-395
 File: `docs/specs/SPEC-427-visual-proof-module.md`
@@ -102,7 +102,7 @@ The `run page` lifecycle (the part a builder gets wrong):
 
 Success is the file on disk, never the browser's exit: two browsers probed on this host write the PNG in about 2 s and then never exit.
 
-`run tape` has the same shape with `vhs` in place of the browser: vhs writes `-o <outdir>/.proof-capture.<pid>.gif`; success is a valid GIF (`GIF8` magic, size > 0, size equal on two reads); at the deadline the tool sends TERM to the vhs pid, then KILL after 2 s; the partial is renamed to `<out>` on success and removed on failure. vhs starts `ttyd` and a browser of its own: the tool does not claim to reap them, and `GUIDE.md` tells a user to check `pgrep ttyd` after a killed run.
+`run tape` has the same shape with `vhs` in place of the browser: vhs writes `-o <outdir>/.proof-capture.<pid>.gif`; success is a valid GIF (`GIF8` magic, size > 0, size equal on two reads); at the deadline the tool sends TERM to the vhs pid, then KILL after 2 s; the partial is renamed to `<out>` on success and removed on failure. vhs starts `ttyd` and a browser of its own; sampled on this host (Grounding 8), TERM ended `ttyd` but not vhs itself within 6 s, and KILL left no `ttyd` and no headless browser behind.
 
 ### Boundaries & failure modes
 
@@ -122,13 +122,18 @@ IN
   argv only. No stdin. No config file.
   <src>        a file path, or an http://, https:// or file:// URL. Any other scheme exits 64.
   --width N    viewport width in px, default 1280.   --height N   default 800.
-  --wait MS    let the page run MS ms of virtual time before the shot (maps to --virtual-time-budget); default none.
+  --wait MS    a positive integer: let the page run MS ms of virtual time before the shot (maps to
+               --virtual-time-budget); default none. 0 exits 64, because the browser writes no file at budget 0.
   --deadline S seconds to wait for a valid artifact; default 45 for page, 120 for tape.
   env PROOF_CAPTURE_BROWSER  path to a Chromium-family browser; set means use it or fail, never fall back.
   env PROOF_CAPTURE_VHS      path to vhs; same rule.
   env PROOF_CAPTURE_DEADLINE seconds; the flag wins.
-  Browser discovery when unset, first hit wins: google-chrome, chromium, chromium-browser, microsoft-edge on PATH;
-  the Google Chrome, Chromium and Microsoft Edge app paths on macOS. Brave is not listed (see Grounding).
+  env PROOF_CAPTURE_BROWSER_CANDIDATES  colon-separated absolute paths or command names that REPLACE the built-in
+               discovery list (the seam a test uses to make "no browser" reproducible on a host that has one).
+  Built-in discovery when no env names a browser, first hit wins: google-chrome, chromium, chromium-browser,
+  microsoft-edge on PATH; then the Google Chrome, Chromium and Microsoft Edge app paths on macOS. Brave is not
+  listed (see Grounding). Every dependency check runs before any external command, so a test can run the entry
+  with an empty PATH.
 
 OUT
   <out> is written only when valid: PNG magic 89504E470D0A1A0A for page, GIF magic "GIF8" for tape, size > 0.
@@ -147,6 +152,7 @@ Exact one-line messages (the suite greps them):
 
 - no browser: `proof-capture: no Chromium-family browser found; install Chrome, Chromium or Edge, or set PROOF_CAPTURE_BROWSER=<path>`
 - bad `PROOF_CAPTURE_BROWSER`: `proof-capture: PROOF_CAPTURE_BROWSER is not an executable file: <value>`
+- bad `PROOF_CAPTURE_VHS`: `proof-capture: PROOF_CAPTURE_VHS is not an executable file: <value>`
 - no vhs: `proof-capture: vhs not found; install it (brew install vhs) or set PROOF_CAPTURE_VHS=<path>`
 - deadline: `proof-capture: no valid artifact within <S>s`
 
@@ -168,6 +174,23 @@ _proof_visual_capture() {                      # <row> -> the capture command, o
 
 Invariants: with `[proof] visual` off, `contract` output is byte-identical to master; `proof-ledger.sh` is not edited; the module never reads a kit file; `bin/proof-capture` holds one `exec` and nothing else.
 
+### Module docs (T2)
+
+- `README.md`: the contract block above, verbatim; the dependency table (page needs a Chromium-family browser; tape needs `vhs`, which brings `ttyd` and `ffmpeg`); the exact messages; a three-line "run it alone" example; the warning that a tape runs commands as the invoking user, so never run one you did not read.
+- `GUIDE.md`: the neutral craft only. Storyboard first, one story under 30 s. The frame check: open the image and look for the right content, and for a leak of paths, hostnames, tokens or names, before it is committed. User theme fidelity: the page or terminal is in the real theme, never a tool default. Three gotchas: a browser can write the file and never exit (the tool kills it); `/tmp` and `/private/tmp` differ on macOS, so pass real paths; a locale without UTF-8 turns box-drawing glyphs into raw bytes in a tape, so set `LANG` on the tape's first line.
+- `SPEC.md`: one page of interface and invariants, with a pointer to this spec for the build story.
+- No tenant words anywhere in the dir: herdr, one-dark, localterm, hermes, a personal browser name.
+
+### The suites (T1 and T6)
+
+`lib/proof-capture/tests/test-proof-capture.sh` defines its own `ok`/`bad` helpers, sources nothing from the kit, and writes both stubs into a temp dir. The stub browser parses `--screenshot=<path>` and `--user-data-dir=<dir>`, appends its argv to `$STUB_ARGV`, then acts by `STUB_MODE`: `ok` writes a valid PNG (a 1 by 1 PNG from `printf` octal escapes) and exits; `write-then-hang` writes it, starts a helper as `bash -c 'sleep 300' _ --user-data-dir=<dir> &` (so the helper's own argv holds the flag and `pgrep -f` can find it), then `sleep 300`; `never-write` sleeps; `exit-no-file` exits 0. The stub `vhs` records its args, takes `-o <path>`, and acts by mode: `ok` writes `GIF89a` plus bytes, `exit-no-file`, `bad-file` writes text. Cases, numbered to the ACs: 1 page file, 2 page URL, 3 argv and profile cleanup, 4 write-then-hang, 5 never-write at a 2 s deadline, 6 missing dependencies (bad `PROOF_CAPTURE_BROWSER`; the candidates seam with only nonexistent entries, exact message; the same seam with the stub as a control that exits 0; bad `PROOF_CAPTURE_VHS`; `PATH` set to an empty dir with no vhs, exit 69 before any external command), 7 tape modes, 8 usage table, 9 the real-browser case (runs when discovery or `PROOF_CAPTURE_BROWSER` finds a browser: capture `hello.html` at 800 by 500 and read the IHDR; else print `SKIP` and count it), 10 the standalone lint with its planted violation. The recap line is `N passed, M failed, K skipped`; exit 0 when M is 0.
+
+`tests/test-proof-capture-route.sh` (kit side) runs: the module dir copied out and its suite run under `env -i` (AC8); the delete-the-tool tree (AC10); the end-to-end repo (AC11), using `PROOF_CAPTURE_BROWSER` for the stub and `PROOF_ASSET_CONVERT` for the encoder seam so no real encoder or network is needed; and the argv-shape check, which takes the `run page` and `run tape` lines from `contract` output, fills the placeholders, and runs them against the stubs.
+
+### The fixture (T9)
+
+Capture with the real browser through the shim: `bin/proof-capture run page lib/proof-capture/examples/hello.html docs/verification/visual-proof-module/page.png --width 800 --height 500`. Open the PNG and read it; the byte count proves nothing. Write one verified-content line (what is on screen, which browser made it, that no path or name leaks). Embed it with a relative link next to the run table. Also run `run tape` on `examples/hello.tape` and quote its output line; the GIF is not committed. Put the real captured output, a run-table and one negative control in `lib/proof-capture/docs/proof-of-done.md`. Run `run page ... --wait 3000 --width 400` against a page that changes after a timer, read the IHDR, and quote it, so the `--wait` and 400 px claims in the contract are shown, not asserted.
+
 ### Data model changes
 
 None. The artifact is a file; the manifest `proof-asset` writes is unchanged.
@@ -186,26 +209,26 @@ None. No hook, no daemon, no launchd, no CI workflow, no network call from the t
 
 ## Task Breakdown
 
-Order matters: T1 before T2 to T6 (everything wraps the entry); T4 before T5 (the routing check reads the shim); T9 needs T1 and T4 (it runs the real capture through the shim); T10 last.
+Order matters: T1 before T2 to T6 (everything wraps the entry); T4 before T5 (the routing check reads the shim); T9 needs T1 and T4 (it runs the real capture through the shim); T10 last. Each task is its files plus its check; the content lives in `## Technical Design`.
 
 ### Phase 1: The module
 
-- [ ] T1: The entry and its suite. Files: `lib/proof-capture/bin/proof-capture`, `lib/proof-capture/examples/hello.html`, `lib/proof-capture/examples/hello.tape`, `lib/proof-capture/tests/test-proof-capture.sh`. Write the entry per `## Design` and the contract; the suite defines its own stub browser and stub `vhs` (a bash script that records its argv to a file, then acts per `STUB_MODE`: `ok`, `write-then-hang`, `never-write`, `exit-no-file`) and its own `ok`/`bad` helpers, and sources nothing from the kit. Check: `bash lib/proof-capture/tests/test-proof-capture.sh` ends `ALL PASS`; AC1 to AC7 and their negative controls.
-- [ ] T2: Module docs. Files: `lib/proof-capture/README.md` (the contract block from Interfaces, the dependency table, the never-run-an-unread-tape note, a three-line "run it alone" example), `lib/proof-capture/GUIDE.md` (the neutral craft only: storyboard first with one story under 30 s; the frame check, which is open the image and look for the right content and a leak of paths, hostnames, tokens or names before committing; one story per capture; a note that user theme fidelity means the page or terminal is in the real theme, no tool default; the three gotchas below), `lib/proof-capture/SPEC.md` (a one-page interface spec, a pointer to this spec for the build story). Gotchas allowed in GUIDE: a browser can write the file and never exit (the tool kills it); `/tmp` and `/private/tmp` differ on macOS, so pass real paths; a locale without UTF-8 turns box-drawing glyphs into bytes in a tape, so set `LANG` on the tape's first line. No tenant words (herdr, one-dark, localterm, hermes, a personal browser name). Check: `grep -c '^IN$' lib/proof-capture/README.md` prints 1 and the same for `^OUT$` and `^EXIT$`; a grep for the tenant words over the dir prints nothing.
+- [ ] T1: The entry and its suite. Files: `lib/proof-capture/bin/proof-capture`, `lib/proof-capture/examples/hello.html`, `lib/proof-capture/examples/hello.tape`, `lib/proof-capture/tests/test-proof-capture.sh`. Check: `bash lib/proof-capture/tests/test-proof-capture.sh` ends `0 failed`; AC1 to AC7 and their negative controls. Build to `## Design`, `### Interfaces` and `### The suites`.
+- [ ] T2: Module docs. Files: `lib/proof-capture/README.md`, `lib/proof-capture/GUIDE.md`, `lib/proof-capture/SPEC.md`. Check: `grep -c '^IN$' lib/proof-capture/README.md` prints 1, the same for `^OUT$` and `^EXIT$`, and a grep for the tenant words over the dir prints nothing. Content per `### Module docs`.
 
 ### Phase 2: Kit integration (thin)
 
-- [ ] T3: Registry rows. Files: `lib/config/modules.tsv` (one row: `proof_capture`, `opt-in`, `-`, `proof-capture`), `kit.toml` (`proof_capture = false` under `[modules]`, comment: hookless, exposes the proof-capture CLI), `lib/config/module-registry.md` (stage Build (Execute); bump the module count text to match the table). Check: `bash tests/test-modules-table.sh` and `bash tests/test-config-registry.sh` pass; a fresh adopt does not turn it on (`tests/test-adopt.sh` stays green, since it reads the table).
-- [ ] T4: The shim and its census. Files: `bin/proof-capture` (three lines: shebang, `SELF_DIR`, `exec "$SELF_DIR/../lib/proof-capture/bin/proof-capture" "$@"`, exec bit set), `tests/test-bin-forwarders.sh` (add `proof-capture` to the `EXPECTED` census), `tests/test-install-clis.sh` (add it to the module CLI loop if that loop names module CLIs). Check: `bash tests/test-bin-forwarders.sh`, `bash tests/test-install-clis.sh`, `bash tests/test-kit-contract.sh` (C2 wiring, C3 needs T2 and T9 done, so read C3 last).
-- [ ] T5: Routing. Files: `lib/gate/proof-gate.sh` (the function above and a four-line addition to `proof_contract`), `tests/test-proof-contract-visual.sh` (new cases: knob on and "redesign the settings page UI" gives a `capture:` line with `run page` and the `visual:` line unchanged; a TUI task gives `run tape`; a bot-message task gives no `capture:`). Check: `bash tests/test-proof-contract-visual.sh` ends all pass, including the existing case 21 and case 22 unchanged.
-- [ ] T6: Kit-side suite. Files: `tests/test-proof-capture-route.sh`, `bin/test-affected.timeouts` (only if the suite needs more than the default). Cases: the delete-the-tool tree (AC10), the end-to-end fixture repo (AC11), the module-dir-has-no-kit-reference lint with a planted violation (AC7), the install census line. Model the temp tree on case 22 of `tests/test-proof-contract-visual.sh` (copy `proof-gate.sh`, `proof-classes.sh`, `proof-classes.tsv` into a temp `lib/gate/`, symlink the other lib subdirs and `docs` except `proof-capture`, leave the temp `bin/` without the shim) and the temp repo on `tests/test-proof-visual-gate.sh`. Check: `bash tests/test-proof-capture-route.sh`.
+- [ ] T3: Registry rows. Files: `lib/config/modules.tsv` (one row: `proof_capture`, `opt-in`, `-`, `proof-capture`), `kit.toml` (`proof_capture = false` under `[modules]`, hookless, exposes the proof-capture CLI), `lib/config/module-registry.md` (a stage row, Build (Execute); a `modules.proof_capture` key row beside `modules.worktree`; the module count text). Check: `bash tests/test-modules-table.sh` and `bash tests/test-config-registry.sh` pass.
+- [ ] T4: The shim and its census. Files: `bin/proof-capture` (shebang, `SELF_DIR`, one `exec "$SELF_DIR/../lib/proof-capture/bin/proof-capture" "$@"`, exec bit), `tests/test-bin-forwarders.sh` (add to `EXPECTED`), `tests/test-install-clis.sh` (add to its module CLI loop). Check: `bash tests/test-bin-forwarders.sh`, `bash tests/test-install-clis.sh`, `bash tests/test-adopt.sh` (a fresh adopt must not turn the module on).
+- [ ] T5: Routing. Files: `lib/gate/proof-gate.sh` (the function above, and a four-line addition to `proof_contract`), `tests/test-proof-contract-visual.sh` (cases: knob on and a settings-page task gives a `capture:` line with `run page` and an unchanged `visual:` line; a TUI task gives `run tape`; a bot-message task gives none). Check: `bash tests/test-proof-contract-visual.sh` all pass, case 21 and case 22 unchanged.
+- [ ] T6: Kit-side suite. Files: `tests/test-proof-capture-route.sh`, `bin/test-affected.timeouts` (only if the suite needs more than the default). Check: `bash tests/test-proof-capture-route.sh` ends `0 failed`; AC8 to AC11. Cases per `### The suites`; model the temp tree on case 22 of the contract suite and the temp repo on `tests/test-proof-visual-gate.sh`.
 
 ### Phase 3: Say it exists, then prove it
 
-- [ ] T7: Docs that say the producer exists. Files: `commands/verify.md` (Step 7b: name `bin/proof-capture run page|tape` as the capture, then `bin/proof-asset put`; a page flow or a generated file with no verb is captured by hand as today), `docs/verification/README.md` (replace the "producer is the visual-proof module ... until it lands" paragraph with the real command and what is still by hand), `docs/reference/tiers.md` (the row that says queued, line 53). Check: `bash tests/test-proof-contract-visual.sh` (its R10 case greps `verify.md`) and `bash tests/test-meta-docs-registry.sh`.
-- [ ] T8: Surface lists. Files: `docs/reference/install.md` (module table row), `docs/reference/project-structure.md` and `docs/reference/consumer-contract.md` (the module-CLI lists), `lib/README.md` (a `proof-capture/` row next to `proof/`). Check: `bash tests/test-meta-docs-registry.sh`.
-- [ ] T9: The fixture and the module's proof. Files: `docs/verification/visual-proof-module.md`, `docs/verification/visual-proof-module/page.png`, `lib/proof-capture/docs/proof-of-done.md`, `CHANGELOG.md`. Capture with the real browser: `bin/proof-capture run page lib/proof-capture/examples/hello.html docs/verification/visual-proof-module/page.png --width 800 --height 500`; open the PNG and read it (do not trust the byte count); write the verified-content line; embed it with a relative link, `![page fixture](visual-proof-module/page.png)`; also run `run tape` on `examples/hello.tape` and quote its output line (the GIF is not committed); put the real captured output, a run-table and one negative control in `proof-of-done.md`. Check: `bash lib/gate/proof-ledger.sh images docs/verification/visual-proof-module.md .` prints one line whose path exists; `wc -c docs/verification/visual-proof-module/page.png` is under 102400.
-- [ ] T10: Whole-change check. Files: none. Run `bash tests/test-kit-contract.sh` (C3 now sees the proof-of-done), then `bash tests/run-all.sh --changed --time` once.
+- [ ] T7: Docs that say the producer exists. Files: `commands/verify.md` (Step 7b names `bin/proof-capture run page|tape`, then `bin/proof-asset put`; a flow or generated file with no verb stays by hand), `docs/verification/README.md` (replace the "producer is the visual-proof module ... until it lands" paragraph), `docs/reference/tiers.md` (the queued row). Check: `bash tests/test-proof-contract-visual.sh` (its R10 case greps `verify.md`) and `bash tests/test-meta-docs-registry.sh`.
+- [ ] T8: Surface lists. Files: `docs/reference/install.md` (module table row), `docs/reference/project-structure.md` and `docs/reference/consumer-contract.md` (the module CLI lists), `lib/README.md` (a `proof-capture/` row beside `proof/`), `docs/reference/FEATURES.md` (regenerated, never hand edited: `bash lib/registry/feature-registry.sh`). Check: `bash tests/test-meta-docs-registry.sh` and `git diff --stat docs/reference/FEATURES.md` shows only generated rows.
+- [ ] T9: The fixture and the module's proof. Files: `docs/verification/visual-proof-module.md`, `docs/verification/visual-proof-module/page.png`, `lib/proof-capture/docs/proof-of-done.md`, `CHANGELOG.md`. Check: `bash lib/gate/proof-ledger.sh images docs/verification/visual-proof-module.md .` prints one line whose path exists, and `wc -c docs/verification/visual-proof-module/page.png` is under 102400. Steps per `### The fixture`.
+- [ ] T10: Whole-change check. Files: none. Check: `bash tests/test-kit-contract.sh` (C3 now sees the proof-of-done), then `bash tests/run-all.sh --changed --time` once.
 
 ## After state
 
@@ -228,7 +251,7 @@ none
 | AC2 headless and throwaway: the browser argv holds `--headless=new` and a `--user-data-dir` under `TMPDIR` that no longer exists after the run; nothing but the named `<out>` is left behind (no `.proof-capture.*` partial) | suite case 3 (stub records argv) | mutate the entry to drop `--headless=new`: case 3 fails |
 | AC3 a browser that writes the file and never exits: the run returns 0 within deadline plus 3 s and the stub process is gone (`pgrep -f` the profile finds nothing) | suite case 4 | delete the `pkill` line: case 4 fails on the leftover process |
 | AC4 deadline: a browser that never writes: exit 1 at the deadline, the exact message, no `<out>`, an existing `<out>` unchanged | suite case 5 | none needed beyond the case itself |
-| AC5 missing dependency, never a pass: `PROOF_CAPTURE_BROWSER=/nonexistent` exits 69 with the exact message and no artifact; `PROOF_CAPTURE_VHS=/nonexistent` exits 69 | suite case 6 | the same call with a valid stub exits 0, so the 69 is caused by the dependency |
+| AC5 missing dependency, never a pass: a bad `PROOF_CAPTURE_BROWSER` exits 69 with its exact message; `PROOF_CAPTURE_BROWSER_CANDIDATES` holding only nonexistent entries exits 69 with the no-browser message (this is how "no browser" is reproduced on a host that has one); a bad `PROOF_CAPTURE_VHS` exits 69 with its message; no vhs on an empty `PATH` exits 69 before any external command; none writes an artifact | suite case 6 | the same candidates seam holding the stub exits 0, so the 69 is caused by the missing dependency |
 | AC6 `run tape`: stub vhs gets `-o <out> <tape>`, writes a GIF, exit 0; stub exits 0 without a file: exit 1; GIF magic is checked | suite cases 7 to 8 | a stub that writes a non-GIF file: exit 1 |
 | AC7 usage: no args, unknown verb, unknown flag, missing input file, a `javascript:` or `chrome:` scheme: exit 64 each, nothing written | suite case 9 | none needed |
 | AC8 standalone: the module dir copied to a temp path outside any git repo passes its own suite under `env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin`; a lint finds no `DWARVES_KIT`, `kit-config` or `../../` in the module's executable | route suite | plant `source ../../config/kit-config.sh` in the copy: the lint fails |
@@ -263,7 +286,7 @@ The real-browser case inside the first suite reports `SKIP` (counted, never a pa
 1. `<src>` is a relative path: resolve it to an absolute `file://` URL from the caller's cwd before launch. A path with spaces or `#` is percent-encoded.
 2. `<out>` exists already: replaced only on success.
 3. `<out>` parent missing: created. `<out>` is a directory: exit 64.
-4. `--width` or `--height` not a positive integer: exit 64.
+4. `--width`, `--height` or `--wait` not a positive integer: exit 64. `--wait 0` is refused on purpose: Edge wrote no file at `--virtual-time-budget=0` (Grounding 7).
 5. Two captures at once: each has its own profile and partial name, so they do not collide.
 6. The page needs JavaScript time: `--wait 3000` gives it virtual time; without it the shot is of the first paint.
 7. `TMPDIR` unset: `/tmp`. The profile is removed on every exit path, including a deadline.
@@ -281,7 +304,7 @@ The real-browser case inside the first suite reports `SKIP` (counted, never a pa
 | Partial or torn PNG | magic bytes ok, size still changing | require equal size on two reads 0.3 s apart; the file lands under `<out>` only by rename |
 | A dependency is missing | `command -v` or an explicit env path fails | exit 69 with the exact line; never exit 0; never fall back from an explicit path |
 | The tape hangs | deadline reached | TERM the vhs pid, then KILL after 2 s; exit 1 |
-| A killed vhs leaves `ttyd` or its browser running | `pgrep ttyd` after a deadline exit | not reaped by the tool (not sampled here); GUIDE.md names the check; the suite uses a stub vhs, so it cannot leak |
+| A killed vhs leaves `ttyd` or its browser running | `pgrep ttyd` after a deadline exit | TERM, then KILL after 2 s; sampled: after KILL no `ttyd` and no headless browser remained (Grounding 8). The suite uses a stub vhs, so it cannot leak |
 | The capture shows a secret or a personal path | a human reading the frame | GUIDE.md frame check; the proof's verified-content line must say what was checked |
 | A drift between the routing case and the module's verbs | AC9 | the route test greps `run page` and `run tape` from the contract output and runs those exact argv shapes against the stub |
 
@@ -289,7 +312,7 @@ The real-browser case inside the first suite reports `SKIP` (counted, never a pa
 
 - `run flow`, a scripted multi-step page walk ending in a GIF. Named as the next verb; Chrome's `--screenshot` cannot click. The "ui flow", "report" and "generated file" rows keep their artifact text and get no `capture:` line.
 - Any lane that drives the live desktop or one platform: macOS window recording, keycastr, a real Terminal window, the simulator route. They stay in the operator's personal skill.
-- Linux and containers: not claimed. The discovery list names Linux binaries; nothing here ran there.
+- Linux and containers: not claimed. The discovery list names Linux binaries; nothing here ran there. This is the failure the Depth line names, and the real-browser case reports SKIP, never a pass, where no browser is found.
 - Upload to a bucket. `proof-asset` owns that and is not edited.
 - Turning `[proof] visual` on for any repo, and any change to `proof-ledger.sh check`.
 - Any edit to `hooks/ship-gate.sh`, `lib/classify/`, or `lib/adopt*`.
@@ -313,6 +336,7 @@ The real-browser case inside the first suite reports `SKIP` (counted, never a pa
 - docs/reference/project-structure.md
 - docs/reference/consumer-contract.md
 - lib/README.md
+- docs/reference/FEATURES.md
 - tests/test-proof-capture-route.sh
 - tests/test-proof-contract-visual.sh
 - tests/test-bin-forwarders.sh
@@ -327,12 +351,14 @@ Read live on 2026-11-25 on the build host (macOS, bash 3.2, node 22). Each line 
 1. Browser, Helium (not in the discovery list; set by `PROOF_CAPTURE_BROWSER`): `Helium --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars --user-data-dir=<tmp> --window-size=800,500 --screenshot=out.png file://.../hello.html`. Result: `out.png: PNG image data, 800 x 500, 8-bit/color RGB` (12890 bytes) written within seconds, and the command did not return within 120 s; a renderer helper carrying the same `--user-data-dir` was still running. `pkill -f <profile>` ended it. The `timeout` in the shell was an alias for `gtimeout`.
 2. Browser, Microsoft Edge: the same flags. `out.png` valid, 800 x 500, 12890 bytes after about 2 s; the browser pid was still alive afterwards.
 3. Browser, Brave: the same flags, run twice, 20 s then 40 s. No PNG written; the browser stayed alive; stderr held `CVDisplayLinkCreateWithCGDisplay failed` lines. This is why Brave is not in the discovery list.
-4. Chrome and Chromium are not installed on this host, so the discovery entries for them are the reference behavior of the flag, not a run here; the build's real-browser case runs on whatever the discovery list or `PROOF_CAPTURE_BROWSER` finds and the proof says which browser it was.
+4. Chrome and Chromium are not installed on this host and no Linux host was available, so the flag set was never run on them. That is the failure the Depth line names. The build's real-browser case runs on whatever discovery or `PROOF_CAPTURE_BROWSER` finds and the proof says which browser it was; the SKIP rule keeps an absent browser from reading as a pass.
 5. `vhs --version` printed `vhs version 0.12.1`; `ttyd` and `ffmpeg` on PATH. `vhs -o <abs>/o2.gif demo.tape` exited 0 and wrote a 9486-byte file whose first bytes are `GIF89a`. A bare `vhs demo.tape` also exited 0 (9761 bytes). Neither opened a window.
 6. `command -v setsid` printed nothing (absent on macOS). `pkill` is present. This is why the lifecycle uses `pkill -f` on the profile path and not a process group.
-7. Kit sources read: `lib/gate/proof-gate.sh` lines 107 to 165 (`_proof_visual_row`, `_proof_visual_artifact`, `proof_contract`), `tests/test-proof-contract-visual.sh` (case 21 greps `^visual:`, case 22 compares a knob-off contract with master's), `lib/wrap/wrap-land.sh` lines 190 to 216 (a relative committed image becomes an absolute URL pinned to the head), `tests/test-kit-contract.sh` (C3 needs `README.md`, a spec and `docs/proof-of-done.md` per module; C4 needs a test), `tests/test-bin-forwarders.sh` line 41 (the `bin/` census).
+7. Edge, `--window-size=400,800`: `file` reports `PNG image data, 400 x 800`. The same with `--virtual-time-budget=3000` against a page that rewrites itself after 1500 ms: the PNG (7769 bytes, opened and read) shows `READY after 1500ms` on a green page, while the run without the budget (4679 bytes) is of the first paint. `--virtual-time-budget=0`: no file was written. So the 400 px and `--wait` claims in the contract were run, and `--wait` must be positive.
+8. vhs killed mid-run: a tape with `Sleep 90s`, started in the background; `ttyd` count 1 while it ran. After `kill -TERM` and 3 s, `ttyd` count 0 but the vhs process was alive; it was still alive 6 s later and `kill -KILL` ended it. Afterwards `pgrep` for `ttyd`, a headless browser, and `rod` helpers each found nothing. So the tool sends TERM, waits 2 s, then KILL.
+9. Kit sources read: `lib/gate/proof-gate.sh` lines 107 to 165 (`_proof_visual_row`, `_proof_visual_artifact`, `proof_contract`), `tests/test-proof-contract-visual.sh` (case 21 greps `^visual:`, case 22 compares a knob-off contract with master's), `lib/wrap/wrap-land.sh` lines 190 to 216 (a relative committed image becomes an absolute URL pinned to the head), `tests/test-kit-contract.sh` (C3 needs `README.md`, a spec and `docs/proof-of-done.md` per module; C4 needs a test), `tests/test-bin-forwarders.sh` line 41 (the `bin/` census).
 
-Dry trace for the negative control of AC3: mutation = delete the `pkill -f -- "--user-data-dir=..."` line in the reap step; the suite's `write-then-hang` stub is a `sleep 300` child started with the same `--user-data-dir` argument; with the line gone the child survives the run; case 4 asserts `pgrep -f -- "--user-data-dir=$PROFILE"` finds nothing, so it goes red.
+Dry trace for the negative control of AC3: mutation = delete the `pkill -f -- "--user-data-dir=..."` line in the reap step. The suite's `write-then-hang` stub starts a helper as `bash -c 'sleep 300' _ --user-data-dir=<profile> &`, so the helper's own argv holds the flag and only `pkill -f` on that string reaches it; killing the browser pid alone leaves it. With the line gone the helper survives the run, case 4 asserts `pgrep -f -- "--user-data-dir=$PROFILE"` finds nothing, and it goes red.
 
 ## Decision Log
 
@@ -343,6 +369,9 @@ Dry trace for the negative control of AC3: mutation = delete the `pkill -f -- "-
 - DEC-E: the fixture image is committed (one PNG, about 13 KB), not uploaded. Why: an upload reaches a real service, and the repo already commits small rendered figures. Open PR 1086 does the same with four PNGs; it is precedent in flight, not a settled rule.
 - DEC-F: Brave is left out of the discovery list. Why: no output in 40 s on this host. An operator can still name it in `PROOF_CAPTURE_BROWSER`.
 - DEC-G: lane `full`. Why: the diff floor, not the task text.
+- DEC-H: Edge is in the discovery list, last. `lib/system-design/shots.mjs` warns that Edge can sign a fresh profile into the OS account on its own. The probe runs here (a throwaway profile, `--disable-sync`, headless) showed no sign-in prompt and left no helper behind, the profile is deleted on every exit path, and Edge is reached only when Chrome and Chromium are absent. An operator who objects sets `PROOF_CAPTURE_BROWSER`.
+- DEC-I: the module's env vars (`PROOF_CAPTURE_*`) get no rows in `module-registry.md`. They are the tool's own contract in its README; a standalone tool does not register its knobs with the kit. The registry gets the stage row and the `modules.proof_capture` key row only.
+- DEC-J: the operator's personal walker (`walk.mjs`, multi-step Playwright) stays where it is. It overlaps the page lane for single shots and is the only part of the old engine that clicks; folding or retiring it is the operator's call once a flow verb exists.
 
 ## Open questions
 
