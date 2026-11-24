@@ -64,7 +64,17 @@ _absorbed() {
 
 # _squash_json <repo-url> <branch> -- the merged-PR list gh reports for that head.
 _squash_json() {
-  gh pr list --repo "$1" --head "$2" --state merged --json headRefOid,baseRefName,mergedAt 2>/dev/null
+  gh pr list --repo "$1" --head "$2" --state merged \
+    --json number,headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null
+}
+
+# _squash_rows <json> <branch> <strict 0|1> -- the merged-PR rows that may speak for <branch>: same
+# repo only (a fork's same-named branch never counts). A row from `gh pr list --head` may omit
+# headRefName; strict (a caller-supplied list) demands it equal <branch>. Unusable JSON prints nothing.
+_squash_rows() {
+  printf '%s' "$1" | jq -c --arg b "$2" --argjson strict "$3" '
+    [.[] | select(((.isCrossRepository // false) | not)
+                  and (if $strict == 1 then .headRefName == $b else ((.headRefName // $b) == $b) end))]' 2>/dev/null
 }
 
 # The merge-proof grammar. The ladder and its squash rung print ONE line, `<code> <reason> <detail>`:
@@ -95,25 +105,62 @@ _squash_verdict() {
   printf '%s\n' "$out"
 }
 
-# branch_merged <repo> <default branch> <gh state> <branch> [tip] -- has <branch> already reached
-# origin/<default>? One line of the grammar above, always exit 0. The rungs run in order: a plain
-# ancestor, absorbed content, the gh squash proof. <tip> defaults to the local branch tip; a caller
-# that already read and guarded a tip passes it, so the proof judges that exact commit.
+# branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] [--numbers] <repo> <default branch> <gh state> <branch>
+# -- has <branch> already reached origin/<default>? One line of the grammar above, always exit 0. The
+# rungs run in order: a plain ancestor, absorbed content, the gh squash proof.
+#   --need pr       skip the ancestor and absorbed rungs: only a merged PR at the exact tip can say SAFE.
+#                   For callers that refuse a branch with no merged PR (wt.sh close, the origin sweep, adopt).
+#   --tip SHA       judge this commit instead of refs/heads/<branch>: a caller that read and guarded a tip,
+#                   or a branch that exists only on origin.
+#   --prs-json FILE use this merged-PR list instead of one gh call (the origin sweep reads it once for
+#                   every branch). Rows must name headRefName; fork rows and non-default bases never count.
+#   --numbers       print the numbers of the merged PRs that speak for the tip, one per line, instead of a
+#                   verdict: exit 0 at least one, 1 none, 2 unreadable (gh not ok, gh failed, unusable JSON).
+# A usage error exits 64 with nothing on stdout, which every caller reads as LEAVE.
 # Full refs and the sha only: a bare name resolves a same-named tag first, and a tag or local
 # branch called origin/<def> beats the remote-tracking ref. Either once proved an unlanded
 # worktree branch "merged".
 branch_merged() {
-  local repo="$1" def="$2" ghs="$3" b="$4" tip="${5:-}" json
+  local need=any tip="" prsjson="" numbers=0 repo def ghs b json rows grc=0 strict=0 out
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --need) need="${2:-}"; shift 2 || return 64 ;;
+      --tip) tip="${2:-}"; shift 2 || return 64 ;;
+      --prs-json) prsjson="${2:-}"; shift 2 || return 64 ;;
+      --numbers) numbers=1; shift ;;
+      --) shift; break ;;
+      -*) return 64 ;;
+      *) break ;;
+    esac
+  done
+  [ "$#" -eq 4 ] || return 64
+  case "$need" in any|pr) ;; *) return 64 ;; esac
+  repo="$1"; def="$2"; ghs="$3"; b="$4"
   [ -n "$tip" ] || tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
-  if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
-    printf 'SAFE ancestor ancestor of origin/%s\n' "$def"; return 0
-  fi
-  if _absorbed "$repo" "$def" "$tip"; then
-    printf 'SAFE absorbed content already on origin/%s\n' "$def"; return 0
+  if [ "$need" = any ] && [ "$numbers" = 0 ]; then
+    if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
+      printf 'SAFE ancestor ancestor of origin/%s\n' "$def"; return 0
+    fi
+    if _absorbed "$repo" "$def" "$tip"; then
+      printf 'SAFE absorbed content already on origin/%s\n' "$def"; return 0
+    fi
   fi
   if [ "$ghs" != "ok" ]; then
+    [ "$numbers" = 1 ] && return 2
     printf 'LEAVE nogh %s\n' "$(_gh_note "$ghs")"; return 0
   fi
-  json="$(_squash_json "$(_origin_url "$repo")" "$b")"
-  _squash_verdict "$json" "$tip" "$def"
+  if [ -n "$prsjson" ]; then
+    json="$(cat "$prsjson" 2>/dev/null)" || grc=1; strict=1
+  else
+    json="$(_squash_json "$(_origin_url "$repo")" "$b")" || grc=1
+  fi
+  rows="$(_squash_rows "$json" "$b" "$strict")"
+  if [ "$numbers" = 1 ]; then
+    [ "$grc" = 0 ] && [ -n "$rows" ] || return 2
+    out="$(printf '%s' "$rows" | jq -r --arg tip "$tip" --arg def "$def" \
+      '.[] | select(.mergedAt != null and .baseRefName == $def and .headRefOid == $tip) | .number' 2>/dev/null)" || return 2
+    [ -n "$out" ] || return 1
+    printf '%s\n' "$out"; return 0
+  fi
+  _squash_verdict "$rows" "$tip" "$def"
 }

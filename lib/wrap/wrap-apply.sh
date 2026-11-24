@@ -248,7 +248,7 @@ _apply_branches() {
     # branch's OWN upstream (or HEAD when it has none), so it refused a branch that tracks
     # another ref or nothing even though origin/<def> already holds its tip. The proof judges the
     # sha read above, see branch_merged.
-    read -r lcode lreason ldetail <<< "$(branch_merged "$repo" "$def" "$ghs" "$b" "$tip")"
+    read -r lcode lreason ldetail <<< "$(branch_merged --tip "$tip" "$repo" "$def" "$ghs" "$b")"
     case "${lcode} ${lreason}" in
       "SAFE ancestor"|"SAFE absorbed")
         run "$repo" "delete ${b} (${ldetail})" git -C "$repo" branch -D "$b" ;;
