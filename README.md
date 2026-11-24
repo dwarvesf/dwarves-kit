@@ -7,7 +7,7 @@
 
 dwarves-kit adds a spec-driven workflow to Claude Code: you set the goal and the gates, and agents build and fix inside them.
 A read-only verifier decides when work is done, so no agent grades its own homework.
-Safety is mechanical: bash hooks block a force push, a secret read, or a ship with no proof, and a fix loop stops after two tries and asks you.
+Safety is mechanical: bash hooks block a force push, a secret read, or (in an adopted repo) a ship with no proof, and a fix loop stops after two tries and asks you.
 
 ![One change moves through think, spec, execute, review, docs, ship, wrap and retro; the verification pipeline and the ship-gate block, the other gates advise](docs/figures/loop.png)
 
