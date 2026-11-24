@@ -60,11 +60,11 @@ Approach 1. The two questions already have a shared core (`spec_for_slug`, `_mer
  mega-merge, pitch ---+          |                   wt.sh close -------+    (default: any rung)
                                  v                   origin sweep -------+--- --need pr
  pre-compact ----+          spec_for_slug            wrap adopt --------+--- --need pr
- post-compact ---+--> spec_active --live             wrap carry --------+--- --allow patch
+ post-compact ---+--> spec_active --live             wrap carry: patch-id stays out
  context-readiness+   (root only, no find)                  |
  spec-drift-guard + --set                                   v
  spec-index (list) --> spec_files               ancestor | absorbed | merged PR at exact tip
-                                                (| patch-id, only with --allow patch)
+
  start.md / next.md prose --> `spec-active.sh --live`
 ```
 
@@ -101,14 +101,13 @@ Out of bounds: `Status:` grammar (spec-status.sh), spec numbering (spec-next.sh)
 ### spec_active (new file `lib/spec/spec-active.sh`, sourced like `spec-find.sh`; also runnable as a CLI)
 
 ```
-spec_active [--live | --set] [--none live|dead] (--slug S | --branch B) <root>
+spec_active [--live | --set] (--slug S | --branch B) <root>
 ```
 
 - `--branch B` derives the slug as `${B#*/}` (the rule `hooks/ship-gate.sh` and `gate-ledger.sh rid` use). `--slug S` is the slug as given (validate-round, mega-merge, proof-ledger, pitch pass the rid).
 - Default mode (no flag, enforcement): the name pick only, `spec_for_slug <root> <slug>`: root `docs/specs` first, then co-located `*/docs/specs`; status-blind. Output is byte-identical to today's `spec_for_slug`, so every enforcement caller keeps its pick.
 - `--live` (session hooks): root `docs/specs` only, no `find`. The name pick counts only if its `Status:` is open. Then: one open spec, use it; several, the one whose slug tokens appear as whole tokens in the branch (split on `/ _ . -`, today's `context-readiness.sh` rule); else ambiguous.
 - `--set`: every open spec at root `docs/specs`, one per line (the drift guard's union).
-- `--none live|dead`: what a spec with no `Status:` header is. Default `live`.
 - stdout: one line per spec, `<kind><TAB><path>`; kind is `name`, `live`, `branch`, or `ambiguous` (one line per candidate). An enforcement caller reads only a `name` line, so a looser step can never feed a gate.
 - exit: 0 exactly one resolved line (or `--set` with at least one); 1 none; 2 ambiguous; 64 usage. A caller that cannot read the file (stale install) treats a missing function as "none".
 - Never sets shell options; never writes; bash 3.2; the paths it prints are `<root>/<rel>`.
@@ -116,7 +115,7 @@ spec_active [--live | --set] [--none live|dead] (--slug S | --branch B) <root>
 ### branch_merged (new file `lib/gate/branch-merged.sh`, sourced)
 
 ```
-branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] [--allow patch] <repo> <default> <ghstate> <branch>
+branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] <repo> <default> <ghstate> <branch>
 ```
 
 - stdout: ONE line, the grammar `_merge_ladder` prints today, byte-identical: `SAFE ancestor|absorbed|squash <phrase>`, `LEAVE tip <sha>`, `LEAVE base <name>`, `LEAVE none <phrase>`, `LEAVE nogh <note>`. A caller branches on the first two words and never on the phrase.
@@ -124,7 +123,6 @@ branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] [--allow patch] <rep
 - `--need pr`: skip ancestor and absorbed; only the gh rung can say SAFE. For callers that today refuse a branch with no merged PR.
 - `--tip SHA`: judge this commit instead of `refs/heads/<branch>` (a caller that read and guarded a tip, or a remote-only branch).
 - `--prs-json FILE`: use this merged-PR list (`gh pr list --state merged --json headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository`) instead of one gh call; the origin sweep reads once for all branches. Rows are filtered to `headRefName == <branch>`, `isCrossRepository != true`, `baseRefName == <default>`.
-- `--allow patch`: add a fourth rung, `SAFE patch`, when the patch-id of `merge-base..tip` equals the patch-id of one commit in `merge-base..origin/<default>`. Off by default; only `wrap carry` passes it.
 - exit: always 0 for a verdict (callers read stdout); 64 on usage error with empty stdout, which every caller reads as LEAVE.
 - Moves with it, unchanged: `_absorbed`, `_squash_json`, `_squash_verdict`, `_gh_state`, `_gh_note`. `lib/wrap/wrap-common.sh` sources the file (precedent: it already sources `lib/gate/default-branch-warn.sh`); `lib/goal/wt.sh` sources `$LIB/gate/branch-merged.sh`.
 
@@ -146,7 +144,7 @@ Merged checks, repro in `## Grounding`. Strictest caller that guards a deletion:
 | DM1 | A merged PR exists, the branch has a later unpushed commit: `wt.sh close` vs ladder | `wt.sh` removes the worktree and `branch -D`s the branch, losing the commit; the ladder says `LEAVE tip` | `wt.sh close` calls `branch_merged --need pr`; refuses unless the exact tip is a merged PR head. Stricter, fail closed |
 | DM2 | The PR merged into a non-default base: origin sweep vs ladder | the sweep deletes the origin branch (its jq has no base check); the ladder says `LEAVE base` | the sweep goes through `branch_merged --need pr --prs-json`; base must equal the default. Stricter |
 | DM3 | Branch is an ancestor of origin/default, no PR: apply vs origin sweep vs `wt.sh` | apply deletes (SAFE ancestor); sweep and `wt.sh` refuse | no change: the sweep and `wt.sh` pass `--need pr`, so the difference is an argument |
-| DM4 | Stray commits whose patch landed, with later edits to the same file: carry patch-id vs ladder | carry says landed (`reset --keep`); the ladder says `LEAVE none` | `--allow patch` rung, used only by `wrap carry`; no other caller gets a looser rung |
+| DM4 | Stray commits whose patch landed, with later edits to the same file: carry patch-id vs ladder | carry says landed (`reset --keep`); the ladder says `LEAVE none` | stays out of the shared function, as a named `merged-ok` exclusion: it answers "did this commit land", not "is this branch merged"; adding a looser rung to the shared function would loosen every deleting caller |
 | DM5 | A merged `<branch>-squash` PR at any tip: carry sibling probe | counts as landed with no tip compared (`wrap-carry.sh:103`) | stays, as a named `merged-ok` exclusion: it only skips opening a duplicate PR; the reset after it is gated by a separate "origin holds HEAD" check |
 | DM6 | Cross-repo PRs: ladder vs origin sweep | the sweep ignores a fork PR; the ladder counts it | both ignore it (`isCrossRepository != true`). Stricter, no known real input |
 | DM7 | Adopt accepts the merged PR head equal to the worktree tip or origin's tracking tip | two tips | adopt calls `branch_merged --need pr --tip` once per tip |
@@ -157,7 +155,7 @@ Active spec:
 |---|---|---|
 | DA1 | Enforcement is status-blind and slug-exact; session hooks filter on status | Both stay, as the two modes. Default mode never filters on `Status:` (ship flips SHIPPED before the push; a filter would drop the spec at the gate) |
 | DA2 | Compaction hooks pick the highest open number and ignore the branch; readiness reports ambiguous | `--live` for all of them. Compaction hooks change from a guess to the branch-aware pick, or `Spec: ambiguous (SPEC-020, SPEC-030)`. Matches `commands/start.md` ("never guess") |
-| DA3 | A spec with no `Status:` is open for compaction and drift, closed for readiness | open everywhere (`--none live` default). Readiness changes only when a header-less spec exists, the branch matches no spec by name, and several specs are open. One line to keep readiness as is: pass `--none dead` there; the lead decides |
+| DA3 | A spec with no `Status:` is open for compaction and drift, closed for readiness | open everywhere, readiness included; no argument to change it. Readiness changes only when a header-less spec exists, the branch matches no spec by name, and several specs are open |
 | DA4 | Hooks read `docs/specs` relative to the cwd | callers pass `git rev-parse --show-toplevel` (else `pwd`). Differs only when the hook runs from a subdirectory (today: no spec found) |
 | DA5 | `spec-index.sh` enumerates with its own unpruned `find` | enumerates through `spec_files`; dot-dir copies (`.claude/worktrees/*/docs/specs`) disappear. It lists, it does not pick; the row's wording is corrected in `lib/spec/README.md` |
 | DA6 | Root-only (session hooks, prose rule) vs co-located (ship-gate) | unchanged by mode: name mode searches both, `--live` and `--set` root only (`commands/start.md` names root as the sole active-spec home) |
@@ -183,10 +181,10 @@ Active spec:
 | T3 | `lib/wrap/wrap-scan.sh:43`, `wrap-apply.sh:211,290,726`, `wrap-land.sh:674` | `branch_merged` (rename; grammar identical) |
 | T8 | `lib/goal/wt.sh:49` | `branch_merged --need pr` |
 | T9 | `lib/wrap/wrap-apply.sh:883-947` | per-branch `branch_merged --need pr --tip <origin tip> --prs-json`; open-PR protection, lease and chunking stay |
-| T10 | `lib/wrap/wrap-carry.sh:101,328-330`; `lib/wrap/wrap-adopt.sh:305-315` | `branch_merged --allow patch`; `branch_merged --need pr --tip` x2 |
+| T10 | `lib/wrap/wrap-carry.sh:328-330` (patch-id); `lib/wrap/wrap-adopt.sh:305-315` | stays, with a `merged-ok` marker and reason; `branch_merged --need pr --tip` x2 |
 | T12 | `commands/start.md:19`, `commands/next.md:11` and the commands that say "resolve the way /kit:next does" | the same rule, now stated as `bash lib/spec/spec-active.sh --live --branch <b>` |
 
-Pinned `merged-ok` exclusions after the build: `wrap-merge.sh` 664, 665, 668, 674 (stacked-parent detection), `wrap-carry.sh:104` (sibling probe), `wrap-apply.sh` 351, 721 (`git cherry`, archive-first: nothing is deleted on that count alone). Pinned `spec-active-ok` markers: the five stubs above, `spec-next.sh:105` (numbering scan of other worktrees), `lib/registry/feature-registry.sh` 205 and 428 (the generator over the kit's own specs), `lib/lint/scattered-ids.sh:69` (a tracked-file listing), `lib/system-design/doc-figures:139`.
+Pinned `merged-ok` exclusions after the build: `wrap-merge.sh` 664, 665, 668, 674 (stacked-parent detection), `wrap-carry.sh:104` (sibling probe), `wrap-carry.sh` 328 and 330 (patch-id: did this commit land),  `wrap-apply.sh` 351, 721 (`git cherry`, archive-first: nothing is deleted on that count alone). Pinned `spec-active-ok` markers: the five stubs above, `spec-next.sh:105` (numbering scan of other worktrees), `lib/registry/feature-registry.sh` 205 and 428 (the generator over the kit's own specs), `lib/lint/scattered-ids.sh:69` (a tracked-file listing), `lib/system-design/doc-figures:139`.
 
 ## Task Breakdown
 
@@ -198,21 +196,21 @@ Order: characterization first, then the two functions, then one caller per task,
 
 ### Phase 2: the functions
 - [ ] TASK-3: `lib/gate/branch-merged.sh`: move `_merge_ladder` (as `branch_merged`), `_absorbed`, `_squash_json`, `_squash_verdict`, `_gh_state`, `_gh_note` out of `wrap-common.sh` and `wrap-apply.sh` with no logic change; delete the originals; migrate scan, apply (3 sites) and land; update `tests/lib/wrap-stub.sh`, `test-wrap-ladder.sh`, `test-wrap-apply.sh`, `test-wrap-land.sh` to the new name. AC: `test-wrap-ladder.sh` output unchanged line for line.
-- [ ] TASK-3b: add `--need`, `--tip`, `--prs-json`, `--allow patch` with unit cases (C10 to C16). AC: default-mode output unchanged.
+- [ ] TASK-3b: add `--need`, `--tip`, `--prs-json` with unit cases (C10 to C15). AC: default-mode output unchanged.
 - [ ] TASK-4a: `lib/spec/spec-active.sh` with unit cases (C1 to C9) and the CLI form. No caller yet.
 
 ### Phase 3: one caller per task
 - [ ] TASK-4: ship-gate (`hooks/ship-gate.sh` 692-701), then `bash lib/codex/repin.sh` (`hooks/codex-hooks.json` pins this hook's hash). AC: `tests/test-spec-find.sh` and `tests/test-ship-gate-review-verdict.sh` unchanged; the C17 row stays on `name`.
 - [ ] TASK-5: pre-compact-backup and post-compact-reinject (DA2, DA4 rows flip).
-- [ ] TASK-6: context-readiness (DA3 row flips or `--none dead`, per the lead).
+- [ ] TASK-6: context-readiness (DA3 row flips).
 - [ ] TASK-7: spec-drift-guard (`--set`) and spec-index (`spec_files`; DA5 row flips).
 - [ ] TASK-8: `wt.sh close` (DM1 flips).
 - [ ] TASK-9: origin sweep (DM2 flips).
-- [ ] TASK-10: wrap-carry (patch rung) and wrap-adopt.
+- [ ] TASK-10: wrap-adopt migration; wrap-carry keeps its patch-id check with a `merged-ok` marker and reason.
 
 ### Phase 4: lock it
 - [ ] TASK-11: `tests/test-shared-lookups.sh`, the structural lint (C20 to C24) and its negative control through `lib/gate/negctl.sh`.
-- [ ] TASK-12: docs: `lib/spec/README.md`, `lib/gate/README.md`, `commands/start.md`, `commands/next.md`, `CHANGELOG.md`, the module registry rows `tests/run-all.sh --changed` demands.
+- [ ] TASK-12: docs: `lib/spec/README.md`, `lib/gate/README.md`, `commands/start.md`, `commands/next.md`, one line in `commands/dispatch.md:162` pointing at the shared check before a worktree or branch is removed, `CHANGELOG.md`, the module registry rows `tests/run-all.sh --changed` demands.
 
 ## After state
 
@@ -234,7 +232,7 @@ none.
 - [ ] AC2: `--live` answers one of `name`, `live`, `branch`, `ambiguous`, none, per the state flow in `## Design`.
 - [ ] AC3: `branch_merged` default output is byte-identical to today's `_merge_ladder` on every case of `tests/test-wrap-ladder.sh`.
 - [ ] AC4: `--need pr` never prints SAFE ancestor or SAFE absorbed.
-- [ ] AC5: DM1 and DM2 inputs produce LEAVE through the migrated callers; DM3, DM4 keep today's outcome.
+- [ ] AC5: DM1 and DM2 inputs produce LEAVE through the migrated callers; DM3 keeps today's outcome.
 - [ ] AC6: each caller in the migration list calls the function (presence check) and holds no private lookup (absence check).
 - [ ] AC7: the lint finds exactly the pinned markers, no more, none without a reason.
 - [ ] AC8: all existing suites the diff touches pass, and no call site loses a refusal it has today except where `## Behavior changes` names it.
@@ -263,7 +261,7 @@ Fixtures: `tests/lib/wrap-stub.sh` (gh stub, clones, `chk`) for merged cases; a 
 | C4 | `--live`, lone open spec, branch unrelated | happy-path | AC2 | kind `live` | same |
 | C5 | `--live`, three open, branch token matches one | happy-path | AC2 | kind `branch`, one line | same |
 | C6 | `--live`, several open, no match | failure-injection | AC2 | kind `ambiguous` lines, exit 2, no pick | same |
-| C7 | `--live`, header-less spec | boundary/edge | AC2 | open with `--none live` (default), closed with `--none dead` | same |
+| C7 | `--live`, header-less spec | boundary/edge | AC2 | open | same |
 | C8 | `--live`, co-located open spec, none at root | boundary/edge | AC2 | exit 1 (root only) | same |
 | C9 | `--live` with `find` and `ls docs/specs/SPEC-` stubbed to exit 99 | failure-injection | AC9 | still answers; stub never ran | same |
 | C10 | ladder grammar, every existing case | regression | AC3 | unchanged lines | `tests/test-wrap-ladder.sh` |
@@ -272,7 +270,6 @@ Fixtures: `tests/lib/wrap-stub.sh` (gh stub, clones, `chk`) for merged cases; a 
 | C13 | merged PR into another base | failure-injection | AC5 | `LEAVE base <name>` | same |
 | C14 | `--tip` of a commit past the PR head | failure-injection | AC5 | `LEAVE tip <PR head>` | same |
 | C15 | `--prs-json` with a cross-repo row at the tip | failure-injection | AC5 | `LEAVE none` | same |
-| C16 | `--allow patch`, later edit on master | boundary/edge | AC5 | `SAFE patch`; without the flag `LEAVE none` | same |
 | C17 | ship-gate pick unchanged | regression | AC1, AC8 | `name` line equals today's `SPEC=` | `tests/test-spec-find.sh` |
 | C18 | `wt.sh close`: PR-less, exact-tip merged, later commit | failure-injection | AC5 | refuse, close, refuse (the last flips from today) | `tests/test-branch-merged-callers.sh` |
 | C19 | origin sweep: base not default | failure-injection | AC5 | kept | same |
@@ -291,7 +288,7 @@ Scope: `hooks/`, `lib/`, `bin/`, excluding `tests/`, `*.md`, `*.html`, `*.tsv`, 
 - active spec: `(ls|find)[^#]*docs/specs`, `docs/specs/SPEC-\*`, `spec_files\(\)`, `spec_for_slug\(\)`, `\*/docs/specs/SPEC`. Today it hits 21 lines in 13 files.
 - merged: `--state merged`, `mergedAt`, `--state merged`, `git[^|]* cherry `, `patch-id`, `--state all[^|]*--head`, `--head[^|]*--state all`, and a merged-direction `is-ancestor` (first argument not `origin/`, second `origin/` or `refs/remotes/origin/`). Today it hits 17 lines in 6 files (`wrap-common.sh` 3, `wrap-adopt.sh` 3, `wrap-apply.sh` 3, `wrap-merge.sh` 4, `wrap-carry.sh` 3, `wt.sh` 1). The up-to-date direction (`is-ancestor origin/<def> HEAD`) and the post-merge confirmations (`!= "MERGED"` on a PR number) are excluded by shape, so a bare `MERGED` or `is-ancestor` grep, which would drown in them, is never used.
 
-Allowlist (a `merged-ok` marker also covers the `patch-id` pair in `wrap-carry.sh` when the lead picks the exclusion in Open question 2): a line carrying `spec-active-ok: <reason>` or `merged-ok: <reason>`. The list of `file:reason` pairs is pinned inside the test; a new marker needs a test edit, an empty reason fails, a marker that no longer matches a pattern fails (no dead exemptions). Presence check: each migrated caller must contain `spec_active`/`spec-active.sh` or `branch_merged`. A positive-control fixture holds one known-bad line per pattern so the lint cannot pass by matching nothing.
+Allowlist (the `patch-id` pair in `wrap-carry.sh` carries a `merged-ok` marker): a line carrying `spec-active-ok: <reason>` or `merged-ok: <reason>`. The list of `file:reason` pairs is pinned inside the test; a new marker needs a test edit, an empty reason fails, a marker that no longer matches a pattern fails (no dead exemptions). Presence check: each migrated caller must contain `spec_active`/`spec-active.sh` or `branch_merged`. A positive-control fixture holds one known-bad line per pattern so the lint cannot pass by matching nothing.
 
 ### Coverage notes
 - Categories skipped: concurrency (no shared state is written), performance beyond AC9 (no loop over specs in the new code).
@@ -322,8 +319,9 @@ Allowlist (a `merged-ok` marker also covers the `patch-id` pair in `wrap-carry.s
 
 - The floor sizing in `lib/classify/lane-classify.sh` and `lib/gate/ship-rules.sh` (another branch; see Merge order).
 - The stale-install stub removal (DA7), `spec-next.sh` numbering, the `Status:` grammar.
+- The patch-id check in `wrap-carry.sh` (a commit-landed question, not a branch-merged one; marker and reason only).
 - Folding `_land_tidy`'s own tree verification into `branch_merged`: it confirms a PR it just merged, not a branch (excluded class).
-- `commands/dispatch.md:162-168` tells the lead to `git worktree remove` and `git branch -D` a goal worktree "after its branch is PR'd/merged" with no proof step: a prose gap beside this row, named here and not changed.
+- `commands/dispatch.md:162-168` beyond the one pointer line in TASK-12.
 - Two unmerged ship-gate specs (SPEC-422 fork heads, SPEC-423 push tokenizing) touch `push-refs.sh` and the hook's marker reads; they overlap neither question.
 
 ## Touches
@@ -349,7 +347,7 @@ Allowlist (a `merged-ok` marker also covers the `patch-id` pair in `wrap-carry.s
 - DEC-A: two modes in one function, not two functions. Rationale: the row asks for one lookup; the enforcement and session questions differ only in the status filter and namespace, both visible arguments. Rejected: a `spec_live` sibling (a second public name to copy).
 - DEC-B: promote `_merge_ladder`, do not write a new one. Rationale: scan, apply and land already share it and `tests/test-wrap-ladder.sh` pins its grammar; the risk of a rewrite is all downside.
 - DEC-C: DM1 and DM2 change behavior in the stricter direction on purpose. Rationale: each is a data-loss path today; the row says surface it, and a tighter delete never loses work.
-- DEC-D: header-less specs are open everywhere (DA3). Rationale: hiding a spec in a compaction snapshot costs the model its recovery context; the readiness change is bounded to one input shape and reversible with one argument.
+- DEC-D: header-less specs are open everywhere (DA3). Rationale: hiding a spec in a compaction snapshot costs the model its recovery context; the readiness change is bounded to one input shape.
 
 ## Grounding
 
@@ -383,6 +381,4 @@ Negative-control dry trace (C24): mutation, append `SPEC_LIST=$(ls docs/specs/SP
 
 ## Open questions
 
-1. DA3: readiness with `--none dead` or the unified `live`? Default in this spec is `live`; one argument flips it.
-2. DM4: keep `--allow patch` (carry joins the function) or leave the patch-id check as a `merged-ok` exclusion? Excluding it removes TASK-3b's fourth rung and one call from TASK-10.
-3. `commands/dispatch.md:162-168` GC prose: add a proof step in this row or leave it to its own change?
+none. The lead decided header-less specs (open everywhere, readiness included), the patch-id check (named exclusion), and the `commands/dispatch.md` pointer (one line in TASK-12).
