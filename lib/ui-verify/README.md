@@ -1,0 +1,153 @@
+# ui-verify
+
+A runner that opens a pull request's preview in a pinned headless Chromium, runs a lead-written scenario file against it, and judges every row itself. The `kit:ui-acceptance-verifier` agent calls it and reports the result in the battery grammar. The runner works without the agent: `node lib/ui-verify/run.mjs scenario --scenario <file> --out <dir>`.
+
+The runner refuses to run before it starts a browser when anything about the scenario file, the output directory or the hosts looks unsafe (exit 3). It never installs anything, never logs in, and writes only under `--out`.
+
+## Install (an operator step)
+
+The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. Run the doctor from the kit checkout: it prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready.
+
+```bash
+node lib/ui-verify/run.mjs --doctor
+```
+
+The install command it prints copies `package.json` and `package-lock.json` into the install root, runs `npm ci --ignore-scripts` there, then runs the local `playwright install chromium` with `PLAYWRIGHT_BROWSERS_PATH` set to `<install root>/browsers`. Expect about 23 MB of npm packages and about 586 MB of browsers, and about 3 minutes the first time.
+
+| Doctor exit | Meaning |
+|---|---|
+| 0 | ready (the `state:` line may add `pin older than 120 days: bump it`; that never changes the exit) |
+| 20 | Playwright is not installed in the install root |
+| 21 | the installed Playwright version differs from the pin |
+| 22 | the browser is missing |
+
+`--doctor` only reads the install. It skips the own-path check and every scenario guard, so run it from the kit checkout. A scenario run is the opposite: the runner refuses when its own real path sits inside the git work tree of the current directory, which includes the kit checkout, so run scenarios from another directory.
+
+## Run
+
+```bash
+node <kit>/lib/ui-verify/run.mjs scenario --scenario <file> --out <dir> [--step-timeout-ms N] [--scenario-timeout-ms N] [--run-budget-ms N]
+```
+
+The three timeout flags can only lower the defaults (step 10 s, scenario 30 s, run 300 s). There is no flag for the URL, hosts, loopback, install root, viewports or the sandbox: every trust input rides in the scenario file. Both the scenario file and `--out` must sit outside any git work tree, and `--out` must not exist or must be empty.
+
+| Exit | Meaning |
+|---|---|
+| 0 | every row PASS, at least one row |
+| 1 | at least one row FAIL |
+| 2 | no FAIL and at least one NO-CHECK, or no rows (`no AC`) |
+| 3 | usage error or a guard refused; no browser started and nothing was written to `--out` |
+| 4 | internal error, or a node older than 22 |
+
+## Reading the result
+
+Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
+
+```
+ui-verify: head <sha40> scenario-sha256 <first 16 hex> preview-identity <matched|unverified|mismatch> playwright <version> run <run id>
+ui-verify: counts PASS <p> FAIL <f> NO-CHECK <n> runner-verdict <PASS|FAIL|NO-CHECK>
+row <id> [neg] | <PASS|FAIL|NO-CHECK> | <reason> | <evidence names>
+observed <id> [neg]: <sanitized text>
+```
+
+In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO-CHECK` row always carries a reason and never counts as `PASS`. The top-level `verdict` is `PASS` only when there is at least one row and every row is `PASS`. `observed` is page text with control, format and separator characters turned into spaces, a backtick turned into an apostrophe, a pipe turned into a slash, and a cut at 200 characters. `blocked_requests` lists the hosts the runner refused to reach, so a lead who forgot an API host can see why a page looks empty. `browser.pids` and `browser.leftover_pids` record the browser processes found by the run id the runner puts on the browser command line.
+
+## Keeping the pin fresh
+
+Playwright is pinned exactly in `package.json` (with a `pinnedOn` date) and `package-lock.json`. Bump the pin at least every 120 days and on any Playwright security release: edit both files, rerun `tests/test-ui-acceptance-verifier.sh` with `UI_VERIFY_REQUIRE=1`, and re-record the live dispatch in `docs/verification/ui-acceptance-verifier.md` in the same pull request. Make the lockfile with `npm install --package-lock-only --ignore-scripts` in a scratch copy of `package.json`, never inside the kit checkout.
+
+## Removing it (the orphan list)
+
+All runtime state sits under one install root. A removal reports these paths and deletes none by script:
+
+- the install root directory (`bash lib/config/data-path.sh path cache ui-verify`: the npm install and the browsers together)
+- `lib/ui-verify/` (this runner, `package.json`, `package-lock.json`, this README)
+- `agents/ui-acceptance-verifier.md` and its row in the "Lens escalation" table of `commands/battery.md`
+- the `cache ui-verify` entry in `lib/config/data-path.sh` and the `UI_VERIFY_HOME` row in `lib/config/module-registry.md`
+- the doc rows (`docs/MANUAL.md`, `docs/reference/architecture.md`, `docs/reference/workflow-paths.md`, `docs/reference/FEATURES.md`, `commands/kit-health.md`, `docs/reference/PHILOSOPHY.md`, `CHANGELOG.md`)
+- `tests/fixtures/ui-verify/` and `tests/test-ui-acceptance-verifier.sh`
+- `docs/verification/ui-acceptance-verifier.md`
+
+## Writing a scenario
+
+The lead writes the scenario file from the acceptance criteria, into a fresh `mktemp -d` directory outside any git work tree. One entry per criterion, and one more per named negative case (a case that must be refused or must not happen).
+
+```json
+{
+  "schema": 1,
+  "target": {
+    "url": "https://pr-12.preview.example.dev/",
+    "head_sha": "0123456789abcdef0123456789abcdef01234567",
+    "allow_hosts": ["pr-12.preview.example.dev", "api.example.dev"],
+    "allow_loopback": false
+  },
+  "viewports": [390, 768, 1280],
+  "ready": { "text": "Dashboard" },
+  "identity": { "header": "x-build-sha" },
+  "scenarios": [
+    { "id": "AC-1", "kind": "criterion", "title": "member saves a profile",
+      "steps": [
+        { "do": "goto", "path": "/settings" },
+        { "do": "fill", "role": "textbox", "name": "Display name", "value": "Ada" },
+        { "do": "click", "role": "button", "name": "Save" },
+        { "do": "expect_text", "text": "Saved" },
+        { "do": "screenshot", "name": "after-save" }
+      ] },
+    { "id": "AC-1", "kind": "negative", "title": "empty name is refused",
+      "steps": [
+        { "do": "goto", "path": "/settings" },
+        { "do": "click", "role": "button", "name": "Save" },
+        { "do": "expect_text", "text": "Name is required" },
+        { "do": "expect_no_text", "text": "Saved" }
+      ] },
+    { "id": "AC-2", "kind": "criterion", "title": "signed-in only page",
+      "skip": "needs a signed-in session; storage state is a later slice" }
+  ]
+}
+```
+
+Fields:
+
+- Unknown keys anywhere are refused. `schema` must be `1`. Every string is at most 200 characters.
+- `target.url` must be `https:`. `http:` is accepted only with `allow_loopback` true and a host of `127.0.0.1`, `localhost` or `[::1]` (the fixture suite does this; a real run never does).
+- `target.allow_hosts` holds 1 to 8 exact hostnames, no wildcards, and must include the URL's host. It bounds redirects and every subresource and WebSocket request. Add the API host a real preview calls.
+- `target.head_sha` is the 40 lowercase hex commit under test.
+- `ready.text` is 1 to 100 characters that only the real app renders, never a login wall.
+- `viewports` is optional: up to 4 integers from 200 to 3000, default `[390, 768, 1280]`. The height is 900 for every width.
+- `identity` is optional and holds exactly one of `header` (a response header name) or `meta` (a `<meta name>`). A value that looks like a build id (7 to 40 lowercase hex) is compared with `head_sha`.
+- `scenarios` holds at most 12 entries. `id` is `AC-<digits>`, `kind` is `criterion` or `negative`, and the pair is unique. An entry has `steps` (1 to 20) or `skip` (a reason), never both.
+- A scenario with steps must hold at least one `expect_text`, `expect_no_text` or `expect_url` step. Without one it is not run and its row is NO-CHECK `scenario asserts nothing`; the other entries still run.
+
+Step verbs, the only ones accepted:
+
+| Step | Fields | Passes when |
+|---|---|---|
+| `goto` | `path` (starts with exactly one `/`) | the page reaches `load` and `document.fonts.ready`; a navigation error is NO-CHECK `page did not settle` |
+| `click` | `role`, `name` | exactly one element matches `getByRole(role, { name, exact: true })` |
+| `fill` | `role`, `name`, `value` | the same locator matches exactly one element |
+| `expect_text` | `text`, optional `within: {role, name}` | `text` is a case-sensitive substring of the whitespace-collapsed `innerText` of the `within` element, else of `<body>`, polled until the step timeout |
+| `expect_no_text` | `text` | `text` is absent from `<body>` `innerText` for an unbroken 500 ms window |
+| `expect_url` | `path` | `location.pathname + location.search` equals `path`, polled until the step timeout |
+| `screenshot` | `name` (`a-z`, `0-9`, `-` only) | always; writes the PNG under `--out` |
+
+Step semantics:
+
+- `click` and `fill`: zero matches, or more than one, after the step timeout is FAIL. `observed` is `element not found: role=<role> name=<name>` or `ambiguous: <n> matches`. A `within` element that is missing is FAIL `element not found: role=<role> name=<name>`.
+- `observed` on a failed expect is the sanitized text, cut at 200 characters, of the `within` element, else of the first `[role=alert]` or `[role=status]` element, else of `<main>`, else of `<body>`.
+- A FAIL scenario is retried once per scenario and viewport in a fresh context. A row that failed once and passed on the retry is `PASS` with `flaky: true`. A NO-CHECK scenario is not retried.
+- A row's status is the worst over its viewports (FAIL over NO-CHECK over PASS).
+
+The twelve roles: `button`, `link`, `textbox`, `checkbox`, `radio`, `combobox`, `heading`, `tab`, `menuitem`, `dialog`, `alert`, `status`.
+
+Refusals (exit 3, one line on stderr, nothing written to `--out`):
+
+- a usage error, an unknown argument, or a timeout flag that is not a positive whole number below its default
+- a `--scenario` path that cannot be read or is not valid JSON, or that sits inside a git work tree
+- `--out` inside a git work tree, or `--out` that exists and is not empty
+- the runner's own real path sitting inside the git work tree of the current directory
+- an unknown key, a missing required key, `schema` other than 1, a wrong type, a string over its limit, or more than 12 scenarios, 20 steps, 4 viewports or 8 hosts
+- a `target.url` that is not `https:` (or `http:` on a loopback host with `allow_loopback`), carries credentials, or has a host missing from `allow_hosts`
+- an allowed host that resolves to a loopback (without `allow_loopback`), private, link-local, shared (100.64.0.0/10, the tailnet range) or unique-local address
+- an unknown step verb, a `goto` or `expect_url` path that does not start with exactly one `/`, a role outside the twelve, a duplicate (`id`, `kind`) pair, an entry with both `steps` and `skip`, or an `identity` with both keys
+
+An allowed host that does not resolve at all is not a refusal: every row is NO-CHECK `preview unreachable` and the exit is 2.
