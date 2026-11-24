@@ -184,7 +184,9 @@ that only changes documentation, or one whose changed lines in a non-doc file ar
 or `#` comments (`lane-classify.sh floor`). Anything it cannot decide keeps the floor: a
 secret-pattern path, a symlink, a gitlink, an unknown file type, a mode change, a NUL byte, a
 heredoc, triple-quote or YAML block file, a change next to a shebang or directive, a
-scanner-suppression comment, or more than 50 hits or 8 seconds of scanning. The proof gate
+scanner-suppression comment, or more than 50 hits or 8 seconds of scanning.
+
+One `ci` hit is sized down by diff: a NEW file `.github/workflows/<name>.yml` (status added, mode 100644, name in `[A-Za-z0-9._-]`) whose whole text matches a closed line grammar, with no other path under `.github/` in the diff, and no workflow, job or job-name collision with any workflow at the merge base, at `KIT_FLOOR_CONFIG_AT` and at the `origin/<default>` tip (no `origin/` default: the floor stands). The grammar admits a small plain check workflow and nothing else: `name:`, a block-style `on:` over `push`, `pull_request` and `workflow_dispatch` with only `branches:` and `paths:` lists, top-level `permissions: contents: read` (or `permissions: {}`), jobs holding `name:`, `runs-on:`, `timeout-minutes:` and `steps:`, and steps holding `name:`, `run:` (one plain line, or a `|` block), `uses: actions/<name>@<40-hex>`, `with:`, `shell:` and `working-directory:`. Any other line, backslash, tab, CR, non-ASCII byte, `${{`, anchor, tag, flow collection or duplicate key keeps the floor. A refusal costs one phase ledger. A sized diff still owes its proof; its phase ledger, the battery and the mega-merge floor drop. Each sized path (this rule and the comment-only rule) writes a `floor-sized` line that the hook shows as an `[advisory]` and logs as `SIZED | floor |`; the workflow line is never capped. The proof gate
 sizes itself the same way: a diff made only of `*.md`/`*.txt`, `.kit.toml`, and documentation
 or asset files under `docs/` classes `inert`. Source, build files and secret-shaped paths under
 `docs/` keep their class. Proof: `tests/test-ceremony-fits-diff.sh`.
