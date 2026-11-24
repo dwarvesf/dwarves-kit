@@ -80,10 +80,10 @@ fi
 # pct_encode <path>: sets ENCODED. Percent first, then space, hash, question mark.
 pct_encode() {
   local s=$1 pct='%' hash='#' q='?'
-  s=${s//$pct/%25}
+  s=${s//"$pct"/%25}
   s=${s// /%20}
-  s=${s//$hash/%23}
-  s=${s//$q/%3F}
+  s=${s//"$hash"/%23}
+  s=${s//"$q"/%3F}
   ENCODED=$s
 }
 
@@ -174,4 +174,103 @@ if [ "$KIND" = page ]; then
   resolve_browser
 fi
 
-usage_fail "capture is not built yet"
+# ---- everything below may call external commands ----------------------------------------------
+[ "$KIND" = page ] || usage_fail "run tape is not built yet"
+
+WORK=""; PARTIAL=""; PROFILE=""; CPID=""; FINAL_TMP=""; REAPED=0
+
+# remove_work: rm -rf only on the directory this run made with mktemp -d, and only by its name.
+remove_work() {
+  case "$WORK" in
+    */proof-capture.*) rm -rf "$WORK" ;;
+  esac
+  WORK=""
+}
+
+# reap: stop the child and remove everything this run made. Runs once.
+reap() {
+  [ "$REAPED" = 0 ] || return 0
+  REAPED=1
+  if [ -n "$CPID" ] && kill -0 "$CPID" 2>/dev/null; then
+    kill -TERM "$CPID" 2>/dev/null
+    { wait "$CPID"; } 2>/dev/null
+  fi
+  [ -z "$FINAL_TMP" ] || rm -f "$FINAL_TMP"
+  remove_work
+}
+trap reap EXIT
+
+fail() { printf 'proof-capture: %s\n' "$1" >&2; reap; exit 1; }
+
+# file_size <file>: bytes, digits only.
+file_size() { local n; n=$(wc -c <"$1" 2>/dev/null); echo "${n//[[:space:]]/}"; }
+
+# hex_head <file> <n> and hex_tail <file> <n>: lowercase hex, no spaces.
+hex_head() { local h; h=$(od -An -tx1 -N "$2" "$1" 2>/dev/null); echo "${h//[[:space:]]/}"; }
+hex_tail() { local h; h=$(tail -c "$2" "$1" 2>/dev/null | od -An -tx1 2>/dev/null); echo "${h//[[:space:]]/}"; }
+
+# artifact_valid <kind> <file>: PNG magic and IEND trailer (page), or GIF magic and trailer byte (tape); not empty.
+artifact_valid() {
+  [ -s "$2" ] || return 1
+  case "$1" in
+    page)
+      [ "$(hex_head "$2" 8)" = 89504e470d0a1a0a ] && [ "$(hex_tail "$2" 12)" = 0000000049454e44ae426082 ]
+      ;;
+    tape)
+      [ "$(hex_head "$2" 4)" = 47494638 ] && [ "$(hex_tail "$2" 1)" = 3b ]
+      ;;
+  esac
+}
+
+# artifact_stable <kind> <file>: valid, and the same size on two reads 0.3 s apart.
+artifact_stable() {
+  local s1 s2
+  artifact_valid "$1" "$2" || return 1
+  s1=$(file_size "$2")
+  sleep 0.3
+  s2=$(file_size "$2")
+  [ "$s1" = "$s2" ] && artifact_valid "$1" "$2"
+}
+
+# finish: copy the valid partial next to <out> under an exclusive temp name, rename it onto <out>, reap, report.
+finish() {
+  local n
+  mkdir -p "$OUTDIR" 2>/dev/null || fail "cannot create the output directory"
+  FINAL_TMP=$(mktemp "$OUTDIR/.proof-capture.XXXXXX" 2>/dev/null) || { FINAL_TMP=""; fail "cannot write next to the output path"; }
+  cp "$PARTIAL" "$FINAL_TMP" 2>/dev/null || fail "cannot copy the artifact"
+  mv -f "$FINAL_TMP" "$OUT" 2>/dev/null || fail "cannot write the output path"
+  FINAL_TMP=""
+  n=$(file_size "$OUT")
+  reap
+  printf 'proof-capture: wrote %s (%s bytes)\n' "$OUT" "$n"
+  exit 0
+}
+
+# capture_run <command...>: start the child, poll for a valid artifact until the deadline.
+capture_run() {
+  local end
+  "$@" </dev/null >/dev/null 2>&1 &
+  CPID=$!
+  end=$((SECONDS + DEADLINE))
+  while :; do
+    if [ -s "$PARTIAL" ] && artifact_stable "$KIND" "$PARTIAL"; then finish; fi
+    if ! kill -0 "$CPID" 2>/dev/null; then
+      artifact_valid "$KIND" "$PARTIAL" && finish
+      fail "the browser exited without a valid artifact"
+    fi
+    [ "$SECONDS" -lt "$end" ] || fail "no valid artifact within ${DEADLINE}s"
+    sleep 0.2
+  done
+}
+
+BASE=${TMPDIR:-/tmp}
+BASE=${BASE%/}
+WORK=$(mktemp -d "$BASE/proof-capture.XXXXXX" 2>/dev/null) || { WORK=""; fail "cannot create a work directory under $BASE"; }
+PROFILE="$WORK/profile"
+PARTIAL="$WORK/partial.png"
+
+set -- --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars \
+  "--user-data-dir=$PROFILE" "--window-size=$WIDTH,$HEIGHT"
+[ -z "$WAIT_MS" ] || set -- "$@" "--virtual-time-budget=$WAIT_MS"
+set -- "$@" "--screenshot=$PARTIAL" "$URL"
+capture_run "$BROWSER" "$@"
