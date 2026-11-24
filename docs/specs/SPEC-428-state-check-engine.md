@@ -50,9 +50,11 @@ Replacing the consumer's own checker (a later step in that repo). Wiring the eng
 
 ## Task Breakdown
 
-1. Port the checker into `lib/board/state_check.py` with the three changes.
-2. Wire the verb and register it.
-3. Fixture suite with negative controls, parity proof against a real consumer checkout.
+| Task | Files | Acceptance |
+|---|---|---|
+| T1: port the checker with the three changes | `lib/board/state_check.py` | AC1, AC3 |
+| T2: wire the verb and register it | `lib/board/board.sh`, docs, `CHANGELOG.md` | `tests/test-registry-verbs.sh`, `tests/test-meta.sh` |
+| T3: fixture suite with negative controls, parity proof | `tests/test-state-check.sh`, `tests/fixtures/state-check/`, `docs/verification/state-check-engine.md` | AC1 to AC4 |
 
 ## After state
 
