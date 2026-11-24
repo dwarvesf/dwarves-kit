@@ -70,7 +70,7 @@ The load-bearing dimension is the list of shapes the sizer accepts. Today it is 
         v                                         |  floor-sized <kind> <rule> <path>
   _floor_find: first hard-path hit                |  on stderr
         |                                         |
-        +--> hit is kind ci, status A, ... ------>+--> Rule A (new): all of A1..A7 hold?
+        +--> hit is kind ci, status A, ... ------>+--> Rule A (new): all of A1..A6 hold?
         |                                              yes: drop line, look again
         |                                              no / cannot tell: floor stands
         v
@@ -242,7 +242,7 @@ A PR that adds one read-only CI workflow file passes the push gate with a proof 
 
 ## Acceptance Criteria (global)
 
-- AC-1: a diff that adds one workflow file passing A1 to A7 yields no `floor` hit; comment-only edits stay sized.
+- AC-1: a diff that adds one workflow file passing A1 to A6 yields no `floor` hit; comment-only edits stay sized.
 - AC-2: a diff that changes a hook's behavior yields `full extra: <path>` and `ship_rule_floor` blocks it without the full lane's gates.
 - AC-3: a sized workflow add still classes `behavioral` and owes its proof.
 - AC-4: every check that cannot decide, every mixed diff, and every row of the failure-modes table keeps the floor.
