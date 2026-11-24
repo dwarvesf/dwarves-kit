@@ -200,12 +200,12 @@ printf '**Status:** Draft (revision 2)\n' > "$R1/docs/specs/SPEC-001-x.md"
 out="$(cd "$R1" && bash "$KIT_DIR/hooks/context-readiness.sh" 2>/dev/null)"
 case "$out" in *"spec:DRAFT"*"spec is DRAFT"*) pass "context-readiness: a bold decorated Draft reads as DRAFT and suggests validation" ;; *) fail "context-readiness draft: $(printf '%s' "$out" | head -c 300)" ;; esac
 
-# ---- 7b. NONE: each reader keeps the behavior it had for a spec with no header ----
+# ---- 7b. NONE: a spec with no header is open for every reader ----
 RN="$TMP/repo-none"; mkrepo "$RN"
 write "$RN" 'Status: SHIPPED' da01/fa01.go SPEC-001-shipped
 printf '# T\nno header, uses dfa02/fa02.go\n' > "$RN/docs/specs/SPEC-002-headerless.md"
 out="$(cd "$RN" && bash "$KIT_DIR/hooks/context-readiness.sh" 2>/dev/null)"
-case "$out" in *"no spec found"*) pass "context-readiness: NONE is not live" ;; *) fail "context-readiness treated a header-less spec as live" ;; esac
+case "$out" in *"spec:NONE"*) pass "context-readiness: NONE is live" ;; *) fail "context-readiness treated a header-less spec as closed: $(printf '%s' "$out" | head -c 200)" ;; esac
 got="$(pick "$RN" pre-compact-backup.sh 'Spec: docs/specs/SPEC-[0-9]+')"
 [ "$got" = "Spec: docs/specs/SPEC-002" ] && pass "pre-compact-backup: NONE is live" || fail "pre-compact-backup NONE: $got"
 got="$(pick "$RN" post-compact-reinject.sh 'SPEC: docs/specs/SPEC-[0-9]+')"

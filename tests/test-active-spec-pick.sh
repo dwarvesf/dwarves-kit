@@ -101,8 +101,15 @@ echo "== readiness =="
 eq "readiness feat/alpha: two open specs, no branch match" "$(readiness "$F")" "spec:ambiguous(SPEC-020,SPEC-030)"
 eq "readiness feat/beta: the branch's own spec" "$(readiness "$B")" "spec:DRAFT"
 H="$TMP/f3"; mkheaderless "$H" feat/zzz
-gap "readiness treats a header-less spec as closed" TASK-6 "$(readiness "$H")" "spec:DRAFT"
-gap "readiness from a subdirectory finds no spec" TASK-6 "$(readiness "$F/src/deep")" ""
+eq "readiness counts a header-less spec as open" "$(readiness "$H")" "spec:ambiguous(SPEC-020,SPEC-030)"
+eq "readiness from a subdirectory uses the repo root" "$(readiness "$B/src/deep")" "spec:DRAFT"
+G="$TMP/f4"; git init -q -b master "$G"; git -C "$G" config user.email t@t; git -C "$G" config user.name t
+spec "$G/docs/specs/SPEC-001-gate.md" DRAFT; spec "$G/docs/specs/SPEC-002-gate-ext.md" DRAFT
+git -C "$G" add -A; git -C "$G" commit -qm init; git -C "$G" checkout -q -b feat/gate
+eq "readiness: an open spec named by the branch beats a token match on a sibling" "$(readiness "$G")" "spec:DRAFT"
+# a kit whose lib lacks spec-active.sh: no spec resolved, the hook still answers
+STALE_RD="$( cd "$F" && bash "$STALE/hooks/context-readiness.sh" </dev/null 2>/dev/null | jq -r '.additionalContext' | tr ' ' '\n' | grep -c '^spec:' || true)"
+eq "readiness on a partial install: no spec token, no crash" "$STALE_RD" "0"
 
 echo "== drift guard: the union of open specs =="
 eq "a file named by an open spec (beta) is known" "$(drift "$F" "$F/src/beta_only.ts")" "0"
