@@ -25,6 +25,9 @@ mkkit() { # $1=dir
   local d="$1"
   git init -q -b master "$d"
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
+  # Pinned inside the fixture so an operator-level core.hooksPath (a secret-scanning pre-commit
+  # rejects the 64-hex pin in codex-hooks.json) never reaches a fixture commit.
+  git -C "$d" config core.hooksPath "$d/.git/hooks"
   mkdir -p "$d/lib/registry" "$d/commands" "$d/agents" "$d/skills/demo" "$d/hooks" "$d/docs/specs" "$d/docs/reference" "$d/tests"
   cp "$KIT/$REG" "$d/$REG"
   printf -- '---\ndescription: a stub command\n---\nbody\n' > "$d/commands/demo.md"
