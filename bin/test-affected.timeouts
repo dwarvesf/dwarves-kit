@@ -266,3 +266,4 @@ test-wrap-merge-resync 250
 test-wrap-merge-stacked 60
 test-wrap-scan 60
 test-wrap-start 60
+test-ceremony-fits-diff 900  # hand-set: about 150 scratch repos plus 12 mutated-lib runs; over 300 s at host load above 200, so the default ceiling killed it

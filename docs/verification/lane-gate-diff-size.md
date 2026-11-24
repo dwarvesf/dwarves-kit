@@ -154,7 +154,7 @@ exit=2
   stderr:   MISSING-GATE: ship (required for lane 'full'; no ran/override entry in the ledger)
   stderr:   MISSING-GATE: reflect (required for lane 'full'; no ran/override entry in the ledger)
   stderr: Run the missing gate(s), or log an explicit override (recorded for audit):
-  stderr:   bash "/Users/tieubao/workspace/dwarvesf/dwarves-kit/.claude/worktrees/lane-gate-diff-size/lib/gate/gate-ledger.sh" override hook-change <phase> "<reason>"
+  stderr:   bash "<worktree>/lib/gate/gate-ledger.sh" override hook-change <phase> "<reason>"
 ```
 Exit: 0
 
@@ -259,4 +259,21 @@ Verdict: PASS
 
 ## Regression
 
-Pending: the lead-run `tests/run-all.sh --changed --time` result is appended below.
+Command: `bash tests/run-all.sh --changed --time` (host load 252, so slow; output kept in a scratch dir)
+Output:
+```
+run-all: 67 suites, 4 at a time, 0 serial
+run-all: FAILED -> test-no-personal-paths test-registry-freshness-guard
+run-all: TIMED OUT at 300s -> test-ceremony-fits-diff test-wrap-land(600s) test-wrap-ship
+run-all: 67 suites run, 0 skipped for missing tooling
+```
+Exit: 1
+
+Follow-up on each non-green suite:
+
+| Suite | Cause | Re-run |
+|---|---|---|
+| `test-no-personal-paths` | this proof file held an operator path in the pasted hook output | fixed in this file; `bash tests/test-no-personal-paths.sh` prints `Passed: 3 / 3` |
+| `test-ceremony-fits-diff` | 300 s default ceiling under load 252; the suite now holds about 150 scratch repos and 12 mutated-lib runs | ceiling set to 900 in `bin/test-affected.timeouts`; `bash tests/test-ceremony-fits-diff.sh` alone: 48 PASS, 0 FAIL, 4m14s |
+| `test-registry-freshness-guard` | the operator's global git pre-commit secret hook blocks the suite's fixture commit of `hooks/codex-hooks.json` (64-hex pins); files untouched by this change | not re-run green here; `PASS=24 FAIL=2`, both on that fixture commit |
+| `test-wrap-land`, `test-wrap-ship` | timeouts only, files untouched by this change | not re-run (host load) |
