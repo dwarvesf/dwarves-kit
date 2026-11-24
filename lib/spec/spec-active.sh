@@ -36,8 +36,8 @@ if ! type spec_for_slug >/dev/null 2>&1; then
 fi
 
 spec_active() {
-  local mode=name root="" slug="" branch="" have_id=0 f base files=() live="" name="" n
-  local btok="" part tok hit matched="" nmatch=0 toks=()
+  local mode=name root="" slug="" branch="" have_id=0 f base files=() live="" name=""
+  local matched=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --live) mode=live; shift ;;
@@ -68,7 +68,7 @@ spec_active() {
   [ -n "$live" ] || return 1
 
   if [ "$mode" = set ]; then
-    while IFS= read -r f; do [ -n "$f" ] && printf 'live\t%s\n' "$f"; done <<< "$live"
+    printf '%s\n' "$live" | awk '{ print "live\t" $0 }'
     return 0
   fi
 
@@ -82,28 +82,20 @@ spec_active() {
     fi
   fi
 
-  n=$(printf '%s\n' "$live" | grep -c . || true)
-  if [ "$n" -eq 1 ]; then printf 'live\t%s\n' "$live"; return 0; fi
+  case "$live" in *$'\n'*) ;; *) printf 'live\t%s\n' "$live"; return 0 ;; esac
 
   if [ -n "$branch" ]; then
-    btok=" ${branch//[\/_.-]/ } "
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      part="${f##*/}"; part="${part%.md}"
-      [[ $part =~ ^SPEC-[0-9]+-(.*)$ ]] && part="${BASH_REMATCH[1]}"
-      hit=0
-      IFS=- read -r -a toks <<< "$part"
-      for tok in ${toks[@]+"${toks[@]}"}; do
-        if [ -n "$tok" ]; then
-          case "$btok" in *" $tok "*) hit=1 ;; esac
-        fi
-      done
-      if [ "$hit" -eq 1 ]; then matched="$f"; nmatch=$((nmatch + 1)); fi
-    done <<< "$live"
-    if [ "$nmatch" -eq 1 ]; then printf 'branch\t%s\n' "$matched"; return 0; fi
+    # Whole-token match: a branch token (split on / _ . -) must equal a whole slug token, so a short
+    # token (a, db, gate) never substring-matches an unrelated spec (gate in gateway). One awk pass.
+    matched=$(printf '%s\n' "$live" | BRANCH_TOKENS="${branch//[\/_.-]/ }" awk '
+      BEGIN { n = split(ENVIRON["BRANCH_TOKENS"], t, " ") }
+      { p = $0; sub(/.*\//, "", p); sub(/\.md$/, "", p)
+        if (match(p, /^SPEC-[0-9]+-/)) p = substr(p, RLENGTH + 1)
+        for (i = 1; i <= n; i++) if (index("-" p "-", "-" t[i] "-")) { print $0; break } }')
+    case "$matched" in ''|*$'\n'*) ;; *) printf 'branch\t%s\n' "$matched"; return 0 ;; esac
   fi
 
-  while IFS= read -r f; do [ -n "$f" ] && printf 'ambiguous\t%s\n' "$f"; done <<< "$live"
+  printf '%s\n' "$live" | awk '{ print "ambiguous\t" $0 }'
   return 2
 }
 
