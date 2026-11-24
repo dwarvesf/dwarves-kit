@@ -8,7 +8,7 @@ You are a task dispatcher. Read the spec, find the next task to work on, and set
 
 ### Step 1: Find the next task
 
-Read the active spec. Resolve it the same way the hooks do (the dual-mode rule): among `docs/specs/SPEC-*.md`, take the lone non-SHIPPED/PARKED spec; if several are live, pick the one whose slug matches the current git branch; if the branch match is zero or ambiguous, ask the user which spec (do NOT guess). `docs/specs/SPEC-NNN-<slug>.md` is the sole active-spec location (root only).
+Read the active spec. Resolve it with the one lookup the hooks use: `bash lib/spec/spec-active.sh --live --branch "$(git branch --show-current)" .` (a lone open spec, or the open spec whose slug matches the branch); on `ambiguous` lines or none, ask the user which spec (do NOT guess). `docs/specs/SPEC-NNN-<slug>.md` is the sole active-spec location (root only).
 
 Find the first task that is:
 - Not marked as done (`[x]` or `DONE`)
