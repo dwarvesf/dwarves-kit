@@ -286,6 +286,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | KIT_UPDATE_CHECK | env-only | `1` | [impl] | update_check | `0` turns the SessionStart newer-release notice off. The module toggle `modules.update_check` does the same per project or operator. |
 | KIT_UPDATE_CHECK_URL | env-only | `https://raw.githubusercontent.com/dwarvesf/dwarves-kit/master/VERSION` | [impl] | update_check | Where `kit-update-notice.sh` fetches the latest VERSION (2s cap, at most once per 24h). A `file://` URL is the test seam. |
 | KIT_UPDATE_STATE_DIR | env-only | `config data path cache update-notice` | [impl] | update_check | Holds `cache.json` (`{checked_at, latest}`), the 24h throttle for the fetch. |
+| UI_VERIFY_HOME | env-only | `config data path cache ui-verify` | [impl] | ui_verify | The install root of `lib/ui-verify/run.mjs`: the pinned Playwright install and its browser cache (`<root>/browsers`). Operator-installed, never touched by the runner; `--doctor` reads it. Never the kit checkout or the target repo. |
 | SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
 | SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
 
