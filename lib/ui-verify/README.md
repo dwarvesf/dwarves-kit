@@ -34,7 +34,7 @@ Where to run it: a scenario run refuses (exit 3) when the runner's own real path
 
 ## Install (an operator step)
 
-The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. The doctor prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready. The runner imports code from the install root, so it uses a root only when it is trusted: not inside a git work tree, owned by the current user, and not writable by group or others. Otherwise every row that would run is NO-CHECK `install root not trusted: <why>`, and the doctor prints `NOT READY: install root not trusted: <why>` (the why is `inside a git work tree`, `not owned by the current user` or `writable by group or others`). The check reads the root itself, not what is inside it.
+The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. The doctor prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready. The runner imports code from the install root, so it uses a root only when it is trusted: not inside a git work tree, owned by the current user, and not writable by group or others. The check also walks every directory above the root up to `/` and looks at `node_modules/playwright`: one that group or others can write to is refused unless it is sticky (like `/tmp`, where others cannot replace what they do not own); system directories such as `/`, `/Users`, `/private` and `/var/folders` are root-owned and mode 755, so they pass. Otherwise every row that would run is NO-CHECK `install root not trusted: <why>`, and the doctor prints `NOT READY: install root not trusted: <why>` (the why is `inside a git work tree`, `not owned by the current user`, `writable by group or others`, `a parent directory is writable by group or others and is not sticky` or `node_modules/playwright is writable by group or others`). The check reads those directories, not the other files inside the root.
 
 ```bash
 node <runner path> --doctor
@@ -66,12 +66,13 @@ Each timeout flag takes a positive whole number at or below its default (step 10
 | 2 | no FAIL and at least one NO-CHECK, or no rows (`no AC`) |
 | 3 | usage error or a guard refused (an `--out` that cannot be created or read included); no browser started and nothing was written to `--out` |
 | 4 | internal error (an uncaught exception), or a node older than 22 |
+| 129 | SIGHUP: the runner closed the browser first; no `result.json` is written |
 | 130 | SIGINT: the runner closed the browser first; no `result.json` is written |
 | 143 | SIGTERM: the runner closed the browser first; no `result.json` is written |
 
 ## Reading the result
 
-Once every guard has passed, the runner prints `ui-verify: run <run id>` on stderr, so a caller that must stop a run can find its browser by the `--kit-ui-verify=<run id>` marker on the browser's command line. On SIGTERM or SIGINT the runner closes the browser, kills any process that still carries the run id and prints `ui-verify: interrupted, browser closed` on stderr. Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
+Once every guard has passed, the runner prints `ui-verify: run <run id>` on stderr, so a caller that must stop a run can find its browser by the `--kit-ui-verify=<run id>` marker on the browser's command line. On SIGTERM, SIGINT or SIGHUP the runner closes the browser, kills any process that still carries the run id and a path under `<install root>/browsers` on its command line (a process that holds only the run id is left alone), removes the browser's temporary home and prints `ui-verify: interrupted, browser closed` on stderr. Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
 
 ```
 ui-verify: head <sha40> scenario-sha256 <first 16 hex> preview-identity <matched|unverified|mismatch> playwright <version> run <run id>
@@ -85,8 +86,9 @@ In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO
 ## Residuals
 
 - Cloaking: PASS proves what the page showed the runner. A page can detect an automated browser and show it something else.
-- Another port of an allowed name: the request guards hold the port (see the allowed hosts rule below), but the browser's resolver rules carry no port and a redirect hop is not shown to the runner. A redirect from an allowed origin to another port of the same allowed name is followed, and that one request is sent. A top-level hop is then caught as NO-CHECK `redirected off an allowed host`; a sub-resource hop is not detected. A redirected POST arrives as a GET. The guards do not compare the scheme.
-- The install-root trust check reads the root, not the files inside it.
+- Another port of an allowed name: the request guards hold the port (see the allowed hosts rule below), but the browser's resolver rules carry no port and redirect hops are not shown to the runner. A chain of redirect hops from an allowed origin to another port of the same allowed host is followed, and a 307 or 308 keeps the method and the body. Observed in the real browser: a page POSTed a JSON body to an allowed path that answered 307 to another port of the allowed host, and the listener there received a POST with that body (nothing in `blocked_requests`). This matters when `allow_loopback` is on, where the allowed origin is code already running on the host. A top-level hop is then caught as NO-CHECK `redirected off an allowed host`; a sub-resource hop is not detected. The guards do not compare the scheme.
+- A WebSocket opened from a Web Worker is not shown to the runner: Playwright routes WebSockets with a script it injects into each page, and a worker does not run it, and Playwright has no context-level hook that covers workers. Observed in the real browser: a dedicated worker opened a WebSocket to another port of the allowed host, the listener there counted the upgrade, and nothing was listed in `blocked_requests`. The resolver pin still holds the socket to the allowed host's checked address, so it can reach only a service on that host, on any port; frames sent over it are not inspected. Blocking workers would break pages that use them, so the runner does not.
+- The install-root trust check reads the root, the directories above it and `node_modules/playwright`, not the other files inside the root.
 - The browser's minimal environment and `--no-proxy-server` were checked on macOS only; a Linux host was not run.
 
 ## The scenario hash
@@ -205,7 +207,7 @@ Refusals (exit 3, one line on stderr, nothing written to `--out`):
 - the runner's own real path sitting inside the git work tree of the current directory
 - an unknown key, a missing required key, `schema` other than 1, a wrong type, a string over its limit, or more than 12 scenarios, 20 steps, 4 viewports or 8 hosts
 - a `target.url` that is not `https:` (or `http:` on a loopback host with `allow_loopback`), carries credentials, or has a host missing from `allow_hosts`
-- an allowed host that resolves to a loopback (without `allow_loopback`), private, link-local, shared (100.64.0.0/10, the tailnet range), unique-local, site-local (`fec0::/10`) or IPv6 transition (`64:ff9b::/96`, `2002::/16`, `::/96`) address
+- an allowed host that resolves to a loopback (without `allow_loopback`), private, link-local, shared (100.64.0.0/10, the tailnet range), unique-local, site-local (`fec0::/10`) or IPv6 transition, Teredo or discard (`64:ff9b::/96`, `64:ff9b:1::/48`, `2001::/32`, `2002::/16`, `100::/64`, `::/96`) address
 - an unknown step verb (a name like `constructor` or `__proto__` included), a `goto` or `expect_url` path that does not start with exactly one `/`, a role outside the twelve, a duplicate (`id`, `kind`) pair, an entry with both `steps` and `skip`, or an `identity` with both keys
 
 An allowed host that does not resolve at all is not a refusal: every row is NO-CHECK `preview unreachable` and the exit is 2.

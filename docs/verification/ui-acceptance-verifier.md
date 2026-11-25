@@ -4,8 +4,8 @@ The proof of done for the UI acceptance verifier: the runner `lib/ui-verify/run.
 
 | Check | Result |
 |---|---|
-| The suite, run once at the end with the real install (`bash tests/test-ui-acceptance-verifier.sh`) | test-ui-acceptance-verifier: 446 passed, 0 failed, 0 skipped, exit 0 |
-| Negative controls recorded in the implementation notes (hand mutations of a temp copy of the runner) | 38 mutations: 37 turned a case red, 1 stayed green by design (see the table) |
+| The suite, run once at the end with the real install (`bash tests/test-ui-acceptance-verifier.sh`) | test-ui-acceptance-verifier: 469 passed, 0 failed, 0 skipped, exit 0 |
+| Negative controls recorded in the implementation notes (hand mutations of a temp copy of the runner) | 45 mutations: 44 turned a case red, 1 stayed green by design (see the table) |
 | Live dispatch (a): three criteria and one negative, all passing | PASS, runner exit 0 |
 | Live dispatch (b): the planted-bug page | FAIL:fixable naming `Error 500`, runner exit 1 |
 | Live dispatch (c): one criterion left out of the scenario | FAIL:escalate with an agent-added NO-CHECK row, runner exit 0 |
@@ -20,13 +20,13 @@ The suite on the real install (Playwright 1.65.1 and its Chromium in the install
 Command: bash tests/test-ui-acceptance-verifier.sh
 Exit: 0
 Output:
-  test-ui-acceptance-verifier: 446 passed, 0 failed, 0 skipped
+  test-ui-acceptance-verifier: 469 passed, 0 failed, 0 skipped
 Verdict: PASS
 ```
 
 ## Negative controls
 
-Each mutation below ran on a temp copy of the runner (next to a copy of `package.json`) outside any git work tree, selected with `UI_VERIFY_RUNNER`, with the one case run alone. The red lines are copied as the implementation notes recorded them (`docs/implementation-notes/ui-acceptance-verifier.md`: build logs A1 and A2, fix round F1). Fix round F2 recorded no per-mutation table, so none of its controls is copied here. The controls that run inside the suite (a resolver copy without the entry, agent file and battery copies, MANUAL and README copies, a fixture copy without `wall.html`, a PATH without node, the synthetic live records) need no copy of the runner and are asserted by the suite itself.
+Each mutation below ran on a temp copy of the runner (next to a copy of `package.json`) outside any git work tree, selected with `UI_VERIFY_RUNNER`, with the one case run alone. The red lines are copied as the implementation notes recorded them (`docs/implementation-notes/ui-acceptance-verifier.md`: build logs A1 and A2, fix round F1) and, for round F4, as recorded in the shell during that round. Fix round F2 recorded no per-mutation table, so none of its controls is copied here. The controls that run inside the suite (a resolver copy without the entry, agent file and battery copies, MANUAL and README copies, a fixture copy without `wall.html`, a PATH without node, the synthetic live records) need no copy of the runner and are asserted by the suite itself.
 
 | Round | Mutation | Case | Red line |
 |---|---|---|---|
@@ -68,6 +68,13 @@ Each mutation below ran on a temp copy of the runner (next to a copy of `package
 | F1 | run id line removed | `sigterm-closes-browser` | `FAIL the run id is printed on stderr before the browser work starts (none)` |
 | F1 | signal handlers removed | `sigterm-closes-browser` | `FAIL the runner reports that it closed the browser before it exited` |
 | F1 | `uncaughtException` listener removed | `internal-error` | `FAIL the injected fault exits 4 (exit 1)` |
+| F4 | step verb check back to the plain lookup (an array holding a known verb) | `guard-refusals` | `FAIL refused: a step verb that is an array holding a known verb (want exit 3 and 'scenarios[0].steps[0].do is not a known step verb'; got exit 2, 1 stderr lines: ui-verify: run <id>)` |
+| F4 | ancestor walk of the install-root check disabled | `doctor-and-skip` | `FAIL doctor: an install root whose parent directory is group-writable and not sticky is not used, state 'NOT READY: install root not trusted: a parent directory is writable by group or others and is not sticky' (exit 0)`, and the matching `run:` line |
+| F4 | kill and scan match the run id alone, not the browser path | `leftover-browser-killed` | `FAIL a bystander whose command line holds only the run id (no browser path) is still alive after the run (pid <pid>)`, and `FAIL the bystander is not among the run's recorded pids` |
+| F4 | `2001::/32` and `64:ff9b:1::/48` removed from the private list | `guard-refusals` | `FAIL refused: an allowed private-range address [2001::] (want exit 3 and '...'; got exit 2, 1 stderr lines: ui-verify: run <id>)`, the same for `[64:ff9b:1::]` and the two upper edges (4 FAIL lines) |
+| F4 | `100::/64` removed from the private list | `guard-refusals` | `FAIL refused: an allowed private-range address [100::] (want exit 3 and '...'; got exit 2 ...)`, and the same for `[100::ffff:ffff:ffff:ffff]` |
+| F4 | SIGHUP handler removed | `signal-during-launch` | `FAIL SIGHUP is handled like SIGTERM: the runner reports it and ends with exit 129 (exit 129)` (the default kill also gives 129, so the check reads the report line too), and `FAIL the browser's temporary home is removed after SIGHUP too` |
+| F4 | removal of the temporary home on a signal exit disabled | `signal-during-launch` | `FAIL the browser's temporary home is removed after a signal exit`, and the same after SIGHUP |
 
 The one green row is the control that proves the pin is the layer that blocks an off-list name: with the pin kept, removing the request route alone leaves the listener at 0 hits.
 
@@ -282,6 +289,13 @@ To redo one live dispatch:
 5. Build the brief as `## Input` in the agent file lists it and run the session command shown under `## Live dispatch`, from `$W`, with the brief after the lead prompt.
 6. Read the `Agent` tool result in the stream JSON. Stop the fixture by its PID.
 
+## Observations
+
+Two things the guards do not cover, measured in the real browser by case `observed-residuals` (Playwright 1.65.1, headless Chromium on macOS). The case asserts only that each page settled; the counts print as NOTE lines.
+
+- Worker WebSocket: a dedicated worker, started by `worker.html`, opened a WebSocket to the other port of the allowed host. The second listener counted 2 upgrades for the run's 2 page loads (the preflight and the scenario step), `blocked_requests` was empty, so the WebSocket guard did not see it. Playwright adds its WebSocket route to each page as an init script, which a worker does not run, and offers no context-level hook for workers, so it is not closed. It is a residual in the README, the spec and the agent notes.
+- 307 hop: `post-hop.html` POSTed `{"hop":1}` to `/redirect-307` on the allowed target, which answered 307 to the other port of the same allowed host. The second listener counted 2 hits for the 2 page loads, each a POST with the body `{"hop":1}` (0 GET), and `blocked_requests` was empty, so the route handler did not see the hop. A 307 or 308 keeps the method and the body.
+
 ## Limits
 
 - The consumer is the kit's own fixture on loopback, not a real preview. No real pull request, no CDN preview and no app behind a login was checked. `Preview identity` was `unverified` in all three dispatches, because the fixture sent no build id.
@@ -292,5 +306,6 @@ To redo one live dispatch:
 - DNS rebinding is proven by the recorded launch arguments only (`--host-resolver-rules`), because the suite has no controllable DNS.
 - A hostile page that detects an automated browser can show it other content. A PASS proves what the page showed the runner.
 - Linux was not run. The browser's minimal environment and `--no-proxy-server` were checked on macOS only.
+- Fix round F4 controls were run by hand on temp copies of the runner and are copied from the shell, not from a notes table.
 - Fix round F2 controls were each seen red by hand, and the notes recorded no per-mutation table for them.
 - No dispatch needed a rerun, so there is no rerun to disclose.
