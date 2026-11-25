@@ -8,7 +8,6 @@
 #   adapters_dir             the one directory scanned
 #   adapters_rows <kind>     <adapter dir><TAB><fields...> for every row of that kind, adapters in name order
 #   adapters_verb <verb>     <script path><TAB><args...>, or return 1 (always 1 for a core verb, at once)
-#   adapters_const <n> <d>   the value of a `const` row (first adapter that declares it), else <d>
 #
 # Sourcing it prints nothing and runs nothing. bash 3.2 clean: no mapfile, no associative arrays.
 if [ -n "${_KIT_ADAPTERS_SH:-}" ]; then return 0; fi
@@ -229,18 +228,4 @@ adapters_verb() {
       printf "\n"; found = 1; exit
     }
     END { exit found ? 0 : 1 }'
-}
-
-adapters_const() {
-  local out val=""
-  out="$(_adapters_scan)" || return 1
-  if [ -n "$out" ]; then
-    val="$(printf '%s\n' "$out" | awk -F'\t' -v n="$1" '
-      $1 == "ROW" && $2 == "const" && $4 == n {
-        s = $5
-        for (i = 6; i <= NF; i++) s = s " " $i
-        print s; exit
-      }')"
-  fi
-  if [ -n "$val" ]; then printf '%s\n' "$val"; else printf '%s\n' "${2:-}"; fi
 }

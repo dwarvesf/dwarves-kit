@@ -43,9 +43,6 @@ try:
         if hit is None:
             sys.exit(1)
         print("\t".join([hit[0]] + hit[1]))
-    elif mode == "const":
-        name, _, default = arg.partition("=")
-        print(reg.const(name, default))
     elif mode == "dir":
         print(reg.dir)
 except SystemExit as e:
@@ -128,12 +125,9 @@ for kind in app opt secret verb sweep-opt leg const hook; do
 done
 [ -n "$(py_run "$FIXTURE" rows app)" ] && ok "the fixture lists its three apps" || bad "the fixture lists no app"
 eq "a verb resolves the same" "$(sh_run /bin/bash "$FIXTURE" adapters_verb fakeverb)" "$(py_run "$FIXTURE" verb fakeverb)"
-eq "a constant resolves the same" "$(sh_run /bin/bash "$FIXTURE" adapters_const inbox-heading dflt)" "$(py_run "$FIXTURE" const 'inbox-heading=dflt')"
-eq "the constant keeps its field with spaces" "$(sh_run bash "$FIXTURE" adapters_const inbox-heading dflt)" "### Fixture inbox"
-eq "a missing constant falls back to the default" "$(sh_run bash "$FIXTURE" adapters_const nosuch dflt)" "dflt"
-eq "a constant defaults the same in Python" "$(py_run "$FIXTURE" const 'nosuch=dflt')" "dflt"
 sh_run bash "$FIXTURE" adapters_verb next >/dev/null 2>&1 && bad "a core verb resolved through the adapters" || ok "a core verb never resolves (returns 1 at once)"
 sh_run bash "$FIXTURE" adapters_verb nosuchverb >/dev/null 2>&1 && bad "an unknown verb resolved" || ok "an unknown verb returns 1"
+eq "a constant keeps its field with spaces" "$(sh_run bash "$FIXTURE" adapters_rows const | awk -F'\t' '$2 == "inbox-heading" {print $3}')" "### Fixture inbox"
 eq "the help text keeps its spaces in a field" "$(sh_run bash "$FIXTURE" adapters_rows opt | head -n 1 | awk -F'\t' '{print $NF}')" "name of the fixture store (a field with spaces)"
 
 # CRLF and a trailing field: the same rows come back
@@ -237,6 +231,15 @@ eq "python never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT
 dec="$(cd "$W/decoyrepo" && KIT_PROJECT_ROOT="$W/decoyrepo" DWARVES_KIT="$W/decoyrepo" env -u KIT_ADAPTERS_DIR bash -c '. "$0"; adapters_rows app' "$SH")"
 eq "bash never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" ""
 [ ! -e "$W/decoy.marker" ] && ok "the decoy module never ran" || bad "the decoy adapter module ran"
+# no kit.toml key selects the directory: plant the plausible ones in the project, operator and kit-root files
+mkdir -p "$W/cfg/op" "$W/cfg/root"
+for f in "$W/decoyrepo/.kit.toml" "$W/cfg/op/kit.toml" "$W/cfg/root/kit.toml"; do
+  printf '[adapters]\ndirs = "%s/lib/adapters"\ndir = "%s/lib/adapters"\n[sync]\nadapters_dir = "%s/lib/adapters"\n' "$W/decoyrepo" "$W/decoyrepo" "$W/decoyrepo" > "$f"
+done
+cfgenv=(KIT_PROJECT_ROOT="$W/decoyrepo" KIT_CONFIG_OPERATOR="$W/cfg/op" KIT_CONFIG_ROOT="$W/cfg/root")
+eq "no kit.toml key selects the directory (python)" "$(cd "$W/decoyrepo" && env -u KIT_ADAPTERS_DIR "${cfgenv[@]}" "$PY" -I "$W/pydump.py" "$KIT/lib/sync" rows app)" ""
+eq "no kit.toml key selects the directory (bash)" "$(cd "$W/decoyrepo" && env -u KIT_ADAPTERS_DIR "${cfgenv[@]}" bash -c '. "$0"; adapters_rows app' "$SH")" ""
+[ ! -e "$W/decoy.marker" ] && ok "the decoy module still never ran" || bad "a kit.toml key made the loader run the decoy"
 # a missing directory is zero adapters and silent; an unreadable one is a load error
 eq "a missing directory loads zero adapters silently (bash)" "$(sh_run bash "$W/nosuchdir" adapters_rows app 2>&1; echo "rc=$?")" "rc=0"
 eq "a missing directory loads zero adapters silently (python)" "$(py_run "$W/nosuchdir" rows app 2>&1; echo "rc=$?")" "rc=0"
@@ -262,8 +265,17 @@ for m in "$KIT"/lib/adapters/*/adapter.tsv; do
   real=$((real+1))
 done
 for kind in app opt secret verb sweep-opt leg const hook; do
-  eq "the real set: rows of kind $kind agree (bash, python)" "$(sh_run bash - adapters_rows "$kind" 2>&1)" "$(py_run - rows "$kind" 2>&1)"
+  for shell in bash /bin/bash; do
+    eq "the real set: rows of kind $kind agree ($shell, python)" "$(sh_run "$shell" - adapters_rows "$kind" 2>&1)" "$(py_run - rows "$kind" 2>&1)"
+  done
 done
+mkdir -p "$W/empty"
+for shell in bash /bin/bash; do
+  eq "an empty directory has no rows and no error under set -euo pipefail ($shell)" "$(sh_run "$shell" "$W/empty" adapters_rows app 2>&1; echo "rc=$?")" "rc=0"
+  sh_run "$shell" "$W/empty" adapters_verb mirror >/dev/null 2>&1 && bad "an empty directory resolved a verb ($shell)" || ok "an empty directory resolves no verb ($shell)"
+  sh_run "$shell" - adapters_verb nosuchverb >/dev/null 2>&1 && bad "the default directory resolved an unknown verb ($shell)" || ok "the default directory resolves no unknown verb ($shell)"
+done
+eq "an empty directory loads zero adapters in Python" "$(py_run "$W/empty" rows app 2>&1; echo "rc=$?")" "rc=0"
 ok "the real set holds $real adapter manifest(s); the loader skips lib/adapters/tests and docs"
 
 echo "=== the frozen core lists ==="
