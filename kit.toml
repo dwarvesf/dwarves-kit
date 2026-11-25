@@ -103,8 +103,8 @@ turn_cap           = 300        # [impl] TURN_CAP. Per-agent turn CEILING for `c
                                 #        it alerts on a lapsed lease and never kills;
                                 #        only the ceiling stops a segment. Non-claude
                                 #        harnesses have no --max-turns and are exempt.
-verify             = "off"      # [impl] "off" | "tiered" (SPEC-421). `tiered`: every node verification step runs the
-                                #        `affected` selection, and the full suite runs once per wave on the merged
+verify             = "off"      # [impl] "off" | "tiered" (SPEC-421). `tiered`: the join runs `[test] join_cmd` (the
+                                #        affected selection of the union of heads) once per wave on the merged
                                 #        tree inside `_wave_converge`. Read at the base commit (`kit_config_get_at`),
                                 #        never from a node's branch. Refused with WAVE_ROLLING=1. The serial path runs the
                                 #        join once per DAG level on the base tree.
@@ -361,7 +361,7 @@ recheck_sample   = 5            # [impl] one run in N rechecks every end-verifie
 known_failures   = "tests/known-failures.txt"  # [impl] a tiered mega-goal's lead-committed list, one failure name per line; read with `git show <base>:<path>` (lib/gate/known-failures.sh). A path inside the repo.
 failure_line     = ""           # [impl] ERE (a TOML literal string, single quotes); capture group 1 is a failure name in a test log. Read at the base. Empty: a red run is a plain failure.
 count_line       = ""           # [impl] ERE; every numeric capture group is summed into the executed count of a run. Read at the base. Empty: a red run is a plain failure.
-join_cmd         = ""           # [impl] the full-suite command the wave join runs on the base tree and on the merged tree (`[mega] verify = "tiered"`). Read at the base. Empty with verify = "tiered": the join refuses and nothing merges.
+join_cmd         = ""           # [impl] the affected-selection command the join runs on the merged tree (`[mega] verify = "tiered"`), with KIT_JOIN_BASE set to the base commit to diff against; in this repo `bin/test-affected --base "$KIT_JOIN_BASE"`. A red run is judged against the known-failures list. Read at the base. Empty with verify = "tiered": the join refuses and nothing merges.
 load_warn        = 16           # [impl] KIT_LOAD_WARN. 1-minute load average over which bin/test-affected runs and the mega dispatch print one warning line (lib/host/load-warn.sh). Warning only: nothing is rerouted or blocked.
 
 [review]                        # `/kit:review-team` decision gate (commands/review-team.md)
