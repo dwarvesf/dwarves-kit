@@ -60,7 +60,7 @@ The source object is the duck type the engine already runs: `name`, `sync_fields
 row's notes already carry, so the planner binds that row instead of creating a duplicate).
 
 **Verb argv.** A verb script gets the manifest args, then the caller's args. `KIT_LIB` (the absolute `lib/`) is set for
-out-of-tree scripts; scripts that ship in the kit derive it from their own location and ignore the environment.
+out-of-tree scripts; scripts that ship in the kit derive it from their own physical location (so an extension directory of symlinks works) and ignore the environment. `board.sh` looks a verb up only for a first word that is not a core verb, so `next`, `get` and `set` never read a manifest.
 
 **Leg environment.** A leg runs as `"$BASH" <script>` with `SWEEP_NAME`, `SWEEP_BOARDS`, `SWEEP_REPO_ROOT`,
 `SWEEP_DRY_RUN` (0 or 1), `SWEEP_BOARD_CMD`, `SWEEP_HEALTH_BIN`, `SWEEP_HEALTH_STATE`, `KIT_LIB` and every `sweep-opt`
@@ -70,7 +70,7 @@ the sweep itself inherited from its caller passes through, as it did to the legs
 **The directory.** The loader scans `$KIT_ADAPTERS_DIR` when it is set (an absolute path; empty or relative exits 1) and
 otherwise `lib/adapters/` of the running kit, found from the loader file's real location, never from cwd,
 `KIT_PROJECT_ROOT`, `DWARVES_KIT` or a config value. `KIT_ADAPTERS_DIR` replaces the in-tree directory; an extension
-directory symlinks the built-ins it wants. A missing directory means zero adapters, silently. An unreadable one is a
+directory symlinks the built-ins it wants, and `board help` prints the directory in effect. A missing directory means zero adapters, silently. An unreadable one is a
 load error.
 
 **Trust.** `KIT_ADAPTERS_DIR` has the trust of `PATH`: it selects code that runs with the caller's whole environment.

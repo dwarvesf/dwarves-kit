@@ -15,6 +15,11 @@ ok()  { PASS=$((PASS+1)); printf '  PASS %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
 eq()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
 has() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1 (missing '$3' in '$2')" ;; esac; }
+# eqd: eq for multi-line output; a mismatch prints a unified diff of the two instead of both blobs
+eqd() {
+  if [ "$2" = "$3" ]; then ok "$1"; return; fi
+  bad "$1"; command diff <(printf '%s\n' "$3") <(printf '%s\n' "$2") | sed -n '1,12p' | cut -c1-400 | sed 's/^/      /'
+}
 
 W="$(mktemp -d "${TMPDIR:-/tmp}/kit-adapters.XXXXXX")" || exit 1
 W="$(cd "$W" && pwd -P)"
@@ -91,8 +96,10 @@ for path in sys.argv[1:]:
 print("\n".join(bad))
 EOF
 newpy=""
-for f in lib/sync/adapters.py lib/adapters/tests/conftest.py lib/sync/tests/test_adapters.py lib/sync/tests/fixtures/adapters/fake/adapter.py; do
-  [ -f "$KIT/$f" ] && newpy="$newpy $KIT/$f"
+for f in lib/sync/adapters.py lib/adapters/tests/conftest.py lib/adapters/tests/test_conformance.py lib/adapters/tests/test_body_expander.py \
+         lib/sync/tests/test_adapters.py lib/sync/tests/fixtures/adapters/fake/adapter.py "$KIT"/lib/adapters/*/adapter.py; do
+  case "$f" in /*) ;; *) f="$KIT/$f" ;; esac
+  [ -f "$f" ] && newpy="$newpy $f"
 done
 # shellcheck disable=SC2086
 floor_out="$("$PY" "$W/floor.py" $newpy 2>&1)"
@@ -102,6 +109,10 @@ if "$PY" "$W/floor.py" "$W/match.py" >/dev/null 2>&1; then bad "negative control
 else ok "negative control: a planted match statement fails the 3.9 parse"; fi
 printf 'import os\n' > "$W/nofuture.py"
 [ -n "$("$PY" "$W/floor.py" "$W/nofuture.py")" ] && ok "negative control: a missing future import is reported" || bad "a missing future import was not reported"
+if [ -x /usr/bin/python3 ]; then
+  sys_py="$(/usr/bin/python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import adapters; print("imported")' "$KIT/lib/sync" 2>&1)"
+  eq "adapters.py imports under /usr/bin/python3 ($(/usr/bin/python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null))" "$sys_py" "imported"
+else ok "no /usr/bin/python3 here: the system interpreter import is skipped"; fi
 /bin/bash -n "$SH" 2>/dev/null && ok "adapters.sh parses under /bin/bash" || bad "adapters.sh does not parse under /bin/bash"
 sh_silence="$(/bin/bash -c 'set -euo pipefail; . "$0"' "$SH" 2>&1; echo "rc=$?")"
 eq "sourcing adapters.sh prints nothing and succeeds under set -euo pipefail (/bin/bash)" "$sh_silence" "rc=0"
@@ -366,6 +377,138 @@ sed -i.bak 's|^KIT_LIB="$(cd "$BM_DIR/../.." \&\& pwd)"|KIT_LIB="${KIT_LIB:-$(cd
 KIT_LIB="$W/decoy" bash "$W/mut/lib/adapters/hermes/board-mirror.sh" row-hash r ID-1 t n queued >/dev/null 2>&1
 [ -e "$W/decoy-used" ] && ok "negative control: a script that trusts KIT_LIB sources the decoy" || bad "the decoy control did not fire"
 command rm -f "$W/decoy-used"
+
+echo "=== the frozen surface ==="
+# the flags and sweep flags live jobs pass; each must still be accepted and listed
+FROZEN_ENGINE="apps backlog archive-file state-root dry-run filter scope-exit-cap allow-scope-exit allow-flips allow-archived-closes list notion-db notion-parent notion-title github-repo hermes-target hermes-home hermes-board hermes-assignee hermes-workspace notion-taskboard-db notion-taskboard-status-map notion-taskboard-status-default notion-taskboard-priority-map notion-taskboard-weight-map notion-taskboard-owner notion-taskboard-props notion-taskboard-types notion-taskboard-pull-db notion-taskboard-pull-props notion-taskboard-pull-done-option multica-url multica-workspace multica-project"
+engine_help() { env -u KIT_ADAPTERS_DIR ${1:+KIT_ADAPTERS_DIR="$1"} "$PY" "$KIT/lib/sync/backlog_sync.py" --help 2>&1; }
+missing_flags() { local help="$1" f miss=""; shift; for f in "$@"; do case "$help" in *"--$f"*) ;; *) miss="$miss --$f" ;; esac; done; printf '%s' "$miss"; }
+# shellcheck disable=SC2086
+eq "backlog_sync.py --help lists every frozen engine flag" "$(missing_flags "$(engine_help)" $FROZEN_ENGINE)" ""
+sweep_help="$(env -u KIT_ADAPTERS_DIR bash "$KIT/bin/board" sweep --help 2>&1)"
+has "board sweep --help prints Usage: board sweep" "$sweep_help" "Usage: board sweep"
+eq "board sweep --help lists the three leg flags" "$(missing_flags "$sweep_help" mirror-hermes-home mirror-snapshot expire-kinds-file)" ""
+# negative control: one opt row deleted from a temp copy of the set must be named
+mkdir -p "$W/frozen"; for d in "$KIT"/lib/adapters/*/; do n="$(basename "$d")"; [ -f "$d/adapter.tsv" ] && cp -R "$d" "$W/frozen/$n"; done
+grep -v $'^opt\thermes-target\t' "$KIT/lib/adapters/hermes/adapter.tsv" > "$W/frozen/hermes/adapter.tsv"
+# shellcheck disable=SC2086
+mutant_missing="$(missing_flags "$(engine_help "$W/frozen")" $FROZEN_ENGINE)"
+eq "negative control: a deleted opt row makes the frozen-flag loop name its flag" "$mutant_missing" " --hermes-target"
+# every [sync] key of kit.toml that starts with an app prefix is read by an opt row, a secret row or a derived filter key
+reg_keys="$({ sh_run bash - adapters_rows opt | awk -F'\t' '{print $3}'; sh_run bash - adapters_rows secret | awk -F'\t' '{print $3}'
+  sh_run bash - adapters_rows app | awk -F'\t' '{a=$2; gsub(/-/,"_",a); m=$3; print a "_only_tags"; print a "_skip_tags"; if (m=="two-way") print a "_intake"}'; } | sort -u)"
+toml_keys="$(awk '/^\[sync\]/{f=1;next} /^\[/{f=0} f && /^[a-z_]+ *=/ {print $1}' "$KIT/kit.toml" | grep -E '^(reminders|notion|hermes|multica|github)_' | sort -u)"
+unread="$(comm -23 <(printf '%s\n' "$toml_keys") <(printf '%s\n' "$reg_keys") | tr '\n' ' ')"
+eq "every app-prefixed [sync] key of kit.toml is read by a manifest row" "$unread" ""
+unread_mut="$(comm -23 <(printf '%s\n' "$toml_keys") <(printf '%s\n' "$reg_keys" | grep -vx hermes_target) | tr '\n' ' ')"
+eq "negative control: dropping a key from the registry set is reported" "$unread_mut" "hermes_target "
+
+echo "=== no adapter configured: board sync ==="
+mkdir -p "$W/syncrepo/_meta"; git -C "$W/syncrepo" init -q 2>/dev/null
+cp "$W/verbs.md" "$W/syncrepo/_meta/BACKLOG.md"
+sync_cfg() { printf '[sync]\napps = "%s"\n' "$1" > "$W/syncrepo/.kit.toml"; }
+sync_run() { local d="$1"; shift; ( cd "$W/syncrepo" && env KIT_ADAPTERS_DIR="$d" KIT_DATA_ROOT="$W/syncdata" KIT_CONFIG_OPERATOR="$W/none.toml" bash "$KIT/bin/board" sync --backlog-file "$W/syncrepo/_meta/BACKLOG.md" "$@" 2>&1 ); }
+before="$(cksum < "$W/syncrepo/_meta/BACKLOG.md")"
+sync_cfg x; out="$(sync_run "$W/empty")"; rc=$?
+eq "apps = x with no adapter exits 1" "$rc" "1"
+has "apps = x names the adapter directory" "$out" "no adapter provides x (searched: $W/empty)"
+sync_cfg "github,x"; out="$(sync_run "$W/empty")"; rc=$?
+eq "apps = github,x with no adapter exits 1 before any sync" "$rc" "1"
+has "the first unknown app is named" "$out" "no adapter provides github (searched: $W/empty)"
+eq "the board is byte identical after the refused runs" "$(cksum < "$W/syncrepo/_meta/BACKLOG.md")" "$before"
+eq "the refused runs wrote no state file" "$(find "$W/syncdata" -type f 2>/dev/null | wc -l | tr -d ' ')" "0"
+sync_cfg fake-pull; out="$(sync_run "$FIXTURE" --dry-run)"
+case "$out" in *"no adapter provides"*) bad "absent differs from present: the fixture adapter was not found ($out)" ;; *) ok "absent differs from present: the fixture adapter provides fake-pull" ;; esac
+
+echo "=== bash 3.2 (/bin/bash) and a symlinked kit root ==="
+mkdir -p "$W/shim"; ln -s /bin/bash "$W/shim/bash"
+# a stub python3 for the sync case, a stub hermes for the bridge cases, a stub secret reader
+mkdir -p "$W/stubs"
+printf '#!/bin/bash\nprintf "ARGV:%%s\\nFAKE_TOKEN:%%s\\n" "$*" "${FAKE_TOKEN:+set}"\n' > "$W/stubs/python3"
+printf '#!/bin/bash\nprintf "stub-secret\\n"\n' > "$W/stubs/secret-cache-read"
+printf '#!/bin/bash\ncase "$*" in *"list --json"*) echo "[]" ;; *"boards list"*) echo "[]" ;; *) echo "{}" ;; esac\n' > "$W/stubs/hermes"
+chmod +x "$W/stubs/python3" "$W/stubs/secret-cache-read" "$W/stubs/hermes"
+mkdir -p "$W/opcfg"; printf '[sync]\nfake_token_ref = "op://operator/ref"\n' > "$W/opcfg/kit.toml"
+mkdir -p "$W/fxrepo/_meta"; git -C "$W/fxrepo" init -q 2>/dev/null
+cp "$W/verbs.md" "$W/fxrepo/_meta/BACKLOG.md"
+printf '[sync]\napps = "fake-two"\n' > "$W/fxrepo/.kit.toml"
+printf 'fx %s on\n' "$W/fxrepo/_meta/BACKLOG.md" > "$W/fxrepo/boards.txt"
+: > "$W/fxrepo/snap.jsonl"
+git -C "$W/fxrepo" add -A >/dev/null 2>&1; git -C "$W/fxrepo" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+base_env() { env -i HOME="$W/home" TMPDIR="$W" KIT_DATA_ROOT="$W/shdata" KIT_CONFIG_OPERATOR="$W/opcfg" HERMES_BIN="$W/stubs/hermes" HERMES_HOME="$W/hh" "$@"; }
+mkdir -p "$W/home"
+# norm: the parts of an output that differ between two runs of the same case (a clock, a scratch name, the kit root's spelling)
+norm() { sed -e 's/synced: [0-9T:.Z-]*/synced: <T>/g' -e 's#board-mirror-registry\.[A-Za-z0-9]*#board-mirror-registry.<R>#g' -e "s#$W/kitroot#$KIT#g"; }
+# run_case <PATH> <label...> -> prints the stdout and stderr of the case, normalized
+shim_cases() {  # shim_cases <kit-root> <path-prefix>: board sync over the fixture adapter, a stub python3 and a secret row
+  local root="$1" pfx="$2" P out
+  P="$pfx$W/stubs:/usr/bin:/bin"
+  out="$(cd "$W/fxrepo" && base_env PATH="$P" KIT_ADAPTERS_DIR="$FIXTURE" bash "$root/bin/board" sync --backlog-file "$W/fxrepo/_meta/BACKLOG.md" 2>&1; echo "rc=$?")"
+  printf '%s\n' "$out" | norm
+}
+sh_bash="$(shim_cases "$KIT" "")"
+sh_shim="$(shim_cases "$KIT" "$W/shim:")"
+eqd "board sync (stub python3, a secret row) gives the same output under /bin/bash and PATH bash" "$sh_shim" "$sh_bash"
+has "the secret row reached the stub engine by environment" "$sh_shim" "FAKE_TOKEN:set"
+case "$sh_shim" in *stub-secret*) bad "the secret leaked into argv or output" ;; *) ok "the secret never appears in the output" ;; esac
+
+bridge_cases() {  # bridge_cases <path-prefix> [kit-root]
+  local pfx="$1" root="${2:-$KIT}" out="" P
+  P="$pfx$W/stubs:/usr/bin:/bin"
+  for c in "mirror --dry-run" "status" "status --with-mega" "writeback --dry-run"; do
+    out="$out--- $c
+$(cd "$W/fxrepo" && base_env ${BR_AD:+KIT_ADAPTERS_DIR="$BR_AD"} PATH="$P" bash "$root/bin/board" $c --repo-root "$W/fxrepo" --registry "$W/fxrepo/boards.txt" --snapshot "$W/fxrepo/snap.jsonl" 2>&1; echo "rc=$?")
+"
+  done
+  printf '%s' "$out" | norm
+}
+b_bash="$(bridge_cases "")"
+b_shim="$(bridge_cases "$W/shim:")"
+eqd "mirror, status, status --with-mega and writeback give the same output under /bin/bash" "$b_shim" "$b_bash"
+has "the mirror dry run printed a plan" "$b_shim" "--- mirror --dry-run"
+has "status printed its summary line" "$b_shim" "repos changed since last mirror"
+has "status --with-mega printed the rollup header" "$b_shim" "MEGA ROLLUP:"
+case "$b_shim" in *"rc=0"*) ok "the bridge verbs ran to an exit code under /bin/bash" ;; *) bad "no bridge case ran: $b_shim" ;; esac
+case "$b_shim" in *"rc=127"*|*"command not found"*|*"syntax error"*) bad "a bridge verb hit a bash 3.2 error: $b_shim" ;; *) ok "no bash 3.2 error in the bridge verbs" ;; esac
+
+sweep_case() {  # sweep_case <path-prefix>
+  local pfx="$1" P
+  P="$pfx/usr/bin:/bin"
+  printf '#!/bin/bash\necho "board called: $*"\nexit 0\n' > "$W/sweepboard"; chmod +x "$W/sweepboard"
+  : > "$W/sweep-boards.txt"
+  mkdir -p "$W/sweep-home/.local/bin"; command cp -f "$W/stubs/hermes" "$W/sweep-home/.local/bin/hermes"
+  printf '[]\n' > "$W/kinds.json"
+  env -i HOME="$W/sweep-home" TMPDIR="$W" KIT_CONFIG_OPERATOR="$W/none.toml" PATH="$P" bash "$KIT/bin/board" sweep --registry "$W/sweep-boards.txt" --board-cmd "$W/sweepboard" --repo-root "$W/sweep-home" --dry-run \
+    --mirror-hermes-home "$W/hh" --mirror-snapshot "$W/sweep-snap.jsonl" --expire-kinds-file "$W/kinds.json" 2>&1 | sed "s#$W#<W>#g; s#[0-9]\{4\}-[0-9][0-9]-[0-9][0-9][T ][0-9:]*Z\{0,1\}#<T>#g; s#pid [0-9]*#pid <N>#g; s#board-mirror-registry\.[A-Za-z0-9]*#board-mirror-registry.<R>#g"
+  echo "rc=${PIPESTATUS[0]}"
+}
+s_bash="$(sweep_case "")"
+s_shim="$(sweep_case "$W/shim:")"
+eqd "board sweep with the three leg flags gives the same output under /bin/bash" "$s_shim" "$s_bash"
+has "the mirror leg ran under /bin/bash" "$s_shim" "mirror rc="
+has "the expire leg ran under /bin/bash" "$s_shim" "expire rc="
+eq "board sweep --help is the same under /bin/bash" "$(env -u KIT_ADAPTERS_DIR PATH="$W/shim:$PATH" bash "$KIT/bin/board" sweep --help 2>&1)" "$sweep_help"
+
+# a kit root with bin and lib symlinked to the tree, as this host installs the kit
+mkdir -p "$W/kitroot"; ln -s "$KIT/bin" "$W/kitroot/bin"; ln -s "$KIT/lib" "$W/kitroot/lib"
+eq "board sweep --help through a symlinked kit root" "$(env -u KIT_ADAPTERS_DIR bash "$W/kitroot/bin/board" sweep --help 2>&1)" "$sweep_help"
+sl_sync="$(shim_cases "$W/kitroot" "")"
+eqd "board sync through a symlinked kit root" "$sl_sync" "$sh_bash"
+sl_bridge="$(bridge_cases "" "$W/kitroot")"
+eqd "the bridge verbs through a symlinked kit root (KIT_ADAPTERS_DIR unset)" "$sl_bridge" "$b_bash"
+# KIT_ADAPTERS_DIR set to a scratch path outside the tree: an extension directory that symlinks the built-ins it wants
+EXT="$W/extdir"; mkdir -p "$EXT"; ln -s "$KIT/lib/adapters/hermes" "$EXT/hermes"
+ext_bridge="$(BR_AD="$EXT" bridge_cases "" "$W/kitroot")"
+eqd "the bridge verbs through a symlinked kit root and an extension directory of symlinks" "$ext_bridge" "$b_bash"
+case "$EXT" in /var/folders/*|/private/var/folders/*) ok "the extension directory is under /var/folders" ;; *) ok "the extension directory is a scratch path ($EXT); /var/folders applies on macOS" ;; esac
+
+echo "=== discovery ==="
+# bin/test-affected and run-all collect suites through tests/lib/suites.sh; a change under lib/adapters picks this suite
+# by the module rule only when the file below is collected under this id
+disc="$(cd "$KIT" && bash -c '. tests/lib/suites.sh; suite_list; suite_id lib/adapters/tests/test-adapters.sh')"
+has "suites.sh collects the module suite" "$disc" "lib/adapters/tests/test-adapters.sh"
+has "the module suite goes by lib-adapters-test-adapters" "$disc" "lib-adapters-test-adapters"
+has "suites.sh collects the purity suite" "$disc" "tests/test-core-purity.sh"
 
 echo "=== the pytest roots ==="
 uv run --no-project --with pytest -- pytest "$KIT/lib/adapters/tests" -q > "$W/pytest.out" 2>&1; prc=$?
