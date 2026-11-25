@@ -7,7 +7,7 @@
 
 dwarves-kit adds a spec-driven workflow to Claude Code: you set the goal and the gates, and agents build and fix inside them.
 A read-only verifier decides when work is done, so no agent grades its own homework.
-Safety is mechanical: bash hooks block a force push, a secret read, or a ship with no proof, and a fix loop stops after two tries and asks you.
+Safety is mechanical: bash hooks block a force push, a secret read, or (in an adopted repo) a ship with no proof, and a fix loop stops after two tries and asks you.
 
 ![One change moves through think, spec, execute, review, docs, ship, wrap and retro; the verification pipeline and the ship-gate block, the other gates advise](docs/figures/loop.png)
 
@@ -51,6 +51,16 @@ You rarely type a command. Say what you want, such as "add a `--version` flag to
 - **Hooks.** Bash scripts on Claude Code events. A small spine always runs; the rest is opt-in. The full inventory is [`docs/reference/hooks.md`](docs/reference/hooks.md).
 - **Skills.** Claude loads these when your intent matches, for example the audit loops. See the [skills roster](docs/reference/skills.md).
 - **The bash engine.** Each subsystem is a standalone shell command under `bin/`, for example `bash bin/board --help` and `bash bin/precedent find "<query>"`. It runs without Claude Code.
+
+## The learning boundary
+
+This kit owns the first row; the other rows are the kits it hands off to. The decision behind the split is ADR-0036 in dwarves-kit.
+
+| Kit | Learner or plane | What it owns | The seam it fills |
+|---|---|---|---|
+| dwarves-kit | the process plane: the system changes | gates, ledgers, the landing step, `reflect`, and the understanding gate (the DEBT record, the nudge, `explain` and `quiz-gate` as entry points that gather the material) | none; it declares the seams the other two fill |
+| learning-kit | a human learning: paying an understanding debt, or studying outside material | the `understand` teacher, the `study` lane, the one concept ledger and its flush | `understand.teach`, `wrap.after` |
+| context-kit | the knowledge tree a human and an agent share | writing knowledge into the tree and the tree's page contract | `knowledge.root` |
 
 ## Who it is for
 
