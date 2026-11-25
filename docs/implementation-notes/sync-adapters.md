@@ -90,3 +90,21 @@ Taken on this host after merging `origin/master` (a19ca13d), each suite alone, i
 - `lib/adapters/tests/test-adapters.sh` runs `pytest lib/adapters/tests` and accepts exit 5 (no tests yet); `lib/sync/tests/test_adapters.py` (28 tests) runs under `tests/test-sync.sh`, so that suite now reports 354 passed (326 baseline plus 28). The fixture adapter is `lib/sync/tests/fixtures/adapters/fake/`; its `build` and hooks are stubs that TASK-C extends for the engine tests.
 - `lib/adapters/README.md` states the whole contract, including parts that land in later tasks (legs, the conformance test, `lib/adapters/docs/`); reword anything that is still false when the last task lands.
 - Decisions on the run itself: the rules file's push and PR steps and the spec's phase-end `run-all --changed` were overridden by the phase 1 brief (no push, no PR, no `run-all`); the phase 1 check ran suite by suite.
+
+## Phase 2 start: the state-check merge (builder 2)
+
+- The state-check change (`origin/feat/state-check-engine`) was merged into the branch after `origin/master`; `state-check)` and `BOARD_STATE_CHECK_PY` are in `board.sh`, so the spec's "the state-check change has landed" branch is true for every later task. The only conflict was the generated `docs/reference/FEATURES.md`; resolved by taking this side and running `bash lib/registry/feature-registry.sh generate` (`check` reports fresh).
+- The merge changed two phase 1 artifacts, neither by a task: the `board help` text of golden section `7-help-errors` gained exactly the nine `state-check` usage lines (no tag in the closed list covers an upstream change, so the commit `rebase golden and core verbs onto state-check lines` rebases the golden once, with no `deltas.txt` row), and the module suite's `CORE_VERBS` equality went red as phase 1 predicted, so `state-check` joined `CORE_VERBS` in `lib/sync/adapters.sh`. TASK-S step 5 (`git diff <A2 commit> HEAD -- golden.txt`) therefore sees that one nine-line hunk with no row: diff against the rebase commit instead, or accept that hunk as the base change.
+- `CHARACTERIZE_UPDATE=1` rewrites the whole golden; always read `git diff` of it afterwards and confirm it holds only the hunk the task causes.
+
+## TASK-G (bound marker)
+
+- `plan_create_only(..., bound_re=None)`; `sync_create_only` passes `getattr(src, "bound_marker_re", None)`; `NotionTaskBoardSource.bound_marker_re` is the compiled `notion-page:([0-9a-f]{32})`. `PULL_MARKER_RE` and `bound_page_id` are gone from `sync_core`.
+- Golden delta: section `3-engine-dry-run`, tag `describe-line`, one line (the `notion-taskboard` adopted row). Recorded in `deltas.txt`.
+- Test names unchanged: the three marker planning tests in `test_notion_taskboard.py` now pass `bound_re=PULL_MARKER_RE` (a module constant bound to the source's attribute); three new tests in `test_core.py` use a fake `fake-id:` marker. `tests/test-sync.sh` reports 357 passed (354 plus 3).
+
+## TASK-L (board-lib.sh)
+
+- Moved verbatim into `lib/board/board-lib.sh`: the `OPT_*` defaults and `POSITIONAL`, `_parse_flags`, `_mega_rollups`, `_default_repo_root`, `_resolve_repo_root`, `_repo_root_for`, `_iso_to_utc_z`, plus `MEGA_SH` (now `$KIT_LIB/mega/mega.sh`) and the `box.sh` source. The helper closure of the three bridge functions was exactly that set; `_behind_count`, `_stale_marker` and `_stale_trailer` stay in `board.sh` (only `cmd_all` uses them).
+- `board.sh` computes `KIT_LIB="$(cd "$BOARD_DIR/.." && pwd)"` and exports it unconditionally, so an inherited value is ignored. `board-lib.sh` fails with a message when `KIT_LIB` is unset. The file is mode 644 (sourced, like `work.sh`).
+- Proof the diff is a move: every removed `board.sh` line other than the `MEGA_SH` and `box.sh` lines exists in `board-lib.sh` (`comm -23` of the sorted lines prints only those two).
