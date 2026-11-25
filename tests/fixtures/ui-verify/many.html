@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Many hosts page</title>
+</head>
+<body>
+<main>
+  <h1>Many hosts page</h1>
+  <p role="status" id="state"></p>
+</main>
+<script>
+  function reach(host) {
+    return fetch('http://' + host + '/', { mode: 'no-cors' }).then(function () {}, function () {});
+  }
+  var longHost = 'a'.repeat(50) + '.' + 'b'.repeat(50) + '.' + 'c'.repeat(50) + '.invalid';
+  reach(longHost).then(function () {
+    var calls = [];
+    for (var i = 0; i < 60; i += 1) calls.push(reach('h' + i + '.blocked.invalid'));
+    return Promise.all(calls);
+  }).then(function () {
+    document.getElementById('state').textContent = 'many done';
+  });
+</script>
+</body>
+</html>

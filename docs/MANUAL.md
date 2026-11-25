@@ -478,6 +478,7 @@ The `harvest` hook stages learnings when a session compacts or ends. The harvest
 | `test-writer` | `/kit:test-write` | Write-capable: turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework; scope-locked to test files, frozen-evaluator on the spec's AC/Verification |
 | `audit-scanner` | doc-drift + topology-drift skills (Tier 2) | Shared read-only evidence scanner for audit-loop instances: receives a target set + contract + evidence class, returns per-item verdicts (audit-loop grammar) with quoted evidence and severity; never fixes, roster has no write path |
 | `devops-triage` | on-demand ("triage this production alert/error") | Read-only production-alert triage: bounded root-cause verdict from Workers Logs history + git log/diff/show around the deploy sha; NOT for local repro or test failures (that is `/kit:debug`); cannot modify the codebase or post anywhere |
+| `ui-acceptance-verifier` | `/kit:battery` (escalation lens, a UI change with a preview URL for the head commit and a lead-written `scenario.json`) | First slice, scenario layer only (no sign-in pages). Read-only: runs the kit's runner (`lib/ui-verify/run.mjs`) over the preview and returns a per-criterion PASS, FAIL or NO-CHECK in the acceptance-verifier grammar; the runner judges every row, the agent checks that every criterion has a scenario entry and maps the runner's result to a verdict |
 
 ## Path-scoped rules
 
