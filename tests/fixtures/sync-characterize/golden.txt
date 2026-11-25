@@ -1002,6 +1002,15 @@ lagging repo. See `_behind_count` for the never-fetch, fail-open contract and it
                                                               its cards by age; --expire-only runs
                                                               just that. Forwards to
                                                               lib/board/board-mirror-cleanup.py.
+  board.sh state-check --all [--strict] | --staged | --fix [--repo-root <dir>] [--states-file <path>]
+                                                              check the state values a repo stores in
+                                                              its own registry (default <repo>/_meta/states.toml):
+                                                              --all reports, --strict exits 1 on undeclared
+                                                              values or drift; --staged blocks NEW drift at
+                                                              commit (ALLOW_STATE_CHANGE="<reason>" lets one
+                                                              through); --fix rewrites drifted projection
+                                                              tokens. Exit 0 clean, 1 blocked, 2 internal
+                                                              error. Forwards to lib/board/state_check.py.
   board.sh health run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
   board.sh health record --repo <name> --rc <n>               the periodic board health digest per
                                                               cluster (open, stale, archived since
