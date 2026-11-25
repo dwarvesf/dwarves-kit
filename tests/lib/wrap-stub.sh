@@ -5,7 +5,7 @@
 # builders more than one suite uses. Sourced, never executed: a suite sets KIT_DIR,
 # then sources this file.
 # modules under test (the test-affected cache key greps this line):
-# lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh lib/wrap/wrap-ship.sh
+# lib/gate/branch-merged.sh lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh lib/wrap/wrap-ship.sh
 
 set -uo pipefail
 WRAP="$KIT_DIR/bin/wrap"
@@ -64,6 +64,13 @@ if [ -n "${GH_STUB_CALLS_QUOTED:-}" ]; then
   { printf '<%s>' "$@"; printf '\n'; } >> "$GH_STUB_CALLS_QUOTED"
 fi
 sub="${1:-}"; [ $# -gt 0 ] && shift
+# GH_STUB_STRICT_JSON=1: answer a PR list with only the fields the caller named in --json, the way gh does
+# and without the completing defaults below, so code that stops asking for a field it relies on reads a
+# row without it. Off by default: every suite that ran green on the completing stub keeps doing so.
+strict_fields() { # strict_fields <json text> <comma list>
+  printf '%s' "$1" | jq -c --arg f "$2" '($f | split(",")) as $w
+    | if type == "array" then map(with_entries(select(.key as $k | $w | index($k)))) else . end' 2>/dev/null || printf '%s\n' "$1"
+}
 case "$sub" in
   auth)
     [ "${GH_STUB_UNAUTH:-0}" = "1" ] && exit 1
@@ -92,9 +99,10 @@ case "$sub" in
     verb="${1:-}"; [ $# -gt 0 ] && shift
     case "$verb" in
       list)
-        head=""; author=""; state=""
+        head=""; author=""; state=""; jsonf=""
         while [ $# -gt 0 ]; do
           case "$1" in
+            --json) jsonf="${2:-}"; shift 2 ;;
             --head) head="${2:-}"; shift 2 ;;
             --author) author="${2:-}"; shift 2 ;;
             --state) state="${2:-}"; shift 2 ;;
@@ -105,7 +113,7 @@ case "$sub" in
           key="GH_STUB_OPEN_HEAD_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
           eval "val=\"\${$key:-}\""
           [ -n "$val" ] || val="[]"
-          printf '%s\n' "$val"
+          if [ "${GH_STUB_STRICT_JSON:-0}" = 1 ]; then strict_fields "$val" "$jsonf"; else printf '%s\n' "$val"; fi
           exit "${GH_STUB_LIST_RC:-0}"
         elif [ -n "$head" ]; then
           # GH_STUB_MERGED_HEAD_RC models a failed merged-head read: gh prints nothing
@@ -114,7 +122,13 @@ case "$sub" in
           key="GH_STUB_MERGED_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
           eval "val=\"\${$key:-}\""
           [ -n "$val" ] || val="[]"
-          printf '%s\n' "$val"
+          # Real gh sends every field the caller asks for, headRefName and isCrossRepository included,
+          # and the merged check keeps a row that lacks either out. A fixture row that omits them is
+          # completed here the way gh would: the head asked about, and not a fork.
+          if [ "${GH_STUB_STRICT_JSON:-0}" = 1 ]; then strict_fields "$val" "$jsonf"; else
+          printf '%s' "$val" | jq -c --arg h "$head" \
+            'if type == "array" then map(. + {headRefName: (.headRefName // $h), isCrossRepository: (.isCrossRepository // false)}) else . end' 2>/dev/null \
+            || printf '%s\n' "$val"; fi
         else
           # --author sends real gh to the GraphQL search index, which lags a PR opened
           # seconds ago; the plain list reads the repository itself and never lags.
@@ -122,7 +136,7 @@ case "$sub" in
             # `apply`'s origin sweep reads every merged PR of the repo in one list.
             # GH_STUB_MERGED_ALL_RC models a failed read: gh prints nothing and exits non-zero.
             [ "${GH_STUB_MERGED_ALL_RC:-0}" = "0" ] || exit "$GH_STUB_MERGED_ALL_RC"
-            printf '%s\n' "${GH_STUB_MERGED_ALL:-[]}"; exit 0
+            if [ "${GH_STUB_STRICT_JSON:-0}" = 1 ]; then strict_fields "${GH_STUB_MERGED_ALL:-[]}" "$jsonf"; else printf '%s\n' "${GH_STUB_MERGED_ALL:-[]}"; fi; exit 0
           fi
           if [ -n "$author" ]; then
             val="${GH_STUB_OPEN_PRS_SEARCH-${GH_STUB_OPEN_PRS:-[]}}"
@@ -130,8 +144,11 @@ case "$sub" in
             val="${GH_STUB_OPEN_PRS:-[]}"
           fi
           # Real gh always answers with an author; default the fixtures that omit one.
+          # headRefName and baseRefName are completed the way gh sends them when asked for: the origin
+          # sweep skips a list holding a row that names no branch, since such a row protects nothing.
+          if [ "${GH_STUB_STRICT_JSON:-0}" = 1 ]; then strict_fields "$val" "$jsonf"; else
           printf '%s\n' "$val" | jq -c --arg me "${GH_STUB_LOGIN:-me}" \
-            '[.[] | if .author then . else . + {author: {login: $me}} end]'
+            '[.[] | (if .author then . else . + {author: {login: $me}} end) | . + {baseRefName: (.baseRefName // "main")}]'; fi
         fi
         exit 0 ;;
       view)
@@ -334,14 +351,14 @@ reword_ladder() {
   [ -n "${WRAP_LADDER_REWORDED:-}" ] && return 0
   local dir="$TMPD/reworded-ladder-kit"
   mkdir -p "$dir/bin"; cp -R "$KIT_DIR/lib" "$dir/lib"; cp "$KIT_DIR/bin/wrap" "$dir/bin/wrap"
-  sed -i.bak -e '/^_merge_ladder()/,/^}/{s/ancestor of origin/reachable from origin/g;s/content already on origin/same bytes already on origin/g;}' \
+  sed -i.bak -e '/^branch_merged()/,/^}/{s/ancestor of origin/reachable from origin/g;s/content already on origin/same bytes already on origin/g;}' \
     -e '/^_squash_verdict()/,/^}/{s/squash-merged per gh/merged via gh/g;s/no merged PR found for this head/no gh record/g;}' \
-    "$dir/lib/wrap/wrap-common.sh"
-  rm -f "$dir/lib/wrap/wrap-common.sh.bak"
-  grep -q 'reachable from origin' "$dir/lib/wrap/wrap-common.sh" \
-    && grep -q 'same bytes already on origin' "$dir/lib/wrap/wrap-common.sh" \
-    && grep -q 'merged via gh' "$dir/lib/wrap/wrap-common.sh" \
-    && grep -q 'no gh record' "$dir/lib/wrap/wrap-common.sh" \
+    "$dir/lib/gate/branch-merged.sh"
+  rm -f "$dir/lib/gate/branch-merged.sh.bak"
+  grep -q 'reachable from origin' "$dir/lib/gate/branch-merged.sh" \
+    && grep -q 'same bytes already on origin' "$dir/lib/gate/branch-merged.sh" \
+    && grep -q 'merged via gh' "$dir/lib/gate/branch-merged.sh" \
+    && grep -q 'no gh record' "$dir/lib/gate/branch-merged.sh" \
     || { echo "reword_ladder: phrase not found" >&2; return 1; }
   WRAP_LADDER_REWORDED="$dir/bin/wrap"
 }

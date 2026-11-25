@@ -20,8 +20,8 @@ _scan_repo() {
   echo "-- checkout on: ${cur:-<detached>}"
 
   local ahead behind
-  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
-  behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)"
+  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: ahead and behind counts for the scan report, which deletes nothing
+  behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)" # merged-ok: ahead and behind counts for the scan report, which deletes nothing
   case "$ahead" in ''|*[!0-9]*) ahead='?' ;; esac
   case "$behind" in ''|*[!0-9]*) behind='?' ;; esac
   echo "-- vs origin/${def}: ahead=${ahead} behind=${behind}"
@@ -36,11 +36,11 @@ _scan_repo() {
 
   echo "-- local branches (an ancestor of origin/${def} is SAFE-d; a squash merge needs the gh proof):"
   local b lcode lreason
-  # The proofs name full refs (see _merge_ladder). A squash merge needs the gh proof; any LEAVE
+  # The proofs name full refs (see branch_merged). A squash merge needs the gh proof; any LEAVE
   # reads the same here, apply is where tip, base and none part ways.
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
-    read -r lcode lreason _ <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$b")"
+    read -r lcode lreason _ <<< "$(branch_merged "$repo" "$def" "$ghs" "$b")"
     case "${lcode} ${lreason}" in
       "SAFE ancestor") echo "     ${b}  [SAFE-d: ancestor of origin/${def}]" ;;
       "SAFE absorbed") echo "     ${b}  [ABSORBED: content already on origin/${def}, safe to -D]" ;;

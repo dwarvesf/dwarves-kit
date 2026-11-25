@@ -1,0 +1,98 @@
+# Fixture registry for tests/test-state-check.sh: one machine of every shape the engine reads.
+# Neutral names on purpose; the engine knows no repo.
+
+[widget]
+check = true
+kind = "frontmatter"
+glob = "widgets/*/README.md"
+field = "status"
+states = ["draft", "live", "paused", "retired", "archived"]
+terminal = ["retired", "archived"]
+legacy = ["usable"]
+projections = [{ file = "widgets/INDEX.md", key = "Slug", field = "Status", legacy = ["old", "gone"] }]
+
+[widget.transitions]
+draft = ["live", "paused", "retired", "archived"]
+live = ["paused", "retired", "archived"]
+paused = ["live", "retired", "archived"]
+retired = ["archived"]
+
+[gadget]
+check = true
+kind = "toml"
+glob = "gadgets/*/gadget.toml"
+field = "status"
+states = ["new", "ready", "idle", "closed"]
+terminal = ["closed"]
+legacy = []
+
+[gadget.transitions]
+new = ["ready", "idle", "closed"]
+ready = ["idle", "closed"]
+idle = ["ready", "new", "closed"]
+
+[note]
+check = true
+kind = "frontmatter"
+glob = "notes/*.md"
+field = "status"
+states = ["current", "superseded", "archived"]
+terminal = ["superseded", "archived"]
+legacy = ["snapshot", "reference"]
+
+[note-visibility]
+check = true
+kind = "frontmatter"
+glob = "notes/*.md"
+field = "visibility"
+# "published:" is a prefix state: a `published:<ref>` value matches it.
+states = ["candidate", "published:", "absent", "no"]
+
+[decision]
+check = true
+kind = "table"
+glob = "logs/DECISIONS.md"
+key = ["date", "subject"]
+field = "verdict"
+append_only = true
+states = ["GO", "NO-GO", "HOLD"]
+legacy = ["SKIP", "SKIP-as-decider"]
+
+[request]
+check = true
+kind = "table"
+glob = "logs/requests.md"
+key = ["artifact"]
+field = "status"
+states = ["open", "done:", "dropped"]
+legacy = []
+
+[request.transitions]
+open = ["done:", "dropped"]
+
+[spec]
+check = true
+kind = "frontmatter"
+glob = "specs/*.md"
+field = "status"
+body_fallback = true
+ignore_case = true
+states = ["draft", "approved", "shipped"]
+legacy = ["rule"]
+
+[external-flag]
+check = false
+owner = "another system"
+store = "its own database"
+source = "elsewhere"
+note = "Declared so the registry is the one map; the engine never checks it."
+
+[topic]
+check = true
+kind = "frontmatter"
+glob = "topics/*/README.md"
+field = "status"
+states = ["started", "active", "held", "graduated"]
+terminal = ["graduated"]
+legacy = ["on-hold"]
+projections = [{ file = "topics/INDEX.md", key = "Topic", field = "Status" }]

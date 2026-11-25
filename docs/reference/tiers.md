@@ -50,7 +50,7 @@ INTERPRETATION layer: "your data is free forever; our reading of it is the produ
 |---|---|---|
 | Workflow Insights: weekly report + the-one-thing-to-change recommendation | stats (paid layer) | dropped ID-411 |
 | Greenlight loop: open PR driven to merge-ready (CI fix + comment triage) | ship | shipped ID-401 (as `kit:greenlight`, report-only) |
-| One persona pack included (Frontend first: visual proof, design lenses, deslop, visual acceptance) | proof/packs | queued ID-395 (deslop lens shipped, ID-402) |
+| One persona pack included (Frontend first: visual proof, design lenses, deslop, visual acceptance) | proof/packs | partly shipped: the visual proof producer is the `proof-capture` module (ID-395); design lenses and visual acceptance queued (deslop lens shipped, ID-402) |
 | Tool-selection ladders, MAINTAINED library (updated as the ecosystem moves; part of the stream) | ladders | dropped ID-418 |
 | Private update channel + pack marketplace access | install | dropped ID-426 (supersedes dropped ID-410) |
 | Ambient module self-suggest | onboard | dropped ID-405 |

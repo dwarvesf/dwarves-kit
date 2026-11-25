@@ -266,7 +266,7 @@ kit_merge_exec() {
 # `--match-head-commit "$KIT_MERGE_HEAD_COMMIT"` to its own merge call.
 kit_merge_verify() {
   local repo="$1" pr="$2" url="${3:-}" head="${4:-}" js state got
-  js="$(cd "$repo" && gh pr view "$pr" ${url:+--repo "$url"} --json state,headRefOid 2>/dev/null)"
+  js="$(cd "$repo" && gh pr view "$pr" ${url:+--repo "$url"} --json state,headRefOid 2>/dev/null)" # merged-ok: confirms the state of the PR number this script just merged, not a branch tip
   state="$(printf '%s' "$js" | jq -r '.state // empty' 2>/dev/null)"
   if [ "$state" != "MERGED" ]; then
     echo "merge command: the project merge command exited 0 but GitHub reports PR #${pr} as '${state:-unreadable}', not MERGED" >&2

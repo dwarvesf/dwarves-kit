@@ -45,57 +45,20 @@ if [ -f "_meta/BACKLOG.md" ]; then
 fi
 
 # Spec status + command suggestion
-# Resolve the active spec (dual-detect, reconciled with the unified spec-location decision):
-# docs/specs/ is primary (kit + downstream). Among the open specs (lib/spec/states.tsv, class
-# not terminal): exactly one -> use it; more than one -> the one whose slug matches the git
-# branch; zero/multiple branch matches -> emit spec:ambiguous and pick none
-# (never silently guess).
+# Resolve the active spec with the one shared lookup (lib/spec/spec-active.sh, --live): docs/specs/
+# at the repo root, open specs only (lib/spec/states.tsv, class not terminal; a spec with no Status
+# header is open). The branch's own spec, else the lone open spec, else the open spec whose slug
+# tokens appear in the branch; no single answer -> spec:ambiguous and pick none (never silently
+# guess). One helper pass, no tree walk: SessionStart blocks on this. Without the lib no spec is
+# resolved.
 SPEC_FILE=""
 SPEC_AMBIG=""
-# One helper pass over every spec: per-file greps cost ~2s on a 267-spec repo, and SessionStart
-# blocks on it. A spec with no Status header is not open here (--none dead). The helper drops
-# dangling links, directories and unreadable files itself. Without lib/ no spec is resolved.
 SPEC_STATUS_SH="${BASH_SOURCE[0]%/*}/../lib/spec/spec-status.sh"
-SPEC_FILES=()
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do SPEC_FILES+=("$F"); done
-CANDIDATES=""
-if [ -f "$SPEC_STATUS_SH" ] && [ ${#SPEC_FILES[@]} -gt 0 ]; then
-  CANDIDATES=$(bash "$SPEC_STATUS_SH" live --none dead "${SPEC_FILES[@]}" 2>/dev/null || true)
-fi
-N=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
-if [ "$N" -eq 1 ]; then
-  SPEC_FILE="$CANDIDATES"
-elif [ "$N" -gt 1 ]; then
-  # Disambiguate by branch: a spec whose slug tokens appear in the branch name.
-  BRANCH_NAME=$(git branch --show-current 2>/dev/null || true)
-  MATCHED=""
-  if [ -n "$BRANCH_NAME" ]; then
-    while IFS= read -r F; do
-      [ -z "$F" ] && continue
-      SLUG=${F##*/}; SLUG=${SLUG%.md}
-      [[ $SLUG =~ ^SPEC-[0-9]+-(.*)$ ]] && SLUG=${BASH_REMATCH[1]}
-      # whole-token match: a slug token must appear as a COMPLETE token in the
-      # branch (split on / _ . -), so short tokens (a, db, gate) don't
-      # substring-match an unrelated branch (e.g. "gate" in "gateway") and
-      # silently mis-select. BTOK is space-padded so the case glob is boundaried.
-      BTOK=" ${BRANCH_NAME//[\/_.-]/ } "
-      HIT=0
-      OLDIFS=$IFS; IFS='-'
-      for T in $SLUG; do
-        if [ -n "$T" ]; then
-          case "$BTOK" in *" $T "*) HIT=1 ;; esac
-        fi
-      done
-      IFS=$OLDIFS
-      if [ "$HIT" -eq 1 ]; then MATCHED="${MATCHED}${F}"$'\n'; fi
-    done <<< "$CANDIDATES"
-  fi
-  MN=$(printf '%s\n' "$MATCHED" | grep -c . || true)
-  if [ "$MN" -eq 1 ]; then
-    SPEC_FILE=$(printf '%s\n' "$MATCHED" | grep -m1 .)
-  else
-    SPEC_AMBIG=$(printf '%s\n' "$CANDIDATES" | sed -E 's#.*(SPEC-[0-9]+)-.*#\1#' | paste -sd, -)
-  fi
+SPEC_ACTIVE_SH="${BASH_SOURCE[0]%/*}/../lib/spec/spec-active.sh"
+if [ -r "$SPEC_ACTIVE_SH" ] && . "$SPEC_ACTIVE_SH" 2>/dev/null; then
+  SPEC_OUT=$(spec_active --live --branch "$(git branch --show-current 2>/dev/null || true)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" 2>/dev/null || true)
+  SPEC_FILE=$(printf '%s\n' "$SPEC_OUT" | awk -F'\t' '$1 != "ambiguous" && $2 != "" { print $2; exit }')
+  SPEC_AMBIG=$(printf '%s\n' "$SPEC_OUT" | awk -F'\t' '$1 == "ambiguous" { n = split($2, p, "/"); f = p[n]; if (match(f, /^SPEC-[0-9]+/)) f = substr(f, 1, RLENGTH); printf "%s%s", sep, f; sep = "," }')
 fi
 if [ -n "$SPEC_AMBIG" ]; then
   STATE+="spec:ambiguous(${SPEC_AMBIG}) "
