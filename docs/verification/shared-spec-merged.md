@@ -252,6 +252,277 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Data-loss review fixes
+
+The review of the joined branch found three inputs where the new code deleted and master refused. Each was reproduced red on a scratch repo with the gh shim BEFORE its fix (rows added first, run against the unfixed code), then fixed, then green.
+
+| Review row | Test row | Red before | Green after |
+|---|---|---|---|
+| two PRs from one head, merged plus OPEN | callers: `a merged PR plus an OPEN PR from the same head refuses` | red | green |
+| two PRs, merged plus CLOSED with a newer origin tip | callers: `origin's branch keeps the newer tip (the remote delete is leased to the judged tip)` | red | green |
+| protect list over 64 KiB | callers: `a base branch with a protect list over 64 KiB is kept` | red | green |
+| null or missing isCrossRepository | callers sweep rows, branch-merged gh and json rows | red | green |
+| open row that names no head or base | callers: `an open PR with no base field keeps every branch` | red | green |
+| spec-find fallback and TAB path | `tests/test-ship-gate-spec-pick.sh` | red (2 rows) | green (10) |
+| only the merged list, only the open list fails | callers wt and sweep rows | green (regression rows) | green |
+| 11 lint bypass forms, continued lines | `tests/test-shared-lookups.sh` fixture tree | not caught | caught |
+
+```
+Command: bash tests/test-branch-merged-callers.sh   (new rows against the unfixed code)
+Exit: 1
+Output:
+  FAIL wt close: a merged PR plus an OPEN PR from the same head refuses
+  FAIL wt close: the open PR's branch stays on origin
+  FAIL wt close: origin's branch keeps the newer tip (the remote delete is leased to the judged tip)
+  FAIL wt close: a failing open-PR list alone refuses
+  FAIL wt close: an unparseable open-PR list refuses
+  FAIL sweep: an open PR with no base field keeps every branch
+  FAIL sweep: a base branch with a protect list over 64 KiB is kept
+  FAIL sweep: a merged row with no isCrossRepository keeps the branch
+  FAIL sweep: a merged row with a null isCrossRepository keeps the branch
+test-branch-merged-callers: 48 passed, 9 FAILED
+Verdict: RED as expected (9 rows)
+```
+
+```
+Command: bash tests/test-branch-merged.sh   (new rows against the unfixed code)
+Exit: 1
+Output:
+  FAIL gh path: no isCrossRepository
+  FAIL gh path: null isCrossRepository
+  FAIL gh path: no headRefName
+  FAIL json: no isCrossRepository
+  FAIL json: null isCrossRepository
+  FAIL json: no baseRefName
+  FAIL numbers: no isCrossRepository is none (exit 1)
+test-branch-merged: 43 passed, 7 FAILED
+Verdict: RED as expected (7 rows)
+```
+
+```
+Command: bash tests/test-ship-gate-spec-pick.sh   (against the unfixed hook)
+Exit: 1
+Output:
+  FAIL a root path holding a TAB survives the pick
+  FAIL co-located spec is still found (the pick master makes)
+test-ship-gate-spec-pick: 8 passed, 2 FAILED
+Verdict: RED as expected (2 rows)
+```
+
+```
+Command: bash tests/test-branch-merged-callers.sh
+Exit: 0
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  test-branch-merged-callers: all 57 passed
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-branch-merged.sh
+Exit: 0
+Output:
+    PASS unknown flag
+    PASS flag without a value
+  test-branch-merged: all 50 passed
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-ship-gate-spec-pick.sh
+Exit: 0
+Output:
+  === a stale install: neither file, the root glob ===
+    PASS root spec
+    PASS no spec for the slug
+  test-ship-gate-spec-pick: all 10 passed
+Verdict: PASS
+```
+
+NEGATIVE CONTROL for each review fix: the fix is reverted by restoring the file from before it, the suite goes red, the file is restored and the suite goes green.
+
+### wt.sh close: open PR check and leased delete reverted
+```
+## Negative control (negctl)
+Command: bash tests/test-branch-merged-callers.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS sweep: a failing open list alone skips the sweep
+    PASS sweep: a failing open list alone deletes nothing
+    PASS sweep: an open PR with no base field keeps every branch
+    PASS sweep: the protect list is over 64 KiB
+    PASS sweep: a base branch with a protect list over 64 KiB is kept
+    PASS sweep: the same run still deletes the exact-tip branch
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  
+  test-branch-merged-callers: all 57 passed
+
+Mutation: git show c903cf9e~1:lib/goal/wt.sh > lib/goal/wt.sh
+Changed: lib/goal/wt.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS sweep: a failing open list alone skips the sweep
+    PASS sweep: a failing open list alone deletes nothing
+    PASS sweep: an open PR with no base field keeps every branch
+    PASS sweep: the protect list is over 64 KiB
+    PASS sweep: a base branch with a protect list over 64 KiB is kept
+    PASS sweep: the same run still deletes the exact-tip branch
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  
+  test-branch-merged-callers: 52 passed, 5 FAILED
+
+Restore: git checkout HEAD -- lib/goal/wt.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### origin sweep: protect list through a pipe restored
+```
+## Negative control (negctl)
+Command: bash tests/test-branch-merged-callers.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS sweep: a failing open list alone skips the sweep
+    PASS sweep: a failing open list alone deletes nothing
+    PASS sweep: an open PR with no base field keeps every branch
+    PASS sweep: the protect list is over 64 KiB
+    PASS sweep: a base branch with a protect list over 64 KiB is kept
+    PASS sweep: the same run still deletes the exact-tip branch
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  
+  test-branch-merged-callers: all 57 passed
+
+Mutation: git show 29dbf577~1:lib/wrap/wrap-apply.sh > lib/wrap/wrap-apply.sh
+Changed: lib/wrap/wrap-apply.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS sweep: a failing open list alone skips the sweep
+    PASS sweep: a failing open list alone deletes nothing
+    FAIL sweep: an open PR with no base field keeps every branch
+    PASS sweep: the protect list is over 64 KiB
+    FAIL sweep: a base branch with a protect list over 64 KiB is kept
+    PASS sweep: the same run still deletes the exact-tip branch
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  
+  test-branch-merged-callers: 55 passed, 2 FAILED
+
+Restore: git checkout HEAD -- lib/wrap/wrap-apply.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### merged check: fork and head fields read permissively again
+```
+## Negative control (negctl)
+Command: bash tests/test-branch-merged.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS numbers: gh 'garbage' is unreadable (exit 2)
+    PASS numbers: gh 'empty' is unreadable (exit 2)
+    PASS numbers: gh not ok is unreadable (exit 2)
+  === usage errors print nothing and exit 64 ===
+    PASS bad --need
+    PASS missing branch
+    PASS unknown flag
+    PASS flag without a value
+  
+  test-branch-merged: all 50 passed
+
+Mutation: git show a0ff3cec~1:lib/gate/branch-merged.sh > lib/gate/branch-merged.sh
+Changed: lib/gate/branch-merged.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS numbers: gh 'garbage' is unreadable (exit 2)
+    PASS numbers: gh 'empty' is unreadable (exit 2)
+    PASS numbers: gh not ok is unreadable (exit 2)
+  === usage errors print nothing and exit 64 ===
+    PASS bad --need
+    PASS missing branch
+    PASS unknown flag
+    PASS flag without a value
+  
+  test-branch-merged: 44 passed, 6 FAILED
+
+Restore: git checkout HEAD -- lib/gate/branch-merged.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### ship-gate pick: the old fallback order and TAB split restored
+```
+## Negative control (negctl)
+Command: bash tests/test-ship-gate-spec-pick.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS a root path holding a TAB survives the pick
+  === a partial install: spec-find.sh without spec-active.sh ===
+    PASS root spec
+    PASS co-located spec is still found (the pick master makes)
+    PASS a root path holding a TAB survives the pick
+  === a stale install: neither file, the root glob ===
+    PASS root spec
+    PASS no spec for the slug
+  
+  test-ship-gate-spec-pick: all 10 passed
+
+Mutation: git show ba71a92c~1:hooks/ship-gate.sh > hooks/ship-gate.sh
+Changed: hooks/ship-gate.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS root spec
+      want: /private/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T/dk-spec-pick.v1YWtk/repo/tools/x/docs/specs/SPEC-005-delta.md
+      got:  
+    FAIL co-located spec is still found (the pick master makes)
+    PASS a root path holding a TAB survives the pick
+  === a stale install: neither file, the root glob ===
+    PASS root spec
+    PASS no spec for the slug
+  
+  test-ship-gate-spec-pick: 8 passed, 2 FAILED
+
+Restore: git checkout HEAD -- hooks/ship-gate.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### lint: a private commit-count merged check (one of the added forms)
+```
+## Negative control (negctl)
+Command: bash tests/test-shared-lookups.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS lib/wrap/wrap-scan.sh calls branch_merged
+    PASS lib/wrap/wrap-apply.sh calls branch_merged
+    PASS lib/wrap/wrap-land.sh calls branch_merged
+    PASS lib/wrap/wrap-adopt.sh calls branch_merged
+    PASS lib/wrap/wrap-carry.sh calls branch_merged
+    PASS lib/goal/wt.sh calls branch_merged
+  === the lint itself: a fixture tree holds one bad line per pattern ===
+    PASS every bad pattern, an empty reason and a dead marker are named; comments, tests, the shared file, ls-files, up-to-date and prune are not
+  
+  test-shared-lookups: all 15 passed
+
+Mutation: printf '%s\n' 'n=$(git rev-list --count origin/main.."$b"); [ "$n" = 0 ] && git branch -D "$b"' >> lib/wrap/wrap-scan.sh
+Changed: lib/wrap/wrap-scan.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS lib/wrap/wrap-scan.sh calls branch_merged
+    PASS lib/wrap/wrap-apply.sh calls branch_merged
+    PASS lib/wrap/wrap-land.sh calls branch_merged
+    PASS lib/wrap/wrap-adopt.sh calls branch_merged
+    PASS lib/wrap/wrap-carry.sh calls branch_merged
+    PASS lib/goal/wt.sh calls branch_merged
+  === the lint itself: a fixture tree holds one bad line per pattern ===
+    PASS every bad pattern, an empty reason and a dead marker are named; comments, tests, the shared file, ls-files, up-to-date and prune are not
+  
+  test-shared-lookups: 14 passed, 1 FAILED
+
+Restore: git checkout HEAD -- lib/wrap/wrap-scan.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
 ## Test plan coverage
 | Row | Run / skip reason |
 |---|---|
@@ -273,7 +544,7 @@ Verdict: PASS
 | C17 | AC1 rows of tests/test-spec-active.sh (the ship-gate pick is the default-mode path); tests/test-spec-find.sh not re-run in this ticket |
 | C18 | tests/test-branch-merged-callers.sh, wt close rows, and the wt.sh negative control |
 | C19 | tests/test-branch-merged-callers.sh, sweep rows, and the sweep negative control |
-| C20 | tests/test-shared-lookups.sh, fixture tree, and the spec-pick negative control |
+| C20 | tests/test-shared-lookups.sh, fixture tree (now 15 bad forms), and the spec-pick negative control |
 | C21 | tests/test-shared-lookups.sh, fixture tree, and the merged-check negative control |
 | C22 | tests/test-shared-lookups.sh, empty-reason and dead-marker fixtures |
 | C23 | tests/test-shared-lookups.sh, presence rows |
