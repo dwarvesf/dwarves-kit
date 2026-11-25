@@ -244,3 +244,46 @@ Taken on this host after merging `origin/master` (a19ca13d), each suite alone, i
 - Golden delta check (TASK-S step 5), against the rebase commit `4e341a4c` (the nine `state-check` usage lines the merge brought are the base, not a delta): the cumulative diff has 1 hunk in `1-sync-argv`, 2 in `3-engine-dry-run`, 3 in `4-sweep` and 7 in `7-help-errors`, none in sections 2, 5 and 6; `deltas.txt` has 2, 2, 4 and 10 rows for those sections (rows count changes, a hunk group can hold two). Every row's tag is one of the closed eight (the characterization suite asserts it); `health-brief-help` was never needed.
 - `lib/sync/deploy/macos/install` line 99 (`apps = "<app>"`) is a known, decided non-comment line in the "comments only" check (decided in phase 5); the other four deploy files differ in comments only.
 - The Q token check, the purity greps and the delta check were run by hand with the commands above; only the purity and module suites keep them.
+
+### Phase 6 final suite results (run-all replaced on the lead's instruction)
+
+`tests/run-all.sh` was not run. It was replaced by this list, each suite alone, in the foreground, at the head of the phase 6 commits:
+
+```
+test-core-purity rc=0 ::   PASS negative control: a file named notion_named.sh is reported   PASS negative control: a word added to a core module is reported === 12 passed, 0 failed ===
+test-adapters rc=0 :: === the pytest roots ===   PASS pytest lib/adapters/tests: exit 0 (5 means no tests yet) === 214 passed, 0 failed ===
+test-sync-characterize rc=0 :: === deltas ===   PASS deltas.txt rows are in the closed list === 13 passed, 0 failed ===
+test-sync rc=0 :: ........................................................................ [ 86%] .......................................................                  [100%] 415 passed
+test-sync-dispatch rc=0 ::   PASS a secret variable that is already set is not looked up again   PASS the no-apps hint names a placeholder, not an app === 20/20 passed ===
+test-board-states rc=0 :: PASS no code file hardcodes the row-to-card map PASS map copy detector catches a planted copy All board-states tests passed.
+test-board-hermes rc=0 ::   ok   board hermes link --help  board-hermes: 79 passed, 0 failed
+test-board-mirror rc=0 ::    ---------------------------------------------   TOTAL: 116   PASS: 116   FAIL: 0   SKIP: 0
+test-board-writeback rc=0 ::    ---------------------------------------------   TOTAL: 75   PASS: 74   FAIL: 0   SKIP: 1
+test-board-mirror-cleanup rc=0 ::   ok   a malformed --kinds-file fails loudly    TOTAL: 31   PASS: 31   FAIL: 0
+test-board-mirror-expire rc=0 ::   ok   the missing registry never mattered    TOTAL: 31   PASS: 31   FAIL: 0
+test-board-health rc=0 ::   ok   board health run --help  board-health: 102 passed, 0 failed
+test-board-brief rc=0 ::   ok   board brief run --help  board-brief: 260 passed, 0 failed
+test-board-sweep rc=0 ::   ok   --help prints the usage  PASS=113 FAIL=0
+test-board-sweep-mirror rc=0 ::   ok   trap moved the snap-list temp file out  PASS=66 FAIL=0
+test-board-sweep-expire rc=0 ::   ok   mirror-cleanup never called    TOTAL: 20   PASS: 20   FAIL: 0
+test-sync-cron-install rc=0 ::   PASS colliding slug also refused under --apply (never silently takes over)   PASS re-installing the SAME repo over its own existing plist is fine (not a collision) ===
+test-sync-cron-launcher rc=0 ::   PASS executable bridge hook is invoked with rc + backlog path   PASS absent bridge hook is a silent no-op (exit 0) === 14/14 passed ===
+test-board-sweep-verify rc=0 :: ok   --no-run exits 0 ok   no --run and no --no-run is refused ok   the refusal says what to pass
+test-spec-find rc=0 :: PASS mutant flip: pitch finds no spec --- test-spec-find: 55 passed, 0 failed
+test-board rc=0 ::    ---------------------------------------------   TOTAL: 63   PASS: 62   FAIL: 0   SKIP: 1
+test-config-registry rc=0 ::   PASS config explain precedent.registry never reports source: project .kit.toml  === 60/60 passed ===
+test-meta-docs-registry rc=0 :: === Results === Passed: 121 / 121 All meta tests passed.
+test-suites-collect rc=0 :: [8] real tree: every Python test under lib/ is reached by a tests/test-*.sh   ok: bench, sync, webcheck and session-recall each have a root entry test-suites-collect: all
+test-kit-contract rc=0 ::   PASS C10 catches an executable that does not declare its interpreter  === kit-contract: 25 passed, 0 failed ===
+test-bin-forwarders rc=0 ::   ok: stats forwarder prints the CLI usage  test-bin-forwarders: all 48 passed, 0 skipped
+test-modules-table rc=0 ::   PASS  NC: the real table is not flagged by the same check (no vacuous pass)  == 64 passed, 0 failed ==
+test-no-personal-paths rc=0 ::  Passed: 3 / 3 All no-personal-paths tests passed.
+test-state-check rc=0 ::   PASS 'mini-top-value' case goes red when its rule is removed  == 124 run, 124 passed, 0 failed ==
+test-meta-vmodel-dispatch rc=0 :: Passed: 75 / 75 All meta tests passed.
+test-board-registry-env rc=0 ::  test-board-registry-env: all 13 passed
+test-mega-box rc=0 :: PASS copy detector catches a planted copy All mega-box tests passed.
+test-mega rc=0 :: --- PASS=18 FAIL=0
+test-meta rc=0 :: === Results === Passed: 935 / 935 All meta tests passed.
+```
+
+Purity: `git grep -il hermes|notion|reminders|multica -- lib/board lib/sync` each print nothing.
