@@ -6,7 +6,7 @@
 # path, so an internal lib reorg (e.g. a future promotion to lib/mega/mega.sh
 # when a second verb lands) never breaks them again.
 #
-# Usage: mega status <slug> [args...]
+# Usage: mega status|review|report|runs|labels|tick ... (mega --help)
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "$SELF_DIR/../lib/mega/mega.sh" "$@"

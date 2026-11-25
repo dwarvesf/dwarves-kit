@@ -32,7 +32,7 @@ Every `lib/` directory has one row.
 | [`ledger/`](ledger/README.md) | `ledger.sh`, the kit's one append substrate that the gate, proof and telemetry writers share. |
 | [`lint/`](lint/README.md) | `scattered-ids.sh`, the lint for spec, task and ADR ids outside their sanctioned homes. Entry: `bin/lint`. |
 | [`loop/`](loop/README.md) | `ql-verdict.sh`, the one QL-VERDICT parser and the `resume` verb that derives a bounded loop's next round from its own record. |
-| [`mega/`](mega/README.md) | The mega-goal engine: `mega.sh` status reconcile against git truth, report, review and runs-dashboard halves. Entry: `bin/mega`. |
+| [`mega/`](mega/README.md) | The mega-goal engine: `mega.sh` status reconcile against git truth, report, review and runs-dashboard halves, and `mega tick`, the one writer that records a merged sub-goal from gh truth. Entry: `bin/mega`. |
 | [`money-gate/`](money-gate/README.md) | The `money_gate` module: a PreToolUse guard that asks before a money-touching edit lands in a repo you named financial. |
 | [`plugin-check/`](plugin-check/README.md) | Read-only freshness lens over the installed Claude Code plugins. Entry: `bin/plugin-check`. |
 | [`precedent/`](precedent/README.md) | "Have we done this before?": the records and inventory surfaces. Entry: `bin/precedent`. |

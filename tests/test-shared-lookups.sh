@@ -110,7 +110,7 @@ marked() {
 # ---------------------------------------------------------------------------- the pinned markers
 # `kind file count`. A new marker, or a marker that moves to another file, is an edit here.
 PINNED="merged-ok lib/config/merge-command.sh 1
-merged-ok lib/mega/mega.sh 2
+merged-ok lib/mega/mega.sh 3
 merged-ok lib/queue/orchestrate.sh 1
 merged-ok lib/wrap/wrap-adopt.sh 1
 merged-ok lib/wrap/wrap-apply.sh 4
