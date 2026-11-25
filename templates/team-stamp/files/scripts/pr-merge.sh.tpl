@@ -23,7 +23,9 @@
 # Which runs count. The check rollup of a head lists runs of every pull request on that head, so a
 # check counts only when its run id is a pull_request run of THIS pull request on the stamped
 # workflow file (read from the actions runs API). The pull request's base must be the default
-# branch. The changed files come from the REST files list, paginated, with each previous name
+# branch. GitHub lists on a run every open pull request that shares its head, so a run counts only
+# when this pull request is the only one listed: a second pull request on the same head, with a base
+# whose checks pass anything, cannot lend its runs. The changed files come from the REST files list, paginated, with each previous name
 # (a rename out of a door is a door change); more than 3000 files, or any failed read, refuses.
 #
 # An approval counts only when all of these hold: it is the reviewer's latest decision, it was made
@@ -58,6 +60,7 @@
 # Every refusal prints two lines on stderr: the rule, then a "Fix:" line.
 set -euo pipefail
 
+# Doors match any casing; ownership (scripts/check-owners.sh) matches the exact path.
 # Door paths (case globs, written in lower case: a path is lowered before it is matched; * crosses a
 # slash; an extra pattern from --door-paths is lowered too). BASE_DOORS are the harness's own files and are always
 # doors. DOORS holds the paths this repo added with --door-paths; it may be empty.
@@ -217,7 +220,7 @@ load() {
     fi
     # the pull_request runs of THIS pull request on the stamped workflow file, for this head
     if ! runs_out="$(gh api --paginate "repos/{owner}/{repo}/actions/runs?head_sha=$head1&event=pull_request&per_page=100" \
-        --jq ".workflow_runs[] | select((.path // \"\") | endswith(\"/$CI_FILE\") or . == \"$CI_FILE\") | select(any((.pull_requests // [])[]; .number == $number)) | .id" 2>/dev/null)"; then
+        --jq ".workflow_runs[] | select((.path // \"\") | endswith(\"/$CI_FILE\") or . == \"$CI_FILE\") | select(((.pull_requests // []) | length) == 1 and .pull_requests[0].number == $number) | .id" 2>/dev/null)"; then
         readfail="the workflow runs of this pull request could not be read"
     fi
     run_ids=""

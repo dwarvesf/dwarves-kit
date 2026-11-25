@@ -384,6 +384,30 @@ run dooroked 7
 expect "door path with another person's approval merges: exit 0" [ "$rc" -eq 0 ]
 expect "door path with approval: merge call recorded" merged
 
+# An approval counts only on the judged head, from a reviewer whose association is OWNER, MEMBER or
+# COLLABORATOR, who is not a bot. Each variant below is refused; the control line merges.
+rev_with() { # rev_with <login> <association> <commit oid>
+    printf '{"author":{"login":"%s"},"authorAssociation":%s,"commit":{"oid":"%s"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}' "$1" "$2" "$3"
+}
+for v in "stale|reviewer|\"MEMBER\"|head-from-before" "contributor|reviewer|\"CONTRIBUTOR\"|head-judged" "none|reviewer|\"NONE\"|head-judged" \
+    "noassoc|reviewer|null|head-judged" "bot|release-bot[bot]|\"MEMBER\"|head-judged" "appbot|app/helper|\"COLLABORATOR\"|head-judged" "nocommit|reviewer|\"MEMBER\"|"; do
+    IFS='|' read -r vtag vlogin vassoc void <<EOF
+$v
+EOF
+    mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$(rev_with "$vlogin" "$vassoc" "$void")"
+    run "appr-$vtag" 7
+    expect "an approval that is $vtag does not count: refused" [ "$rc" -eq 1 ]
+    expect "an approval that is $vtag: no merge call" not_merged
+done
+mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$(rev_with reviewer '"COLLABORATOR"' head-judged)"
+run appr-collab 7
+expect "an approval from a collaborator on the judged head merges" merged
+# Runs: a run that lists two pull requests (a second PR shares the head) does not count.
+CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","pull_requests":[{"number":7},{"number":8}]}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run sharedhead 7
+expect "a run that also lists another pull request on the same head does not count: refused" [ "$rc" -eq 1 ]
+expect "a run shared with another pull request: no merge call" not_merged
+
 mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run nodoorpath 7
 expect "a PR that touches no door path merges without a review" merged

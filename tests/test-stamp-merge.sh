@@ -46,7 +46,7 @@ expect "the header says the self-copy check stops an honest out-of-date copy, no
 expect "the guard reads the files from the REST list, paginated, with previous names, and caps at 3000" bash -c "grep -q 'pulls/\$number/files' '$P' && grep -q 'previous_filename' '$P' && grep -q 'MAX_FILES=3000' '$P' && ! grep -q '100 or more' '$P'"
 expect "the guard takes only this PR's runs of the stamped workflow file" bash -c "grep -q 'actions/runs?head_sha=' '$P' && grep -q 'pull_requests' '$P' && grep -q 'CI_FILE=' '$P'"
 expect "the guard reads the timeline for base changes and refuses a base that is not the default branch" bash -c "grep -q 'base_ref_changed' '$P' && grep -q 'baseRefName' '$P'"
-expect "the door patterns are lower case and the path is lowered before the match" bash -c "grep -q 'lp=\"\$(lower' '$P' && ! grep -E '^BASE_DOORS=' '$P' | grep -q '[A-Z]'"
+expect "the door patterns are lower case and the path is lowered before the match" bash -c "grep -q 'lp=\"\$(lower' '$P' && ! grep -E '^BASE_DOORS=' '$P' | sed 's/^BASE_DOORS=//' | grep -q '[A-Z]'"
 expect "the default doors cover .github, scripts, .claude, OWNERS, AGENTS and CLAUDE at any depth, .mcp.json, the workflow doc and .kit.toml" bash -c "grep -E '^BASE_DOORS=' '$P' | grep -q '\.github/\*' && grep -E '^BASE_DOORS=' '$P' | grep -q '\*/agents.md' && grep -E '^BASE_DOORS=' '$P' | grep -q '\*/claude.md' && grep -E '^BASE_DOORS=' '$P' | grep -q '\.mcp.json'"
 expect "no stale-rules refusal" bash -c "! grep -Eiq 'stale|older than the last change|RULE_PATHS' '$P'"
 expect "no kit merge-head variable" bash -c "! grep -q 'KIT_' '$P'"
