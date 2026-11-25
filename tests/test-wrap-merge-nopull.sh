@@ -90,6 +90,89 @@ chk_has "merge --no-pull: a PR held by a linked worktree stays eligible" "$out" 
 chk_no "merge --no-pull: a PR held by a linked worktree gets no skip" "$out" "checked out in the main checkout"
 
 
+echo "--- merge --apply: the main checkout is fast-forwarded after a merge, the way land does it"
+# `merge` merges server-side, so the checkout it was handed stayed behind origin. The stub's
+# `pr merge` pushes feat/pl onto the bare origin's main (GitHub's own landing); the clone's
+# main is then one commit behind, and the pull is what brings it level.
+build_pull() { # build_pull <name>: bare origin + clone on main one commit behind the PR's landing
+  local name="$1" work="$TMPD/pl-work-$1"
+  PL_BARE="$TMPD/pl-bare-$name"; PL_CLONE="$TMPD/pl-clone-$name"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf 'base\n' > "$work/a.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$PL_BARE"
+  git clone -q "$PL_BARE" "$PL_CLONE"; gitc "$PL_CLONE"
+  git -C "$PL_CLONE" remote set-head origin main >/dev/null 2>&1
+  PL_BASE="$(git -C "$PL_CLONE" rev-parse main)"
+  git -C "$PL_CLONE" checkout -q -b feat/pl
+  printf 'pr change\n' > "$PL_CLONE/b.txt"; git -C "$PL_CLONE" add -A; git -C "$PL_CLONE" commit -qm "pr change"
+  PL_TIP="$(git -C "$PL_CLONE" rev-parse feat/pl)"
+  git -C "$PL_CLONE" checkout -q main
+}
+pl_json() { # pl_json <number> <tip> [<reviewDecision>]
+  printf '{"number":%s,"title":"ff me","headRefName":"feat/pl","headRefOid":"%s","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"%s","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2" "${3:-APPROVED}"
+}
+pl_open() { printf '[{"number":%s,"title":"ff me","headRefName":"feat/pl"}]' "$1"; }
+pl_merge() { # pl_merge <number> [flags]: merge --apply --pr <number> on the fixture, stub landing wired
+  local n="$1"; shift
+  env GH_STUB_OPEN_PRS="$(pl_open "$n")" "GH_STUB_PR_${n}=$(pl_json "$n" "$PL_TIP")" \
+    GH_STUB_LAND_REPO="$PL_CLONE" GH_STUB_LAND_REMOTE="$PL_BARE" GH_STUB_LAND_BRANCH=feat/pl GH_STUB_LAND_DEF=main \
+    "$WRAP" merge --apply --pr "$n" "$@" "$PL_CLONE" 2>&1
+}
+
+build_pull ok
+: > "$GH_STUB_CALLS"
+out="$(pl_merge 91)"; rc=$?
+chk "merge --apply --pr pulls: exits 0" "$rc"
+chk_has "merge --apply --pr pulls: the merge itself is reported" "$out" "tree verified"
+chk "merge --apply --pr pulls: the checkout's main equals origin's" \
+  "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$(git -C "$PL_BARE" rev-parse main)" ] && [ "$(git -C "$PL_CLONE" rev-parse main)" != "$PL_BASE" ]; echo $?)"
+chk_has "merge --apply --pr pulls: says the checkout was pulled" "$out" "pulled ${PL_CLONE}: "
+chk "merge --apply --pr pulls: the checkout stays on main" "$([ "$(git -C "$PL_CLONE" branch --show-current)" = main ]; echo $?)"
+
+build_pull nopull
+out="$(pl_merge 92 --no-pull)"; rc=$?
+chk "merge --apply --pr --no-pull: exits 0" "$rc"
+chk_has "merge --apply --pr --no-pull: merged" "$out" "tree verified"
+chk "merge --apply --pr --no-pull: the checkout's main stays behind" \
+  "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_BASE" ]; echo $?)"
+chk_has "merge --apply --pr --no-pull: says it did not pull and names the command" "$out" \
+  "SKIP pull: --no-pull; ${PL_CLONE} not pulled, run: wrap apply --apply --pull-only ${PL_CLONE}"
+
+build_pull offdef
+git -C "$PL_CLONE" checkout -q -b side
+out="$(pl_merge 93)"; rc=$?
+chk "merge --apply --pr off the default branch: exits 0" "$rc"
+chk_has "merge --apply --pr off the default branch: merged" "$out" "tree verified"
+chk_has "merge --apply --pr off the default branch: says why and names the command" "$out" \
+  "PULL BLOCKED: ${PL_CLONE} is on 'side', not main; run: wrap apply --apply --pull-only ${PL_CLONE}"
+chk "merge --apply --pr off the default branch: the checkout and its main are untouched" \
+  "$([ "$(git -C "$PL_CLONE" branch --show-current)" = side ] && [ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_BASE" ]; echo $?)"
+
+build_pull diverged
+printf 'local only\n' > "$PL_CLONE/c.txt"; git -C "$PL_CLONE" add -A; git -C "$PL_CLONE" commit -qm "local only"
+PL_LOCAL="$(git -C "$PL_CLONE" rev-parse main)"
+out="$(pl_merge 94)"; rc=$?
+chk "merge --apply --pr, main cannot fast-forward: still exits 0" "$rc"
+chk_has "merge --apply --pr, main cannot fast-forward: says the pull was refused and names the command" "$out" \
+  "PULL BLOCKED: pull --ff-only refused in ${PL_CLONE}, nothing was stashed or reset; run: wrap apply --apply --pull-only ${PL_CLONE}"
+chk "merge --apply --pr, main cannot fast-forward: the local commit is intact" \
+  "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_LOCAL" ]; echo $?)"
+
+build_pull dry
+out="$(GH_STUB_OPEN_PRS="$(pl_open 95)" GH_STUB_PR_95="$(pl_json 95 "$PL_TIP")" "$WRAP" merge --pr 95 "$PL_CLONE" 2>&1)"; rc=$?
+chk "merge dry run: exits 0" "$rc"
+chk_no "merge dry run: never pulls" "$out" "pulled"
+chk "merge dry run: the checkout's main is untouched" "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_BASE" ]; echo $?)"
+
+build_pull skipped
+out="$(GH_STUB_OPEN_PRS="$(pl_open 96)" GH_STUB_PR_96="$(pl_json 96 "$PL_TIP" CHANGES_REQUESTED)" \
+  GH_STUB_LAND_REPO="$PL_CLONE" GH_STUB_LAND_REMOTE="$PL_BARE" GH_STUB_LAND_BRANCH=feat/pl GH_STUB_LAND_DEF=main \
+  "$WRAP" merge --apply --pr 96 "$PL_CLONE" 2>&1)"; rc=$?
+chk "merge --apply --pr that merged nothing: exits 4" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_no "merge --apply --pr that merged nothing: never pulls" "$out" "pull"
+chk "merge --apply --pr that merged nothing: the checkout's main is untouched" "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_BASE" ]; echo $?)"
+
 echo "--- merge --repo <owner>/<name>: no local checkout, gh-only gate, merge and verify"
 # No path, no clone: the stub answers by slug. Every local step is skipped and the run says so.
 RM_JSON() { # RM_JSON <number> <mergeable> <extra json fields, trailing comma>
@@ -100,6 +183,7 @@ RM_MERGED='{"state":"MERGED","mergeCommit":{"oid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 out="$(cd "$TMPD" && GH_STUB_OPEN_PRS="$(open_one 71)" GH_STUB_PR_71="$(RM_JSON 71 MERGEABLE)"   GH_STUB_VIEW_STATE="$RM_MERGED" "$WRAP" merge --apply --pr 71 --repo o/r 2>&1)"; rc=$?
 chk "merge --repo: exits 0" "$rc"
 chk_has "merge --repo: says the local steps are skipped" "$out" "no local checkout, so the re-merge push, tree verify and pull are skipped"
+chk_no "merge --repo: never pulls (there is no checkout)" "$out" "pulled"
 chk_has "merge --repo: reports the merge verified through gh api" "$out" \
   "merged #71 (bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb): verified on main via gh api"
 chk "merge --repo: squash-merged once, pinned to the gated head, against the slug" \

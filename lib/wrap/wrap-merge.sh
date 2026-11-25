@@ -990,6 +990,28 @@ _merge_pending_wait() {
   return 0
 }
 
+# _merge_pull_checkout <repo> <default> -- the fast-forward `merge --apply` owes the checkout
+# it was handed. The merge is server-side, so the checkout stayed behind origin until a later
+# `apply` pulled it. Same guard shape and messages as `land`'s closing pull: skipped under
+# --no-pull (a step 0 stop, where the main checkout belongs to a live session), refused off the
+# default branch, ff-only through `_land_ff_pull` so a dirty merge=union file is carried and
+# nothing is stashed or reset. Advisory like land's: every outcome prints one line naming the
+# command that finishes the job, and none changes the merge's exit code.
+_merge_pull_checkout() {
+  local repo="$1" def="$2" cur hint
+  hint="run: wrap apply --apply --pull-only ${repo}"
+  cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
+  if [ "$NO_PULL" = 1 ]; then
+    echo "SKIP pull: --no-pull; ${repo} not pulled, ${hint}"
+  elif [ "$cur" != "$def" ]; then
+    echo "PULL BLOCKED: ${repo} is on '${cur:-<detached>}', not ${def}; ${hint}"
+  elif _land_ff_pull "$repo"; then
+    echo "pulled ${repo}: $(git -C "$repo" log --oneline -1 2>/dev/null)"
+  else
+    echo "PULL BLOCKED: pull --ff-only refused in ${repo}, nothing was stashed or reset; ${hint}"
+  fi
+}
+
 # Exit code of `merge --apply --pr N` when the named PR was not merged and nothing failed:
 # a SKIP, a refusal, or nothing eligible. 0 stays "merged" (or a dry run, or a bare sweep with
 # nothing to merge); 1 gh/query errors, 2 a failed write, 3 merged but the tree check disagrees.
@@ -1367,6 +1389,7 @@ cmd_merge() {
     OK)
       echo "merged #${first_eligible} (${sha}): tree verified"
       [ -z "$superseded_n" ] || echo "superseded #${superseded_n}: its tree landed via #${first_eligible} on ${superseded_branch}; close #${superseded_n} when ready"
+      _merge_pull_checkout "$repo" "$def"
       ;;
     MISMATCH*)
       echo "merged #${first_eligible} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
