@@ -963,6 +963,14 @@ ADR). This section is what actually dispatches; every claim below is proven by
   `--stream`/`--verbose` piped straight to the conductor -- that tees the child
   transcript into the parent's context, the exact accumulation trap this ADR closes.
 
+### Closing an NN-slug sub-goal
+
+A ROADMAP in the `NN-slug` form (`- [x] NN-slug, PR #N, merged <sha>`) closes a sub-goal with
+`bin/mega tick <mega> <NN-slug> --pr <N>`, never a hand edit. The verb audits the PR through gh
+(MERGED, a merge commit, base on the default branch), checks the goal file's `**Branch:**` against
+the PR head, writes the line with the sha gh reports, and records `attempt-state.sh commit-result`.
+Any refusal writes nothing. Contract: `docs/specs/SPEC-430-mega-tick-verb.md`.
+
 ### Per-sub-goal model routing
 
 Each sub-goal file's `Model:`/`Effort:` header becomes `--model`/`--effort` flags on that
