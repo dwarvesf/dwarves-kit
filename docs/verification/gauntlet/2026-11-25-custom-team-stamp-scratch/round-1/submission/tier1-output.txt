@@ -1,0 +1,45 @@
+== T1.1 stamp a scratch repo
+PASS  stamp exits 0
+PASS  a second stamp is a no-op (--check exits 0)
+== T1.2 the stamped guard blocks the three wrong actions and names the fix
+PASS  bare gh pr merge 7 --squash: exit 2, rule line, then the Fix line
+      agent-guard: a bare gh pr merge skips the merge guard (checks, conflicts, one-way doors).
+      Fix: bash scripts/pr-merge.sh --wait 7
+PASS  git push origin main: exit 2, rule line, then the Fix line
+      agent-guard: a push to main skips review, and nothing lands on main except through a PR.
+      Fix: git switch -c <type>/<slug> && git push -u origin <type>/<slug> && gh pr create
+PASS  git commit on main: exit 2, rule line, then the Fix line
+      agent-guard: you are on main, and nothing commits to main directly (your changes come with you to a branch).
+      Fix: git switch -c <type>/<slug>
+== T1.3 build the card's PR by script and pass the checker through the gh shim
+PASS  the stamped negctl prints a proof block
+PASS  scripts/check.sh exits 0 with the PR's own title and body
+PASS  scripts/pr-merge.sh --wait 1 merges through the shim
+PASS  the checker passes on the card's PR
+      PASS  1 the pull request was merged
+      PASS  2 the title is a conventional commit subject
+      PASS  3 a proof file holds a NEGATIVE CONTROL block with a red verdict
+      PASS  4 the changelog gained a tagged line
+      PASS  5 the body links the work (Closes #<n>)
+      PASS  6 scripts/check.sh exits 0 with the PR's own title and body
+      PASS  7 no bare gh pr merge was issued
+      SKIP  8 no transcript given: the kit-path scan did not run
+      check-submission: 0 failed
+== T1.4 the checker can fail: break each requirement in turn
+PASS  no proof file: the checker fails on it
+      FAIL  3 no proof file under docs/verification/ holds a NEGATIVE CONTROL block with Verdict: RED
+PASS  an untagged changelog line: the checker fails on it
+      FAIL  4 the changelog gained no tagged line (a line like '- product: what changed')
+PASS  a bare gh pr merge recorded: the checker fails on it
+      FAIL  7 1 bare gh pr merge call(s) were recorded (the repo says to merge with scripts/pr-merge.sh)
+== T1.5 the clean room stages with no kit in it and one credential slot
+PASS  run.sh stages the room
+PASS  the room holds the card, the shim, and the stamped repo
+PASS  the repo, card, prompt and shim name no path under the kit
+PASS  the room holds no kit lib or gauntlet dir
+PASS  the Dockerfile bakes no credential
+PASS  run.sh passes exactly one credential (the probe key) into the room
+== T1.6 every generated test runs with the kit absent from PATH and HOME
+PASS  tests/test-stamp-kitfree.sh all: 13 passed, 0 failed
+
+tier1: 0 failed, 19 passed

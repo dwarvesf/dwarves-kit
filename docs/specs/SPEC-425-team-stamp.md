@@ -236,7 +236,7 @@ Rung 1: G0 alone. Rung 2 (parallel, disjoint): G1, G2, G3, G4, G5, G6, G7, G9 (G
 ### Phase 4: Integration and proof
 
 - [x] TASK-G10 integration. Files: `commands/stamp.md`, `tests/test-stamp-e2e.sh`, `tests/test-stamp-refusals.sh`, `tests/test-stamp-adopt-interplay.sh`, `tests/test-stamp-cross.sh`, `docs/verification/team-stamp.md`, `CONTEXT.md` (the terms), `CHANGELOG.md`; regenerated `docs/reference/FEATURES.md`; and the one-line mentions the docs lint demands. Done when: the full stamp on an empty git repo writes the 22 rows' files, a second run is a no-op, a kit-free pass runs every generated test with the kit absent, every refusal passes the two-line check; and the cross-group tests pass: `check-owners.sh` passes on a full stamp (test row 24), every `bash scripts/...` command in `SKILL.md` names a generated script, every script the guard's fix lines name exists, and `negctl.sh` output is accepted by `pr-shape.sh`'s proof check. The privacy section of `tests/test-stamp-e2e.sh` follows AC14. Test: `bash tests/test-stamp-e2e.sh && bash tests/test-stamp-refusals.sh && bash tests/test-stamp-adopt-interplay.sh && bash tests/test-stamp-cross.sh`.
-- [ ] TASK-G11 gauntlet run. Files: `tests/gauntlet/team-stamp/` (card, checker, clean-room runner, Tier 1 command), `docs/verification/gauntlet/<date>-team-stamp-scratch/` (the run record). Done when: the run in "The gauntlet run" below ends with an unaided SOLID verdict. Test: `bash tests/gauntlet/team-stamp/tier1.sh`, then the engine's recorded run.
+- [ ] TASK-G11 gauntlet run (built and Tier 1 green; Tier 2 not run). Files: `tests/gauntlet/team-stamp/` (card, checker, clean-room runner, Tier 1 command), `docs/verification/gauntlet/<date>-team-stamp-scratch/` (the run record). Done when: the run in "The gauntlet run" below ends with an unaided SOLID verdict. Test: `bash tests/gauntlet/team-stamp/tier1.sh`, then the engine's recorded run.
 
 ## The gauntlet run
 
@@ -267,7 +267,7 @@ Cost note: the probe is Sonnet, cap 3 rounds, per `commands/gauntlet.md`.
 - [x] `grep -rEn` for the kit-path patterns over a stamped repo returns only line 1 of `AGENTS.md` and the one public URL; every generated test passes with the kit absent from `PATH` and `HOME`. (Today: the adopt pointer sends an agent to `~/.claude/dwarves-kit/AGENTS.md`.)
 - [x] A bare `gh pr merge` fed to `scripts/agent-guard.sh` exits 2 with `Fix: bash scripts/pr-merge.sh --wait <n>`. (Today: the kit's `hooks/safety-gate.sh` has no bare-merge block and is plugin-bound.)
 - [x] The generated workflow has `runs-on: [self-hosted]` and no GitHub-hosted runner label, and `actionlint` accepts it (exit 0 on the rendered workflow). (Today: none generated.)
-- [ ] A recorded gauntlet run under `docs/verification/gauntlet/` ends SOLID for the card above.
+- [ ] A recorded gauntlet run under `docs/verification/gauntlet/` ends SOLID for the card above. (Tier 1 is green and recorded; Tier 2, the probe, has NOT run: no container runtime on the build host and the probe key is metered. The "bare merge is blocked with the fix line" half of the Done line is shown by Tier 1; the "clean-room agent opens a PR that passes the generated CI" half is not. Operator command: `ANTHROPIC_API_KEY=<capped probe key> RUN_OUT=docs/verification/gauntlet/<date>-custom-team-stamp-scratch/round-N bash tests/gauntlet/team-stamp/run.sh`.)
 - [x] `docs/reference/FEATURES.md` lists `stamp`.
 - [ ] `bash tests/run-all.sh --changed origin/master` is green (the lead runs it).
 
