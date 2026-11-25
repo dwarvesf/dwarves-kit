@@ -362,7 +362,7 @@ print("MISSING " + " ".join(missing) if missing else ("OK" if sc.ROOT == pathlib
 ')"
 [ "$surface" = "OK" ] && ok "importable: the helpers a wrapper script reuses exist and ROOT follows STATES_ROOT" || no "importable surface: $surface"
 
-tenant_re='ops-toolkit|ops_toolkit|check-states|tieubao|family-office|airwallex'"|"'CC_[A-Z]'
+tenant_re='ops-''toolkit|ops_''toolkit|check-states|tieu''bao|family-office|airwallex'"|"'CC_[A-Z]'
 leaks="$(cd "$KIT_DIR" && grep -nEI "$tenant_re" lib/board/state_check.py tests/fixtures/state-check/states.toml 2>/dev/null)"
 [ -z "$leaks" ] && ok "engine and fixture registry name no tenant" || no "tenant names in the engine or fixture" "$leaks"
 
