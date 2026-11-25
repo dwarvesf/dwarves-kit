@@ -523,6 +523,202 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Review round 2 fixes
+
+| Row | Test row | Red before | Green after |
+|---|---|---|---|
+| `wt.sh close`: a newer CLOSED PR, origin at Y, local at X, uncommitted file in the worktree | callers w10: refuses, `LEAVE remote <Y>`, branch, worktree and the uncommitted file stay | red (5 rows) | green |
+| the origin ref cannot be read | callers w10b | red | green |
+| the PR head moved past the local tip | callers w14: `LEAVE tip`, then `Fix: git -C <worktree> pull --ff-only, then close again` | red | green |
+| the same case, a worktree path outside the safe set | callers w15: `Fix: in that worktree run git pull --ff-only, then close again`, no path echoed | red | green |
+| `spec_active` answers nothing, `spec_for_slug` defined | `tests/test-ship-gate-spec-pick.sh` | red (2 rows) | green |
+| the stub fills in fields the code stopped asking for | callers strict-stub rows (`GH_STUB_STRICT_JSON=1`) | mutation turns 1 row red | green |
+
+```
+Command: bash tests/test-branch-merged-callers.sh   (new rows against the unfixed code)
+Exit: 1
+Output:
+  FAIL wt close: a remote branch that moved past the judged tip refuses
+  FAIL wt close: the refusal names the remote tip
+  FAIL wt close: the local branch stays
+  FAIL wt close: the worktree stays
+  FAIL wt close: the worktree's uncommitted file stays
+  FAIL wt close: a failed remote read refuses and keeps the branch
+  FAIL wt close: and ends with the way out
+  FAIL wt close: and names no path
+test-branch-merged-callers: 66 passed, 8 FAILED
+Verdict: RED as expected (8 rows)
+```
+
+```
+Command: bash tests/test-ship-gate-spec-pick.sh   (new rows against the unfixed hook)
+Exit: 1
+Output:
+  FAIL the pick is never emptier than master's
+  FAIL the co-located spec too
+test-ship-gate-spec-pick: 11 passed, 2 FAILED
+Verdict: RED as expected (2 rows)
+```
+
+```
+Command: bash tests/test-branch-merged.sh && bash tests/test-branch-merged-callers.sh && bash tests/test-ship-gate-spec-pick.sh && bash tests/test-shared-lookups.sh && bash tests/test-codex-hooks.sh
+Exit: 0
+Output:
+  test-branch-merged: all 50 passed
+  test-branch-merged-callers: all 74 passed
+  test-ship-gate-spec-pick: all 13 passed
+  test-shared-lookups: all 15 passed
+  94 passed, 0 failed
+Verdict: PASS
+```
+
+NEGATIVE CONTROL for the round 2 fixes:
+
+### wt.sh close: the gate accepts any verdict (rerun)
+```
+## Negative control (negctl)
+Command: bash tests/test-branch-merged-callers.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  === the --need pr callers under the strict gh stub ===
+    PASS the strict stub was cut from tests/lib/wrap-stub.sh
+    PASS strict stub: wt close at a merged PR's exact tip still closes
+    PASS strict stub: the sweep deletes the exact-tip branch
+    PASS strict stub: the sweep keeps a PR merged into another base
+    PASS strict stub: the sweep keeps the base of an open PR
+  
+  test-branch-merged-callers: all 74 passed
+
+Mutation: sed -i '' 's|"SAFE squash "\*) ;;|*) ;;|' lib/goal/wt.sh
+Changed: lib/goal/wt.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  === the --need pr callers under the strict gh stub ===
+    PASS the strict stub was cut from tests/lib/wrap-stub.sh
+    PASS strict stub: wt close at a merged PR's exact tip still closes
+    PASS strict stub: the sweep deletes the exact-tip branch
+    PASS strict stub: the sweep keeps a PR merged into another base
+    PASS strict stub: the sweep keeps the base of an open PR
+  
+  test-branch-merged-callers: 59 passed, 15 FAILED
+
+Restore: git checkout HEAD -- lib/goal/wt.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### wt.sh close: the remote read and the Fix line reverted
+```
+## Negative control (negctl)
+Command: bash tests/test-branch-merged-callers.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  === the --need pr callers under the strict gh stub ===
+    PASS the strict stub was cut from tests/lib/wrap-stub.sh
+    PASS strict stub: wt close at a merged PR's exact tip still closes
+    PASS strict stub: the sweep deletes the exact-tip branch
+    PASS strict stub: the sweep keeps a PR merged into another base
+    PASS strict stub: the sweep keeps the base of an open PR
+  
+  test-branch-merged-callers: all 74 passed
+
+Mutation: git show 0c801db5~1:lib/goal/wt.sh > lib/goal/wt.sh
+Changed: lib/goal/wt.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  === the --need pr callers under the strict gh stub ===
+    PASS the strict stub was cut from tests/lib/wrap-stub.sh
+    PASS strict stub: wt close at a merged PR's exact tip still closes
+    PASS strict stub: the sweep deletes the exact-tip branch
+    PASS strict stub: the sweep keeps a PR merged into another base
+    PASS strict stub: the sweep keeps the base of an open PR
+  
+  test-branch-merged-callers: 66 passed, 8 FAILED
+
+Restore: git checkout HEAD -- lib/goal/wt.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### the strict stub: the merged check stops requesting isCrossRepository
+```
+## Negative control (negctl)
+Command: bash tests/test-branch-merged-callers.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  === the --need pr callers under the strict gh stub ===
+    PASS the strict stub was cut from tests/lib/wrap-stub.sh
+    PASS strict stub: wt close at a merged PR's exact tip still closes
+    PASS strict stub: the sweep deletes the exact-tip branch
+    PASS strict stub: the sweep keeps a PR merged into another base
+    PASS strict stub: the sweep keeps the base of an open PR
+  
+  test-branch-merged-callers: all 74 passed
+
+Mutation: sed -i '' 's|headRefOid,baseRefName,mergedAt,isCrossRepository|headRefOid,baseRefName,mergedAt|' lib/gate/branch-merged.sh
+Changed: lib/gate/branch-merged.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS sweep: a merged row with no isCrossRepository keeps the branch
+    PASS sweep: a merged row with a null isCrossRepository keeps the branch
+  === the --need pr callers under the strict gh stub ===
+    PASS the strict stub was cut from tests/lib/wrap-stub.sh
+    FAIL strict stub: wt close at a merged PR's exact tip still closes
+    PASS strict stub: the sweep deletes the exact-tip branch
+    PASS strict stub: the sweep keeps a PR merged into another base
+    PASS strict stub: the sweep keeps the base of an open PR
+  
+  test-branch-merged-callers: 73 passed, 1 FAILED
+
+Restore: git checkout HEAD -- lib/gate/branch-merged.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+### ship-gate pick: the spec_for_slug fall-through reverted
+```
+## Negative control (negctl)
+Command: bash tests/test-ship-gate-spec-pick.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS still empty when neither finds one
+  === a partial install: spec-find.sh without spec-active.sh ===
+    PASS root spec
+    PASS co-located spec is still found (the pick master makes)
+    PASS a root path holding a TAB survives the pick
+  === a stale install: neither file, the root glob ===
+    PASS root spec
+    PASS no spec for the slug
+  
+  test-ship-gate-spec-pick: all 13 passed
+
+Mutation: git show 77015737~1:hooks/ship-gate.sh > hooks/ship-gate.sh
+Changed: hooks/ship-gate.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS still empty when neither finds one
+  === a partial install: spec-find.sh without spec-active.sh ===
+    PASS root spec
+    PASS co-located spec is still found (the pick master makes)
+    PASS a root path holding a TAB survives the pick
+  === a stale install: neither file, the root glob ===
+    PASS root spec
+    PASS no spec for the slug
+  
+  test-ship-gate-spec-pick: 11 passed, 2 FAILED
+
+Restore: git checkout HEAD -- hooks/ship-gate.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
 ## Test plan coverage
 | Row | Run / skip reason |
 |---|---|
