@@ -93,7 +93,8 @@ rc=0
 
 tracked_changes() { git -c core.quotepath=off diff HEAD --no-renames --name-only; }
 untracked_files() { git -c core.quotepath=off ls-files --others --exclude-standard | LC_ALL=C sort; }
-show_tail() { plain "$out" | tail -n 15 | sed 's/^/    /' >&2; }
+# plain runs to a file first: bash 5.3 was seen to crash on a function inside a pipeline on a loaded host.
+show_tail() { plain "$out" >"$work/tail-plain"; tail -n 15 "$work/tail-plain" | sed 's/^/    /' >&2; }
 
 # The test runs as a background job in its own process group, so a signal to
 # negctl can stop the whole test tree before the restore starts.
@@ -228,7 +229,8 @@ untracked_files >"$work/after"
 LC_ALL=C comm -13 "$work/before" "$work/after" >"$created"
 created_known=1
 if [ "$mutate_rc" -ne 0 ]; then
-    plain "$work/mutate-out" | tail -n 15 | sed 's/^/    /' >&2
+    plain "$work/mutate-out" >"$work/mutate-plain"
+    tail -n 15 "$work/mutate-plain" | sed 's/^/    /' >&2
     refuse 1 "the mutate command failed with exit $mutate_rc; restored" "$mutate_cmd"
 fi
 changed="$(tracked_changes)"
@@ -249,7 +251,8 @@ if load_line="$(red_load_error "$red_rc")"; then
     refuse 1 "REFUSED, the red run is a load or syntax error, not a failing assertion ($load_line); restored" "$use_fix"
 fi
 if [ -s "$out" ]; then
-    plain "$out" | tail -n 15 >"$work/red-tail"
+    plain "$out" >"$work/out-plain"
+    tail -n 15 "$work/out-plain" >"$work/red-tail"
 else
     echo "<no output>" >"$work/red-tail"
 fi
