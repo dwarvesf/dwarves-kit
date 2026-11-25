@@ -1,0 +1,4 @@
+# ci group: the CI workflow, the local check that runs the same commands, and its test. Columns, tab separated: action, source, target, mode, keys
+copy	files/scripts/check.sh.tpl	scripts/check.sh	0755	DEFAULT_BRANCH,PRODUCT_ERE
+copy	files/scripts/test-check.sh.tpl	scripts/test-check.sh	0755	DEFAULT_BRANCH,TAGS,PRODUCT_PATHS,PRODUCT_ERE
+copy	files/.github/workflows/ci.yml.tpl	.github/workflows/ci.yml	0644	PRODUCT_ERE
