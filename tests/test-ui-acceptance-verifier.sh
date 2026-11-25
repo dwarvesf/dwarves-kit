@@ -625,7 +625,7 @@ case_suite_harness() {
 #   ... 0 skipped ...
 #   VERDICT: PASS, VERDICT: FAIL:fixable (naming Error 500) and VERDICT: FAIL:escalate (naming NO-CHECK: scenario does not cover)
 #   No evidence was uploaded or committed.
-RECORD="$KIT_DIR/docs/verification/ui-acceptance-verifier.md"
+RECORD="${UI_VERIFY_RECORD:-$KIT_DIR/docs/verification/ui-acceptance-verifier.md}"
 record_ok() {
   local f=$1 broke=0 item pattern tools
   [ -s "$f" ] || { echo "the record is missing or empty"; return 1; }
