@@ -44,6 +44,10 @@
 #                                                            (ESCALATE <cur> -> <heavier> | HOLD <cur>), exit 0
 #   lane-classify.sh floor <root> [<base>]              -> `full <kind>: <path>` for the first hard-path hit
 #                                                            in the base..HEAD diff, else nothing, exit 0.
+#                                                            A new workflow file whose whole text matches the closed
+#                                                            line grammar of _floor_workflow_additive is sized down
+#                                                            too; every sized path writes one `floor-sized` line on
+#                                                            stderr.
 #                                                            A hit counts only for a non-doc file (.md,
 #                                                            README or README.<text ext>, anything under docs/)
 #                                                            whose hunks change more than comment or blank
@@ -520,13 +524,24 @@ deescalate() {
 # list and the added lines are scanned in ONE pass, so the cost stays flat as the diff grows (the
 # hook has a short timeout that fails open). The project's lane data is read from <root>.
 _DOC_AWK='cur ~ /\.(md|markdown|txt|rst|adoc)$/ || cur ~ /(^|\/)docs\//'
+# A floor that cannot run its own tools must not answer "no hit": print a hit instead.
+_floor_tools_ok() {
+  local t
+  # every external command the floor verb's code path runs, read from its functions and the config readers
+  for t in git awk sed tr grep wc head cut cmp mktemp cp mv rm cat sort paste basename env; do
+    command -v "$t" >/dev/null 2>&1 || { printf 'full tools-missing: %s\n' "$t"; return 1; }
+  done
+  return 0
+}
 floor() {
   local root="${1:-}" base="${2:-}" head="${3:-HEAD}" tmp
   [ -n "$root" ] || { echo "usage: lane-classify.sh floor <root> [<base> [<head>]]" >&2; return 64; }
+  _floor_tools_ok || return 0   # prints `full tools-missing: <name>` itself
   export KIT_PROJECT_ROOT="$root"
+  export GIT_NO_REPLACE_OBJECTS=1   # a `git replace` ref must not change what any floor read sees
   [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
   [ -n "$base" ] || return 0
-  tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 0
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || { printf 'full tools-missing: tmpdir\n'; return 0; }
   _floor_scan "$root" "$base" "$head" "$tmp"
   rm -rf "$tmp"   # the scratch dir this call made; no RETURN trap, which would outlive the function
   return 0
@@ -537,7 +552,7 @@ floor() {
 # into docs/, and no attributes file.
 _floor_git() {
   local root="$1"; shift
-  env -u GIT_EXTERNAL_DIFF git -C "$root" -c core.quotePath=false -c color.diff=false -c color.ui=false \
+  env -u GIT_EXTERNAL_DIFF git --no-replace-objects -C "$root" -c core.quotePath=false -c color.diff=false -c color.ui=false \
     -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.renames=false -c diff.external= \
     -c core.attributesFile=/dev/null "$@"
 }
@@ -675,6 +690,282 @@ _floor_comment_only() {
       if (lc ~ /ignore|disable|skip|suppress|allowlist|nolint|nosec|noqa|nosemgrep|nosonar|tfsec|tflint|checkov|trivy|kics|hadolint|shellcheck|pylint|lgtm|codeql|trufflehog|gitleaks|pragma|lint:|type:/) bad = 1 }
     END { exit (bad || !changed) ? 1 : 0 }' "$tmp/cdiff"
 }
+# _floor_sized_note <kind> <rule> <reason> <path>: one TAB line on stderr for every path the floor sizes down,
+# path last (a path cannot forge a field). ship-rules.sh relays it as an advisory and a SIZED log line.
+_floor_sized_note() {
+  printf 'floor-sized\t%s\t%s\t-\t%s\t-\t%s\n' "$1" "$2" "$3" "$4" >&2
+}
+# The added-workflow rule. A new workflow file is sized down only when its WHOLE text matches a closed line
+# grammar: a line that matches no production keeps the floor, so the grammar only has to be right about the
+# lines it admits. Every check below is one line tagged `# chk:<id>`, so a test can switch one finding's
+# checks off and watch its rows go red. The grammar program prints the lowercased names the file defines.
+read -r -d '' _WF_GRAMMAR <<'AWK' || true
+function bad(m) { print "refuse line " NR ": " m > "/dev/stderr"; failed = 1; exit 1 }
+function ign(m) { }
+function okname(v,   l) { l = tolower(v); return (v ~ /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/ && v !~ / $/ && l !~ /^(y|n|yes|no|on|off|true|false|null)$/ && v !~ /^[0-9._]+$/) }
+function stepend() { if (ns > 0 && (sk["run"] + sk["uses"]) != 1) bad("a step needs exactly one of run and uses") }
+function jobend() { if (!injob) return; stepend(); if (!jk["runs-on"] || !jk["steps"] || ns == 0) bad("a job needs runs-on and one step") }
+function once(a, k) { if (a[k]++) bad("duplicate key " k) }
+function stepkey(t,   v) {
+  wopen = 0
+  if (t == "with:") { once(sk, "with"); wopen = 1; split("", wk); return }
+  if (t == "run: |") { once(sk, "run"); inblk = 1; blkn = 0; return }
+  if (t ~ /^run: /) { v = substr(t, 6); if (v !~ /^[A-Za-z0-9._\/-][A-Za-z0-9 ._\/=+,@"'$()&|;<>*-]*$/) bad("run value"); once(sk, "run"); return }
+  if (t ~ /^uses: /) {
+    if (t !~ /^uses: actions\/(checkout|setup-[A-Za-z0-9_-]+)@[0-9a-f]+$/) bad("action outside the allow list")   # chk:PIN
+    v = t; sub(/^.*@/, "", v)
+    if (length(v) != 40) bad("action pin")   # chk:F4 PIN
+    once(sk, "uses"); return
+  }
+  if (t ~ /^name: /) { v = substr(t, 7); if (!okname(v)) bad("step name"); once(sk, "name"); return }
+  if (t ~ /^shell: (bash|sh)$/) { once(sk, "shell"); return }
+  if (t ~ /^working-directory: [A-Za-z0-9][A-Za-z0-9 ._\/-]*$/) { once(sk, "working-directory"); return }
+  bad("step key outside the grammar")
+}
+function top(t,   v) {
+  sec = ""
+  if (t ~ /^name: /) { v = substr(t, 7); if (!okname(v)) bad("workflow name"); once(seen, "name"); names[tolower(v)] = 1; return }
+  if (t == "on:") { once(seen, "on"); sec = "on"; return }
+  if (t == "permissions: {}") { once(seen, "permissions"); permok = 1; return }
+  if (t == "permissions:") { once(seen, "permissions"); sec = "perm"; return }
+  if (t == "jobs:") { once(seen, "jobs"); sec = "jobs"; return }
+  bad("top-level line outside the grammar")   # chk:F2
+}
+function onl(ind, t,   e, k) {
+  if (ind == 2) {
+    if (t !~ /^(push|pull_request|workflow_dispatch):$/) bad("event outside the closed list")   # chk:F2
+    e = substr(t, 1, length(t) - 1); once(evs, e); evt = e; nev++; lst = ""; split("", ek); return
+  }
+  if (ind == 4) {
+    if (evt != "push" && evt != "pull_request") bad("filter under an event that takes none")   # chk:F2
+    if (t !~ /^(branches|paths):$/) bad("event key outside the grammar")   # chk:F2
+    k = substr(t, 1, length(t) - 1); once(ek, k); lst = k; return
+  }
+  if (ind == 6) {
+    if (lst == "") bad("list item without a key")   # chk:F2
+    if (t !~ /^- [A-Za-z0-9._\/][A-Za-z0-9._\/*-]*$/) bad("list item")   # chk:F2
+    return
+  }
+  bad("indent in the on block")   # chk:F2
+}
+function jobl(ind, t,   v) {
+  if (ind == 2) {
+    jobend()
+    if (t !~ /^[A-Za-z0-9][A-Za-z0-9_-]*:$/) bad("job key")
+    v = substr(t, 1, length(t) - 1)
+    if (!okname(v)) bad("job key is boolean-like or numeric")
+    once(jobs, tolower(v)); names[tolower(v)] = 1; nj++; injob = 1; insteps = 0; ns = 0; wopen = 0; split("", jk); split("", sk)
+    return
+  }
+  if (!injob) bad("line outside a job")
+  if (ind == 4) {
+    stepend(); insteps = 0; wopen = 0
+    if (t == "steps:") { once(jk, "steps"); insteps = 1; return }
+    if (t ~ /^name: /) { v = substr(t, 7); if (!okname(v)) bad("job name"); once(jk, "name"); names[tolower(v)] = 1; return }   # chk:F3
+    if (t ~ /^runs-on: /) { v = substr(t, 10); if (v !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/ && v !~ /^\[self-hosted(, [A-Za-z0-9][A-Za-z0-9._-]*)*\]$/) bad("runs-on"); once(jk, "runs-on"); return }
+    if (t ~ /^timeout-minutes: [0-9]+$/ && length(t) <= 21) { once(jk, "timeout-minutes"); return }
+    bad("job key outside the grammar")   # chk:F4
+  }
+  if (ind == 6) {
+    if (!insteps) bad("step outside steps")
+    if (t !~ /^- [^ ]/) bad("step marker")
+    stepend(); ns++; split("", sk); stepkey(substr(t, 3)); return
+  }
+  if (ind == 8) { if (!insteps || ns == 0) bad("step key outside a step"); stepkey(t); return }
+  if (ind == 10) {
+    if (!wopen) bad("deep line outside with")
+    if (t !~ /^[A-Za-z0-9_-]+: [A-Za-z0-9][A-Za-z0-9 ._\/-]*$/) bad("with entry")
+    v = t; sub(/:.*$/, "", v); once(wk, v); return
+  }
+  bad("indent in the jobs block")
+}
+{
+  if (NR > 200) bad("more than 200 lines")
+  line = $0
+  if (line !~ /^[ -~]*$/) bad("byte outside printable ASCII")   # chk:F1
+  if (index(line, "\\")) bad("backslash")   # chk:F1
+  if (index(line, "${{")) bad("expression")   # chk:F3
+  if (line ~ / $/) bad("trailing space")
+  if (inblk) {
+    if (line == "") next
+    match(line, /^ */)
+    if (RLENGTH >= 10 && (blkn > 0 || RLENGTH == 10)) { blkn++; next }
+    if (blkn == 0) bad("empty or oddly indented block scalar")
+    inblk = 0
+  }
+  if (line == "") next
+  if (line ~ /^ *#/) next
+  match(line, /^ */); ind = RLENGTH; t = substr(line, ind + 1)
+  if (ind % 2) bad("odd indent")
+  if (ind == 0) { top(t); next }
+  if (sec == "on") { onl(ind, t); next }
+  if (sec == "perm") { if (ind == 2 && t == "contents: read" && !permc) permc = 1; else bad("permissions entry outside the grammar"); next }   # chk:PERM
+  if (sec == "jobs") { jobl(ind, t); next }
+  bad("indented line outside a section")
+}
+END {
+  if (failed) exit 1
+  if (inblk && blkn == 0) bad("empty block scalar")
+  jobend()
+  if (!seen["name"] || !seen["on"] || !seen["jobs"] || !seen["permissions"] || !(permok || permc)) bad("a required section is missing")   # chk:F2 PERM EMPTY
+  if (nev < 1 || nj < 1) bad("no event or no job")   # chk:EMPTY
+  for (n in names) print n
+}
+AWK
+# The base workflows are files we do not control, so each is read by "anything we cannot classify keeps the
+# floor". The program prints one lowercased glob per name that could become a check name (the workflow name,
+# each job key, each job-level `name:`; each `${{ ... }}` becomes `*`) and exits 3 on the first line it cannot
+# classify: a `workflow_run` anywhere, a document marker, a tab, a top-level line that is not a plain key, an
+# inline `jobs:`, a quoted or complex key, a job key that is not `[A-Za-z0-9_-]+:`, a job-level `uses:`, a name
+# value that is empty, a block or folded scalar, an anchor, an alias, a tag or a flow value.
+read -r -d '' _WF_BASECHECK <<'AWK' || true
+BEGIN { pend = -1; jl = -1; pl = -1 }
+function unsafe(m) { print "unclassifiable base line " NR ": " m > "/dev/stderr"; failed = 1; exit 3 }
+function ign(m) { }
+function add(v,   p, n, seg) {
+  gsub(/^ +| +$/, "", v); if (v == "") return
+  out[v] = 1
+  p = index(v, " ("); if (p > 0) out[substr(v, 1, p - 1)] = 1
+  n = split(v, seg, " / "); if (n > 1) out[seg[n]] = 1
+}
+function glob(v,   o, i, j) {
+  o = ""
+  while ((i = index(v, "${{")) > 0) {
+    j = index(substr(v, i), "}}")
+    if (j == 0) unsafe("unterminated expression")   # chk:R3
+    o = o substr(v, 1, i - 1) "*"; v = substr(v, i + j + 1)
+  }
+  o = o v
+  if (index(o, "}}") || index(o, "${{")) unsafe("an expression the glob could not absorb")   # chk:R9
+  return o
+}
+function nameval(raw,   v, c) {
+  v = raw; sub(/ +#.*$/, "", v); gsub(/^ +| +$/, "", v)
+  if (v == "") unsafe("empty name value")   # chk:R3
+  c = substr(v, 1, 1)
+  if (c ~ /[|>&*!{\[%@`?]/) unsafe("name value shape")   # chk:R3
+  if (c == "\"" || c == "'") {
+    if (length(v) < 2 || substr(v, length(v)) != c) unsafe("quoted name")   # chk:R3
+    v = substr(v, 2, length(v) - 2)
+    if (index(v, "\\") || index(v, c)) unsafe("escape in a quoted name")   # chk:R3
+  }
+  if (index(v, ": ")) unsafe("mapping inside a name")   # chk:R3
+  add(glob(v))
+}
+{
+  l = $0; sub(/\r$/, "", l); lo = tolower(l)
+  if (index(lo, "workflow_run")) unsafe("workflow_run")   # chk:R2
+  if (index(l, "\t")) unsafe("tab")   # chk:R3
+  if (l == "---" || l ~ /^--- / || l ~ /^\.\.\./) unsafe("document marker")   # chk:R3
+  if (l ~ /^ *$/ || l ~ /^ *#/) next
+  match(l, /^ */); ind = RLENGTH; t = substr(lo, ind + 1)
+  if (pend >= 0) { if (ind > pend) unsafe("a name value continues on the next line"); pend = -1 }   # chk:R8
+  if (t ~ /^["'?&*!{\[]/) unsafe("key shape")   # chk:R3
+  if (ind == 0) {
+    injobs = 0
+    if (t !~ /^[a-z_][a-z0-9_-]*:/) unsafe("top-level shape")   # chk:R3
+    if (t ~ /^jobs:/) { if (t !~ /^jobs: *(#.*)?$/) unsafe("inline jobs"); injobs = 1; jl = -1; pl = -1; next }   # chk:R3
+    if (t ~ /^name:/) { nameval(substr(t, 6)); pend = ind }
+    next
+  }
+  if (!injobs) next
+  if (jl < 0) jl = ind
+  if (ind < jl) unsafe("dedent inside jobs")   # chk:R3
+  if (ind == jl) {
+    if (t !~ /^[a-z0-9_-]+: *(#.*)?$/) unsafe("job key shape")   # chk:R3
+    id = t; sub(/:.*$/, "", id); add(id); pl = -1; next
+  }
+  if (pl < 0) pl = ind
+  if (ind == pl) {
+    if (t !~ /^(- [^ ]|[a-z0-9_-]+ *:)/) unsafe("job property shape")   # chk:R3
+    if (t ~ /^uses *:/) unsafe("job-level uses")   # chk:R3
+    if (t ~ /^name *:/) { v = t; sub(/^name *:/, "", v); nameval(v); pend = ind }
+  }
+}
+END { if (failed) exit 3; for (v in out) print v }
+AWK
+# The collision test: every glob in the first file against every new name in the second. A glob is a literal
+# with `*` for each base expression; a bare `*` matches every name, so the floor stands. Exit 3 on a match.
+read -r -d '' _WF_GLOBMATCH <<'AWK' || true
+function gmatch(s, p,   n, parts, i, pos) {
+  n = split(p, parts, "*")
+  if (n == 1) return s == p
+  if (substr(s, 1, length(parts[1])) != parts[1]) return 0
+  s = substr(s, length(parts[1]) + 1)
+  if (length(s) < length(parts[n]) || (parts[n] != "" && substr(s, length(s) - length(parts[n]) + 1) != parts[n])) return 0
+  s = substr(s, 1, length(s) - length(parts[n]))
+  for (i = 2; i < n; i++) { pos = index(s, parts[i]); if (pos == 0) return 0; s = substr(s, pos + length(parts[i])) }
+  return 1
+}
+NR == FNR { pat[++np] = $0; next }
+{ for (i = 1; i <= np; i++) if (gmatch($0, pat[i])) hit = 1 }
+END { exit hit ? 3 : 0 }
+AWK
+# _floor_wf_read <root> <rev> <out> <tmp>: append the name globs of every workflow file at <rev> to <out>.
+# Returns 1 on any read error, more than 50 files, a file over 200000 bytes, a byte count that is not all
+# digits, or a file the base program cannot classify; the caller then keeps the floor.
+_floor_wf_read() {
+  local root="$1" rev="$2" out="$3" tmp="$4" f n=0 img="$tmp/wf.rd" list="$tmp/wf.ls" bytes cr=$'\r'
+  _floor_git "$root" ls-tree -r -z --name-only "$rev" -- .github/workflows > "$list" 2>/dev/null || return 1
+  while IFS= read -r -d '' f; do
+    n=$((n + 1)); [ "$n" -le 50 ] || return 1
+    _floor_git "$root" show "$rev:$f" > "$img" 2>/dev/null || return 1
+    bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
+    case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
+    [ "$bytes" -le 200000 ] || return 1   # chk:R5
+    # Byte rule, before the classifier reads anything: only 0x20 to 0x7E and LF, plus CR when it ends a line. A bare
+    # CR, a tab, a NUL, NEL, LS, PS, a BOM or any byte from 0x80 up is a line break or a hidden character that a
+    # YAML reader may honor and the line reader does not, so such a base file keeps the floor.
+    LC_ALL=C sed "s/$cr\$//" "$img" > "$tmp/wf.cr" 2>/dev/null || return 1   # chk:R10
+    LC_ALL=C tr -d '\040-\176\n' < "$tmp/wf.cr" > "$tmp/wf.bad" 2>/dev/null || return 1   # chk:R10
+    [ ! -s "$tmp/wf.bad" ] || return 1   # chk:R10
+    LC_ALL=C awk "$_WF_BASECHECK" "$img" >> "$out" 2>/dev/null || return 1   # chk:F3 F4
+  done < "$list"
+  return 0
+}
+# _floor_workflow_additive <root> <base> <head> <tmp> <n> <kind>: true (and one floor-sized note) when the file
+# on path-list line n is a new workflow that is purely additive. Any doubt, any read error, any status other
+# than the expected one returns 1 and the floor stands. No `git show` output is piped into a test here: each
+# image is read once into a file and its exit status is tested.
+_floor_workflow_additive() {
+  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path st hm k extra rc rev def bytes img="$tmp/wf.img"
+  [ "$kind" = ci ] || return 1
+  path="$(sed -n "${n}p" "$tmp/paths")"; st="$(sed -n "${n}p" "$tmp/status")"; hm="$(sed -n "${n}p" "$tmp/hmode")"
+  [ -n "$path" ] || return 1
+  [ "$st" = A ] && [ "$hm" = 100644 ] || return 1   # chk:F10 MODE
+  printf '%s\n' "$path" | grep -Eq -e '^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$' || return 1   # chk:F5
+  for k in $_HP_KINDS; do
+    [ "$k" != ci ] || continue
+    rc=0; printf '%s\n' "$path" | grep -Eiq -e "$(_hp_re "$k")" || rc=$?
+    [ "$rc" -eq 1 ] || return 1   # chk:F5
+  done
+  _load_extras
+  while IFS= read -r extra; do
+    [ -n "$extra" ] || continue
+    rc=0; printf '%s\n' "$path" | grep -Eiq -e "$extra" || rc=$?
+    [ "$rc" -eq 1 ] || return 1   # chk:F5 EXTRA
+  done <<< "$_EXTRA_LIST"
+  [ "$(grep -Eic -e '(^|/)\.github/' "$tmp/paths.all")" = 1 ] || return 1   # chk:F9
+  _floor_git "$root" show "$head:$path" > "$img" 2>/dev/null || return 1   # chk:F5
+  [ -s "$img" ] || return 1   # chk:F5 EMPTY
+  bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
+  case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
+  [ "$bytes" -le 20000 ] || return 1   # chk:F5 R5
+  LC_ALL=C tr -d '\0' < "$img" | cmp -s - "$img" || return 1   # chk:F5
+  if ! LC_ALL=C awk "$_WF_GRAMMAR" "$img" > "$tmp/wf.names" 2>/dev/null; then return 1; fi   # chk:G
+  def="$(_deesc_default_branch "$root")"
+  case "$def" in origin/*) ;; *) return 1 ;; esac   # chk:F7
+  _floor_git "$root" rev-parse --verify -q "$def^{commit}" >/dev/null 2>&1 || return 1   # chk:F7
+  : > "$tmp/wf.pat"
+  for rev in "$base" "${KIT_FLOOR_CONFIG_AT:-}" "$def"; do
+    [ -n "$rev" ] || continue
+    _floor_wf_read "$root" "$rev" "$tmp/wf.pat" "$tmp" || return 1   # chk:F7
+  done
+  rc=0; LC_ALL=C awk "$_WF_GLOBMATCH" "$tmp/wf.pat" "$tmp/wf.names" 2>/dev/null || rc=$?
+  [ "$rc" -eq 0 ] || return 1   # chk:F3 F4
+  _floor_sized_note ci additive-workflow "plain read-only check workflow, closed line grammar" "$path"
+  return 0
+}
 # The sqli carve-out's two awk passes over $tmp/plen (byte length of each record's path) and $tmp/added.
 # Pass A prints each candidate path once: a line holding ' and ;-- in a test file of a known language.
 # A path holding a backslash or a control byte never qualifies: git quotes such a name, and two
@@ -765,12 +1056,12 @@ _floor_scan() {
   # One pass over the -z stream: records are ":<modes> ... <status>" then the path. A gitlink has
   # mode 160000. A newline inside a path shows up as a line that is not a record start; it is
   # folded into the path as "?".
-  : > "$tmp/paths"; : > "$tmp/links"; : > "$tmp/nosoft"
-  tr '\0' '\n' < "$tmp/raw" | awk -v pf="$tmp/paths" -v lf="$tmp/links" -v nf="$tmp/nosoft" '
-    function flush() { if (have) { n++; print path > pf; if (link) print n > lf; if (link || sym) print n > nf } have = 0 }
+  : > "$tmp/paths"; : > "$tmp/links"; : > "$tmp/nosoft"; : > "$tmp/status"; : > "$tmp/hmode"
+  tr '\0' '\n' < "$tmp/raw" | awk -v pf="$tmp/paths" -v lf="$tmp/links" -v nf="$tmp/nosoft" -v sf="$tmp/status" -v mf="$tmp/hmode" '
+    function flush() { if (have) { n++; print path > pf; print st > sf; print hm > mf; if (link) print n > lf; if (link || sym) print n > nf } have = 0 }
     /^:[0-7][0-7][0-7][0-7][0-7][0-7] [0-7][0-7][0-7][0-7][0-7][0-7] / && state != 1 {
       flush(); split($0, m, " "); link = (m[1] == ":160000" || m[2] == "160000")
-      sym = (m[1] == ":120000" || m[2] == "120000"); state = 1; next }
+      sym = (m[1] == ":120000" || m[2] == "120000"); st = m[5]; hm = m[2]; state = 1; next }
     state == 1 { path = $0; have = 1; state = 2; next }
     state == 2 { path = path "?" $0; next }
     END { flush() }'
@@ -783,6 +1074,8 @@ _floor_scan() {
   lane_hard_path_exempt "$root" "${KIT_FLOOR_CONFIG_AT:-$base}" > "$tmp/recs" || true   # KIT_FLOOR_CONFIG_AT: the mega gate reads config at the base-branch tip, not the PR-chosen base
   # A secret-shaped path is never a doc, whatever its extension or directory.
   grep -Ein -e "$(_hp_re secret)" "$tmp/paths" 2>/dev/null | cut -d: -f1 >> "$tmp/nosoft" || true
+  # The unblanked list, for the added-workflow rule: a doc or a comment-only file beside the workflow still counts.
+  cp "$tmp/paths" "$tmp/paths.all"
   # Docs never trip a hard path: blank them (line numbers stay valid) before any pattern runs.
   awk 'FILENAME == ARGV[1] { keep[$1] = 1; next }
     !(FNR in keep) && ($0 ~ /\.(md|markdown)$/ || $0 ~ /(^|\/)README\.(md|markdown|txt|rst|adoc)$/ ||
@@ -798,8 +1091,14 @@ _floor_scan() {
     pick="$(_floor_find "$tmp" "$links")"
     [ -n "$pick" ] || break
     best="${pick%%$'\t'*}"; bestkind="${pick#*$'\t'}"
-    if [ "$tries" -lt 50 ] && [ $((SECONDS - t0)) -lt 8 ] && _floor_comment_only "$root" "$base" "$head" "$tmp" "$best" "$bestkind"; then
-      _floor_drop "$tmp" "$best"; tries=$((tries + 1)); best=0; bestkind=""; continue
+    if [ "$tries" -lt 50 ] && [ $((SECONDS - t0)) -lt 8 ]; then
+      if _floor_comment_only "$root" "$base" "$head" "$tmp" "$best" "$bestkind"; then
+        _floor_sized_note "$bestkind" comment-only "comment or blank lines only" "$(sed -n "${best}p" "$tmp/paths")"
+        _floor_drop "$tmp" "$best"; tries=$((tries + 1)); best=0; bestkind=""; continue
+      fi
+      if [ "$bestkind" = ci ] && _floor_workflow_additive "$root" "$base" "$head" "$tmp" "$best" "$bestkind"; then
+        _floor_drop "$tmp" "$best"; tries=$((tries + 1)); best=0; bestkind=""; continue
+      fi
     fi
     break
   done
