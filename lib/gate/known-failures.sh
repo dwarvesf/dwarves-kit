@@ -15,8 +15,6 @@
 #                                          failure set of its own base run).
 #   guard    <root> <base> <goal-file>     exit 1 when the diff touches the known-failures file and the goal file
 #                                          carries no `Known-failures: edit <reason>` line
-#   suite    <root> <base> [<goal-file>]   prints affected | full: the goal file's `Test-suite:` line, else
-#                                          `[test] suite` at <base>, else full
 #   names    <log> <root> <base>           the failure names parsed from <log> (sorted, unique)
 #   count    <log> <root> <base>           the executed count parsed from <log> (empty when none)
 #
@@ -144,25 +142,15 @@ cmd_guard() {
   return 1
 }
 
-cmd_suite() {
-  local root="${1:-}" base="${2:-}" gf="${3:-}" v=""
-  [ -n "$root" ] && [ -n "$base" ] || { echo "usage: known-failures.sh suite <root> <base> [<goal-file>]" >&2; return 64; }
-  [ -z "$gf" ] || v="$(_kf_goal_text "$root" "$base" "$gf" | sed -nE 's/^Test-suite:[[:space:]]+([a-z]+).*$/\1/p' | head -1)"
-  case "$v" in affected|full) printf '%s\n' "$v"; return 0 ;; esac
-  v="$(_kf_cfg "$root" "$base" test.suite full)"
-  case "$v" in affected) printf 'affected\n' ;; *) printf 'full\n' ;; esac
-}
-
 main() {
   local verb="${1:-}"; shift 2>/dev/null || true
   case "$verb" in
     read) cmd_read "$@" ;;
     classify) cmd_classify "$@" ;;
     guard) cmd_guard "$@" ;;
-    suite) cmd_suite "$@" ;;
     names) cmd_names "$@" ;;
     count) cmd_count "$@" ;;
-    *) echo "usage: known-failures.sh {read <root> <base>|classify <log> <root> <base> [--exit n] [--prev-count n]|guard <root> <base> <goal-file>|suite <root> <base> [goal-file]|names|count}" >&2; return 64 ;;
+    *) echo "usage: known-failures.sh {read <root> <base>|classify <log> <root> <base> [--exit n] [--prev-count n]|guard <root> <base> <goal-file>|names|count}" >&2; return 64 ;;
   esac
 }
 
