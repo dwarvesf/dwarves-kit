@@ -25,7 +25,7 @@ Authoritative assignment per ADR-0034 decision 3, renamed by the 2026-07-18 amen
 stage; Specify/Execute/Observe/Govern -> Shape/Build/Watch/Check, Learn kept) and by ADR-0036
 (Learn -> Reflect, the subsystem `learn` -> `reflect`). Old names shown parenthetically for one
 release. Every toggleable module in `lib/config/modules.tsv` (the one module table that
-`install.sh` and `lib/adopt.sh` both read, 12 modules) has exactly one row. `team_mode` is not in that
+`install.sh` and `lib/adopt.sh` both read, 14 modules) has exactly one row. `team_mode` is not in that
 table (install.sh hard-rejects it until team-mode ships), and neither is `spine` (always wired, never a
 toggle), so neither is a row here , the completeness rule is scoped to the table's
 toggleable modules, not to every `[modules]` line in `kit.toml`.
@@ -43,6 +43,7 @@ toggleable modules, not to every `[modules]` line in `kit.toml`.
 | weekend_batch | Reflect (Learn) | |
 | sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. The `board mirror --engine sync` dry-run slice was removed (it had no caller); `lib/sync/cockpit.py` stays for the helpers `sources/hermes.py`, `sources/notion_taskboard_pull.py` and `lib/mega/runs-dashboard.py` import. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
+| proof_capture | Build (Execute) | visual proof capture: `lib/proof-capture/`, the `proof-capture` CLI (`run page`, `run tape`); hookless, standalone (the directory runs with no kit file). The `capture:` line in `proof-gate.sh contract` names it. |
 | money_gate | Check (Govern) | |
 | classify | Shape (Specify) | not a `modules.tsv` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
 | gate | Check (Govern) | spine machinery, same as above (ADR-0034 decision 3). |
@@ -484,6 +485,7 @@ COMMAND invocation via `kit_config_get modules.<name>`.
 | - | modules.quiz_gate | `false` | [impl] | quiz_gate | Hookless; backs `commands/quiz-gate.md`. |
 | - | modules.weekend_batch | `false` | [impl] | weekend_batch | Hookless; backs `lib/queue/weekend-batch.sh`. |
 | - | modules.worktree | `false` | [impl] | worktree | Hookless; exposes the `worktree-provision` CLI. |
+| - | modules.proof_capture | `false` | [impl] | proof_capture | Hookless; exposes the `proof-capture` CLI. The kit path `$DWARVES_KIT/bin/proof-capture` works whether or not this is on; the toggle only decides whether `install.sh` puts a shim on `PATH`. |
 | - | modules.money_gate | `false` | [impl] | money_gate | `money-gate.sh` PreToolUse guard; inert without `MONEY_GATE_REPOS`. |
 | - | modules.prose_rag | `false` | [impl] | prose_rag | `prose-rag.sh` recall inject + CLI; dormant without `PROSE_RAG_INJECT=1`. |
 | - | modules.sync | `false` | [impl] | sync | hookless; `board sync` two-way spoke mirror, inert without `[sync] sources`. |

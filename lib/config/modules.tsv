@@ -32,6 +32,7 @@ stats	opt-in	-	-
 quiz_gate	opt-in	-	-
 weekend_batch	opt-in	-	-
 worktree	opt-in	-	worktree-provision
+proof_capture	opt-in	-	proof-capture
 money_gate	opt-in	PreToolUse:money-gate.sh	-
 prose_rag	opt-in	UserPromptSubmit:prose-rag.sh	prose-rag
 sync	opt-in	-	-
