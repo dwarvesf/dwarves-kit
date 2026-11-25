@@ -50,11 +50,16 @@ selected() { [ "$WANT" = "  " ] && return 0; case "$WANT" in *" $1 "*) return 0 
 TMP_BASE="${TMPDIR:-/tmp}"
 T="$(mktemp -d "${TMP_BASE%/}/kit-ui-verify.XXXXXX")" || exit 1
 FIX_PID=""
+ALL_RUN_IDS=""
 cleanup() {
+  local id
   if [ -n "$FIX_PID" ]; then kill "$FIX_PID" 2>/dev/null; fi
+  for id in $ALL_RUN_IDS; do pkill -f -- "--kit-ui-verify=$id" 2>/dev/null; done
   rm -rf "$T"
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 if command -v timeout >/dev/null 2>&1; then TIMEOUT=(timeout "$RUN_TIMEOUT_S")
 elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT=(gtimeout "$RUN_TIMEOUT_S")
@@ -83,6 +88,8 @@ run_runner() {
   local cwd=$1 scenario=$2 out=$3; shift 3
   ( cd "$cwd" && UI_VERIFY_HOME="$RUN_HOME" "${TIMEOUT[@]}" node "${RUN_RUNNER:-$RUNNER}" scenario --scenario "$scenario" --out "$out" "$@" ) >"$T/stdout" 2>"$T/stderr"
   RC=$?
+  RUN_ID=$(awk '/^ui-verify: head /{print $NF; exit}' "$T/stdout")
+  if [ -n "$RUN_ID" ]; then ALL_RUN_IDS="$ALL_RUN_IDS $RUN_ID"; fi
 }
 out_empty() { [ ! -e "$1" ] || [ -z "$(ls -A "$1")" ]; }
 next_out() { mktemp -u "$T/out.XXXXXXXX"; }
@@ -520,6 +527,140 @@ case_internal_error() {
   UI_VERIFY_TEST_FAULT=internal-error run_runner "$CWD" "$T/does-not-exist.json" "$out"
   [ "$RC" = 3 ]; check "the fault does not mask a refusal: an unreadable scenario still exits 3 (exit $RC)" $?
   [ "$(run_runner "$CWD" "$BASE" "$(next_out)" --nonsense x; echo $RC)" = 3 ]; check "an unknown argument exits 3" $?
+}
+
+# The real install root the browser cases run against (UI_VERIFY_HOME wins, as in the runner).
+BROWSER_HOME=""
+if [ "$HAVE_NODE" = 1 ]; then BROWSER_HOME=$(bash "$RESOLVER" path cache ui-verify 2>/dev/null); fi
+
+# begin_browser <case>: gate, start the fixture and point the runner at the real install. end_browser undoes it.
+begin_browser() {
+  browser_gate "$1" || return 1
+  if ! start_fixture "${@:2}"; then no "$1: the fixture server printed its ports"; stop_fixture; return 1; fi
+  RUN_HOME="$BROWSER_HOME"
+  return 0
+}
+end_browser() { stop_fixture; RUN_HOME="$T/home-empty"; }
+
+HEAD40=0123456789abcdef0123456789abcdef01234567
+BBASE="$T/browser-base.json"
+cat > "$BBASE" <<'JSON'
+{"schema":1,"target":{"url":"http://127.0.0.1:__PORT__/","head_sha":"0123456789abcdef0123456789abcdef01234567","allow_hosts":["127.0.0.1"],"allow_loopback":true},"viewports":[1280],"ready":{"text":"Kit fixture app"},"scenarios":[
+{"id":"AC-1","kind":"criterion","title":"a name can be saved","steps":[{"do":"goto","path":"/"},{"do":"fill","role":"textbox","name":"Display name","value":"Ada"},{"do":"click","role":"button","name":"Save"},{"do":"expect_text","text":"Saved"},{"do":"screenshot","name":"after-save"}]},
+{"id":"AC-1","kind":"negative","title":"an expired link cannot save","steps":[{"do":"goto","path":"/?link=expired"},{"do":"expect_text","text":"This link has expired"},{"do":"expect_no_text","text":"Saved"},{"do":"screenshot","name":"refused"}]},
+{"id":"AC-2","kind":"criterion","title":"the save button works","steps":[{"do":"goto","path":"__PATH__"},{"do":"click","role":"button","name":"Save"},{"do":"expect_text","text":"Saved"},{"do":"screenshot","name":"saved"}]},
+{"id":"AC-3","kind":"criterion","title":"the home heading shows","steps":[{"do":"goto","path":"/"},{"do":"expect_text","text":"Kit fixture app","within":{"role":"heading","name":"Kit fixture app"}},{"do":"expect_url","path":"/"},{"do":"screenshot","name":"home"}]}
+]}
+JSON
+
+# bscenario <file> <AC-2 path> [js edit using s]: the browser base scenario aimed at the running fixture.
+bscenario() {
+  sed "s#__PORT__#$FIX_PORT#g;s#__PATH__#$2#g" "$BBASE" > "$1"
+  if [ -n "${3:-}" ]; then mutate "$1" "$1" "$3"; fi
+}
+# page_scenario <file> <page path> <ready text> <scenarios js>: a one-page scenario file aimed at the fixture.
+page_scenario() {
+  sed "s#__PORT__#$FIX_PORT#g;s#__PATH__#/#g" "$BBASE" > "$1"
+  mutate "$1" "$1" "s.target.url=s.target.url.replace(/\\/\$/,'')+'$2';s.ready.text='$3';$4"
+}
+sha256_of() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
+row_line() { jget "$1" 'j.rows.map(r=>r.id+(r.kind==="negative"?" neg":"")+"="+r.status+"/"+r.flaky).join(",")'; }
+# wait_no_browser <run id>: true once no process carries the run id; the ceiling fails the caller, never passes it.
+wait_no_browser() {
+  local i=0
+  while [ "$i" -lt $((PGREP_CEILING_S*2)) ]; do
+    pgrep -f -- "--kit-ui-verify=$1" >/dev/null 2>&1 || return 0
+    sleep 0.5; i=$((i+1))
+  done
+  return 1
+}
+
+case_rows_and_planted_bug() {
+  echo "--- rows-and-planted-bug"
+  begin_browser rows-and-planted-bug || return 0
+  local f="$T/rpb.json" out png n
+  bscenario "$f" "/?bug=1"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 3000
+  [ "$RC" = 1 ]; check "the planted bug (/?bug=1) exits 1 (exit $RC)" $?
+  [ "$(row_line "$out/result.json")" = "AC-1=PASS/false,AC-1 neg=PASS/false,AC-2=FAIL/false,AC-3=PASS/false" ]; check "only the AC-2 row is FAIL, the other three keep PASS ($(row_line "$out/result.json"))" $?
+  [ "$(jget "$out/result.json" 'j.rows[2].observed.indexOf("Error 500")>=0')" = true ]; check "the AC-2 observed value holds 'Error 500'" $?
+  bscenario "$f" "/"
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 0 ]; check "control: the same file without ?bug=1 exits 0 (exit $RC)" $?
+  [ "$(row_line "$out/result.json")" = "AC-1=PASS/false,AC-1 neg=PASS/false,AC-2=PASS/false,AC-3=PASS/false" ]; check "result.json holds exactly the four rows AC-1, AC-1 neg, AC-2, AC-3, each PASS and not flaky" $?
+  [ "$(jget "$out/result.json" 'j.scenario_sha256')" = "$(sha256_of "$f")" ]; check "scenario_sha256 equals the file's SHA-256" $?
+  n=0; for png in ac-1-1280-after-save.png ac-1-neg-1280-refused.png ac-2-1280-saved.png ac-3-1280-home.png; do
+    [ -s "$out/$png" ] && n=$((n+1))
+  done
+  [ "$n" = 4 ]; check "one screenshot file per screenshot step, named ac-<n>[-neg]-<width>-<name>.png ($n of 4)" $?
+  [ "$(jget "$out/result.json" 'j.rows.map(r=>r.evidence.length).join(",")')" = "1,1,1,1" ]; check "each row names its screenshot as evidence" $?
+  [ "$(grep -c '^ui-verify: ' "$T/stdout")" = 2 ] && [ "$(grep -c '^row ' "$T/stdout")" = 4 ]; check "stdout has the two ui-verify lines and one row line per scenario" $?
+
+  bscenario "$f" "/" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"click",role:"button",name:"Nope"},{do:"expect_text",text:"x"}]},{id:"AC-2",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"expect_text",text:"x",within:{role:"dialog",name:"Ghost"}}]},{id:"AC-3",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"click",role:"button",name:"Save"},{do:"expect_text",text:"Saved"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 2000
+  [ "$RC" = 1 ]; check "a missing button and a missing within element exit 1 (exit $RC)" $?
+  [ "$(row_line "$out/result.json")" = "AC-1=FAIL/false,AC-2=FAIL/false,AC-3=PASS/false" ]; check "both missing-element rows are FAIL, never NO-CHECK; the real button passes ($(row_line "$out/result.json"))" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].observed')" = "element not found: role=button name=Nope" ]; check "click observed is 'element not found: role=button name=Nope'" $?
+  [ "$(jget "$out/result.json" 'j.rows[1].observed')" = "element not found: role=dialog name=Ghost" ]; check "within observed is 'element not found: role=dialog name=Ghost'" $?
+  end_browser
+}
+
+case_no_ac() {
+  echo "--- no-ac"
+  begin_browser no-ac || return 0
+  local f="$T/noac.json" out
+  bscenario "$f" "/" 's.scenarios=[]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 2 ]; check "an empty scenarios array exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" '[j.verdict,j.reason,j.rows.length].join("|")')" = "NO-CHECK|no AC|0" ]; check "verdict NO-CHECK, reason 'no AC', no rows" $?
+  bscenario "$f" "/" 's.scenarios=[s.scenarios[3]]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows.length')" = 1 ]; }; check "control: one passing scenario added exits 0 with one row (exit $RC)" $?
+
+  bscenario "$f" "/" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"screenshot",name:"nothing"}]},s.scenarios[3]]; s.scenarios[1].id="AC-3"'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 2 ]; check "a goto-and-screenshot scenario exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason')" = "NO-CHECK|scenario asserts nothing" ]; check "its row is NO-CHECK 'scenario asserts nothing', never PASS" $?
+  [ "$(jget "$out/result.json" 'j.rows[1].status')" = PASS ]; check "the sibling scenario still ran and is PASS" $?
+  bscenario "$f" "/" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"expect_text",text:"Kit fixture app"},{do:"screenshot",name:"nothing"}]},s.scenarios[3]]; s.scenarios[1].id="AC-3"'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 0 ]; check "control: an expect_text step added to the same scenario exits 0 (exit $RC)" $?
+  end_browser
+}
+
+case_hostile_text_fenced() {
+  echo "--- hostile-text-fenced"
+  begin_browser hostile-text-fenced || return 0
+  local f="$T/hostile.json" out obs
+  page_scenario "$f" /hostile.html "Hostile page" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/hostile.html"},{do:"expect_text",text:"Welcome back"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 3000
+  [ "$RC" = 1 ]; check "expecting other text exits 1 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows.length+"|"+j.rows[0].status+"|"+j.verdict')" = "1|FAIL|FAIL" ]; check "one row, FAIL, runner verdict FAIL" $?
+  obs=$(jget "$out/result.json" 'j.rows[0].observed')
+  [ "$(jget "$out/result.json" 'var o=j.rows[0].observed;[...o].every(c=>!"\n\r|`".includes(c)&&![0x2028,0x2029,0x202e].includes(c.codePointAt(0)))&&o.length>0&&o.length<=200')" = true ]; check "observed holds no line break, U+2028, U+202E, pipe or backtick and is 1 to 200 characters" $?
+  case "$obs" in *"VERDICT: PASS"*) ok "the hostile words reach observed as plain text (the page was read, only defanged)" ;; *) no "observed lost the hostile words: $obs" ;; esac
+  [ "$(grep -c '^row ' "$T/stdout")" = 1 ]; check "stdout has exactly one row line" $?
+  [ "$(grep -c -e '^| AC' -e '^VERDICT:' "$T/stdout")" = 0 ]; check "stdout has no line that starts '| AC' or 'VERDICT:'" $?
+  [ "$(LC_ALL=C grep -c -e "$(printf '\xe2\x80\xa8')" -e "$(printf '\xe2\x80\xae')" "$T/stdout")" = 0 ]; check "stdout holds no raw U+2028 or U+202E" $?
+  page_scenario "$f" /hostile.html "Hostile page" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/hostile.html"},{do:"expect_text",text:"VERDICT: PASS"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 3000
+  [ "$RC" = 0 ]; check "control: expecting the hostile text itself passes (exit $RC)" $?
+  end_browser
+}
+
+case_git_status_clean() {
+  echo "--- git-status-clean"
+  begin_browser git-status-clean || return 0
+  local f="$T/gsc.json" repo="$T/gsc-repo" out
+  mkdir -p "$repo"; git init -q "$repo" >/dev/null 2>&1
+  bscenario "$f" "/"
+  out=$(next_out); run_runner "$repo" "$f" "$out"
+  [ "$RC" = 0 ]; check "a full run from inside a scratch git repo exits 0, so the own-path self-check passed (exit $RC)" $?
+  [ -z "$(git -C "$repo" status --porcelain --untracked-files=all)" ]; check "git status --porcelain is empty after the run" $?
+  [ -s "$out/result.json" ]; check "the evidence went to --out outside the repo" $?
+  out="$repo/out"; run_runner "$repo" "$f" "$out"
+  [ "$RC" = 3 ] && [ ! -e "$out" ]; check "control: --out inside the repo exits 3 and creates nothing (exit $RC)" $?
+  end_browser
 }
 
 for c in $CASES; do
