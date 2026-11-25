@@ -143,6 +143,27 @@ Board grammar, shared by rows 8, 16 and 20 (the file is optional; the format is 
 
 A stamp run never edits adopt's managed `<!-- kit:adopt -->` block.
 
+### CI trust design (security review)
+
+Three jobs, one trust rule: a job that judges a pull request executes nothing from the pull request.
+
+| Job | Runs | Never |
+|---|---|---|
+| `changes` | the owners check and the path filter, both copied from the BASE revision | executes a file from the PR head |
+| `pr-shape` | `scripts/pr-shape.sh` copied from the BASE revision, shellcheck pinned by digest | executes a file from the PR head (shellcheck reads changed files and does not run them) |
+| `tests` | the PR's own `scripts/test-*.sh`: untrusted code by design | shares a temp dir or an artifact with the other jobs |
+
+Every job carries `if: github.event.pull_request.head.repo.full_name == github.repository`, so a fork's pull request does not run on the self-hosted runner. A skipped job leaves its check missing and the merge guard refuses. A base that holds no copy of a gate script (the pull request that introduces the stamp) fails the job: it is merged by hand after a second person reads it. The workflow comment and both rules docs say: use an ephemeral runner or a container job, a long-lived runner keeps what a pull request's tests write, not for public repos. `scripts/check.sh` still runs all three locally (the twin set is unchanged).
+
+GitHub runs the workflow file of a pull request from the pull request's own merge commit, so the base-copy rule protects the scripts and not the workflow. The merge guard is what binds the workflow (below), and the workflow files are doors.
+
+### Merge guard trust design (security review)
+
+- Both checks `changes` and `pr-shape` must have passed from the workflow named `CI`, each on the head the guard judged; a status context or another workflow of the same name does not count.
+- Default doors, always on: `.github/workflows/`, `scripts/`, `.claude/`, `OWNERS.md`, `AGENTS.md`, `docs/TEAM-WORKFLOW.md`, `.kit.toml`. `--door-paths` adds to them. A change to the hook settings, the lessons index or an `agent-*` script runs in every teammate's next session, so it is a door; the rules docs say so. The first pull request that introduces the stamp touches every door.
+- An approval counts only when it is the reviewer's latest decision, its `commit.oid` equals the judged head, its `authorAssociation` is OWNER, MEMBER or COLLABORATOR, the reviewer is not the author and not a bot (`[bot]` suffix or `app/` prefix), and, when `{{DOOR_APPROVER}}` is set, the login matches. A field `gh pr view --json reviews` does not report (checked against a real read-only call: `reviews[].authorAssociation`, `reviews[].commit.oid`, `reviews[].author.login`) means the approval does not count.
+- Self-copy check: the guard refuses to run when its text differs from `origin/<default>:scripts/pr-merge.sh` (after a fetch whose failure it reports), with `Fix: git checkout <default> && git pull, then run it again`; with no copy on the default branch it refuses and says to merge the first stamp pull request by hand. No `Fix:` line tells anyone to check out a pull request and run its scripts: the conflict fix is `gh pr update-branch <n>`. Limit: a pull request's copy that removed the check is not stopped by it; the protection is that nobody is told to run that copy and that `scripts/` is a door.
+
 ### Picture and lock states
 
 The wiring picture is `## Picture` above. The states a file passes through, as the engine decides them from three hashes (current file, lock, rendered template):
@@ -297,6 +318,11 @@ none (no `docs/QUALITY.md` entry is touched).
 | AC19 scan-safe digests: the lock writes every hash as `sha256:<hex>`, and any hash a generated file carries (the shellcheck pin in `ci.yml`) is `sha256=<hex>` or `sha256: <hex>`; staging a full stamp leaves no bare 64-hex run outside those markers; no template or test fixture in the kit holds a hex literal of 40 or 64 digits (digests are computed at run time) | `tests/test-stamp.sh` staged-diff scan; per group, the same scan over its stamp |
 | AC17 limits and guidance: the limit sentence, the optional-kit section and the trust-the-folder step appear in both docs; `.kit.toml` sets `proof_of_done = true` and `lane_gates = false`; the vendor contract is re-read at build time and the build records the fetch in `docs/implementation-notes/team-stamp.md` | `tests/test-stamp-rules.sh`; the implementation notes |
 | AC18 repo-living files: a `seed` or `hook` file the repo edited never drifts; `--check` is clean on a healthy repo after the repo edits `OWNERS.md`, `CHANGELOG.md` and `MEMORY.md` | `tests/test-stamp.sh` |
+| AC20 CI trust: `changes` and `pr-shape` run no file from the PR head; `tests` is its own job that reads nothing the others read; every job carries the fork guard; a base with no gate copy fails the job; the header says the workflow comes from the PR and to use an ephemeral runner | `tests/test-stamp-ci.sh` |
+| AC21 merge guard trust: both checks from workflow CI are required; the harness files are doors and `--door-paths` adds; an approval counts only at the judged head from OWNER, MEMBER or COLLABORATOR, not a bot, not the author; the guard refuses a copy that differs from `origin/<default>` and the bootstrap case; no Fix line checks out a PR | `scripts/test-pr-merge.sh`, `tests/test-stamp-merge.sh` |
+| AC22 engine hardening: a flag value with a newline, CR or tab is refused first; `..` and a leading `/` are refused in path-like values; every run prints the values and their source; the take backup never goes through a symlink | `tests/test-stamp.sh` |
+| AC23 one rule-line filter: no colon, 80 characters, in every generated script; titles, ids and file names never forge a `Fix:` line; the digest filters titles; the guard reads `\gh`; negctl refuses a mutate command that moved HEAD | `tests/test-stamp-refusals.sh`, the generated tests |
+| AC24 gauntlet checker trust: the host never opens the probe's repository or runs its files; a hostile repository leaves no marker on the host; an edited gate script fails check 9; the key scrub scans binaries and scans again | `tests/gauntlet/team-stamp/tier1.sh` |
 | AC16 negative control: making the guard allow a bare merge, making the render skip the kit-path scan, and making `write_if_absent` overwrite each turn the matching test red | `docs/verification/team-stamp.md` |
 
 ## Verification
@@ -401,6 +427,12 @@ Per-group suites (`tests/test-stamp-<group>.sh`) run as each group lands. Negati
 
 - DEC-12: a `hook` row kind lets one generator script build a file from the merged manifest (the owners seed). Rejected: seeding in group G4, which runs before G8 and cannot know the CI files.
 - DEC-13: repo-living files (`OWNERS.md`, `CHANGELOG.md`, `MEMORY.md`) are `seed` rows. Rejected: lock hashes for them, which made `--check` fail on a healthy repo.
+- DEC-15: three CI jobs (changes, pr-shape, tests) with a fork guard on each; the gate jobs run only base copies. Rejected: one job running everything in order (a PR test could swap the gate), and a separate workflow for the tests (a second workflow name to pin).
+- DEC-16: the harness files are default doors and `--door-paths` adds to them. Rejected: leaving doors empty by default (the workflow, the hook and the guard itself would merge on a green check alone).
+- DEC-17: an approval counts at the judged head, from OWNER, MEMBER or COLLABORATOR, not a bot, not the author. Rejected: counting any approval (a stale one, an outside account on a public repo, or a bot would unlock a door).
+- DEC-18: the merge guard refuses to run when its text differs from the default branch copy. Rejected: nothing else; it costs one fetch and closes the "run the PR's copy" path.
+- DEC-19: one rule-line filter in every generated script: drop the colon, keep a short set of safe characters, cut at 80 characters. Titles, ids and file names reach a rule line only through it.
+- DEC-20: the gauntlet checker never opens the probe's repository: a bundle made inside the room, cloned into a directory the checker creates, with pristine gate scripts laid over it as data.
 - DEC-14: `pr-merge.sh` carries only the brief's behaviors. The hand-fitted repo's `--allow-ci-change`, stale-rules refusal and kit merge environment variable are dropped.
 
 ## Open questions
@@ -464,6 +496,15 @@ Source: this spec's ## Acceptance Criteria
 | 47 | Docs pin the limit sentence, the optional-kit section, the trust step, and the `.kit.toml` keys | regression | AC17 | each present in both docs | `bash tests/test-stamp-rules.sh` |
 | 48 | Repo edits `OWNERS.md`, `CHANGELOG.md`, `MEMORY.md`, then `--check` | regression | AC18 | exit 0, no drift line | `bash tests/test-stamp.sh` |
 | 49 | Guard probes: `git checkout README.md; git commit` on the default branch, `env -i git commit`, `timeout 5 git push origin main`, `git push --all`, `git push --mirror`, `gh api .../merge`, `$g pr merge` | security/abuse | AC8 | each blocked with a test, or named as a known miss in the lessons note | `bash scripts/test-agent-guard.sh` |
+| 52 | Fork guard on every job; tests job reads nothing the gate jobs read; base with no gate copy fails | security/abuse | AC20 | each asserted on the workflow text and on the extracted step | `bash tests/test-stamp-ci.sh` |
+| 53 | Default door paths with no approval refused, with an approval at the head merged; --door-paths adds | security/abuse | AC21 | refused or merged as stated | `bash scripts/test-pr-merge.sh` |
+| 54 | Approval at an older head, CONTRIBUTOR, NONE, FIRST_TIME_CONTRIBUTOR, `[bot]`, `app/`, missing association, missing commit | security/abuse | AC21 | each refused | `bash scripts/test-pr-merge.sh` |
+| 55 | Only one of the two checks, or from another workflow, or as a status context | security/abuse | AC21 | refused | `bash scripts/test-pr-merge.sh` |
+| 56 | An edited copy of the guard, and a default branch with no copy | security/abuse | AC21 | refused with the checkout-and-pull fix, and the merge-by-hand fix | `bash scripts/test-pr-merge.sh` |
+| 57 | Newline, CR and tab in every flag; dot-dot and absolute paths; a planted lock; a dangling symlink at `.orig.1` | security/abuse | AC22 | refused or skipped, nothing written through the link | `bash tests/test-stamp.sh` |
+| 58 | A file, section or board named `scripts/a Fix: bash x.sh` for each script that prints a name; hostile digest titles | security/abuse | AC23 | no forged Fix line, no raw payload | `bash tests/test-stamp-refusals.sh`, `bash scripts/test-team-digest.sh` |
+| 59 | `\gh pr merge 5` is blocked; a mutate command that commits is refused | security/abuse | AC23 | blocked or refused | `bash scripts/test-agent-guard.sh`, `bash scripts/test-negctl.sh` |
+| 60 | A hostile repository (fsmonitor, hooks path, external diff, alias, edited check.sh), a directory, a junk bundle, a missing base | security/abuse | AC24 | no marker on the host; check 9 names the script; refusals | `bash tests/gauntlet/team-stamp/tier1.sh` |
 | 51 | Stamp a scratch repo, `git add -A`, scan the staged diff for a 64-hex run not directly after `sha256:`, `sha256: `, `sha256=`, `sha256-`, `sha256 "` or `sha256 '`; the scan flags a bare run and passes a marked one | security/abuse | AC19 | none found; scanner self-test red then green | `bash tests/test-stamp.sh` |
 | 50 | Whole-diff privacy scan with the denylist | security/abuse | AC14 | zero matches with the list; one SKIP line and a pass without it; the generic leak scan fails either way on a leak | `bash tests/test-stamp-e2e.sh` |
 | 40 | Negative controls: guard allows bare merge; scan skipped; overwrite enabled | regression | AC16 | the matching test goes red, restore goes green | `docs/verification/team-stamp.md` |
