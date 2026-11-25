@@ -316,7 +316,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
  Ad hoc on any load-bearing claim: [D] claim-verifier ──> HOLDS / REFUTED majority verdict.
  Lib verbs on this path: [V] classify floor / lane data / push-refs feed ship-gate; [V] recheck-sample
  decide + check-edit feed /kit:execute; [V] spec-depth feeds /kit:spec; [V] stats ceremony + board work
- are read-only views; [V] orchestrate --backend orca is the opt-in /kit:mega backend; [V] adopt pointer
+ are read-only views; [V] board state-check is the consumer repo's state-drift guard; [V] orchestrate --backend orca is the opt-in /kit:mega backend; [V] adopt pointer
  is /kit:adopt's writer.
  Ad hoc production alert: [D] devops-triage ──> bounded root-cause verdict (read-only).
  Standing Check hooks: secrets-guard [E, HARD], commit-format [E, HARD when [gate] commit_format is on],
@@ -521,6 +521,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 |---|
 | `[V] adopt pointer -> lib/adopt.sh injects AGENTS.md pointer + proof marker + CLAUDE.md loader -> hash-safe, idempotent (terminal: adopted repo)` |
 | `[V] board work -> lib/board/work.sh joins board rows, mega sub-goals, git, Orca terminals, ledger rung -> one table of who is on what (read-only)` |
+| `[V] board state-check -> lib/board/state_check.py reads the repo's own registry and its stored values -> report, block new drift at commit, or repair projection rows (read-only unless --fix)` |
 | `[V] check-edit -> lib/gate/check-edit.sh diffs the build against a base ref -> did the build weaken the checks the spec names (execute signal)` |
 | `[V] classify floor -> lib/classify/lane-classify.sh reads the diff -> full on a hard path, else the size floor (feeds ship-gate)` |
 | `[V] classify risk -> lib/classify/lane-classify.sh scores task + files -> full or the chosen lane (advisory)` |
