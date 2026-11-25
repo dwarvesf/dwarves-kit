@@ -15,7 +15,7 @@ The Hermes, Notion, Reminders, Multica and GitHub connectors moved out of core `
 | 9 | Health and brief | `bash tests/test-board-health.sh`, `bash tests/test-board-brief.sh` | 102 passed; 260 passed | PASS |
 | 10 | Config registry, kit contract, state-check | three suites | 60/60; 25 passed; 124 of 124 | PASS |
 | 11 | Meta | `bash tests/test-meta.sh` | 943 / 943 | PASS |
-| 12 | Personal paths and boundary | `bash tests/test-no-personal-paths.sh`, `bash lib/gate/boundary-lint.sh` | 3 / 3 passed; lint reports one hit in a file this change does not own (see below) | PASS with note |
+| 12 | Personal paths and boundary | `bash tests/test-no-personal-paths.sh`, `bash lib/gate/boundary-lint.sh` | 3 / 3 passed; `boundary-lint: PASS` on the final tree (see below) | PASS |
 | 13 | No test lost | `comm` of test names, master against branch | 0 missing; 273 before, 331 after | PASS |
 | 14 | Negative controls | see NEGATIVE CONTROLS | each goes red, restored | PASS |
 
@@ -181,6 +181,6 @@ One independent Opus review of the whole diff for behaviour preservation and sec
 - CI: not run. The org's runner pools are down.
 - `tests/test-wrap-land.sh` and `tests/test-adopt.sh`: not run. Each has a known red on master that is not part of this change.
 - Any live sync: never run, by design. Every suite uses fixtures, stubs and dry-run seams. No real store, Hermes home, Notion, Reminders, Multica, GitHub write or Discord was reached.
-- `bash lib/gate/boundary-lint.sh` is not clean: it reports one hit, `tests/test-state-check.sh:365`, a line that arrived with the state-check change this branch is stacked on. The same hit appears on that change's own branch. This change adds no hit: one phrase in a moved dated spec was reworded so the path check passes.
+- `bash lib/gate/boundary-lint.sh` prints `boundary-lint: PASS` on the final tree. An earlier run reported one hit, `tests/test-state-check.sh:365`, a line that arrived with the state-check change this branch is stacked on; that change fixed it on its own branch and the fix was merged in here. This change added no hit: one phrase in a moved dated spec was reworded so the path check passes.
 - Finding 4 has no committed test, only the manual check above.
 - The first live proof is the post-merge check in the spec (section Risk and rollback), read only, on the first hourly tick that starts after the merge. Until then the only evidence for the live paths is the fixtures and the golden.
