@@ -905,7 +905,7 @@ AWK
 # Returns 1 on any read error, more than 50 files, a file over 200000 bytes, a byte count that is not all
 # digits, or a file the base program cannot classify; the caller then keeps the floor.
 _floor_wf_read() {
-  local root="$1" rev="$2" out="$3" tmp="$4" f n=0 img="$tmp/wf.rd" list="$tmp/wf.ls" bytes
+  local root="$1" rev="$2" out="$3" tmp="$4" f n=0 img="$tmp/wf.rd" list="$tmp/wf.ls" bytes cr=$'\r'
   _floor_git "$root" ls-tree -r -z --name-only "$rev" -- .github/workflows > "$list" 2>/dev/null || return 1
   while IFS= read -r -d '' f; do
     n=$((n + 1)); [ "$n" -le 50 ] || return 1
@@ -913,6 +913,12 @@ _floor_wf_read() {
     bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
     case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
     [ "$bytes" -le 200000 ] || return 1   # chk:R5
+    # Byte rule, before the classifier reads anything: only 0x20 to 0x7E and LF, plus CR when it ends a line. A bare
+    # CR, a tab, a NUL, NEL, LS, PS, a BOM or any byte from 0x80 up is a line break or a hidden character that a
+    # YAML reader may honor and the line reader does not, so such a base file keeps the floor.
+    LC_ALL=C sed "s/$cr\$//" "$img" > "$tmp/wf.cr" 2>/dev/null || return 1   # chk:R10
+    LC_ALL=C tr -d '\040-\176\n' < "$tmp/wf.cr" > "$tmp/wf.bad" 2>/dev/null || return 1   # chk:R10
+    [ ! -s "$tmp/wf.bad" ] || return 1   # chk:R10
     LC_ALL=C awk "$_WF_BASECHECK" "$img" >> "$out" 2>/dev/null || return 1   # chk:F3 F4
   done < "$list"
   return 0
