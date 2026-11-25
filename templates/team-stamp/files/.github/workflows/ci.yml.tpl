@@ -9,11 +9,14 @@
 # both checks `changes` and `pr-shape` passed on the head it judged, each from the workflow named CI,
 # and a pull request that touches .github/workflows/ is a door that needs a second person's approval.
 #
-# Runners. A self-hosted runner executes pull request code (the `tests` job runs the pull request's
-# own scripts/test-*.sh). Use an ephemeral runner or a container job: a long-lived runner keeps what
-# a pull request's tests write, for the next run, the next pull request and the other repos on that
-# host. Not for public repos. A pull request from a fork does not run here: every job carries the
-# `if:` guard below. A skipped job leaves its check missing, and the merge guard then refuses.
+# Runners. Nothing in this file executes a file from a pull request: both jobs run only scripts
+# copied from the base revision. A job that runs the pull request's own code (tests, builds) belongs
+# on a separate runner label or in a container job, never on the runner that runs `changes` and
+# `pr-shape`: a long-lived runner keeps what a pull request's code writes, for the next run, the next
+# pull request and the other repos on that host. Not for public repos. A pull request from a fork
+# does not run here: the two jobs carry the `if:` guard below. A skipped job leaves its check
+# missing, and the merge guard then refuses. scripts/check.sh runs the generated script tests on
+# your own machine.
 #
 # Jobs
 #   changes    scripts/check-owners.sh (every script and workflow has an owner), then a path filter
@@ -22,8 +25,6 @@
 #              scripts/pr-merge.sh waits for this job to pass, so keep the job name changes.
 #   pr-shape   scripts/pr-shape.sh with the title and body of the pull request (title, proof file,
 #              board link, changelog tag, shellcheck, rule parity).
-#   tests      the pull request's own scripts/test-*.sh. This is untrusted code by design: it gets
-#              nothing the other jobs read (its own temp dir, no artifact, no output).
 #
 # `changes` and `pr-shape` run ONLY scripts copied from the base revision. They never execute a file
 # from the pull request head; shellcheck reads changed files and does not run them.
@@ -37,7 +38,6 @@
 # same inputs. Keep this list and the same list at the top of scripts/check.sh in step with the jobs.
 #   twin: check-owners.sh
 #   twin: pr-shape.sh env PR_TITLE PR_BODY BASE_SHA HEAD_SHA
-#   twin: test-*.sh
 #
 # Pins. Every action is pinned by a full commit sha, with its release tag in the comment after it.
 # The shellcheck release is pinned by tag and by the sha256 of each build; a download whose digest
@@ -174,58 +174,10 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash "$RUNNER_TEMP/gate/pr-shape.sh"
 
-  # The pull request's own tests. Untrusted code by design: nothing here is read by another job.
-  tests:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Install pinned shellcheck
-        env:
-          SHELLCHECK_VERSION: "0.11.0"
-        run: |
-          set -euo pipefail
-          case "$(uname -s)-$(uname -m)" in
-            Linux-x86_64) platform="linux.x86_64"; want="sha256=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6" ;;
-            Linux-aarch64 | Linux-arm64) platform="linux.aarch64"; want="sha256=68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc" ;;
-            Darwin-x86_64) platform="darwin.x86_64"; want="sha256=c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51" ;;
-            Darwin-arm64 | Darwin-aarch64) platform="darwin.aarch64"; want="sha256=339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f" ;;
-            *) echo "shellcheck: no pinned build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
-          esac
-          asset="shellcheck-v${SHELLCHECK_VERSION}.${platform}.tar.gz"
-          dir="$(mktemp -d)"
-          mkdir -p "$dir"
-          curl -fsSL --retry 3 -o "$dir/$asset" \
-            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${asset}"
-          if command -v sha256sum >/dev/null 2>&1; then
-            got="$(sha256sum "$dir/$asset")"
-          else
-            got="$(shasum -a 256 "$dir/$asset")"
-          fi
-          got="${got%% *}"
-          if [ "$got" != "${want#sha256=}" ]; then
-            echo "shellcheck: the digest of $asset is sha256=$got, not the pinned ${want}" >&2
-            exit 1
-          fi
-          tar -xzf "$dir/$asset" -C "$dir"
-          echo "$dir/shellcheck-v${SHELLCHECK_VERSION}" >> "$GITHUB_PATH"
-          "$dir/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" --version
-
-      - name: Script tests
-        run: |
-          set -euo pipefail
-          for t in scripts/test-*.sh; do
-            [ -f "$t" ] || continue
-            echo "run: $t"
-            bash "$t"
-          done
-
-  # The repo's own build and test jobs go here, one per toolchain. Each one waits for the filter:
+  # The repo's own build and test jobs go here, one per toolchain, as a stub for now. A job that runs
+  # the pull request's own code belongs on a SEPARATE runner label or in a container job, never on
+  # the runner that runs `changes` and `pr-shape`. Each one waits for the filter:
   #   needs: changes
   #   if: needs.changes.outputs.product == 'true'
-  # runs on [self-hosted] like the jobs above, pins every action by full commit sha, and passes no
-  # pull request text into a run: line (use an env: entry).
+  # pins every action by full commit sha, and passes no pull request text into a run: line (use an
+  # env: entry). It does not run on [self-hosted] alone: give it its own label.

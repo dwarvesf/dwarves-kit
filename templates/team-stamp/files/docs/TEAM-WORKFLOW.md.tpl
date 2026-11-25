@@ -53,7 +53,7 @@ A one-way door is hard to undo after it ships. A charged customer cannot be un-c
 | Paths the merge guard checks | {{DOOR_PATHS}} |
 | Who says the second yes for those paths | {{DOOR_APPROVER}} |
 
-A blank path cell means no path is added to the harness's own files, which are always doors: `.github/workflows/`, `scripts/`, `.claude/`, `OWNERS.md`, `AGENTS.md`, `docs/TEAM-WORKFLOW.md` and `.kit.toml`. A pull request that touches a door needs an approval from a second person on the head the merge guard judged, from an owner, member or collaborator who is not the author and not a bot. A blank approver cell means any such person. Review a change to the hook settings, the lessons index or an `agent-*` script as code that runs in every teammate's next session. The first pull request that introduces the stamp touches every door: a second person reads it, and it is merged by hand.
+A blank path cell means no path is added to the harness's own files, which are always doors: `.github/` (the whole directory), `scripts/`, `.claude/`, `OWNERS.md`, `AGENTS.md` and `CLAUDE.md` at any depth, `.mcp.json`, `docs/TEAM-WORKFLOW.md` and `.kit.toml`. A file an agent reads as instructions is a door; other agent instruction or tool config files a team uses are added with `--door-paths`. A pull request that touches a door needs an approval from a second person on the head the merge guard judged, from an owner, member or collaborator who is not the author and not a bot. A blank approver cell means any such person. Review a change to the hook settings, the lessons index or an `agent-*` script as code that runs in every teammate's next session. The first pull request that introduces the stamp touches every door: a second person reads it, and it is merged by hand.
 
 Agents follow the same list. An agent stops and asks a human before it touches secrets or access.
 
@@ -118,7 +118,7 @@ GitHub cannot enforce any of this without branch protection. A person who merges
 
 Two machines back the rules instead: a Claude Code hook for the agents that run in it, and the CI check `pr-shape` for everyone. The hook is advice with teeth, not a wall. Claude Code uses a hook from `.claude/settings.json` even in a folder not yet trusted (only a parent folder trusted, or a `claude -p` run), so a teammate needs no extra step. Agents other than Claude Code meet only the CI check.
 
-A pull request can edit the workflow file itself, because GitHub runs the pull request's copy. The merge guard is what binds it: it needs both checks `changes` and `pr-shape` from the workflow `CI`, and a change to `.github/workflows/` is a door that needs a second person. The CI jobs run on a self-hosted runner, and the `tests` job runs the pull request's own test scripts: use an ephemeral runner or a container job, because a long-lived runner keeps what a pull request's tests write. Not for public repos.
+A pull request can edit the workflow file itself, because GitHub runs the pull request's copy. The merge guard is what binds it: it needs both checks `changes` and `pr-shape` from the workflow `CI`, and a change to `.github/workflows/` is a door that needs a second person. The two CI jobs run on a self-hosted runner and run only scripts copied from the base revision. A job that runs a pull request's own code (tests, builds) belongs on a separate runner label or in a container job, never on the runner that runs `changes` and `pr-shape`, because a long-lived runner keeps what a pull request's code writes. Not for public repos.
 
 The rule: [Limits](../AGENTS.md#limits).
 

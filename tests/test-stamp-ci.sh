@@ -165,18 +165,19 @@ expect "no pull_request_target and no workflow_dispatch" bash -c "! grep -Eq 'pu
 expect "the job changes exists" grep -qx '  changes:' "$CIA"
 expect "the job pr-shape exists" grep -qx '  pr-shape:' "$CIA"
 job_text() { awk -v j="$2" '$0 == "  " j ":" { g = 1; next } g && /^  [a-z#]/ { exit } g' "$1"; }
-for j in changes pr-shape tests; do
+for j in changes pr-shape; do
   expect "the job $j runs only for a pull request from this repo (fork guard)" bash -c "$(declare -f job_text); job_text '$CIA' $j | grep -qxF '    if: github.event.pull_request.head.repo.full_name == github.repository'"
 done
-expect "the workflow has the three jobs changes, pr-shape and tests" grep -qx '  tests:' "$CIA"
+expect "the workflow has exactly the two gate jobs, and no tests job" bash -c "[ \$(grep -c '^  [a-z][a-z-]*:\$' '$CIA') -eq 2 ] && ! grep -qx '  tests:' '$CIA'"
+expect "no step of the workflow runs a script of the pull request's tests" bash -c "! grep -v '^ *#' '$CIA' | grep -q 'scripts/test-'"
+expect "no step of the workflow runs a loop over the pull request's files" bash -c "! grep -v '^ *#' '$CIA' | grep -Eq 'for t in|bash \"\\\$t\"'"
+expect "the stub says a job that runs the pull request's code needs its own runner label or a container job" bash -c "grep -q 'SEPARATE runner label or in a container job' '$CIA' && grep -q 'never on' '$CIA'"
 expect "the pr-shape job runs none of the pull request's scripts/test-*.sh" bash -c "$(declare -f job_text); ! job_text '$CIA' pr-shape | grep -q 'scripts/test-'"
 expect "the changes job runs none of the pull request's scripts/test-*.sh" bash -c "$(declare -f job_text); ! job_text '$CIA' changes | grep -q 'scripts/test-'"
-expect "the tests job runs the pull request's scripts/test-*.sh" bash -c "$(declare -f job_text); job_text '$CIA' tests | grep -q 'for t in scripts/test-\*.sh'"
-expect "the tests job never reads the gate directory or RUNNER_TEMP" bash -c "$(declare -f job_text); ! job_text '$CIA' tests | grep -q 'RUNNER_TEMP'"
 expect "neither gate job executes a file from the checkout except through git show" bash -c "$(declare -f job_text); for j in changes pr-shape; do job_text '$CIA' \$j | grep -E '^ +(run: )?(bash|sh|source|\\.) ' | grep -vE 'bash -c \"\\\$\(cat \"\\\$RUNNER_TEMP/gate/check-owners.sh\"\)\"|bash \"\\\$RUNNER_TEMP/gate/pr-shape.sh\"' | grep -q . && exit 1; done; exit 0"
 expect "the header says the workflow file itself comes from the pull request" grep -q 'a pull request can edit THIS file' "$CIA"
-expect "the header says to use an ephemeral runner and not a public repo" bash -c "grep -q 'ephemeral runner or a container job' '$CIA' && grep -q 'Not for public repos' '$CIA'"
-expect "the header says a skipped job leaves its check missing and the merge guard refuses" grep -q 'A skipped job leaves its check missing' "$CIA"
+expect "the header says a job that runs PR code needs a separate runner, and not for public repos" bash -c "grep -q 'separate runner label or in a container job' '$CIA' && grep -q 'Not for public repos' '$CIA'"
+expect "the header says a skipped job leaves its check missing and the merge guard refuses" grep -q 'A skipped job leaves its check' "$CIA"
 expect "the changes job exposes the product output" grep -qF 'product: ${{ steps.filter.outputs.product }}' "$CIA"
 expect "the end of the file shows where the repo's own jobs go" grep -q 'own build and test jobs go here' "$CIA"
 expect "the pr-shape job gets the title and body through env: entries" bash -c "grep -qxF '          PR_TITLE: \${{ github.event.pull_request.title }}' '$CIA' && grep -qxF '          PR_BODY: \${{ github.event.pull_request.body }}' '$CIA'"
@@ -367,7 +368,7 @@ expect "a path outside the product paths: product=false" [ "$r" = "product=false
 
 # 9. AC12: the twin set
 expect "AC12: the declared set of ci.yml is not empty" bash -c "[ -n \"\$(sed -n 's/^#   twin: //p' '$CIA')\" ]"
-expect "AC12: the set holds the three gate commands" bash -c "[ \$(sed -n 's/^#   twin: //p' '$CIA' | wc -l) -eq 3 ]"
+expect "AC12: the set holds the two gate commands" bash -c "[ \$(sed -n 's/^#   twin: //p' '$CIA' | wc -l) -eq 2 ]"
 expect "AC12: the declared sets of ci.yml and check.sh match, and every member runs in both with the same inputs" twin_ok "$CIA" "$CKA"
 expect "AC12: the same holds for the default-value stamp" twin_ok "$CIB" "$CKB"
 # negative controls: drop a command, drop an input, empty the set, add an undeclared command
@@ -382,7 +383,7 @@ grep -v '^#   twin: ' "$CKA" >"$WORK/ck-empty.sh"
 refute "AC12: an empty set fails the twin check" twin_ok "$WORK/ci-empty.yml" "$WORK/ck-empty.sh"
 sed 's/^        run: bash "\$RUNNER_TEMP\/gate\/pr-shape.sh"$/        run: bash "$RUNNER_TEMP\/gate\/pr-shape.sh" \&\& bash scripts\/extra.sh/' "$CIA" >"$WORK/ci-extra.yml"
 refute "AC12: a gate command in ci.yml that the set does not declare fails the twin check" twin_ok "$WORK/ci-extra.yml" "$CKA"
-sed 's/^#   twin: test-\*.sh$/#   twin: test-other.sh/' "$CIA" >"$WORK/ci-other.yml"
+sed 's/^#   twin: check-owners.sh$/#   twin: check-other.sh/' "$CIA" >"$WORK/ci-other.yml"
 refute "AC12: sets that differ fail the twin check" twin_ok "$WORK/ci-other.yml" "$CKA"
 
 # 10. every generated file: kit-free, no dash characters, no python3, no bash 4 feature, shellcheck clean

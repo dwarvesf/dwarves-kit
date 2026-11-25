@@ -12,7 +12,8 @@
 # the same inputs. Keep the two lists, and the commands below, in step with ci.yml.
 #   twin: check-owners.sh
 #   twin: pr-shape.sh env PR_TITLE PR_BODY BASE_SHA HEAD_SHA
-#   twin: test-*.sh
+# The generated script tests below are not in CI (a job that runs a pull request's own code does not
+# belong on the gate runner); check.sh runs them on your machine.
 #
 # PR title and body. The first source that applies wins:
 #   1. arguments: --title, --body or --body-file

@@ -127,11 +127,12 @@ expect ".kit.toml keeps no other gate key on" bash -c "[ \$(grep -Ec '^[a-z_]+ =
 # 7b. the review rules for the harness's own files, the workflow limit and the runner advice
 for f in "$A" "$T"; do
   b="${f#"$R2"/}"
-  expect "$b lists the harness's own files as doors" bash -c "for p in '.github/workflows/' 'scripts/' '.claude/' 'OWNERS.md' 'AGENTS.md' 'docs/TEAM-WORKFLOW.md' '.kit.toml'; do grep -qF \"\$p\" '$f' || exit 1; done; grep -qF 'always doors' '$f'"
+  expect "$b lists the harness's own files as doors" bash -c "for p in '.github/' 'scripts/' '.claude/' 'OWNERS.md' 'AGENTS.md' 'CLAUDE.md' '.mcp.json' 'docs/TEAM-WORKFLOW.md' '.kit.toml' 'any depth'; do grep -qF \"\$p\" '$f' || exit 1; done; grep -qF 'always doors' '$f'"
   expect "$b warns that hook settings, the lessons index and agent scripts run in every teammate's next session" bash -c "grep -qF 'hook settings' '$f' && grep -qF 'lessons index' '$f' && grep -qF 'agent-*' '$f' && grep -qF 'next session' '$f'"
   expect "$b says the first stamp pull request is read by a second person and merged by hand" bash -c "grep -qF 'merged by hand' '$f' && grep -qF 'second person reads it' '$f'"
   expect "$b says a pull request can edit the workflow file and the merge guard binds it" bash -c "grep -qF 'edit' '$f' && grep -qF 'ci.yml' '$f' || grep -qF 'workflow file' '$f'"
-  expect "$b says to use an ephemeral runner or a container job, not for public repos" bash -c "grep -qF 'ephemeral runner or a container job' '$f' && grep -qF 'Not for public repos' '$f'"
+  expect "$b says a job that runs PR code needs a separate runner or a container job, not for public repos" bash -c "grep -qF 'separate runner label or in a container job' '$f' && grep -qF 'never on the runner that runs' '$f' && grep -qF 'Not for public repos' '$f'"
+  expect "$b names instruction files as doors and --door-paths for the rest" bash -c "grep -qF 'reads as instructions is a door' '$f' && grep -qF -- '--door-paths' '$f'"
 done
 expect "AGENTS.md says never to run a pull request's copy of a script" grep -qF "never run a pull request's copy of a script" "$A"
 expect "AGENTS.md names the conflict fix gh pr update-branch" grep -qF 'gh pr update-branch' "$A"
