@@ -7,7 +7,11 @@
 // /leave.html links to the second listener as localhost; /redirect answers 302 to the second listener as
 // localhost, /redirect-port answers 302 to it by the allowed name on its other port, /redirect-ok answers 302 to /.
 // /flaky?key=K answers "Error 500" on its first hit for that key and "Saved" on every later one.
-// Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted.
+// /worker.html starts a dedicated worker (/worker.js) that opens a WebSocket to the second listener by the allowed
+// host name; /post-hop.html POSTs a JSON body to /redirect-307, which answers 307 to the second listener by the
+// allowed host name on its other port.
+// Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted; GET /seen answers
+// {"requests":[{"method":M,"body":B}]} for every counted plain hit, in order, and is not itself counted.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
@@ -15,11 +19,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html', '/nobody.html': 'nobody.html', '/meta.html': 'meta.html' };
+const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html', '/nobody.html': 'nobody.html', '/meta.html': 'meta.html', '/worker.html': 'worker.html', '/post-hop.html': 'post-hop.html' };
 const args = process.argv.slice(2);
 const buildSha = args[0] === '--build-sha' ? args[1] : '';
 
 const counts = { hits: 0, upgrades: 0 };
+const seen = [];
 const flakyHits = new Map();
 let port2 = 0;
 
@@ -44,6 +49,16 @@ const main = http.createServer((req, res) => {
     send(res, 200, 'text/html; charset=utf-8', `<!doctype html><title>Flaky</title><main><p>${hits === 0 ? 'Error 500' : 'Saved'}</p></main>`);
     return;
   }
+  if (pathname === '/worker.js') {
+    res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(readFileSync(path.join(HERE, 'worker.js'), 'utf8'));
+    return;
+  }
+  if (pathname === '/redirect-307') {
+    res.writeHead(307, { location: `http://127.0.0.1:${port2}/hop`, 'cache-control': 'no-store' });
+    res.end();
+    return;
+  }
   if (pathname === '/redirect' || pathname === '/redirect-ok' || pathname === '/redirect-port') {
     const target = { '/redirect': `http://localhost:${port2}/pixel`, '/redirect-ok': '/', '/redirect-port': `http://127.0.0.1:${port2}/pixel` }[pathname];
     res.writeHead(302, { location: target, 'cache-control': 'no-store' });
@@ -59,8 +74,14 @@ const main = http.createServer((req, res) => {
 const counter = http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://fixture').pathname;
   if (pathname === '/count') { send(res, 200, 'application/json', `${JSON.stringify(counts)}\n`); return; }
+  if (pathname === '/seen') { send(res, 200, 'application/json', `${JSON.stringify({ requests: seen })}\n`); return; }
   counts.hits += 1;
-  send(res, 200, 'text/plain; charset=utf-8', 'counted\n');
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', () => {
+    seen.push({ method: req.method, body: Buffer.concat(chunks).toString('utf8') });
+    send(res, 200, 'text/plain; charset=utf-8', 'counted\n');
+  });
 });
 
 counter.on('upgrade', (req, socket) => {

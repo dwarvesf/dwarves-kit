@@ -37,7 +37,7 @@ STEP_MS=6000
 HANG_SCENARIO_MS=15000
 
 CASES="install-root-entry docs-rows agent-file-tokens battery-row live-record suite-harness guard-refusals doctor-and-skip no-browser-rows signal-during-launch fixture-serves internal-error"
-BROWSER_CASES="rows-and-planted-bug no-ac hostile-text-fenced git-status-clean offsite-request-aborted hang-bounded identity-and-readiness browser-sandbox leftover-browser-killed sigterm-closes-browser step-behaviors"
+BROWSER_CASES="rows-and-planted-bug no-ac hostile-text-fenced git-status-clean offsite-request-aborted observed-residuals hang-bounded identity-and-readiness browser-sandbox leftover-browser-killed sigterm-closes-browser step-behaviors"
 
 PASS=0; FAIL=0; SKIP=0
 ok() { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
@@ -359,9 +359,9 @@ case_guard_refusals() {
   refused "credentials in the URL" 's.target.url="http://u:p@127.0.0.1:9/"' "target.url must not carry credentials"
   refused "localhost without allow_loopback" 's.target.url="https://localhost/";s.target.allow_hosts=["localhost"];s.target.allow_loopback=false' "allowed host localhost resolves to a loopback address (allow_loopback is false)"
   range_cases private 0.0.0.0 0.255.255.255 10.0.0.0 10.255.255.255 100.64.0.0 100.127.255.255 169.254.0.0 169.254.255.255 172.16.0.0 172.31.255.255 192.0.0.0 192.0.0.255 192.168.0.0 192.168.255.255 198.18.0.0 198.19.255.255 224.0.0.0 239.255.255.255 240.0.0.0 255.255.255.255
-  range_cases private "[::]" "[::2]" "[::ffff:ffff]" "[fc00::1]" "[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]" "[fe80::1]" "[febf::1]" "[fec0::1]" "[feff::1]" "[ff00::1]" "[ff02::1]" "[64:ff9b::]" "[64:ff9b::808:808]" "[2002::1]" "[2002:ffff::1]"
+  range_cases private "[::]" "[::2]" "[::ffff:ffff]" "[fc00::1]" "[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]" "[fe80::1]" "[febf::1]" "[fec0::1]" "[feff::1]" "[ff00::1]" "[ff02::1]" "[64:ff9b::]" "[64:ff9b::808:808]" "[64:ff9b:1::]" "[64:ff9b:1:ffff:ffff:ffff:ffff:ffff]" "[2001::]" "[2001:0:ffff:ffff:ffff:ffff:ffff:ffff]" "[2002::1]" "[2002:ffff::1]" "[100::]" "[100::ffff:ffff:ffff:ffff]"
   range_cases loopback 127.0.0.0 127.0.0.1 127.255.255.255 "[::1]"
-  range_cases public 1.1.1.1 9.255.255.255 11.0.0.0 100.63.255.255 100.128.0.0 126.255.255.255 128.0.0.0 169.253.255.255 169.255.0.0 172.15.255.255 172.32.0.0 191.255.255.255 192.0.1.0 192.167.255.255 192.169.0.0 198.17.255.255 198.20.0.0 223.255.255.255 "[::1:0:0]" "[fbff::1]" "[fe00::1]" "[fe7f::1]" "[2001:ffff::1]" "[2003::1]" "[64:ff9a::1]" "[64:ff9b:1::1]" "[2606:4700::1111]"
+  range_cases public 1.1.1.1 9.255.255.255 11.0.0.0 100.63.255.255 100.128.0.0 126.255.255.255 128.0.0.0 169.253.255.255 169.255.0.0 172.15.255.255 172.32.0.0 191.255.255.255 192.0.1.0 192.167.255.255 192.169.0.0 198.17.255.255 198.20.0.0 223.255.255.255 "[::1:0:0]" "[fbff::1]" "[fe00::1]" "[fe7f::1]" "[2001:ffff::1]" "[2003::1]" "[64:ff9a::1]" "[64:ff9b:2::1]" "[2001:1::1]" "[100:0:0:1::1]" "[2606:4700::1111]"
 
   mkdir -p "$repo" "$nonempty"; git init -q "$repo" >/dev/null 2>&1
   : > "$nonempty/keep"
@@ -445,6 +445,8 @@ case_guard_refusals() {
   refused "an unknown key in a step" 's.scenarios[0].steps[0].extra=1' "unknown key scenarios[0].steps[0].extra"
   refused "a step verb named like an object property (constructor)" 's.scenarios[0].steps.unshift({do:"constructor"})' "scenarios[0].steps[0].do is not a known step verb"
   refused "a step verb named __proto__" 's.scenarios[0].steps.unshift({do:"__proto__"})' "scenarios[0].steps[0].do is not a known step verb"
+  refused "a step verb that is an array holding a known verb" 's.scenarios[0].steps.unshift({do:["goto"],path:"/"})' "scenarios[0].steps[0].do is not a known step verb"
+  refused "a step verb that is a number" 's.scenarios[0].steps.unshift({do:1})' "scenarios[0].steps[0].do is not a known step verb"
   refused "an unknown step verb" 's.scenarios[0].steps.unshift({do:"hover",role:"button",name:"x"})' "scenarios[0].steps[0].do is not a known step verb"
   refused "an id that is not AC-<digits>" 's.scenarios[0].id="AC-x"' "scenarios[0].id must look like AC-<digits>"
   refused "a kind that is not criterion or negative" 's.scenarios[0].kind="other"' "scenarios[0].kind must be criterion or negative"
@@ -478,6 +480,8 @@ untrusted_case() {
     */dr-intree) mkdir -p "$home"; git init -q "$home" >/dev/null 2>&1; fake_install "$home" "$pin" with-browser ;;
     */dr-group) fake_install "$home" "$pin" with-browser; chmod 775 "$home" ;;
     */dr-world) fake_install "$home" "$pin" with-browser; chmod 777 "$home" ;;
+    */dr-parent/root) fake_install "$home" "$pin" with-browser; chmod 775 "$(dirname "$home")" ;;
+    */dr-pw) fake_install "$home" "$pin" with-browser; chmod 775 "$home/node_modules/playwright" ;;
   esac
   doctor "$home"
   { [ "$RC" = 20 ] && printf '%s\n' "$DOC" | grep -qF "NOT READY: $want"; }; check "doctor: $label is not used, state 'NOT READY: $want' (exit $RC)" $?
@@ -551,6 +555,14 @@ case_doctor_and_skip() {
   untrusted_case "an install root inside a git work tree" "$T/dr-intree" 'inside a git work tree' "$pin"
   untrusted_case "a group-writable install root" "$T/dr-group" 'writable by group or others' "$pin"
   untrusted_case "a world-writable install root" "$T/dr-world" 'writable by group or others' "$pin"
+  untrusted_case "an install root whose parent directory is group-writable and not sticky" "$T/dr-parent/root" 'a parent directory is writable by group or others and is not sticky' "$pin"
+  untrusted_case "an install root whose node_modules/playwright is group-writable" "$T/dr-pw" 'node_modules/playwright is writable by group or others' "$pin"
+  home="$T/dr-sticky/root"; fake_install "$home" "$pin" with-browser; chmod 1777 "$(dirname "$home")"
+  doctor "$home"
+  [ "$RC" = 0 ]; check "control: a sticky world-writable parent directory (like /tmp) does not refuse the install root (exit $RC)" $?
+  home="$T/dr-plain/root"; fake_install "$home" "$pin" with-browser
+  doctor "$home"
+  [ "$RC" = 0 ]; check "control: an ordinary 755 parent directory does not refuse the install root (exit $RC)" $?
   if [ "$(id -u)" != 0 ] && [ -d /var/empty ] && [ "$(ls -ldn /var/empty | awk '{print $3}')" != "$(id -u)" ]; then
     untrusted_case "an install root owned by another user (/var/empty)" /var/empty 'not owned by the current user' "$pin"
   else skip "doctor-and-skip: no root-owned directory to use as a foreign install root"; fi
@@ -572,7 +584,7 @@ doctor_nonode_run() {
   done
   if PATH="$bin" command -v node >/dev/null 2>&1; then no "the no-node PATH still finds node"; return 0; fi
   s="$KIT_DIR/tests/test-ui-acceptance-verifier.sh"
-  r1=$(PATH="$bin" "$bin/bash" "$s" guard-refusals internal-error battery-row 2>&1); local rc1=$?
+  r1=$(PATH="$bin" UI_VERIFY_REQUIRE= "$bin/bash" "$s" guard-refusals internal-error battery-row 2>&1); local rc1=$?
   last=$(printf '%s\n' "$r1" | tail -n 1)
   [ "$rc1" = 0 ]; check "no node: the suite exits 0 (exit $rc1)" $?
   [ "$(printf '%s\n' "$r1" | grep -c 'SKIP node not installed')" = 2 ]; check "no node: each node case prints 'SKIP node not installed'" $?
@@ -710,14 +722,15 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 export const chromium = {
   launch: (options) => new Promise(() => {
-    if (process.env.FAKE_LAUNCH === 'spawn') spawn(process.execPath, ['-e', 'setTimeout(()=>{},300000)', '--', ...options.args], { stdio: 'ignore' });
+    if (process.env.FAKE_LAUNCH === 'spawn') spawn(process.execPath, ['-e', 'setTimeout(()=>{},300000)', '--', ...options.args, `${process.env.PLAYWRIGHT_BROWSERS_PATH}/chromium-fake`], { stdio: 'ignore' });
     setInterval(() => {}, 1000);
     writeFileSync(process.env.FAKE_MARK, 'launching');
   }),
 };
 EOF
   rm -f "$mark"; out=$(next_out)
-  ( cd "$CWD" && UI_VERIFY_HOME="$home" FAKE_LAUNCH="$mode" FAKE_MARK="$mark" exec node "$RUNNER" scenario --scenario "$BASE" --out "$out" ) >"$T/sigl.out" 2>"$T/sigl.err" &
+  rm -rf "$T/sigl-tmp"; mkdir -p "$T/sigl-tmp"
+  ( cd "$CWD" && UI_VERIFY_HOME="$home" TMPDIR="$T/sigl-tmp" FAKE_LAUNCH="$mode" FAKE_MARK="$mark" exec node "$RUNNER" scenario --scenario "$BASE" --out "$out" ) >"$T/sigl.out" 2>"$T/sigl.err" &
   pid=$!
   while [ "$i" -lt 120 ] && [ ! -e "$mark" ]; do sleep 0.5; i=$((i+1)); done
   id=$(awk '/^ui-verify: run /{print $3; exit}' "$T/sigl.err")
@@ -737,11 +750,15 @@ case_signal_during_launch() {
   [ "$SIG_RC" = 143 ]; check "SIGTERM while the browser is still launching ends the runner with exit 143 (exit $SIG_RC)" $?
   [ -n "$SIG_ID" ] && ! pgrep -f -- "--kit-ui-verify=$SIG_ID" >/dev/null 2>&1; check "no process that carries the run id is left after that SIGTERM" $?
   grep -q '^ui-verify: interrupted, browser closed' "$T/sigl.err"; check "the runner reports that it stopped the browser" $?
+  [ -z "$(ls -A "$T/sigl-tmp")" ]; check "the browser's temporary home is removed after a signal exit" $?
   signal_during_launch hang TERM
   [ "$SIG_RC" = 143 ]; check "SIGTERM with no browser started ends the runner with exit 143 (exit $SIG_RC)" $?
   grep -q '^ui-verify: interrupted, no browser was running' "$T/sigl.err" && ! grep -q 'browser closed' "$T/sigl.err"; check "the runner does not claim to have closed a browser that never started" $?
   signal_during_launch hang INT
   [ "$SIG_RC" = 130 ]; check "SIGINT ends the runner with exit 130 (exit $SIG_RC)" $?
+  signal_during_launch hang HUP
+  { [ "$SIG_RC" = 129 ] && grep -q '^ui-verify: interrupted, no browser was running' "$T/sigl.err"; }; check "SIGHUP is handled like SIGTERM: the runner reports it and ends with exit 129 (exit $SIG_RC)" $?
+  [ -z "$(ls -A "$T/sigl-tmp")" ]; check "the browser's temporary home is removed after SIGHUP too" $?
 }
 
 case_fixture_serves() {
@@ -1026,6 +1043,30 @@ case_offsite_request_aborted() {
   end_browser
 }
 
+# Two things the guards are known not to cover, recorded as they happen in the real browser. A NOTE line is an
+# observation, never a pass or a fail: the checks only prove each page settled, so a Playwright upgrade that
+# closes either gap shows up as a changed NOTE and a README edit, not as a red suite.
+#   worker WebSocket: a dedicated worker opens a WebSocket to another port of the allowed host. The WebSocket route
+#     is an init script in the page, which a worker never runs, so the guard is not expected to see this socket.
+#   307 hop: the allowed target answers a POST with 307 to another port of the allowed host. The route handler
+#     is not called for a redirect hop, so the method and the body are expected to arrive.
+case_observed_residuals() {
+  echo "--- observed-residuals"
+  begin_browser observed-residuals || return 0
+  local f="$T/obs.json" out count seen
+  page_scenario "$f" /worker.html "worker done" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/worker.html"},{do:"expect_text",text:"worker done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page whose worker opens a WebSocket to another port of the allowed host settled and its row is PASS (exit $RC)" $?
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
+  printf '  NOTE  worker WebSocket to the other port: listener answered %s; blocked_requests %s\n' "$count" "$(jget "$out/result.json" 'JSON.stringify(j.blocked_requests)')"
+  page_scenario "$f" /post-hop.html "hop done" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/post-hop.html"},{do:"expect_text",text:"hop done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page that POSTs a JSON body to a path answering 307 to another port of the allowed host settled and its row is PASS (exit $RC)" $?
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count"); seen=$(curl -s "http://127.0.0.1:$FIX_PORT2/seen")
+  printf '  NOTE  307 hop to the other port: listener answered %s and saw %s; blocked_requests %s\n' "$count" "$seen" "$(jget "$out/result.json" 'JSON.stringify(j.blocked_requests)')"
+  end_browser
+}
+
 HANG_JS='s.scenarios=[1,2,3].map(function(i){return {id:"AC-"+i,kind:"criterion",steps:[{do:"goto",path:"/hang"},{do:"expect_text",text:"x"}]}}).concat([{id:"AC-4",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"expect_text",text:"Kit fixture app"}]}])'
 
 case_hang_bounded() {
@@ -1155,7 +1196,7 @@ case_browser_sandbox() {
 case_leftover_browser_killed() {
   echo "--- leftover-browser-killed"
   begin_browser leftover-browser-killed || return 0
-  local f="$T/lbk.json" out stub="$T/decoy-bin" real_ps pid_file="$T/decoy.pid" pid i=0
+  local f="$T/lbk.json" out stub="$T/decoy-bin" real_ps pid_file="$T/decoy.pid" bare_file="$T/decoy-bare.pid" pid bare i=0
   real_ps=$(command -v ps)
   mkdir -p "$stub"
   cat > "$stub/ps" <<STUB
@@ -1163,8 +1204,10 @@ case_leftover_browser_killed() {
 if [ ! -e "$pid_file" ]; then
   id=\$("$real_ps" -axww -o command= | sed -n 's/.*--kit-ui-verify=\([0-9a-f]*\).*/\1/p' | head -n 1)
   if [ -n "\$id" ]; then
-    ( exec -a "ui-verify-decoy --kit-ui-verify=\$id" sleep 300 ) >/dev/null 2>&1 &
+    ( exec -a "ui-verify-decoy --kit-ui-verify=\$id $RUN_HOME/browsers/decoy" sleep 300 ) >/dev/null 2>&1 &
     echo \$! > "$pid_file"
+    ( exec -a "ui-verify-bystander --kit-ui-verify=\$id" sleep 300 ) >/dev/null 2>&1 &
+    echo \$! > "$bare_file"
     sleep 0.5
   fi
 fi
@@ -1173,13 +1216,16 @@ STUB
   chmod +x "$stub/ps"
   bscenario "$f" "/"
   out=$(next_out); PATH="$stub:$PATH" run_runner "$CWD" "$f" "$out"
-  pid=$(cat "$pid_file" 2>/dev/null)
+  pid=$(cat "$pid_file" 2>/dev/null); bare=$(cat "$bare_file" 2>/dev/null)
   [ "$RC" = 0 ]; check "a run that leaves a process carrying its run id behind still exits 0 (exit $RC)" $?
   [ -n "$pid" ] && [ "$(jget "$out/result.json" "j.browser.pids.includes($pid)")" = true ]; check "the scan recorded the stray process (pid ${pid:-none}) among the run's pids" $?
   while [ "$i" -lt 20 ] && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; do sleep 0.5; i=$((i+1)); done
-  { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; }; check "the runner killed the stray process that carried its run id" $?
+  { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; }; check "the runner killed the stray process that carried its run id and a path under the browser directory" $?
   [ "$(jget "$out/result.json" 'j.browser.leftover_pids.length')" = 0 ]; check "browser.leftover_pids is empty after the kill" $?
+  { [ -n "$bare" ] && kill -0 "$bare" 2>/dev/null; }; check "a bystander whose command line holds only the run id (no browser path) is still alive after the run (pid ${bare:-none})" $?
+  [ -n "$bare" ] && [ "$(jget "$out/result.json" "!j.browser.pids.includes($bare)")" = true ]; check "the bystander is not among the run's recorded pids" $?
   if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; fi
+  if [ -n "$bare" ]; then kill "$bare" 2>/dev/null; fi
   wait_no_browser "$RUN_ID"; check "no process carries the run id at the end" $?
   end_browser
 }
