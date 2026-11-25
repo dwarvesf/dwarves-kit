@@ -98,7 +98,7 @@ want_tool_tmp_clean() {
 }
 
 reset_env() {
-  unset PROOF_CAPTURE_BROWSER PROOF_CAPTURE_VHS PROOF_CAPTURE_DEADLINE RUN_PATH
+  unset PROOF_CAPTURE_BROWSER PROOF_CAPTURE_VHS PROOF_CAPTURE_DEADLINE RUN_PATH STUB_READY
   export PROOF_CAPTURE_BROWSER_CANDIDATES="$SUITE_TMP/no-such-a:$SUITE_TMP/no-such-b"
 }
 
@@ -317,9 +317,127 @@ case_3() {
   end_case
 }
 
+# wait_ready <file> [bound]: wait for the stub's ready marker (the stub touches it last, once it is set up).
+wait_ready() {
+  local end=$((SECONDS + ${2:-20}))
+  while [ ! -e "$1" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done
+  [ -e "$1" ]
+}
+
+# want_gone_by <label> <t0> <limit>: every recorded pid is gone within <limit> seconds of <t0> (a SECONDS value).
+# Stubs sleep 20 s on their own, so a limit past that would pass for the wrong reason; a late finish is reported.
+want_gone_by() {
+  local left=$(($3 - (SECONDS - $2)))
+  [ "$left" -ge 1 ] || left=1
+  want_pids_gone "$1" "$left"
+  [ $((SECONDS - $2)) -lt 19 ] || note_bad "$1: finished too late to prove anything (the stub's own 20 s sleep may have ended it)"
+}
+
+# signal_row <mode> <signal>: the tool gets <signal> mid-run; it must exit 1 with the one line, leave nothing behind.
+signal_row() {
+  local mode=$1 sig=$2 d t0 label="$1 stub, $2"
+  d=$(new_dir)
+  stub_env "$mode" "$d/argv"
+  export STUB_READY="$d/ready"
+  t0=$SECONDS
+  start_tool run page "$EXAMPLES/hello.html" "$d/s.png"
+  if ! wait_ready "$d/ready"; then
+    note_bad "$label: the stub never became ready"
+    kill -TERM "$TOOL_PID" 2>/dev/null
+    wait_tool 15
+    return 0
+  fi
+  kill -s "$sig" "$TOOL_PID"
+  wait_tool 15
+  [ "$TIMED_OUT" = 0 ] || note_bad "$label: the tool did not exit after the signal"
+  want_rc 1 "$label"
+  want_err_is "proof-capture: interrupted" "$label"
+  want_gone_by "$label" "$t0" 17
+  want_tool_tmp_clean "$label"
+  want_no_hidden_left "$d" "$label"
+  want_absent "$d/s.png" "$label wrote an artifact"
+}
+
+# ---- case 4: a browser that writes the file and never exits ------------------------------------
+case_4() {
+  local d t0
+  begin_case 4 "write-then-hang"
+  d=$(new_dir)
+  stub_env write-then-hang "$d/argv"
+  t0=$SECONDS
+  start_tool run page "$EXAMPLES/hello.html" "$d/o.png"
+  wait_tool 15
+  [ "$TIMED_OUT" = 0 ] || note_bad "the tool did not return"
+  want_rc 0 "write-then-hang"
+  want_same_file "$d/o.png" "$STUB_PNG" "write-then-hang"
+  [ "$(wc -l <"$STUB_PIDS" | tr -d ' ')" -ge 2 ] || note_bad "the stub and its helper were not both recorded"
+  want_gone_by "write-then-hang (the helper too)" "$t0" 17
+  want_tool_tmp_clean "write-then-hang"
+  want_no_hidden_left "$d" "write-then-hang"
+  end_case
+}
+
+# ---- case 6: TERM, INT and HUP to the tool mid-run ---------------------------------------------
+case_6() {
+  local mode sig
+  begin_case 6 "TERM, INT and HUP to the tool"
+  for mode in never-write term-ignore; do
+    for sig in TERM INT HUP; do
+      signal_row "$mode" "$sig"
+    done
+  done
+  end_case
+}
+
+# ---- case 12: KILL to the tool; the watchdog ends the group ------------------------------------
+case_12() {
+  local d t0 w
+  begin_case 12 "KILL to the tool, the watchdog ends the group"
+  d=$(new_dir)
+  stub_env never-write "$d/argv"
+  export STUB_READY="$d/ready"
+  t0=$SECONDS
+  start_tool run page "$EXAMPLES/hello.html" "$d/k.png" --deadline 2
+  if ! wait_ready "$d/ready"; then
+    note_bad "the stub never became ready"
+  fi
+  { kill -KILL "$TOOL_PID"; wait_tool 10; } 2>/dev/null
+  [ "$(pids_alive)" -ge 1 ] || note_bad "the stub was already gone right after the KILL, so the check would prove nothing"
+  want_gone_by "KILL to the tool" "$t0" 17
+  # The documented residual: the work dir of a killed tool stays under TMPDIR. Remove it so later cases start clean.
+  for w in "$TOOL_TMP"/proof-capture.*; do
+    [ -d "$w" ] || continue
+    case "$w" in "$TOOL_TMP"/proof-capture.*) rm -rf "$w" ;; esac
+  done
+  want_absent "$d/k.png" "KILL case wrote an artifact"
+  end_case
+}
+
+# ---- case 13: a second signal during the reap --------------------------------------------------
+case_13() {
+  local d t0
+  begin_case 13 "a second signal during the reap"
+  d=$(new_dir)
+  stub_env term-ignore "$d/argv"
+  export STUB_READY="$d/ready"
+  t0=$SECONDS
+  start_tool run page "$EXAMPLES/hello.html" "$d/s.png" --deadline 2
+  wait_ready "$d/ready" || note_bad "the stub never became ready"
+  # About 1 s into the 2 s TERM wait: the deadline is 2 s, the signal goes out at 3 s.
+  while [ $((SECONDS - t0)) -lt 3 ]; do sleep 0.2; done
+  kill -s TERM "$TOOL_PID" 2>/dev/null
+  wait_tool 15
+  [ "$TIMED_OUT" = 0 ] || note_bad "the tool did not exit"
+  want_rc 1 "second TERM"
+  want_gone_by "second TERM during the reap" "$t0" 16
+  want_tool_tmp_clean "second TERM"
+  want_no_hidden_left "$d" "second TERM"
+  end_case
+}
+
 # ---- case 5: deadline -----------------------------------------------------------------------------
 case_5() {
-  local d
+  local d t0
   begin_case 5 "deadline"
   d=$(new_dir)
 
@@ -350,6 +468,14 @@ case_5() {
   want_rc 1 "flag wins over env"
   want_err_is "proof-capture: no valid artifact within 2s" "flag wins over env"
   want_pids_gone "flag wins over env"
+
+  # A browser and a helper that ignore TERM: the KILL step must end every recorded pid.
+  stub_env term-ignore "$d/argv"
+  t0=$SECONDS
+  run_tool run page "$EXAMPLES/hello.html" "$d/none.png" --deadline 2
+  want_rc 1 "term-ignore"
+  want_err_is "proof-capture: no valid artifact within 2s" "term-ignore"
+  want_gone_by "term-ignore (KILL escalation)" "$t0" 17
   want_tool_tmp_clean "case 5"
   end_case
 }
@@ -562,10 +688,14 @@ run_case() {
 run_case 1 case_1
 run_case 2 case_2
 run_case 3 case_3
+run_case 4 case_4
 run_case 5 case_5
+run_case 6 case_6
 run_case 7 case_7
 run_case 8 case_8
 run_case 11 case_11
+run_case 12 case_12
+run_case 13 case_13
 
 echo "$NPASS passed, $NFAIL failed, $NSKIP skipped"
 [ "$NFAIL" = 0 ]

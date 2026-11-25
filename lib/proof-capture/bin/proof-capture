@@ -177,7 +177,8 @@ fi
 # ---- everything below may call external commands ----------------------------------------------
 [ "$KIND" = page ] || usage_fail "run tape is not built yet"
 
-WORK=""; PARTIAL=""; PROFILE=""; CPID=""; FINAL_TMP=""; REAPED=0
+WORK=""; PARTIAL=""; PROFILE=""; CPID=""; WDPID=""; FINAL_TMP=""
+REAPING=0; REAP_DONE=0; INTR=0; NOGROUP=0
 
 # remove_work: rm -rf only on the directory this run made with mktemp -d, and only by its name.
 remove_work() {
@@ -187,17 +188,58 @@ remove_work() {
   WORK=""
 }
 
-# reap: stop the child and remove everything this run made. Runs once.
+# is_pid <value>: a number greater than 1, so a group signal can never reach the caller's own group or every process.
+is_pid() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -gt 1 ]
+}
+
+# group_alive <pid>: the process group whose id is <pid> still has a member.
+group_alive() { is_pid "$1" && kill -0 -- "-$1" 2>/dev/null; }
+
+# reap [interrupt]: end the child's own group, then the watchdog, then remove what this run made.
+# Signals go only to the group of a pid this run recorded, never by name. One reap runs at a time: while it runs
+# the trap only sets INTR, and the wait below reads it and goes straight to KILL.
 reap() {
-  [ "$REAPED" = 0 ] || return 0
-  REAPED=1
-  if [ -n "$CPID" ] && kill -0 "$CPID" 2>/dev/null; then
-    kill -TERM "$CPID" 2>/dev/null
-    { wait "$CPID"; } 2>/dev/null
+  local c w i=0 tend
+  [ "$REAPING" = 0 ] && [ "$REAP_DONE" = 0 ] || return 0
+  REAPING=1
+  c=$CPID
+  w=$WDPID
+  if is_pid "$c"; then
+    if [ "$NOGROUP" = 1 ]; then
+      kill -KILL "$c" 2>/dev/null
+    else
+      if [ "${1:-}" != interrupt ] && group_alive "$c"; then
+        kill -TERM -- "-$c" 2>/dev/null
+        tend=$((SECONDS + 3))
+        while group_alive "$c" && [ "$INTR" = 0 ] && [ "$i" -lt 20 ] && [ "$SECONDS" -lt "$tend" ]; do
+          sleep 0.1
+          i=$((i + 1))
+        done
+      fi
+      if group_alive "$c"; then kill -KILL -- "-$c" 2>/dev/null; fi
+    fi
   fi
+  if group_alive "$w"; then kill -KILL -- "-$w" 2>/dev/null; fi
+  if is_pid "$c"; then { wait "$c"; } 2>/dev/null; fi
+  if is_pid "$w"; then { wait "$w"; } 2>/dev/null; fi
   [ -z "$FINAL_TMP" ] || rm -f "$FINAL_TMP"
   remove_work
+  CPID=""; WDPID=""
+  REAPING=0
+  REAP_DONE=1
+  return 0
 }
+
+on_signal() {
+  INTR=1
+  [ "$REAPING" = 0 ] || return 0
+  reap interrupt
+  printf 'proof-capture: interrupted\n' >&2
+  exit 1
+}
+trap on_signal INT TERM HUP
 trap reap EXIT
 
 fail() { printf 'proof-capture: %s\n' "$1" >&2; reap; exit 1; }
@@ -246,11 +288,36 @@ finish() {
   exit 0
 }
 
-# capture_run <command...>: start the child, poll for a valid artifact until the deadline.
+# capture_run <command...>: start the child in its own process group, check that, start the watchdog, poll for a
+# valid artifact until the deadline. Job control (set -m) makes the group id equal to the child's pid.
 capture_run() {
-  local end
-  "$@" </dev/null >/dev/null 2>&1 &
-  CPID=$!
+  local end pg wd_end
+  {
+    set -m
+    "$@" </dev/null >/dev/null 2>&1 &
+    CPID=$!
+    set +m
+  } 2>/dev/null
+  pg=$(ps -o pgid= -p "$CPID" 2>/dev/null)
+  pg=${pg//[[:space:]]/}
+  if [ -n "$pg" ] && [ "$pg" != "$CPID" ]; then
+    NOGROUP=1
+    fail "cannot isolate the browser process group"
+  fi
+  # The watchdog runs in its own group and ends the child's group at the deadline plus 5 s even if this tool is
+  # killed. It acts only while it has just seen the group exist.
+  if group_alive "$CPID"; then
+    wd_end=$((SECONDS + DEADLINE + 5))
+    {
+      set -m
+      (
+        while kill -0 -- "-$CPID" 2>/dev/null && [ "$SECONDS" -lt "$wd_end" ]; do sleep 1; done
+        if kill -0 -- "-$CPID" 2>/dev/null; then kill -KILL -- "-$CPID" 2>/dev/null; fi
+      ) </dev/null >/dev/null 2>&1 &
+      WDPID=$!
+      set +m
+    } 2>/dev/null
+  fi
   end=$((SECONDS + DEADLINE))
   while :; do
     if [ -s "$PARTIAL" ] && artifact_stable "$KIND" "$PARTIAL"; then finish; fi
