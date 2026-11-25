@@ -8,7 +8,7 @@ Three `wrap` gaps, each reproduced on master by a read-only scout and confirmed 
 
 ## Rule
 
-- A. Under `--with-ci` (or `KIT_WRAP_CI_ON_MERGE=1`), a PR the gate skipped only because a check is still running, with none failing, waits with the usual bounded wait (`KIT_WRAP_CARRY_CHECKS_SECS`), is re-read once GitHub has settled, and is gated again on the same head. `--pr N` and the bare form. A head that moved during the wait keeps the `head moved` refusal (exit 2). A wait that runs out prints `SKIP #N: checks still pending after Ns; left open` and exits 4, the not-merged code. A failing check skips at once with no wait. Without `--with-ci` nothing changes. A dry run only names the wait.
+- A. Under `--with-ci` (or `KIT_WRAP_CI_ON_MERGE=1`), a PR the gate skipped only because a check is still running, with none failing, waits with the usual bounded wait (`KIT_WRAP_CARRY_CHECKS_SECS`), is re-read once GitHub has settled, and is gated again on the same head. `--pr N` and the bare form. A head that moved during the wait keeps the `head moved` refusal (exit 2). A wait that runs out prints `SKIP #N: checks still pending after Ns; left open` and exits like any other skip: 4 under `--pr`, 0 for the bare sweep. A failing check skips at once with no wait. Without `--with-ci` nothing changes. A dry run only names the wait.
 - B. After `merge --apply` merged and verified a PR in a local checkout, that checkout is fast-forwarded through `land`'s own `_land_ff_pull`, with land's guards: only on the default branch, ff-only, never forced. `--no-pull` skips it. A checkout off the default branch, or a pull that cannot fast-forward, prints one `PULL BLOCKED` line. Every line names `wrap apply --apply --pull-only <repo>`. The exit code never changes. A dry run, `--repo <owner>/<name>` and a call that merged nothing never pull. The merge that `apply`'s autoland carry runs in-process never pulls (apply pulls on its own stage, after the carry).
 - C. `wrap log` from a git repo other than the log's prints one stderr line: `wrap log: wrote <abs path> (repo <log repo>), outside the current repo <repo>`. The line still goes to the one log; the exit code is unchanged. From the log's own repo, its worktrees or subdirectories, or from outside any git repo, nothing new prints.
 
@@ -140,7 +140,7 @@ Output:
 Verdict: PASS
 ```
 
-The new cases: A, `--pr` pending then green merges, still pending at the bound exits 4 with the seconds waited, head moved during the wait exits 2, pending then red never merges, a failing check exits 4 at once with no wait, one failing plus one pending does not wait, no `--with-ci` does not wait, a dry run names the wait without waiting, the bare form merges after the wait and exits 4 at the bound. B, merge pulls so the checkout's main equals origin's, `--no-pull` stays behind and prints the command, off the default branch prints why and touches nothing, a diverged main refuses without losing the local commit and still exits 0, a dry run, a merge that merged nothing and `--repo` never pull, and the merge called from apply's autoland carry prints no pull line. C, a foreign worktree and a foreign main checkout print the line and still write the one log and nothing into the foreign repo; the log's own subdirectory and worktree, and a call from outside any repo, print nothing new. The ops forwarder that execs `wrap log` from inside the log's repo was also run by hand in a throwaway fixture: from a subdirectory of the log's repo it printed no outside-the-repo line, from another repo it printed it.
+The new cases: A, `--pr` pending then green merges, still pending at the bound exits 4 with the seconds waited (0 for the bare form), head moved during the wait exits 2, pending then red never merges, a failing check exits 4 at once with no wait, one failing plus one pending does not wait, no `--with-ci` does not wait, a dry run names the wait without waiting, the bare form merges after the wait and exits 0 at the bound; pending then red exits 4 with the `after the check wait` line; the merge called from apply's autoland carry never waits a second time. B, merge pulls so the checkout's main equals origin's, `--no-pull` stays behind and prints the command, off the default branch prints why and touches nothing, a diverged main refuses without losing the local commit and still exits 0, a dry run, a merge that merged nothing and `--repo` never pull, and the merge called from apply's autoland carry prints no pull line. C, a foreign worktree and a foreign main checkout print the line and still write the one log and nothing into the foreign repo; the log's own subdirectory and worktree, and a call from outside any repo, print nothing new. The ops forwarder that execs `wrap log` from inside the log's repo was also run by hand in a throwaway fixture: from a subdirectory of the log's repo it printed no outside-the-repo line, from another repo it printed it.
 
 ## Failures that are not this change
 
@@ -309,9 +309,66 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
+## Review round
+
+A review found two contract gaps, fixed in the follow-up commit: a wait that runs out in the bare sweep exits 0 (it was 4), and the merge called from apply's autoland carry no longer waits a second time. Rerun on the tip merged with origin/master (already up to date):
+
+```
+Command: bash tests/test-wrap-ci.sh
+Exit: 0
+Output:
+  test-wrap-ci: all 214 passed
+Verdict: PASS
+```
+
+```
+Command: bash tests/test-wrap-merge-nopull.sh
+Exit: 0
+Output:
+  test-wrap-merge-nopull: all 78 passed
+Verdict: PASS
+```
+
+Negative control for the carry guard on the pending wait (mutation: the `_merge_in_carry` test removed from the wait's condition):
+
+```
+Command: bash tests/test-wrap-ci.sh
+Exit: 0 (green before mutation)
+Output:
+    PASS the worktree was removed
+    PASS the branch was deleted
+  === the gate verdict is a code: callers do not depend on the reason wording ===
+    PASS code gate: a reworded conflict reason still prints on the SKIP line
+    PASS code gate: a reworded conflict reason still starts the conflict recovery
+    PASS code gate: a reworded pending reason still exits 0
+    PASS code gate: a reworded pending reason still reaches the ci label sync
+    PASS code gate: the reworded pending case still merges once green
+  
+  test-wrap-ci: all 214 passed
+
+Mutation: perl -pi -e 's/ && ! _merge_in_carry && _merge_pending_only/ && _merge_pending_only/' lib/wrap/wrap-merge.sh
+Changed: lib/wrap/wrap-merge.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+    PASS the worktree was removed
+    PASS the branch was deleted
+  === the gate verdict is a code: callers do not depend on the reason wording ===
+    PASS code gate: a reworded conflict reason still prints on the SKIP line
+    PASS code gate: a reworded conflict reason still starts the conflict recovery
+    PASS code gate: a reworded pending reason still exits 0
+    PASS code gate: a reworded pending reason still reaches the ci label sync
+    PASS code gate: the reworded pending case still merges once green
+  
+  test-wrap-ci: 212 passed, 2 FAILED of 214
+
+Restore: git checkout HEAD -- lib/wrap/wrap-merge.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
 ## Judgment calls
 
-- A timeout of the pending wait exits 4, not 2. `apply`'s autoland carry reads any code other than 0 and 4 from `merge --apply --pr` as a failed merge; a PR whose checks are still running at the bound is not merged and nothing failed.
+- A timeout of the pending wait follows the call's skip code: 4 under `--pr`, 0 for the bare sweep, never 2. `apply`'s autoland carry reads any code other than 0 and 4 from `merge --apply --pr` as a failed merge; a PR whose checks are still running at the bound is not merged and nothing failed.
 - Fix B reuses `_land_ff_pull` unchanged (it is callable from `wrap-merge.sh`, so the note-only fallback was not needed). The carry guard names `_autoland_carry` on the call stack, because `apply` lands its carry branch through `cmd_merge` in-process; its own test asserts that function still exists.
 - Fix C names the repo by the directory that holds `.git`, so a linked worktree reads as its main repo. A log outside any git repo prints `(no git repo)`.
 
