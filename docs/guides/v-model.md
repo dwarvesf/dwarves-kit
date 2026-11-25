@@ -9,7 +9,7 @@ _Figure: each build level on the left has a mirrored test on the right, and each
 ## What happens
 
 - You shape work down the left arm: the brief (`/kit:think`), the design (`/kit:design`), the spec (`/kit:spec`), then the code (`/kit:execute`). Each artifact gets a static review when it is produced.
-- The kit tests up the right arm. The task level checks that each task is right. The integration level checks that the tasks wire together. The acceptance level checks that the program meets the original ask.
+- The kit tests up the right arm. The task level checks that each task is right. The integration level checks that the tasks wire together. The system level runs the whole project suite. The acceptance level checks that the program meets the original ask.
 - `/kit:execute` runs the task, integration and acceptance levels at the end of the build, with a fix agent for failures that can be fixed (two retries at most).
 - `/kit:verify` re-runs the whole right arm on demand, read-only. It rebuilds nothing and fixes nothing.
 - Each level is a different agent, in a fresh context, that did not write the code.
@@ -29,7 +29,7 @@ How the levels pair up:
 | Level | Left arm (builds) | Right arm (proves) | Who runs the test |
 |---|---|---|---|
 | Requirement | `/kit:think`, `/kit:assign` | Acceptance test | `kit:acceptance-verifier` |
-| Solution design | `/kit:design` | None in the work loop (the whole suite runs in the release/nightly path) | None |
+| Solution design | `/kit:design` | System test | `kit:system-verifier` (only with `/kit:verify --full`) |
 | Spec | `/kit:spec` | Integration test | `kit:integration-verifier` |
 | Code | `/kit:execute` | Unit and task test | `kit:task-verifier` |
 
@@ -52,6 +52,9 @@ Base ref: <sha> (<how it was resolved>)
 
 ## Acceptance level (kit:acceptance-verifier)
 - PASS | FAIL -- [AC-N gap, or NO EXECUTABLE CHECK]
+
+## System level (kit:system-verifier)
+- PASS | FAIL -- [suite/regression, or NO EXECUTABLE CHECK]
 
 ## Verdict: PASS / FAIL / INCONCLUSIVE
 ```

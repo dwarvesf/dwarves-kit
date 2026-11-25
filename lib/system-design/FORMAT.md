@@ -1,6 +1,6 @@
 # SYSTEM-DESIGN.md format
 
-One file per repo: `docs/SYSTEM-DESIGN.md`, next to `docs/QUALITY.md`. It is the repo's system design document. Markdown prose plus fenced `uml` blocks (the notation is UML). Each block is one diagram, written as YAML. The first `# ` heading names the model. The prose between that heading and the first `## ` heading or block is the cover's intro. The prose right above a block is that diagram's note on its sheet.
+One file per repo: `docs/SYSTEM-DESIGN.md`, next to `docs/QUALITY.md`. It is the repo's system design document. Markdown prose plus fenced `uml` blocks (the notation is UML, plus C4 for structure). Each block is one diagram, written as YAML. The first `# ` heading names the model. The prose between that heading and the first `## ` heading or block is the cover's intro. The prose right above a block is that diagram's note on its sheet.
 
 High-level design is levels L1-L2, low-level design is L3-L4, both in this one file, told apart by the `level:` field.
 
@@ -9,7 +9,7 @@ Every block carries:
 | Key | Value |
 |---|---|
 | `id` | stable kebab id, unique in the file; the delta keys on it |
-| `type` | `usecase`, `class`, `erd`, `sequence`, `state`, `component` |
+| `type` | `usecase`, `class`, `erd`, `sequence`, `state`, `component`, `c4` |
 | `title` | sheet title |
 | `level` | `L1` context, `L2` structure, `L3` data and flows, `L4` detail |
 | `review` | optional list of questions for the reviewer, drawn as "Check here" on the sheet |
@@ -25,6 +25,7 @@ Every block carries:
 | `sequence` | `participants` [names], `messages` | message: `from`, `to`, `text`, `kind` call, return or async |
 | `state` | `states`, `transitions` | state: `name`, `final`, `initial` (else the first state starts). transition: `from`, `to`, `event`, `guard` |
 | `component` | `nodes`, `edges` | node: `id`, `name`, `note`, `group`, `kind` sys, ext or store. edge: `from`, `to`, `label`, `dashed` |
+| `c4` | `elements`, `relations`; optional `boundaries`; `view` (required) | element: `id`, `name`, `c4` person, system, container, component, db, queue or node, `tech`, `desc`, `ext`, `boundary`, `zoom`. relation: `from`, `to`, `label`, `tech`, `dashed`. Details in "C4 views" below |
 
 ## Revision (front matter)
 
@@ -50,6 +51,7 @@ Every hint is optional. Sheets are a grid: `at: [col, row]` puts an element in t
 | Type | Hints |
 |---|---|
 | `component` | `lanes: [{id, name}]` at diagram level (ordered); node `lane:` (else its `group:`) picks one and the lane draws as a frame around its nodes; node `at`; edge `via` and `route` |
+| `c4` | element `at` and `boundary`; relation `via` and `route`; `boundaries` at diagram level (see "C4 views") |
 | `usecase` | `bands: [{name, rows: [first, last]}]` at diagram level, dashed rules between row ranges; case `at`; actor `side: left` or `right` |
 | `erd` | table `at`; rel `via` and `route` |
 | `state` | state `at`; transition `via` and `route` |
@@ -68,6 +70,7 @@ Every hint is optional. Sheets are a grid: `at: [col, row]` puts an element in t
 | Type | Takes `tone` |
 |---|---|
 | `component` | node; lane (`lanes: [{id, name, tone}]`, tints the frame; a node without its own tone takes its lane's); edge |
+| `c4` | element; boundary (tints the frame; an element without its own tone takes its boundary's); relation |
 | `state` | state; transition (colors the line, arrowhead and label) |
 | `usecase` | case; actor (also colors its lines to its cases) |
 | `sequence` | participant, written `{name: Host, tone: blue}` (tints the head box); message |
@@ -76,6 +79,58 @@ Every hint is optional. Sheets are a grid: `at: [col, row]` puts an element in t
 - An unknown value is ignored and the sheet shows a warning.
 - Tone never counts as a change in the delta.
 
+## C4 views
+
+`type: c4` draws the C4 model for structure; UML keeps behavior and data (sequence, state, ERD). One block is one view, set by `view`: `context`, `container`, `component` or `deployment`. A zoom chain of the four views is the usual set, one sheet each.
+
+| Field | Meaning |
+|---|---|
+| `elements` | `id`, `name`, `c4` kind, `tech`, `desc`, `ext`, `boundary`, `zoom`, `at`, `tone`. `c4` is `person`, `system`, `container`, `component`, `db`, `queue` or `node` (default `container`) |
+| `relations` | `from`, `to`, `label`, `tech`, `dashed` (asynchronous or indirect), `via`, `route`, `tone`. Drawn as "label [tech]" |
+| `boundaries` | ordered `[{id, name, kind, in, tone}]`. `kind` is `system`, `container`, `account` or `region`. `in: <boundary id>` nests one inside another. An element joins one with `boundary: <id>` |
+
+How each kind draws:
+
+| Kind | Shape | Type line |
+|---|---|---|
+| `person` | head over shoulders | `[Person]` |
+| `system` | box | `[Software System]` |
+| `container` | box | `[Container: tech]` |
+| `component` | box | `[Component: tech]` |
+| `db` | cylinder | `[Container: tech]` |
+| `queue` | pipe | `[Container: tech]` |
+| `node` | box with a back face | `[Deployment Node: tech]` |
+
+- Every box shows the bold name, the type line, then `desc`. `ext: true` turns the box gray and the type line reads `[External ...]`.
+- A boundary draws as a dashed frame with its name and `[kind]` at the bottom left. A frame covers its own elements and its nested frames, so a nested boundary needs its elements in columns next to the parent's. The sheet warns when a frame covers an element that is not its own.
+- Without `at`, each boundary becomes a column in model order (children right after their parent). An element with no boundary sits left of the frames when it only calls into them, else right.
+- `zoom: <sheet id>` makes the element a link to that sheet, marked with a small magnifier. A zoom that names no sheet draws no link and the sheet warns.
+- Each sheet ends with a legend that lists only the kinds, boundaries and line styles it uses.
+- Delta: elements are keyed by `id` and relations by `from → to` plus `label`, as for a component. `boundary` counts as a change (a container moving between accounts is a design change); `at`, `via`, `route`, `tone` and `zoom` do not. A new `view` on the same id marks the sheet changed.
+
+````markdown
+```uml
+id: c4-containers
+type: c4
+view: container
+title: Containers
+level: L2
+boundaries:
+  - {id: mkt, name: Marketplace, kind: system}
+elements:
+  - {id: owner, name: Owner, c4: person, desc: Approves every payment., at: [0, 0]}
+  - {id: core, name: Core API, c4: container, tech: "Go, REST", desc: Quotes and orders., boundary: mkt, zoom: c4-core, at: [1, 0]}
+  - {id: pg, name: Postgres, c4: db, tech: Postgres, boundary: mkt, at: [2, 0]}
+  - {id: stripe, name: Stripe, c4: system, ext: true, desc: Connect and Link., at: [3, 0]}
+relations:
+  - {from: owner, to: core, label: Approves, tech: HTTPS}
+  - {from: core, to: pg, label: Reads and writes, tech: SQL}
+  - {from: core, to: stripe, label: Charges, tech: REST}
+```
+````
+
+Full set: `examples/marketplace-c4/` (context, container, component and deployment views, plus a base file for the delta).
+
 ## Identity (what the delta compares)
 
 - An element is keyed by `id`, else `name`.
@@ -83,7 +138,7 @@ Every hint is optional. Sheets are a grid: `at: [col, row]` puts an element in t
 - A message is keyed by `from|to|text` plus an occurrence counter for repeats of the same triple. Inserting a message does not re-key the others; a repeat gets #2, #3 by order.
 - Columns, attributes and operations are keyed by name (text before `:`, `(` or a space), so a column shows as `+col`, `-col` or `~col` inside a changed table.
 - Same key, different content: `changed`. Key only in the current file: `new`. Key only in the base: `removed`.
-- Layout hints (`at`, `via`, `route`, `side`, `lane`), `tone` and `review` lists are left out of the comparison.
+- Layout hints (`at`, `via`, `route`, `side`, `lane`), `tone`, `zoom` and `review` lists are left out of the comparison.
 
 ## Prose sections
 
@@ -116,4 +171,4 @@ transitions:
 ```
 ````
 
-Full sample: `examples/marketplace/SYSTEM-DESIGN.md`.
+Full samples: `examples/marketplace/SYSTEM-DESIGN.md` (UML) and `examples/marketplace-c4/SYSTEM-DESIGN.md` (C4).

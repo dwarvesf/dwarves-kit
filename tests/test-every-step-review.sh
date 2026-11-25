@@ -22,7 +22,7 @@ echo "=== every-step review (SPEC-093 AC1-AC3) ==="
 # --- AC1: every full-lane phase maps to a review in WORKFLOW's every-step mapping ---
 grep -qi 'Every-step review in the full-autonomous lane' "$WF"; assert "AC1: WORKFLOW has the every-step review mapping section" $?
 # each review-bearing phase names a concrete review agent/command in the V-model + mapping
-for pair in "spec-validate" "review-team" "task-verifier" "integration-verifier" "doc-verifier" "acceptance-verifier" "brief-reviewer" "recheck-verifier" "advisor"; do
+for pair in "spec-validate" "review-team" "task-verifier" "integration-verifier" "doc-verifier" "acceptance-verifier" "system-verifier" "brief-reviewer" "recheck-verifier" "advisor"; do
   grep -qi "$pair" "$WF"; assert "AC1: mapping wires a review: $pair" $?
 done
 # no review-bearing full-lane phase is skip: every 'required full' phase resolves in the plan
