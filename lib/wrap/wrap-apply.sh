@@ -863,9 +863,9 @@ _apply_origin_branches() {
   if [ "$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)" = "$_ORIGIN_PR_LIMIT" ]; then
     echo "     SKIP origin sweep: ${_ORIGIN_PR_LIMIT}+ open PRs, an unread one could need a branch"; return 0
   fi
-  local heads_out protect mnames mfile b tip verdict
+  local heads_out protect mnames mfile b tip verdict nl=$'\n'
   if ! printf '%s' "$merged" | jq -e 'type == "array"' >/dev/null 2>&1 \
-     || ! printf '%s' "$open" | jq -e 'type == "array"' >/dev/null 2>&1 \
+     || ! printf '%s' "$open" | jq -e 'type == "array" and all(.[]; (.headRefName | type) == "string" and (.baseRefName | type) == "string")' >/dev/null 2>&1 \
      || ! heads_out="$(git -C "$repo" ls-remote --heads origin 2>/dev/null)"; then
     echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
   fi
@@ -882,9 +882,12 @@ _apply_origin_branches() {
   while IFS=$'\t' read -r tip b; do
     b="${b#refs/heads/}"
     [ -n "$tip" ] && [ -n "$b" ] && [ "$b" != "$def" ] || continue
-    if [ -n "$OWN_SET" ]; then printf '%s\n' "$OWN_BRANCHES" | grep -qxF -- "$b" || continue; fi
-    printf '%s\n' "$mnames" | grep -qxF -- "$b" || continue
-    printf '%s\n' "$protect" | grep -qxF -- "$b" && continue
+    # Matched in the shell with a case on newline-delimited text, never through a pipe into grep -q:
+    # grep exits on its first hit, the writer takes SIGPIPE, and under pipefail the "found" answer
+    # reads as "not found" once the list passes the pipe buffer, which would let a protected branch go.
+    if [ -n "$OWN_SET" ]; then case "$nl$OWN_BRANCHES$nl" in *"$nl$b$nl"*) ;; *) continue ;; esac; fi
+    case "$nl$mnames$nl" in *"$nl$b$nl"*) ;; *) continue ;; esac
+    case "$nl$protect$nl" in *"$nl$b$nl"*) continue ;; esac
     verdict="$(branch_merged --need pr --tip "$tip" --prs-json "$mfile" "$repo" "$def" ok "$b")"
     case "$verdict" in "SAFE squash "*) elig="${elig}${b} ${tip}"$'\n' ;; esac
   done <<< "$heads_out"
@@ -1020,7 +1023,7 @@ _apply_repo() {
     # --pull-only skips the stray-commits carry, so name what it leaves behind rather than
     # letting unpushed commits on the default branch go silent run after run.
     if [ "$PULL_ONLY" = 1 ] && [ "$fetch_succeeded" = 1 ]; then
-      local ahead; ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+      local ahead; ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: ahead count of the main checkout's default branch for the pull step, no delete rides on it
       [ "${ahead:-0}" -gt 0 ] 2>/dev/null && \
         echo "     NOTE: ${def} is ${ahead} commits ahead of origin/${def}; --pull-only never carries them, plain apply --apply does"
     fi
