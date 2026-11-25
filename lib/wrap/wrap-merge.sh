@@ -962,7 +962,7 @@ _merge_pending_only() {
       | map(select(pending)) | length > 0' >/dev/null 2>&1
 }
 
-# _merge_pending_wait <repo-url> <default> <pr> <detail> -- the `--with-ci` wait for a PR the
+# _merge_pending_wait <repo-url> <pr> <detail> -- the `--with-ci` wait for a PR the
 # gate skipped only because its checks were still running. `_merge_register_gate` and the
 # label sync wait too, but only for a PR the gate had already passed, so a head with a check
 # in flight never reached them and the sweep ended on `nothing eligible`. Holds with the usual
@@ -971,7 +971,7 @@ _merge_pending_only() {
 # head moved during the wait (the same refusal the label wait makes) or the checks were still
 # pending when the bound ran out; the refusal is printed and the PR stays open.
 _merge_pending_wait() {
-  local url="$1" n="$3" detail="$4" head_oid new_head
+  local url="$1" n="$2" detail="$3" head_oid new_head
   head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
   echo "waiting for the pending checks on #${n} (up to ${KIT_WRAP_CARRY_CHECKS_SECS}s)"
   CI_PRELABEL_KEYS='[]'
@@ -996,9 +996,13 @@ _merge_pending_wait() {
 # --no-pull (a step 0 stop, where the main checkout belongs to a live session), refused off the
 # default branch, ff-only through `_land_ff_pull` so a dirty merge=union file is carried and
 # nothing is stashed or reset. Advisory like land's: every outcome prints one line naming the
-# command that finishes the job, and none changes the merge's exit code.
+# command that finishes the job, and none changes the merge's exit code. Silent when `apply`'s
+# autoland carry is the caller: that stage lands its carry branch through this verb in-process,
+# keeps the checkout's stray lines as dirty files, and pulls on its own stage, so a pull here
+# would move the files it is carrying.
 _merge_pull_checkout() {
   local repo="$1" def="$2" cur hint
+  case " ${FUNCNAME[*]} " in *" _autoland_carry "*) return 0 ;; esac
   hint="run: wrap apply --apply --pull-only ${repo}"
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
   if [ "$NO_PULL" = 1 ]; then
@@ -1181,7 +1185,7 @@ cmd_merge() {
   if [ "$do_apply" = 1 ] && [ -z "$first_eligible" ] && [ -n "$pend_list" ]; then
     local pn
     for pn in $pend_list; do
-      _merge_pending_wait "$url" "$def" "$pn" "$(cat "${jsondir}/pr-${pn}.json" 2>/dev/null)"; prc=$?
+      _merge_pending_wait "$url" "$pn" "$(cat "${jsondir}/pr-${pn}.json" 2>/dev/null)"; prc=$?
       if [ "$prc" -ne 0 ]; then rm -rf "$jsondir"; return "$prc"; fi
       detail="$PW_DETAIL"
       printf '%s' "$detail" > "${jsondir}/pr-${pn}.json"

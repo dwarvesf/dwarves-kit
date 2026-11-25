@@ -173,6 +173,20 @@ chk "merge --apply --pr that merged nothing: exits 4" "$([ "$rc" -eq 4 ]; echo $
 chk_no "merge --apply --pr that merged nothing: never pulls" "$out" "pull"
 chk "merge --apply --pr that merged nothing: the checkout's main is untouched" "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_BASE" ]; echo $?)"
 
+# apply's autoland carry lands its carry branch through cmd_merge in-process. It keeps the
+# checkout's stray lines as dirty files and pulls on its own stage, so the merge's pull stays
+# silent there. The caller is stood in for by a function of the same name.
+build_pull carry
+out="$(env GH_STUB_OPEN_PRS="$(pl_open 97)" "GH_STUB_PR_97=$(pl_json 97 "$PL_TIP")" \
+  GH_STUB_LAND_REPO="$PL_CLONE" GH_STUB_LAND_REMOTE="$PL_BARE" GH_STUB_LAND_BRANCH=feat/pl GH_STUB_LAND_DEF=main \
+  bash -c 'source "$1" help >/dev/null; _autoland_carry() { ( cmd_merge --apply --pr 97 "$2" ); }; _autoland_carry x "$2"' _ \
+  "$KIT_DIR/lib/wrap/wrap.sh" "$PL_CLONE" 2>&1)"; rc=$?
+chk "merge called from apply's carry: exits 0" "$rc"
+chk_has "merge called from apply's carry: merged" "$out" "tree verified"
+chk_no "merge called from apply's carry: prints no pull line" "$out" "pull"
+chk "merge called from apply's carry: the checkout's main is left for apply's own pull" \
+  "$([ "$(git -C "$PL_CLONE" rev-parse main)" = "$PL_BASE" ]; echo $?)"
+
 echo "--- merge --repo <owner>/<name>: no local checkout, gh-only gate, merge and verify"
 # No path, no clone: the stub answers by slug. Every local step is skipped and the run says so.
 RM_JSON() { # RM_JSON <number> <mergeable> <extra json fields, trailing comma>
