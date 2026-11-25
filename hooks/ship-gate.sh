@@ -691,12 +691,17 @@ fi
 
 # Resolve the spec for this slug; fail open if there is no spec-driven run. spec_active is the
 # one lookup (default mode: the name pick validate-round also binds to, status-blind, root
-# docs/specs then co-located */docs/specs); only its `name` line is a pick here. A stale
-# install without spec-active.sh keeps the old root-only glob, so the hook never breaks on it.
+# docs/specs then co-located */docs/specs); only its `name` line is a pick here, and the `name<TAB>`
+# prefix is stripped rather than split on, so a repo path that holds a TAB survives. An install
+# that has spec-find.sh but no spec-active.sh keeps the pick master makes (spec_for_slug); one
+# with neither keeps the root-only glob, so the hook never breaks on a partial update.
 SPEC=""
 SACTIVE="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-active.sh"
+SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
 if [ -r "$SACTIVE" ] && source "$SACTIVE" 2>/dev/null; then
-  SPEC=$(spec_active --slug "$SLUG" "$ROOT" 2>/dev/null | awk -F'\t' '$1 == "name" { print $2; exit }')
+  SPEC=$(spec_active --slug "$SLUG" "$ROOT" 2>/dev/null | awk 'index($0, "name\t") == 1 { print substr($0, 6); exit }')
+elif [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
+  SPEC=$(spec_for_slug "$ROOT" "$SLUG") # spec-active-ok: spec-find.sh without spec-active.sh, the enforcement name pick as before
 else
   SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true) # spec-active-ok: stale-install fallback
 fi
