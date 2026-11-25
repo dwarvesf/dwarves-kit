@@ -1,7 +1,8 @@
 // Fixture server for the ui-verify suite. Prints "port <n>" for the main listener and "port2 <n>" for
 // a second listener the suite reaches as localhost, which counts plain hits and WebSocket upgrades.
 //   node serve.mjs [--build-sha <value>]
-// Main listener: /, /index.html, /hostile.html, /offsite.html, /wall.html; /hang never answers.
+// Main listener: /, /index.html, /hostile.html, /offsite.html, /wall.html; /hang never answers;
+// /redirect answers 302 to the second listener as localhost, /redirect-ok answers 302 to /.
 // Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -31,6 +32,12 @@ function readPage(name) {
 const main = http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://fixture').pathname;
   if (pathname === '/hang') return;
+  if (pathname === '/redirect' || pathname === '/redirect-ok') {
+    const target = pathname === '/redirect' ? `http://localhost:${port2}/pixel` : '/';
+    res.writeHead(302, { location: target, 'cache-control': 'no-store' });
+    res.end();
+    return;
+  }
   const file = PAGES[pathname];
   const page = file ? readPage(file) : null;
   if (page === null) { send(res, 404, 'text/plain; charset=utf-8', 'not found\n'); return; }

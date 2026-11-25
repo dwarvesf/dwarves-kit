@@ -134,6 +134,8 @@ Step semantics:
 
 - `click` and `fill`: zero matches, or more than one, after the step timeout is FAIL. `observed` is `element not found: role=<role> name=<name>` or `ambiguous: <n> matches`. A `within` element that is missing is FAIL `element not found: role=<role> name=<name>`.
 - `observed` on a failed expect is the sanitized text, cut at 200 characters, of the `within` element, else of the first `[role=alert]` or `[role=status]` element, else of `<main>`, else of `<body>`.
+- The scenario clock also caps a step in flight: a step waits at most the smallest of the step timeout, the scenario time left and the run budget left. When the scenario clock is the one that ran out, the row is NO-CHECK `scenario timeout`; when the run budget is, `run budget spent`.
+- The browser resolves only the allowed hosts, each to the address checked at startup (`--host-resolver-rules`, recorded in `browser.args`); every other name or IP literal fails at name resolution. That is what stops a redirect to an unlisted host and a name that re-resolves to a private address. A blocked top-level hop is NO-CHECK `redirected off an allowed host`; a blocked subresource or hop changes no row status and is listed in `blocked_requests`.
 - A FAIL scenario is retried once per scenario and viewport in a fresh context. A row that failed once and passed on the retry is `PASS` with `flaky: true`. A NO-CHECK scenario is not retried.
 - A row's status is the worst over its viewports (FAIL over NO-CHECK over PASS).
 

@@ -481,6 +481,8 @@ case_fixture_serves() {
   done
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/"); [ "$code" = 200 ]; check "/ answers 200" $?
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/nope.html"); [ "$code" = 404 ]; check "control: a page that does not exist answers 404 (got $code)" $?
+  code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "http://127.0.0.1:$FIX_PORT/redirect"); [ "$code" = "302 http://localhost:$FIX_PORT2/pixel" ]; check "/redirect answers 302 to the second listener as localhost (got $code)" $?
+  code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "http://127.0.0.1:$FIX_PORT/redirect-ok"); [ "$code" = "302 http://127.0.0.1:$FIX_PORT/" ]; check "/redirect-ok answers 302 to / (got $code)" $?
   curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$FIX_PORT/hang"; code=$?
   [ "$code" = 28 ]; check "/hang gets no answer, curl times out client-side (curl exit $code)" $?
   count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count"); [ "$count" = '{"hits":0,"upgrades":0}' ]; check "GET /count answers zero hits and upgrades before any traffic ($count)" $?
@@ -660,6 +662,142 @@ case_git_status_clean() {
   [ -s "$out/result.json" ]; check "the evidence went to --out outside the repo" $?
   out="$repo/out"; run_runner "$repo" "$f" "$out"
   [ "$RC" = 3 ] && [ ! -e "$out" ]; check "control: --out inside the repo exits 3 and creates nothing (exit $RC)" $?
+  end_browser
+}
+
+case_offsite_request_aborted() {
+  echo "--- offsite-request-aborted"
+  begin_browser offsite-request-aborted || return 0
+  local f="$T/off.json" out count
+  page_scenario "$f" /offsite.html "Offsite page" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/offsite.html"},{do:"expect_text",text:"offsite done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page settled ('offsite done' shown) and its row is PASS: a blocked request changes no status (exit $RC)" $?
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
+  [ "$count" = '{"hits":0,"upgrades":0}' ]; check "the second listener saw no plain hit and no WebSocket upgrade ($count)" $?
+  [ "$(jget "$out/result.json" 'j.blocked_requests.filter(b=>b.host==="localhost").reduce((n,b)=>n+b.count,0)>=2')" = true ]; check "blocked_requests names localhost for both the HTTP request and the WebSocket" $?
+  [ "$(jget "$out/result.json" 'j.browser.args.indexOf("--host-resolver-rules=MAP 127.0.0.1 127.0.0.1, MAP * ~NOTFOUND")>=0')" = true ]; check "the launch pins the allowed host to its checked address and sends every other name to ~NOTFOUND (--host-resolver-rules in the recorded args)" $?
+
+  local redirect_js='s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/redirect"},{do:"expect_text",text:"counted"}]},{id:"AC-2",kind:"criterion",steps:[{do:"goto",path:"/redirect-ok"},{do:"expect_text",text:"Kit fixture app"}]}]'
+  page_scenario "$f" / "Kit fixture app" "$redirect_js"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 5000
+  [ "$RC" = 2 ]; check "an allowed path that answers 302 to a host off the list exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason')" = "NO-CHECK|redirected off an allowed host" ]; check "the redirect row is NO-CHECK 'redirected off an allowed host'" $?
+  [ "$(jget "$out/result.json" 'j.rows[1].status')" = PASS ]; check "control: a 302 to an allowed path is followed and its row is PASS" $?
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
+  [ "$count" = '{"hits":0,"upgrades":0}' ]; check "the second listener saw no hit through the redirect ($count)" $?
+  [ "$(jget "$out/result.json" 'j.blocked_requests.some(b=>b.host==="localhost"&&b.count>=1)')" = true ]; check "blocked_requests names localhost for the redirect hop" $?
+  page_scenario "$f" /offsite.html "Offsite page" 's.target.allow_hosts.push("localhost");s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/offsite.html"},{do:"expect_text",text:"offsite done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 0 ]; check "control: with localhost allowed the same page still settles (exit $RC)" $?
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
+  [ "$(printf '%s' "$count" | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(String(c.hits>=1&&c.upgrades>=1))')" = true ]; check "control: with localhost allowed the listener is reached both ways ($count)" $?
+  [ "$(jget "$out/result.json" 'j.browser.args.indexOf("--host-resolver-rules=MAP 127.0.0.1 127.0.0.1, MAP localhost 127.0.0.1, MAP * ~NOTFOUND")>=0')" = true ]; check "control: with localhost allowed the launch maps it to its checked address too" $?
+  page_scenario "$f" /offsite.html "Offsite page" "s.target.allow_hosts.push('localhost');$redirect_js"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 5000
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "control: with localhost allowed the same 302 is followed and the listener answers 'counted' (exit $RC)" $?
+  end_browser
+}
+
+HANG_JS='s.scenarios=[1,2,3].map(function(i){return {id:"AC-"+i,kind:"criterion",steps:[{do:"goto",path:"/hang"},{do:"expect_text",text:"x"}]}}).concat([{id:"AC-4",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"expect_text",text:"Kit fixture app"}]}])'
+
+case_hang_bounded() {
+  echo "--- hang-bounded"
+  begin_browser hang-bounded || return 0
+  local f="$T/hang.json" out id
+  bscenario "$f" "/" "$HANG_JS"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 2000 --scenario-timeout-ms 5000 --run-budget-ms 5000
+  id=$RUN_ID
+  [ "$RC" = 2 ]; check "three hanging scenarios and a normal one exit 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason')" = "NO-CHECK|page did not settle" ]; check "the first row is NO-CHECK 'page did not settle'" $?
+  [ "$(jget "$out/result.json" 'j.rows[3].status+"|"+j.rows[3].reason')" = "NO-CHECK|run budget spent" ]; check "the last row is NO-CHECK 'run budget spent'" $?
+  [ "$(jget "$out/result.json" 'j.rows.every(r=>r.status==="NO-CHECK")')" = true ]; check "no row is FAIL or PASS" $?
+  [ "$(jget "$out/result.json" 'j.browser.pids.length>0')" = true ]; check "browser.pids is not empty: the run-id marker finds the browser" $?
+  [ "$(jget "$out/result.json" 'j.browser.leftover_pids.length')" = 0 ]; check "browser.leftover_pids is empty" $?
+  wait_no_browser "$id"; check "no process carries run id $id after the runner exits (ceiling ${PGREP_CEILING_S}s fails the case)" $?
+  [ "$(jget "$out/result.json" 'j.duration_ms<=100000')" = true ]; check "duration_ms is at most 100000" $?
+
+  bscenario "$f" "/" 's.scenarios=[s.scenarios[0],s.scenarios[2],s.scenarios[3]]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows.every(r=>r.status==="PASS")')" = true ]; }; check "control: the same file without the /hang scenarios and with default timeouts exits 0, every row PASS (exit $RC)" $?
+  wait_no_browser "$RUN_ID"; check "control: the browser of the clean run is gone too" $?
+
+  bscenario "$f" "/" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/hang"},{do:"expect_text",text:"x"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 5000 --scenario-timeout-ms 1000
+  [ "$RC" = 2 ]; check "a hang with a scenario timeout below the step timeout exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason')" = "NO-CHECK|scenario timeout" ]; check "the scenario clock caps a step in flight: the row is NO-CHECK 'scenario timeout'" $?
+  wait_no_browser "$RUN_ID"; check "no browser is left after the scenario timeout run" $?
+  end_browser
+}
+
+# identity_case <label> <build sha, or empty for no header> <identity status> <exit> <seen> [scenario js]
+identity_case() {
+  local label=$1 sha=$2 want=$3 want_rc=$4 want_seen=$5 f="$T/id.json" out got
+  stop_fixture
+  if [ -n "$sha" ]; then start_fixture --build-sha "$sha"; else start_fixture; fi || { no "$label: the fixture started"; return 0; }
+  page_scenario "$f" / "Kit fixture app" "s.identity={header:'x-build-sha'};s.scenarios=[s.scenarios[3]];${6:-}"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 5000
+  got=$(jget "$out/result.json" 'j.identity.status+"|"+j.identity.seen+"|"+j.rows[0].status+"|"+j.rows[0].reason' 2>/dev/null)
+  local want_row="PASS|"
+  if [ "$want" = mismatch ]; then want_row="NO-CHECK|preview is not the head"; fi
+  if [ "$RC" = "$want_rc" ] && [ "$got" = "$want|$want_seen|$want_row" ] && grep -q "preview-identity $want " "$T/stdout"; then ok "$label -> $want"
+  else no "$label -> $want (exit $RC, got: $got)"; fi
+}
+
+case_identity_and_readiness() {
+  echo "--- identity-and-readiness"
+  begin_browser identity-and-readiness || return 0
+  local f="$T/idr.json" out
+  identity_case "header holds the first 12 hex of head_sha" 0123456789ab matched 0 0123456789ab
+  identity_case "the same in upper case" 0123456789AB matched 0 0123456789ab
+  identity_case "a different 40-hex value" ffffffffffffffffffffffffffffffffffffffff mismatch 2 ffffffffffff
+  identity_case "a UUID" 123e4567-e89b-12d3-a456-426614174000 unverified 0 123e4567-e89
+  identity_case "a semver" 1.2.3 unverified 0 1.2.3
+  identity_case "6 hex that are a prefix of head_sha" 012345 unverified 0 012345
+  identity_case "7 hex that are a prefix of head_sha" 0123456 matched 0 0123456
+  identity_case "7 hex that are not a prefix" 0123457 mismatch 2 0123457
+  identity_case "40 hex equal to head_sha" "$HEAD40" matched 0 0123456789ab
+  identity_case "41 hex" "${HEAD40}0" unverified 0 0123456789ab
+  identity_case "no identity key in the scenario, a mismatching header on the page" ffffffffffffffffffffffffffffffffffffffff unverified 0 "" 'delete s.identity'
+
+  stop_fixture; start_fixture
+  page_scenario "$f" /wall.html "Kit fixture app" 's.scenarios=[s.scenarios[3]]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 3000
+  [ "$RC" = 2 ]; check "the login wall (200, no ready text) exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows.every(r=>r.status==="NO-CHECK"&&r.reason==="preview not ready")')" = true ]; check "every row is NO-CHECK 'preview not ready', never FAIL" $?
+  page_scenario "$f" /nope.html "Kit fixture app" 's.scenarios=[s.scenarios[3]]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 3000
+  { [ "$RC" = 2 ] && [ "$(jget "$out/result.json" 'j.rows.every(r=>r.status==="NO-CHECK"&&r.reason==="preview unreachable")')" = true ]; }; check "a target URL that answers 404: every row NO-CHECK 'preview unreachable', exit 2 (exit $RC)" $?
+  page_scenario "$f" / "Kit fixture app" "s.target.url='https://nonexistent.invalid/';s.target.allow_hosts=['nonexistent.invalid'];s.target.allow_loopback=false;s.scenarios=[s.scenarios[3]]"
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  { [ "$RC" = 2 ] && [ "$(jget "$out/result.json" 'j.rows.every(r=>r.status==="NO-CHECK"&&r.reason==="preview unreachable")')" = true ]; }; check "an allowed host under .invalid that does not resolve: NO-CHECK 'preview unreachable', result.json written, exit 2 (exit $RC)" $?
+  page_scenario "$f" / "Kit fixture app" 's.scenarios=[s.scenarios[3]]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 0 ]; check "control: index.html with its real ready text passes (exit $RC)" $?
+  end_browser
+}
+
+case_browser_sandbox() {
+  echo "--- browser-sandbox"
+  begin_browser browser-sandbox || return 0
+  local f="$T/sb.json" out stub="$T/stub-bin"
+  bscenario "$f" "/"
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 0 ]; check "a normal run exits 0 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'var b=j.browser;[b.sandbox,b.no_sandbox_seen,b.launch_attempts,b.args.some(a=>a.indexOf("--no-sandbox")>=0),b.args.indexOf("--kit-ui-verify="+j.run_id)>=0,b.pids.length>0].join(",")')" = "true,false,1,false,true,true" ]; check "browser: sandbox true, no_sandbox_seen false, 1 launch attempt, no --no-sandbox, the run-id marker in args, pids found" $?
+  wait_no_browser "$RUN_ID"; check "the browser of the normal run is gone" $?
+
+  out=$(next_out); UI_VERIFY_TEST_FAULT=sandbox-unavailable run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 2 ]; check "UI_VERIFY_TEST_FAULT=sandbox-unavailable exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows.length>0&&j.rows.every(r=>r.status==="NO-CHECK"&&r.reason==="browser sandbox unavailable")')" = true ]; check "every row is NO-CHECK 'browser sandbox unavailable'" $?
+  [ "$(jget "$out/result.json" 'j.browser.launch_attempts+"|"+j.browser.sandbox+"|"+j.browser.pids.length')" = "1|false|0" ]; check "launch_attempts is 1 (no unsandboxed retry), no sandbox, no pids" $?
+  [ -z "$(pgrep -f -- "--kit-ui-verify=$RUN_ID" 2>/dev/null)" ]; check "no process carries the run id of the faulted run" $?
+
+  mkdir -p "$stub"; printf '#!/bin/sh\nexit 0\n' > "$stub/ps"; chmod +x "$stub/ps"
+  out=$(next_out); PATH="$stub:$PATH" run_runner "$CWD" "$f" "$out"
+  [ "$RC" = 2 ]; check "a scan that finds no process carrying the run id (a ps stub that lists nothing) exits 2 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows.length>0&&j.rows.every(r=>r.status==="NO-CHECK"&&r.reason==="browser sandbox unavailable")')" = true ]; check "unverified sandbox: every row is NO-CHECK 'browser sandbox unavailable'" $?
+  [ "$(jget "$out/result.json" 'j.browser.pids.length+"|"+j.browser.sandbox+"|"+j.browser.launch_attempts')" = "0|false|1" ]; check "unverified sandbox: browser.pids is empty and the sandbox is not reported as on" $?
+  wait_no_browser "$RUN_ID"; check "the runner still closed that browser (real pgrep finds nothing after the poll)" $?
   end_browser
 }
 

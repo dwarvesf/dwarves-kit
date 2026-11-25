@@ -388,3 +388,54 @@ Negative controls run in this half (hand mutations on a temp copy of `run.mjs` o
 | count NO-CHECK rows as PASS in the verdict | `doctor-and-skip` | `FAIL the verdict is NO-CHECK, never PASS` (and four more) |
 
 Open at the end of this half: `docs-rows` stays red on `feature-registry check` (FEATURES.md has drifted; the lead regenerates it last). The seam `driveBrowser` throws, so a host with the pinned install exits 4 on a runnable scenario until the browser half lands.
+
+## Build log (A2: browser, steps, bounds)
+
+Delta from the spec for the second build half. Nothing here restates the spec.
+
+Install: the documented one-liner from `--doctor` was right and complete (copy `package.json` and the lockfile, `npm ci --ignore-scripts`, local `playwright install chromium` with `PLAYWRIGHT_BROWSERS_PATH`). Wall time 24 s on this host (fast CDN, load average 30 to 45), `node_modules` 19 MB, `browsers/` 606 MB (chromium, headless shell 159.0.8154.6 and ffmpeg). `playwright install chromium` installs the full chromium as well as the headless shell; the doctor only needs a `chromium*` directory.
+
+Sandbox: the sandboxed headless launch works on this host (macOS). One launch took about 1.2 s. The runner recorded `sandbox` true, `no_sandbox_seen` false, `launch_attempts` 1 and one pid carrying the run id. A `chromiumSandbox: false` control makes `no_sandbox_seen` true.
+
+Decisions the spec did not make:
+
+- A step in flight yields to the scenario clock: its wait is the smallest of the step timeout, the scenario time left and the run budget left. Whichever binds names the reason (`scenario timeout`, `run budget spent`, else the step's own finding: FAIL for click, fill and expects, NO-CHECK `page did not settle` for goto). Ties go to the step. This pins test-plan row 33 to `scenario timeout`.
+- The scenario clock restarts per attempt (a retry is a new attempt); the run budget is shared by every attempt including retries.
+- Retry keeps the first FAIL when the retry does not pass (a retry that ends NO-CHECK for budget never turns a FAIL into NO-CHECK).
+- A FAIL row has an empty `reason`; the finding is in `observed`. A `click` or `fill` on an element that matches but never becomes actionable is FAIL `element not actionable: role=<role> name=<name>`.
+- `expect_text` `observed` follows the spec literally (first `[role=alert]` or `[role=status]` element even when it is empty).
+- Preflight reads the ready text from `<body>` `innerText`, whitespace collapsed. Order of its findings: status 4xx or 5xx or a navigation error is `preview unreachable` (retried), ready text missing is `preview not ready` (retried), a top-level hop off the allowed hosts is `redirected off an allowed host` (not retried), then identity `mismatch` is `preview is not the head`. A skip row keeps `skipped by scenario` under a mismatch (A1 left this open; applyEnvironmentFault applies to runnable rows only).
+- `browser.sandbox` is true only after the scan found at least one process with the run id and none with `--no-sandbox`. A fault or an unverified scan leaves it false.
+- Test-plan row 43: no third fault value. The suite puts a `ps` stub that lists nothing first on `PATH` for one real run; the runner's scan then finds no process carrying the run id, so the unverified-sandbox branch runs for real, with a real browser, and the suite checks with the real `pgrep` that the runner still closed it. Control: a temp copy that treats an empty scan as sandbox-ok turns the case red.
+- Test-plan row 33: pinned as above; control is a temp copy with the scenario clock removed from the step limit (`hang-bounded` red on the `scenario timeout` row).
+- Identity padding (test-plan row 37, "a value with spaces around it") is not testable through a response header, because the HTTP layer strips it; the trim is in `judgeIdentity` and is exercised only by the upper-case case.
+- The fixture gained `/redirect` (302 to the second listener as `localhost`) and `/redirect-ok` (302 to `/`), and `fixture-serves` checks both.
+- `hang-bounded` passes `--step-timeout-ms 2000` as the spec says, and the preflight is bounded by the step timeout too, so a very loaded host could fail that case on the preflight. Not seen on this host (load 30 to 100).
+
+Request guard (security review of the containment commit, two gaps fixed in the same task):
+
+- Redirect bypass: Playwright does not run the route handler again for the hop of a `route.continue()` request. A first design used `route.fetch({ maxRedirects: 0 })` and fulfilled the 3xx. Observed on the real browser: a fulfilled 302 is not routed again either (one handler call, then Chromium follows the hop itself), and fulfilling every response made Chromium block the page's own WebSocket to `localhost` (the fulfilled document has no remote address, so it counts as a public page reaching a private one), so that design was dropped. What stops the hop is the DNS pin below: every name and every IP literal not on the list fails at name resolution (observed: `MAP * ~NOTFOUND` also blocks `http://127.0.0.1:<port>/` unless that literal is mapped, so allowed IP literals are mapped to themselves). A failed request for a host off the list with `ERR_NAME_NOT_RESOLVED` is counted in `blocked_requests` like a blocked request, and a failed top-level navigation gives the row NO-CHECK `redirected off an allowed host`.
+- DNS rebinding: the runner already resolved each allowed host once; it now keeps the validated address (IPv4 first) and launches Chromium with `--host-resolver-rules=MAP <host> <address>, ..., MAP * ~NOTFOUND`, recorded in `browser.args`. No Node-side fetch exists, so there is no second resolver to dodge it. Residual: a hop after the first, or a hop to an allowed host that itself redirects off the list, is not routed and shows as `page did not settle` or a counted blocked request rather than always `redirected off an allowed host`; it still cannot reach the host.
+- Consequence for the spec's controls: with the pin in place the route guard is not the only layer, so removing the route (or the WebSocket check) alone leaves the offsite listener at 0 hits. That is the pin working, and it was observed. The control for the route needs the pin removed too (below).
+- Rebinding itself cannot be tested hermetically (no controllable DNS), so the suite asserts the launch arguments the runner recorded, plus the real redirect and offsite requests against the fixture.
+
+Negative controls run in this half (hand mutations on a temp copy of `run.mjs` outside any git work tree next to a copy of `package.json`, `UI_VERIFY_RUNNER` selecting it, the case run alone each time). Red lines:
+
+| Mutation | Case | Red line |
+|---|---|---|
+| browser status forced to PASS | `rows-and-planted-bug` | `FAIL the planted bug (/?bug=1) exits 1 (exit 0)` |
+| empty row set no longer NO-CHECK | `no-ac` | `FAIL an empty scenarios array exits 2 (exit 0)` |
+| expect-step rule removed | `no-ac` | `FAIL a goto-and-screenshot scenario exits 2 (exit 0)` |
+| `observed` stored raw | `hostile-text-fenced` | `FAIL observed holds no line break, U+2028, U+202E, pipe or backtick and is 1 to 200 characters` |
+| screenshots written to the cwd | `git-status-clean` | `FAIL git status --porcelain is empty after the run` |
+| request route always continues and no resolver pin | `offsite-request-aborted` | `FAIL the second listener saw no plain hit and no WebSocket upgrade ({"hits":2,"upgrades":0})` |
+| WebSocket check always connects and no resolver pin | `offsite-request-aborted` | `FAIL the second listener saw no plain hit and no WebSocket upgrade ({"hits":0,"upgrades":2})` |
+| resolver pin removed (route kept) | `offsite-request-aborted` | `FAIL the second listener saw no hit through the redirect ({"hits":1,"upgrades":0})` and the launch-argument check |
+| request route always continues (pin kept) | `offsite-request-aborted` | green, 13 passed: the pin alone keeps the listener at 0 hits |
+| `chromiumSandbox: false` | `browser-sandbox` | `FAIL a normal run exits 0 (exit 2)` |
+| an empty scan treated as sandbox-ok | `browser-sandbox` | `FAIL a scan that finds no process carrying the run id (a ps stub that lists nothing) exits 2 (exit 0)` |
+| browser not closed | `hang-bounded` | `FAIL browser.leftover_pids is empty` (Playwright's exit hook still ends the process, so the pgrep poll stays green) |
+| run budget not enforced | `hang-bounded` | `FAIL the last row is NO-CHECK 'run budget spent'` |
+| scenario clock does not cap a step | `hang-bounded` | `FAIL the scenario clock caps a step in flight: the row is NO-CHECK 'scenario timeout'` |
+| `mismatch` read as `unverified` | `identity-and-readiness` | `FAIL a different 40-hex value -> mismatch (exit 0, got: unverified/ffffffffffff/PASS/)` |
+| a UUID read as a build id | `identity-and-readiness` | `FAIL a UUID -> unverified (exit 2, got: mismatch/123e4567-e89/NO-CHECK/preview is not the head)` |
