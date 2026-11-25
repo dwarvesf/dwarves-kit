@@ -33,7 +33,7 @@ PGREP_CEILING_S=60
 SERVE_WAIT_S=30
 
 CASES="install-root-entry docs-rows agent-file-tokens battery-row guard-refusals doctor-and-skip fixture-serves internal-error"
-BROWSER_CASES="rows-and-planted-bug no-ac hostile-text-fenced git-status-clean offsite-request-aborted hang-bounded identity-and-readiness browser-sandbox"
+BROWSER_CASES="rows-and-planted-bug no-ac hostile-text-fenced git-status-clean offsite-request-aborted hang-bounded identity-and-readiness browser-sandbox leftover-browser-killed sigterm-closes-browser"
 
 PASS=0; FAIL=0; SKIP=0
 ok() { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
@@ -88,8 +88,18 @@ run_runner() {
   local cwd=$1 scenario=$2 out=$3; shift 3
   ( cd "$cwd" && UI_VERIFY_HOME="$RUN_HOME" "${TIMEOUT[@]}" node "${RUN_RUNNER:-$RUNNER}" scenario --scenario "$scenario" --out "$out" "$@" ) >"$T/stdout" 2>"$T/stderr"
   RC=$?
-  RUN_ID=$(awk '/^ui-verify: head /{print $NF; exit}' "$T/stdout")
+  RUN_ID=$(awk '/^ui-verify: run /{print $3; exit}' "$T/stderr")
+  if [ -z "$RUN_ID" ]; then RUN_ID=$(awk '/^ui-verify: head /{print $NF; exit}' "$T/stdout"); fi
   if [ -n "$RUN_ID" ]; then ALL_RUN_IDS="$ALL_RUN_IDS $RUN_ID"; fi
+}
+# runner_variant <name> <search> <replace>: a copy of the runner with one literal edit, next to a copy of
+# package.json and outside any git work tree. Prints its path. It fails when the search text is absent, so a
+# control that no longer matches the code cannot pass.
+runner_variant() {
+  local dir="$T/variant-$1"
+  mkdir -p "$dir"; cp "$PACKAGE_JSON" "$dir/package.json"
+  node -e 'const fs=require("fs");const c=fs.readFileSync(process.argv[1],"utf8");if(!c.includes(process.argv[3]))process.exit(1);fs.writeFileSync(process.argv[2],c.replace(process.argv[3],()=>process.argv[4]))' "$RUNNER" "$dir/run.mjs" "$2" "$3" || return 1
+  printf '%s' "$dir/run.mjs"
 }
 out_empty() { [ ! -e "$1" ] || [ -z "$(ls -A "$1")" ]; }
 next_out() { mktemp -u "$T/out.XXXXXXXX"; }
@@ -320,6 +330,12 @@ case_guard_refusals() {
   [ "$RC" = 3 ] && [ "$(ls -A "$nonempty")" = keep ]; check "refused: --out that exists and is not empty (exit $RC)" $?
   out=$(next_out); run_runner "$CWD" "$T/does-not-exist.json" "$out"
   [ "$RC" = 3 ] && out_empty "$out"; check "refused: an unreadable --scenario path (exit $RC)" $?
+  if [ "$(id -u)" != 0 ]; then
+    mkdir -p "$T/ro-parent"; chmod 555 "$T/ro-parent"
+    run_runner "$CWD" "$BASE" "$T/ro-parent/out"
+    [ "$RC" = 3 ]; check "refused: an --out whose parent cannot be written is exit 3, not an internal error (exit $RC)" $?
+    chmod 755 "$T/ro-parent"
+  else skip "guard-refusals: running as root, a read-only parent cannot be made"; fi
   printf 'not json' > "$T/notjson.json"; out=$(next_out); run_runner "$CWD" "$T/notjson.json" "$out"
   [ "$RC" = 3 ]; check "refused: a scenario file that is not JSON (exit $RC)" $?
   cp "$RUNNER" "$repo/run.mjs"; out=$(next_out)
@@ -573,6 +589,12 @@ case_internal_error() {
   UI_VERIFY_TEST_FAULT=internal-error run_runner "$CWD" "$T/does-not-exist.json" "$out"
   [ "$RC" = 3 ]; check "the fault does not mask a refusal: an unreadable scenario still exits 3 (exit $RC)" $?
   [ "$(run_runner "$CWD" "$BASE" "$(next_out)" --nonsense x; echo $RC)" = 3 ]; check "an unknown argument exits 3" $?
+  local variant
+  if variant=$(runner_variant uncaught "process.on('uncaughtException'" "process.on('uncaughtExceptionOff'"); then
+    out=$(next_out)
+    RUN_RUNNER="$variant" UI_VERIFY_TEST_FAULT=internal-error run_runner "$CWD" "$BASE" "$out"
+    [ "$RC" != 4 ]; check "control: a runner copy that no longer listens for uncaughtException does not exit 4 on the injected fault (exit $RC)" $?
+  else no "control: the uncaughtException registration is no longer in the runner"; fi
 }
 
 # The real install root the browser cases run against (UI_VERIFY_HOME wins, as in the runner).
@@ -866,6 +888,7 @@ case_browser_sandbox() {
   [ "$RC" = 0 ]; check "a normal run exits 0 (exit $RC)" $?
   [ "$(jget "$out/result.json" 'var b=j.browser;[b.sandbox,b.no_sandbox_seen,b.launch_attempts,b.args.some(a=>a.indexOf("--no-sandbox")>=0),b.args.indexOf("--kit-ui-verify="+j.run_id)>=0,b.pids.length>0].join(",")')" = "true,false,1,false,true,true" ]; check "browser: sandbox true, no_sandbox_seen false, 1 launch attempt, no --no-sandbox, the run-id marker in args, pids found" $?
   wait_no_browser "$RUN_ID"; check "the browser of the normal run is gone" $?
+  [ "$(jget "$out/result.json" 'j.browser.env_keys.join(",")+"|"+j.browser.args.includes("--no-proxy-server")')" = "HOME,PATH|true" ]; check "the browser started with the sandbox on, --no-proxy-server and only HOME and PATH in its environment" $?
 
   out=$(next_out); UI_VERIFY_TEST_FAULT=sandbox-unavailable run_runner "$CWD" "$f" "$out"
   [ "$RC" = 2 ]; check "UI_VERIFY_TEST_FAULT=sandbox-unavailable exits 2 (exit $RC)" $?
@@ -879,6 +902,63 @@ case_browser_sandbox() {
   [ "$(jget "$out/result.json" 'j.rows.length>0&&j.rows.every(r=>r.status==="NO-CHECK"&&r.reason==="browser sandbox unavailable")')" = true ]; check "unverified sandbox: every row is NO-CHECK 'browser sandbox unavailable'" $?
   [ "$(jget "$out/result.json" 'j.browser.pids.length+"|"+j.browser.sandbox+"|"+j.browser.launch_attempts')" = "0|false|1" ]; check "unverified sandbox: browser.pids is empty and the sandbox is not reported as on" $?
   wait_no_browser "$RUN_ID"; check "the runner still closed that browser (real pgrep finds nothing after the poll)" $?
+  end_browser
+}
+
+case_leftover_browser_killed() {
+  echo "--- leftover-browser-killed"
+  begin_browser leftover-browser-killed || return 0
+  local f="$T/lbk.json" out stub="$T/decoy-bin" real_ps pid_file="$T/decoy.pid" pid i=0
+  real_ps=$(command -v ps)
+  mkdir -p "$stub"
+  cat > "$stub/ps" <<STUB
+#!/bin/bash
+if [ ! -e "$pid_file" ]; then
+  id=\$("$real_ps" -axww -o command= | sed -n 's/.*--kit-ui-verify=\([0-9a-f]*\).*/\1/p' | head -n 1)
+  if [ -n "\$id" ]; then
+    ( exec -a "ui-verify-decoy --kit-ui-verify=\$id" sleep 300 ) >/dev/null 2>&1 &
+    echo \$! > "$pid_file"
+    sleep 0.5
+  fi
+fi
+exec "$real_ps" "\$@"
+STUB
+  chmod +x "$stub/ps"
+  bscenario "$f" "/"
+  out=$(next_out); PATH="$stub:$PATH" run_runner "$CWD" "$f" "$out"
+  pid=$(cat "$pid_file" 2>/dev/null)
+  [ "$RC" = 0 ]; check "a run that leaves a process carrying its run id behind still exits 0 (exit $RC)" $?
+  [ -n "$pid" ] && [ "$(jget "$out/result.json" "j.browser.pids.includes($pid)")" = true ]; check "the scan recorded the stray process (pid ${pid:-none}) among the run's pids" $?
+  while [ "$i" -lt 20 ] && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; do sleep 0.5; i=$((i+1)); done
+  { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; }; check "the runner killed the stray process that carried its run id" $?
+  [ "$(jget "$out/result.json" 'j.browser.leftover_pids.length')" = 0 ]; check "browser.leftover_pids is empty after the kill" $?
+  if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; fi
+  wait_no_browser "$RUN_ID"; check "no process carries the run id at the end" $?
+  end_browser
+}
+
+case_sigterm_closes_browser() {
+  echo "--- sigterm-closes-browser"
+  begin_browser sigterm-closes-browser || return 0
+  local f="$T/sig.json" out id="" rc pid i=0
+  bscenario "$f" "/" "$HANG_JS"
+  out=$(next_out)
+  ( cd "$CWD" && UI_VERIFY_HOME="$RUN_HOME" exec node "$RUNNER" scenario --scenario "$f" --out "$out" ) >"$T/sig.out" 2>"$T/sig.err" &
+  pid=$!
+  while [ "$i" -lt 120 ]; do
+    id=$(awk '/^ui-verify: run /{print $3; exit}' "$T/sig.err")
+    if [ -n "$id" ] && pgrep -f -- "--kit-ui-verify=$id" >/dev/null 2>&1; then break; fi
+    sleep 0.5; i=$((i+1))
+  done
+  [ -n "$id" ]; check "the run id is printed on stderr before the browser work starts (${id:-none})" $?
+  ALL_RUN_IDS="$ALL_RUN_IDS $id"
+  kill -TERM "$pid" 2>/dev/null
+  i=0; while [ "$i" -lt 120 ] && kill -0 "$pid" 2>/dev/null; do sleep 0.5; i=$((i+1)); done
+  if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid" 2>/dev/null; fi
+  { wait "$pid"; } 2>/dev/null; rc=$?
+  [ "$rc" = 143 ]; check "SIGTERM ends the runner with exit 143 (exit $rc)" $?
+  [ -n "$id" ] && ! pgrep -f -- "--kit-ui-verify=$id" >/dev/null 2>&1; check "no process carries the run id the moment the runner has exited" $?
+  grep -q '^ui-verify: interrupted, browser closed' "$T/sig.err"; check "the runner reports that it closed the browser before it exited" $?
   end_browser
 }
 
