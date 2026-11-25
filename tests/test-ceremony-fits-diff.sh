@@ -875,6 +875,20 @@ case_floor_workflow_base_glob_braces() {
   done_case floor-workflow-base-glob-braces
 }
 
+
+case_floor_workflow_base_byte_rule() {
+  local rn='    runs-on: self-hosted' nel=$'\xc2\x85'
+  basetry full bare-cr-hides-a-name "$(wf_base_sub "$rn" $'    timeout-minutes: 5\r    name: Required')" "$(wf_sub 'lint check' 'Required')"
+  basetry full nel-hides-a-name "$(wf_base_sub "$rn" "    timeout-minutes: 5${nel}    name: Required")" "$(wf_sub 'lint check' 'Required')"
+  basetry full tab-in-a-comment "${WF_BASE}"$'\n# a\tb'
+  basetry full utf8-letter-in-a-comment "${WF_BASE}"$'\n# caf\xc3\xa9'
+  basetry full byte-order-mark $'\xef\xbb\xbf'"$WF_BASE"
+  basetry full bare-cr-inside-a-comment "${WF_BASE}"$'\n# note\rmore'
+  basetry sized crlf-file-still-classifies "${WF_BASE//$'\n'/$'\r\n'}"
+  basetry sized control-plain-ascii "$WF_BASE"
+  done_case floor-workflow-base-byte-rule
+}
+
 # Each finding's checks carry a `# chk:<id>` tag. A copy of the libs with one id switched off (bad( becomes a
 # no-op, `return 1` becomes `true`) must turn that finding's rows RED; the real libs keep them green.
 mut_libs() {  # mut_libs <id> <extra-sed-expr-lane-classify|-> <extra-sed-expr-ship-rules|->; prints the copy dir
@@ -920,6 +934,7 @@ case_rule_a_checks_are_load_bearing() {
   mut_red R7 "review 7 action allowlist" 's/\(checkout\|setup-/(checkout|cache|upload-artifact|github-script|download-artifact|setup-/' - floor-workflow-action-allowlist
   mut_red R8 "round 2 row 1 name continuation" - - floor-workflow-base-name-continues
   mut_red R9 "round 2 row 2 glob braces" - - floor-workflow-base-glob-braces
+  mut_red R10 "round 3 base byte rule" - - floor-workflow-base-byte-rule
   WANT=quoted-permission-value mut_red PERM "single fault: permission" - - floor-workflow-single-fault-rows
   WANT=quoted-permission-key mut_red PERM "single fault: permission key" - - floor-workflow-single-fault-rows
   WANT=unpinned-checkout mut_red PIN "single fault: unpinned" - - floor-workflow-single-fault-rows
@@ -936,7 +951,7 @@ run_case() {
   local fn="case_${1//-/_}"
   if declare -F "$fn" >/dev/null; then "$fn"; else fail "$1" "no such case"; fi
 }
-ALL="class-docs-tree-any-extension-is-inert class-code-under-docs-keeps-its-class class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff floor-additive-workflow-is-sized ship-rule-floor-sizes-workflow-add sized-workflow-still-owes-proof floor-hook-behavior-change-keeps-full floor-workflow-mixed-diffs-keep-full floor-workflow-existing-workflow-keeps-full floor-workflow-escapes-keep-full floor-workflow-on-block-tricks-keep-full floor-workflow-name-tricks-keep-full floor-workflow-reuse-and-privilege-keep-full floor-workflow-read-failures-keep-full floor-workflow-collision-read-points floor-workflow-block-scalar-cannot-smuggle floor-workflow-odd-path-keeps-full floor-workflow-odd-file-keeps-full floor-workflow-grammar-refusals floor-workflow-data-loss-line-keeps-full floor-code-to-comment-keeps-full floor-comment-edit-is-sized-and-logged floor-config-key-flip-keeps-full sized-notices-relay-and-cap floor-sized-flood-keeps-floor floor-workflow-base-expression-names floor-workflow-base-workflow-run-anywhere floor-workflow-base-unclassifiable-keeps-full floor-workflow-replaced-objects-keep-full floor-workflow-byte-count-must-be-digits floor-tools-missing-prints-a-hit floor-workflow-action-allowlist floor-workflow-single-fault-rows floor-workflow-base-name-continues floor-workflow-base-glob-braces rule-a-checks-are-load-bearing"
+ALL="class-docs-tree-any-extension-is-inert class-code-under-docs-keeps-its-class class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff floor-additive-workflow-is-sized ship-rule-floor-sizes-workflow-add sized-workflow-still-owes-proof floor-hook-behavior-change-keeps-full floor-workflow-mixed-diffs-keep-full floor-workflow-existing-workflow-keeps-full floor-workflow-escapes-keep-full floor-workflow-on-block-tricks-keep-full floor-workflow-name-tricks-keep-full floor-workflow-reuse-and-privilege-keep-full floor-workflow-read-failures-keep-full floor-workflow-collision-read-points floor-workflow-block-scalar-cannot-smuggle floor-workflow-odd-path-keeps-full floor-workflow-odd-file-keeps-full floor-workflow-grammar-refusals floor-workflow-data-loss-line-keeps-full floor-code-to-comment-keeps-full floor-comment-edit-is-sized-and-logged floor-config-key-flip-keeps-full sized-notices-relay-and-cap floor-sized-flood-keeps-floor floor-workflow-base-expression-names floor-workflow-base-workflow-run-anywhere floor-workflow-base-unclassifiable-keeps-full floor-workflow-replaced-objects-keep-full floor-workflow-byte-count-must-be-digits floor-tools-missing-prints-a-hit floor-workflow-action-allowlist floor-workflow-single-fault-rows floor-workflow-base-name-continues floor-workflow-base-glob-braces floor-workflow-base-byte-rule rule-a-checks-are-load-bearing"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
