@@ -65,7 +65,8 @@ The same order as the Design flowchart; every arrow down is "passed".
       state MERGED, oid 40-hex, base == code-root default,
       url names PR N ........................................ exit 1
        |
-  [4] goal file **Branch:** == headRefName (or BRANCH unverified) ..... exit 3
+  [4] normalized goal file **Branch:** == headRefName, or --branch-override,
+      or BRANCH unverified ............................................ exit 3
        |
   [5] _tick_store: attempt-state.sh dir (code-root, ledger), status <id> ... exit 5
        |
@@ -75,7 +76,7 @@ The same order as the Design flowchart; every arrow down is "passed".
        |
   [8] new line == current? -- yes --> UNCHANGED (no write)
        | no
-  [9] mktemp + awk(ENVIRON) + chmod + mv ROADMAP.md ........ unlock, exit 8
+  [9] mktemp + awk(ENVIRON, old line must still match) + chmod + mv ... unlock, exit 8
        |
   [10] unlock
        |
@@ -110,8 +111,8 @@ The check order as a flowchart (ASCII; this repo's operator rule forbids mermaid
      state MERGED; oid 40-hex; base == code-root default;
      url is .../<owner>/<name>/pull/<N>? --------------- no --> exit 1
    | yes
- [4] goal file Branch resolves? -- no --> print BRANCH unverified, go on
-       | yes: == headRefName? ----------------------------- no --> exit 3
+ [4] goal file Branch resolves (after normalizing)? -- no --> print BRANCH unverified, go on
+       | yes: == headRefName as a literal, or --branch-override? -- no --> exit 3
    | yes
  [5] attempt stores resolve; record in at most one store;
      record eligible, or positively absent, or --no-attempt with no record? -- no --> exit 5
@@ -127,7 +128,8 @@ The check order as a flowchart (ASCII; this repo's operator rule forbids mermaid
    | yes
  [8] new line == current line? -- yes --> UNCHANGED, skip [9]
    | no
- [9] mktemp, write, chmod, mv ok? ------------------------- no --> unlock, exit 8 (original intact)
+ [9] mktemp; record TICK_NR still == the line read in [7];
+     write, chmod, mv ok? ------------------------------- no --> unlock, exit 8 (original intact)
    | yes: TICKED
  [10] unlock
  [11] record found? -- no --> ATTEMPT none / skipped, exit 0
@@ -153,6 +155,7 @@ Out of bounds: merging, pushing, committing, fetching, and any ROADMAP line othe
 mega tick <mega-slug> <sub-id> --pr <N>
           [--note <text> | --keep-note]
           [--attempt <aid> | --no-attempt]
+          [--branch-override <reason>]
           [--megagoals-root <path>] [--code-root <path>]
 
 example (VimMotion keeps its megas under docs/megagoals):
@@ -165,27 +168,35 @@ example (VimMotion keeps its megas under docs/megagoals):
 - `--note <text>`: emit ` (<text>)` after the sha. A note holding any control character (bytes 0x00 to 0x1f, or 0x7f) refuses with exit 3. Backslashes and every printable byte are kept verbatim.
 - `--keep-note`: keep the current line's annotation verbatim (defined under "Line match"). `--note` and `--keep-note` together give exit 64.
 - `--attempt <aid>`: commit this attempt id instead of the resolved one. `--no-attempt`: record nothing in the attempt store (see "Attempt record"). Both together give exit 64.
+- `--branch-override <reason>`: accept a goal-file branch that differs from the PR head (a renamed or replacement branch). The reason follows the note rules (no control character, at most 200 bytes, else exit 3) and is printed on the AUDIT line as `branch-override=<reason, printf %q>`; the BRANCH line then reads `BRANCH override <goal branch> != <head>`.
+- Text checks: every control-character test runs under `LC_ALL=C` over bytes 0x00 to 0x1f and 0x7f. A `--note` longer than 200 bytes is exit 3.
 - `--code-root <path>`: the repo whose PRs and default branch are git truth. It resolves as `mega status` does: flag > `$CODE_ROOT` > git toplevel of cwd.
 - Dependencies: `gh` and `jq` on `PATH` (or `GH_BIN`). Either missing gives exit 1, named on stderr.
-- Environment seams, the convention `mega status` already uses: `GH_BIN`; `ATTEMPT_STATE_BIN` (default: the sibling `lib/goal/attempt-state.sh`); `ATTEMPT_REGISTRY_DIR` (when set, the only store); `MEGA_TICK_GH_TIMEOUT_S` (default 30; applied through `timeout` or `gtimeout` when one exists, as `lib/board/work.sh` does, and unbounded when neither exists); `MEGA_TICK_LOCK_WAIT_SECS` (default 10; accepts `0` or a decimal such as `0.5`; the poll interval is 0.2 s, so the wait is `ceil(wait / 0.2)` polls); `MEGA_TICK_TEST=1` plus `MEGA_TICK_TEST_PAUSE_FILE` (tests only: with both set, after taking the lock the verb waits while that file exists, at most 30 s; without `MEGA_TICK_TEST=1` the pause file is ignored).
+- Environment seams, the convention `mega status` already uses: `GH_BIN`; `ATTEMPT_STATE_BIN` (default: the sibling `lib/goal/attempt-state.sh`); `ATTEMPT_REGISTRY_DIR` (when set, the only store); `MEGA_TICK_GH_TIMEOUT_S` (default 30; applied through `timeout` or `gtimeout` when one exists, as `lib/board/work.sh` does, and unbounded when neither exists); `MEGA_TICK_LOCK_WAIT_SECS` (default 10; accepts `0` or a decimal such as `0.5`; the poll interval is 0.2 s, so the wait is `ceil(wait / 0.2)` polls); `MEGA_TICK_TEST=1` plus `MEGA_TICK_TEST_PAUSE_FILE` (tests only: with both set, after taking the lock and reading the matched line, before the write, the verb waits while that file exists, at most 30 s; without `MEGA_TICK_TEST=1` the pause file is ignored).
 
 **gh read** (one call, `cwd = <code-root>`, stdout parsed, stderr kept only for its first line)
 
 ```
-gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url
+GH_PROMPT_DISABLED=1 gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url </dev/null
 ```
+
+- stdin is `/dev/null` and `GH_PROMPT_DISABLED=1` is set, so gh can never block on a prompt. The timeout is `MEGA_TICK_GH_TIMEOUT_S` through `timeout` or `gtimeout`; on a host with neither, the call is unbounded (the `lib/board/work.sh` precedent), and the usage text says so.
 
 - Audit passes only when: `state == "MERGED"`; `mergeCommit.oid` is 40 lowercase hex; `baseRefName` equals `kit_default_branch_here <code-root>`; `url` matches `https://<host>/<owner>/<name>/pull/<N>` with `<N>` equal to `--pr`. `<owner>/<name>` is the repo the AUDIT line prints.
 - Every PR-sourced string (`baseRefName`, `headRefName`, `url`) is refused (exit 1) when it is longer than 255 bytes or holds a control character. These strings are always quoted, never passed to `eval`, never word-split, and never interpolated into an `awk -v` or `sed` program.
-- gh nonzero, timeout, empty stdout, or JSON `jq` cannot parse: exit 1, and the stderr line carries gh's first stderr line (cut to 200 bytes).
+- gh nonzero, timeout, empty stdout, or JSON `jq` cannot parse: exit 1, and the stderr line carries gh's first stderr line (control bytes stripped, cut to 200 bytes).
+- `MERGED` with a null `mergeCommit`: exit 1 with "merged but gh has no merge commit yet; retry shortly".
+- Every untrusted string printed in a message (gh stderr, a `**Branch:**` value, a PR string, a reason) has its control bytes stripped first. Every recovery command printed (exit 6, exit 7) is built with `printf %q` per argument, so it can be pasted as is.
 - No default branch resolves for code-root: exit 1, and stderr names the resolver (`kit_default_branch_here`: `origin/HEAD`, then `origin/main`, then `origin/master`) and the fix `git -C <code-root> remote set-head origin -a`.
 
 **Goal-file branch check**
 
-- The goal file is `<megadir>/goals/<sub-id>.md`, read through the existing `_sub_branch` (its `**Branch:** <name>` line).
-- Branch resolves and differs from gh `headRefName`: exit 3, naming both. This catches a wrong `--pr` on an open line.
+- The goal file is `<megadir>/goals/<sub-id>.md`, read through the existing `_sub_branch` (its `**Branch:** <rest of line>`). `_sub_branch` itself is not changed, so `mega status` keeps its raw value.
+- Normalize the value in `_tick_branch_norm`, in this order: strip one trailing CR; strip one trailing ` (...)` group (real shape: `ci/release-pipeline (existing)`); trim surrounding whitespace; strip one surrounding pair of backticks; trim again. An empty result counts as "no branch line".
+- Compare the normalized value to gh `headRefName` as a quoted literal string (`[ "$goal" = "$head" ]`), never as an unquoted `[[ == ]]` pattern, so a value such as `feat/*` matches only itself.
+- Mismatch: exit 3, naming both (control bytes stripped), unless `--branch-override <reason>` is given. This catches a wrong `--pr` on an open line.
 - No goal file or no `**Branch:**` line: stdout `BRANCH unverified <sub-id> (no **Branch:** line in goals/<sub-id>.md)`, and the verb continues.
-- Branch resolves and matches: stdout `BRANCH ok <name>`.
+- Match: stdout `BRANCH ok <name>`.
 
 **Line format** (written)
 
@@ -197,7 +208,7 @@ gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url
 - `- [x]` is built from `box_token done`, never spelled as a literal (the `tests/test-mega-box.sh` section 14 lint scans `lib/mega`).
 - `<sha7>` is the first 7 characters of gh's `mergeCommit.oid`. It is never an argument and never read from the line or from local git.
 - This is the format the VimMotion ROADMAP declares ("Format on completion: `- [x] NN-slug, PR #N, merged <sha>`"). `commands/mega.md` line 164 describes the SG-NN scaffold's done form as `- [x] SG-NN ... -- PR #N`. That form stays as it is, because SG-NN is out of scope.
-- The new line is built by bash string concatenation and reaches the writer only through the environment: `awk` reads `ENVIRON["TICK_NR"]` and `ENVIRON["TICK_LINE"]`, prints `TICK_LINE` for record `TICK_NR`, and prints every other record unchanged. `awk -v` is never used for it, because `-v` expands backslash escapes (`\n` in a note would forge a second line). No `sed` program ever holds note text.
+- The new line is built by bash string concatenation and reaches the writer only through the environment: `awk` reads `ENVIRON["TICK_NR"]`, `ENVIRON["TICK_OLD"]` and `ENVIRON["TICK_LINE"]`, prints `TICK_LINE` for record `TICK_NR` only when that record still equals `TICK_OLD`, prints every other record unchanged, and exits nonzero when record `TICK_NR` no longer equals `TICK_OLD` (exit 8, temp moved aside). `awk -v` is never used for it, because `-v` expands backslash escapes (`\n` in a note would forge a second line). No `sed` program ever holds note text.
 
 **Line match** (read, under the lock)
 
@@ -205,7 +216,8 @@ gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url
 - A matched line ending in `\r` (CRLF file): exit 3. The verb never writes a mixed-ending file.
 - A parked box (`box_name` is `parked`): exit 3.
 - Primary PR: the first `PR #<digits>` in the line, the same parse `cmd_status` uses (`mega.sh:317`). Annotation text after it (`fix-forward PR #43`) never counts.
-- Another sub-goal line (any box, any other id) whose primary PR is `<N>`: exit 3. One PR closes one sub-goal.
+- PR numbers are compared as exact strings (`PR #093` is not `93`; a mismatch refuses).
+- Another DONE-box sub-goal line (any other id) whose primary PR is `<N>`: exit 3. One PR closes one sub-goal. Open and parked lines are not read for this rule, because open-line prose may cite a PR (`see PR #96`) without owning it.
 - Repairable ticked shape: a done-box line is rewritten only when it has the shape `<box> <id>, PR #<n>` optionally followed by `, merged` and one word with no space or `(`, optionally followed by ` (<text>)`, and nothing else but trailing spaces. This covers the canonical line, a wrong sha (`merged 2819920`), a non-sha word (`merged OPEN `), and a bare `merged`. Any other done-box line (for example the older kit form `- [x] 01-module-collapse (dwarves-kit), <prose>, PR #190 merged cb64f15 (<prose>)`) refuses with exit 3, so no prose is dropped in silence; it is fixed by hand first.
 - A ticked line whose primary PR differs from `--pr`: exit 3.
 - Existing annotation: the `<text>` of the ` (<text>)` group above, from the first ` (` after the merged word to the final `)`. A ticked line that has one refuses (exit 3) unless `--note` or `--keep-note` is given. `--keep-note` with no annotation, or with an annotation holding a control character: exit 3.
@@ -218,7 +230,7 @@ gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url
 - `mkdir flip.lock` fails and the dir exists: the lock is held. If `flip.lock/pid` holds a pid that `kill -0` reports dead, reclaim it by the driver's rule (move the pid file aside to `${TMPDIR:-/tmp}`, never `rm`, then `rmdir`) and retry. A live pid, or no pid file, is waited on until `MEGA_TICK_LOCK_WAIT_SECS`, then exit 7.
 - `mkdir flip.lock` fails and no dir exists (permissions, read-only file system): exit 8, with the `mkdir` error.
 - Exit 7 stderr names the path, the recorded pid (or "no pid file"), and the exact recovery command: for a live pid, "retry once pid <p> exits"; for no pid file, `rmdir '<path>'` once no driver is running.
-- Release, on every exit path after acquire (an EXIT trap): only when `flip.lock/pid` holds the verb's own pid; move the pid file aside, then `rmdir`.
+- Release, on every exit path after acquire (an EXIT trap): only when `flip.lock/pid` holds the verb's own pid; move the pid file aside, then `rmdir`. The same trap moves any `.roadmap.tick.*` temp file this run created aside (never `rm`).
 
 **Write**
 
@@ -234,7 +246,7 @@ gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url
 - A record is the regular file `<dir>/<sub-id>.task`. Found in two distinct stores: exit 5, naming both. Found in one: every later `attempt-state.sh` call runs with `ATTEMPT_REGISTRY_DIR=<that dir>`, so it reads and writes exactly that store.
 - Positive "no record": at least one candidate dir exists as a directory and none holds `<sub-id>.task`. Stdout: `ATTEMPT none <sub-id> (no <sub-id>.task in <dir>[, <dir>])`; exit 0. No candidate dir exists at all: exit 5, with the hint "pass --no-attempt if this mega never dispatched through attempt-state".
 - `--no-attempt`: skip the store, stdout `ATTEMPT skipped <sub-id> (--no-attempt)`. A record found in any candidate store still refuses (exit 5): an explicit skip never hides a live dispatch.
-- Eligibility, decided before any write from `attempt-state.sh status <sub-id>`, per the transition tables at `attempt-state.sh:63-75`: an attempt is eligible when the task is `dispatched` and the attempt is `running` or `disconnected` (commit), or the task is `done` and the attempt is the `winner=` attempt (`NOOP`). Resolution: `--attempt` if given, matched by exact field equality on the `attempt=<aid>` field, and it must be eligible; else the one `running` or `disconnected` attempt of a `dispatched` task; else the `winner=` attempt of a `done` task; else exit 5. A `lost` or `superseded` attempt, a task in state `lost` or `queued`, and a non-winner on a done task all refuse before the ROADMAP is touched. The exit 5 stderr names the task state, each attempt's state, and the way out (`--attempt <aid>` for an eligible attempt, or settle the record with `attempt-state.sh` first).
+- Eligibility, decided before any write from `attempt-state.sh status <sub-id>`, per the transition tables at `attempt-state.sh:63-75`: an attempt is eligible when the task is `dispatched` and the attempt is `running` or `disconnected` (commit), or the task is `done` and the attempt is the `winner=` attempt (`NOOP`). Resolution: `--attempt` if given, matched by exact field equality on the `attempt=<aid>` field, and it must be eligible (with no record anywhere, `--attempt` is exit 5); else the one `running` or `disconnected` attempt of a `dispatched` task (two or more live attempts with no `--attempt`: exit 5, naming the candidates); else the `winner=` attempt of a `done` task; else exit 5. A `lost` or `superseded` attempt, a task in state `lost` or `queued`, and a non-winner on a done task all refuse before the ROADMAP is touched. The exit 5 stderr names the task state, each attempt's state, and the way out (`--attempt <aid>` for an eligible attempt, or settle the record with `attempt-state.sh` first).
 - Done task: when its `ref=` differs from the new `PR#<N>@<sha7>`, stderr prints `ATTEMPT ref-mismatch <sub-id> recorded=<ref> now=<ref>`. The exit code is unaffected (a done record has no legal move).
 
 **Exit codes and output**
@@ -243,12 +255,12 @@ gh pr view <N> --json state,mergeCommit,baseRefName,headRefName,url
 |---|---|---|
 | 0 | `TICKED` or `UNCHANGED`, plus the attempt line | ROADMAP (TICKED only); the attempt store (when a record exists) |
 | 1 | gh audit refused: gh or jq missing, gh failed or timed out, unparseable JSON, not MERGED, no 40-hex oid, base is not the code-root default, no default resolves for code-root, url does not name PR N, or a PR string over 255 bytes or with a control character | nothing |
-| 3 | content refused: note with a control character, goal-file branch differs from the PR head, no line or more than one, CR line end, parked box, line not in the repairable shape, primary PR differs, another line already names PR N, annotation rule broken, kept annotation with a control character | nothing |
+| 3 | content refused: note or override reason with a control character or over 200 bytes, goal-file branch (normalized) differs from the PR head without `--branch-override`, no line or more than one, CR line end, parked box, line not in the repairable shape, primary PR differs, another done line already names PR N, annotation rule broken, kept annotation with a control character | nothing |
 | 4 | ledger checkout refused: on its default branch, HEAD detached, or no default branch resolves (stderr names the resolver and `git remote set-head origin -a`) | nothing |
-| 5 | attempt refused before any write: a store cannot resolve, a record in two stores, no store dir at all without `--no-attempt`, `--no-attempt` with a record present, or no eligible attempt | nothing |
-| 6 | the ROADMAP was written, then `commit-result` failed. Stderr: "ROADMAP written; settle the record: re-run this same command (the line reads UNCHANGED and the commit is retried), or run `ATTEMPT_REGISTRY_DIR=<dir> attempt-state.sh commit-result <id> <aid> PR#<N>@<sha7>`" | ROADMAP only |
+| 5 | attempt refused before any write: a store cannot resolve, `--attempt` with no record, two live attempts without `--attempt`, a record in two stores, no store dir at all without `--no-attempt`, `--no-attempt` with a record present, or no eligible attempt | nothing |
+| 6 | the ROADMAP was written, then `commit-result` failed. Stderr: "ROADMAP written; settle the record: re-run the same command with the same flags (the line reads UNCHANGED and the commit is retried), or run `ATTEMPT_REGISTRY_DIR=<dir> attempt-state.sh commit-result <id> <aid> PR#<N>@<sha7>`", each argument quoted with `printf %q` | ROADMAP only |
 | 7 | `flip.lock` held by a live pid, or with no pid file, past the wait; stderr gives the recovery command | nothing |
-| 8 | write path refused: ROADMAP.md is a symlink or not a regular file, `.orchestrate/` or the lock dir cannot be created for a reason other than "exists", or `mktemp` / write / `chmod` / `mv` failed | nothing (the original file is intact) |
+| 8 | write path refused: ROADMAP.md is a symlink or not a regular file, the matched record changed between read and write, `.orchestrate/` or the lock dir cannot be created for a reason other than "exists", or `mktemp` / write / `chmod` / `mv` failed | nothing (the original file is intact) |
 | 64 | usage error | nothing |
 
 stdout on success, one line each, in this order:
@@ -293,16 +305,17 @@ None.
 
 ### Phase 1: Core
 
-- [ ] TASK-001: Add the helpers `_tick_args`, `_tick_audit`, `_tick_store`, `_tick_lock`, `_tick_unlock` and `_tick_line` to `lib/mega/mega.sh`, source `lib/gate/default-branch-warn.sh` for `kit_default_branch_here`, add the `# merged-ok:` marker on the gh statement, and bump the pinned count in `tests/test-shared-lookups.sh`. Acceptance: `bash -n lib/mega/mega.sh`; `bash tests/test-mega-box.sh` and `bash tests/test-shared-lookups.sh` pass.
-- [ ] TASK-002: depends: TASK-001. Add `cmd_tick` in the flowchart order, wire `tick` into `main`, extend the header usage block and the `usage()` line range, with the `--megagoals-root docs/megagoals` example. Acceptance: every row of the Exit codes table is reachable; `bin/mega --help` prints a `tick` line.
+- [ ] TASK-001: Add the helpers `_tick_args`, `_tick_audit`, `_tick_branch_norm`, `_tick_store`, `_tick_lock`, `_tick_unlock` and `_tick_line` to `lib/mega/mega.sh`; wrap the bottom `main "$@"` in the `[ "${BASH_SOURCE[0]}" = "$0" ]` guard (the `attempt-state.sh` pattern) so the helpers can be sourced; source `lib/gate/default-branch-warn.sh` for `kit_default_branch_here`; add the `# merged-ok:` marker on the gh statement; bump the pinned count in `tests/test-shared-lookups.sh`. Acceptance: `bash -n lib/mega/mega.sh`; a one-line `bash -c` that sources `lib/mega/mega.sh` and calls `_tick_branch_norm` on the three fixture shapes (suffixed ` (existing)`, backticked, CR-ended) prints `ci/release-pipeline`, `feat/13`, `feat/x`; `bash tests/test-mega-box.sh` and `bash tests/test-shared-lookups.sh` pass.
+- [ ] TASK-002: depends: TASK-001. Add `cmd_tick` in the flowchart order, wire `tick` into `main`, extend the header usage block and the `usage()` line range with the `--megagoals-root docs/megagoals` example, and update the `# Usage:` comment in `bin/mega` to name `tick`. Acceptance: `bin/mega --help` prints a `tick` line; `bin/mega tick` with no args exits 64.
 
 ### Phase 2: Tests
 
-- [ ] TASK-003: depends: TASK-001, TASK-002. Add `tests/test-mega-tick.sh` with the fixtures and cases in `## Test plan`: a `GH_BIN` stub keyed on the PR number that logs its argv, a ledger fixture repo and a separate code fixture repo, each with a bare origin and `origin/HEAD` set, a goal-file dir, and attempt stores in both repos' git dirs. Acceptance: the suite passes, and each negative control in `## Grounding` turns its named case red when its mutation is applied by hand.
+- [ ] TASK-003: depends: TASK-001, TASK-002. Create `tests/test-mega-tick.sh` with the fixtures of `## Test plan` (the `GH_BIN` stub keyed on the PR number that logs argv and cwd, a ledger repo and a separate code repo each with a bare origin and `origin/HEAD` set, the goal-file dir, attempt stores in both git dirs) and the audit, branch and line cases C1 to C25 plus C48 to C51. Acceptance: those cases pass, and NC1 to NC7, NC18 to NC23 and NC34 to NC36 turn their named case red when applied by hand.
+- [ ] TASK-004: depends: TASK-003. Add the ledger, attempt, lock and write cases C26 to C47 to the same suite. Acceptance: the whole suite passes, and NC8 to NC17 and NC24 to NC33 turn their named case red when applied by hand.
 
 ### Phase 3: Docs
 
-- [ ] TASK-004: depends: TASK-002. Document the verb in `lib/mega/README.md` (entry-point line, "read-only views" becomes "views plus one writer", tests line) and in `docs/WORKFLOW.md` "## Mega-goal delegate execution", at the point where a sub-goal closes ("box flipped"): an NN-slug ROADMAP line is closed with `mega tick`, never a hand edit. Acceptance: `rg -n 'mega tick' lib/mega/README.md docs/WORKFLOW.md` finds both.
+- [ ] TASK-005: depends: TASK-002. Document the verb in `lib/mega/README.md` (entry-point line, "read-only views" becomes "views plus one writer", tests line) in `lib/README.md` (the mega module's one-line entry, if it names verbs), and in `docs/WORKFLOW.md` "## Mega-goal delegate execution", at the point where a sub-goal closes ("box flipped"): an NN-slug ROADMAP line is closed with `mega tick`, never a hand edit. Acceptance: `rg -n 'mega tick' lib/mega/README.md docs/WORKFLOW.md` finds both.
 
 ## After state
 
@@ -327,7 +340,7 @@ none
 
 ## Test plan
 
-**Fixtures.** Two git repos in a temp dir, each with a bare origin and `origin/HEAD` set by `git remote set-head`: `ledger` (holds `docs/megagoals/m1/ROADMAP.md`, mode 644, checked out on `run/m1`; its default is `main`) and `code` (default `develop`). Neither has a `.orchestrate/` dir to start with, like the real VimMotion mega dir. `goals/40-drag-by-labels.md` carries `**Branch:** feat/vn-40-drag-by-labels`; `goals/44-uat-pack-release-gate.md` carries `**Branch:** feat/vn-44-uat`; no other goal file has a `**Branch:**` line. Each case starts from a fresh copy of every fixture and both stores, so no case depends on another's write.
+**Fixtures.** Two git repos in a temp dir, each with a bare origin and `origin/HEAD` set by `git remote set-head`: `ledger` (holds `docs/megagoals/m1/ROADMAP.md`, mode 644, checked out on `run/m1`; its default is `main`) and `code` (default `develop`). Neither has a `.orchestrate/` dir to start with, like the real VimMotion mega dir. Goal files with a `**Branch:**` line: `40-drag-by-labels.md` `feat/vn-40-drag-by-labels`; `44-uat-pack-release-gate.md` `feat/vn-44-uat`; `01-release-pipeline.md` `ci/release-pipeline (existing)` (the real suffixed shape); `13-hintkit-labels.md` `` `feat/13` `` (backticked); `21-app-shell-seams.md` `feat/x` followed by a CR byte; `50-glob.md` `feat/*`. No other goal file has one. Each case starts from a fresh copy of every fixture and both stores, so no case depends on another's write.
 
 ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) plus synthetic rows:
 
@@ -344,6 +357,8 @@ ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) 
 - [x] 47-legacy (repo), prose, PR #190 merged cb64f15 (note)
 - [x] 48-backslash, PR #48, merged abcdef1 (path C:\tmp\x and a \n literal)
 - [ ] 49-open-other, prose, PR #
+- [ ] 50-glob, prose, PR #
+- [ ] 51-cites, see PR #96 for context, PR #
 ```
 
 **gh stub** (every PR returns `url` `https://github.com/acme/code/pull/<N>` unless noted, and logs its argv and cwd):
@@ -352,7 +367,8 @@ ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) 
 |---|---|---|---|---|
 | 96 | MERGED | develop | feat/vn-40-drag-by-labels | `0c471eb999dcbbcb51723e4ea22912d217e73fb8` |
 | 37 | MERGED | develop | feat/13 | `281992a3530ea05c37709663c04ea2514dec0654` |
-| 57, 21, 38, 48 | MERGED | develop | feat/x | a fixed oid each |
+| 57, 38, 48 | MERGED | develop | feat/x | a fixed oid each |
+| 21 | MERGED | develop | ci/release-pipeline | a fixed oid (the real PR 21 head) |
 | 102 | OPEN | develop | feat/vn-44-uat | null |
 | 103 | MERGED | develop | feat/vn-44-uat | null |
 | 104 | MERGED | feat/stack | feat/vn-44-uat | an oid |
@@ -367,9 +383,9 @@ ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) 
 
 | # | Case | Expect |
 |---|---|---|
-| C1 | tick 40 with PR 96; record `40...` in the code store: `dispatched`, `a1` running | exit 0; stdout AUDIT (repo `acme/code`), `BRANCH ok`, TICKED `- [x] 40-drag-by-labels, PR #96, merged 0c471eb`; status `done winner=a1 ref=PR#96@0c471eb`; diff is exactly 1 `<` and 1 `>`; file mode still 644; `.orchestrate/flip.lock` gone afterwards |
-| C2 | tick 13 with PR 37, first with `--keep-note`, then with no flags | exit 3 (no annotation to keep); then exit 0, `merged 281992a`, `BRANCH unverified` |
-| C3 | tick 21 with PR 57 | exit 0; `merged OPEN ` replaced by gh's sha7, trailing space gone |
+| C1 | tick 40 with PR 96 (line 51 is an open line citing PR #96 in prose); record `40...` in the code store: `dispatched`, `a1` running | exit 0; stdout AUDIT (repo `acme/code`), `BRANCH ok`, TICKED `- [x] 40-drag-by-labels, PR #96, merged 0c471eb`; status `done winner=a1 ref=PR#96@0c471eb`; diff is exactly 1 `<` and 1 `>`; file mode still 644; `.orchestrate/flip.lock` gone afterwards |
+| C2 | tick 13 with PR 37, first with `--keep-note`, then with no flags | exit 3 (no annotation to keep); then exit 0, `merged 281992a`, `BRANCH ok feat/13` (backticked branch line) |
+| C3 | tick 21 with PR 57 | exit 0; `BRANCH ok feat/x` (CR-ended branch line); `merged OPEN ` replaced by gh's sha7, trailing space gone |
 | C4 | run C1 a second time | exit 0; `UNCHANGED`; attempt line `NOOP`; ROADMAP bytes identical |
 | C5 | tick 44 with PR 102 (OPEN) | exit 1; unchanged |
 | C6 | tick 44 with PR 103 (MERGED, null oid) | exit 1; unchanged |
@@ -379,7 +395,7 @@ ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) 
 | C10 | tick 44 with PR 106 (OPEN, oid present) | exit 1; unchanged |
 | C11 | tick 44 with PR 109 (url names another PR) and with PR 111 (300-byte head) | exit 1 each; unchanged |
 | C12 | `GH_BIN` pointing at a missing file; and `PATH` without `jq` | exit 1 each, naming the missing tool; unchanged |
-| C13 | code fixture with its origin refs removed (no default resolves) | exit 1; stderr names `kit_default_branch_here` and `git -C <code-root> remote set-head origin -a`; unchanged |
+| C13 | code fixture with its origin refs removed and its `origin` remote still configured (no default resolves) | exit 1; stderr names `kit_default_branch_here` and `git -C <code-root> remote set-head origin -a`; unchanged |
 | C14 | tick 44 with PR 108 (head `feat/someone-else`, goal file says `feat/vn-44-uat`) | exit 3, naming both branches; unchanged |
 | C15 | tick 49 with PR 57 (another line, 21, already names PR #57) | exit 3; unchanged |
 | C16 | tick `99-missing`; tick `13-hintkit` (prefix of a real id) | exit 3 each; unchanged |
@@ -387,7 +403,7 @@ ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) 
 | C18 | tick 45 (parked); tick 46 (two lines) | exit 3 each; unchanged |
 | C19 | tick 47 with PR 190 (legacy ticked line with prose) | exit 3; unchanged |
 | C20 | tick 07 with PR 38, no flags; then `--keep-note` | exit 3; then exit 0, annotation kept verbatim |
-| C21 | tick 01 with PR 21 and `--note "merged by Han"` | exit 0; line ends ` (merged by Han)` |
+| C21 | tick 01 with PR 21 and `--note "merged by Han"` | exit 0; `BRANCH ok ci/release-pipeline` (suffixed branch line); line ends ` (merged by Han)` |
 | C22 | tick 40 with PR 96 and `--note 'x\n- [x] 99-other, PR #1, merged abc1234'` (a literal backslash and `n`, no newline byte) | exit 0; the line ends ` (x\n- [x] 99-other, PR #1, merged abc1234)` byte-exact; `diff` shows 1 `<` and 1 `>`; `grep -c '^- \[x\] 99-other'` is 0 |
 | C23 | tick 48 with PR 48 and `--keep-note` | exit 0; the annotation `path C:\tmp\x and a \n literal` is byte-exact; one-line diff |
 | C24 | `--note` holding a real newline, a tab, and a 0x7f byte; and a 48 line whose annotation holds a tab, with `--keep-note` | exit 3 each; unchanged |
@@ -413,7 +429,11 @@ ROADMAP rows, copied from the real VimMotion ROADMAP (quoted in `## Grounding`) 
 | C44 | `ATTEMPT_STATE_BIN` stub that passes `dir` and `status` but fails `commit-result` | exit 6; ROADMAP written; stderr carries the settle command; a re-run with the real script converges to exit 0 with `UNCHANGED` |
 | C45 | `chmod` stubbed to fail through `PATH` | exit 8; ROADMAP unchanged; no `.roadmap.tick.*` left in the mega dir |
 | C46 | `SG-01` id; `--note` plus `--keep-note`; `--attempt` plus `--no-attempt`; `--pr` missing, `096`, `1234567890`, `9a`; mega slug `../x` and `.hidden` | exit 64 each |
-| C47 | gh stub argv and cwd log over C1 | exactly one call, `pr view 96 --json state,mergeCommit,baseRefName,headRefName,url`, cwd = code-root; no `merge`, no `fetch`; no git call writes a ref |
+| C47 | gh stub argv, cwd and env log over C1 | exactly one call, `pr view 96 --json state,mergeCommit,baseRefName,headRefName,url`, cwd = code-root, stdin not a TTY, `GH_PROMPT_DISABLED=1`; no `merge`, no `fetch`; no git call writes a ref |
+| C48 | tick 44 with PR 108 and `--branch-override "branch renamed after review"` | exit 0; AUDIT ends `branch-override=branch\ renamed\ after\ review`; `BRANCH override feat/vn-44-uat != feat/someone-else` |
+| C49 | tick 50 with PR 48 (goal file `feat/*`, head `feat/x`) | exit 3; unchanged |
+| C50 | `--note` of 201 bytes; `--branch-override` with a tab | exit 3 each; unchanged |
+| C51 | ROADMAP changed by another writer between the line read and the write (simulated with the C43 pause seam: the test edits line 40 while the verb waits) | exit 8; the other writer's edit stays; no `.roadmap.tick.*` left in the mega dir |
 
 ## Verification
 
@@ -438,7 +458,7 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 | gh unavailable, unauthenticated, or hung | gh exits nonzero, prints no JSON, or hits `MEGA_TICK_GH_TIMEOUT_S` | exit 1 with gh's first stderr line, nothing written; rerun once gh works |
 | gh API shape change (field renamed) | `jq` yields an empty `state` or `oid` | treated as not MERGED, exit 1; fail closed, never a sha-less tick |
 | Wrong `--pr` | the goal file's `**Branch:**` differs from gh's head (exit 3), or another line already names that PR (exit 3), or a ticked line records another PR (exit 3) | refused before any write. With no `**Branch:**` line the AUDIT line still shows the head for a human check, and `BRANCH unverified` flags it |
-| A wrong tick that got through anyway | `mega status`, or a human reading the AUDIT/BRANCH lines | the verb never commits: before the commit, `git -C <ledger> restore <ROADMAP>`; after it, `git revert` the tick commit or fix the line, then tick again with the right PR (the same-id line is now repairable). The attempt record is terminal once `done` (no legal move out); `attempt-state.sh release <id>` drops it, and the merged PR plus the run ledger stay the durable trail |
+| A wrong tick that got through anyway | `mega status`, or a human reading the AUDIT/BRANCH lines | fixed by `git revert` or a hand edit, never by the verb: a re-tick with another PR refuses (exit 3, the line records a different PR). Before the commit, `git -C <ledger> restore <ROADMAP>`; after it, `git revert` the tick commit or hand-edit the line back to open, then tick with the right PR. The attempt record is terminal once `done` (no legal move out); `attempt-state.sh release <id>` drops it, and the merged PR plus the run ledger stay the durable trail |
 | Attempt store unreachable or wrong | `attempt-state.sh dir` fails, or the record sits in a store nobody probed | `dir` failure is exit 5, never "no record"; both roots are probed; `ATTEMPT none` prints every dir it looked in |
 | Lock left by a crashed run | `flip.lock` with a dead pid | reclaimed by the driver's rule (pid moved aside, `rmdir`), then the tick proceeds |
 | Lock held by a live process, or with no pid file | the wait runs out | exit 7 with the recovery command; the verb never reclaims a live or pid-less lock |
@@ -459,6 +479,8 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 ## Touches
 
 - lib/mega/mega.sh
+- bin/mega
+- lib/README.md
 - lib/mega/README.md
 - tests/test-mega-tick.sh
 - tests/test-shared-lookups.sh
@@ -475,7 +497,7 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 - DEC-007: a ticked line whose primary PR equals `--pr` is rewritten (the repair path). This is what fixes the `2819920` and `merged OPEN` lines.
 - DEC-008: exit codes are distinct per refusal class (1, 3, 4, 5, 6, 7, 8) so each negative control asserts its own code, not just "nonzero".
 - DEC-009: note text reaches the file only through the environment (`ENVIRON` in awk) and bash concatenation, and any control character in a note or kept annotation refuses. `awk -v` expands backslash escapes, so a note with `\n` would forge a second ledger line.
-- DEC-010: a wrong `--pr` is caught by the goal file's `**Branch:**` line (all 44 VimMotion goal files carry one) and by the one-PR-one-line rule. With no branch line the verb continues and prints `BRANCH unverified`, because requiring one would block megas whose goal files never declared it.
+- DEC-010: a wrong `--pr` is caught by the goal file's `**Branch:**` line (all 44 VimMotion goal files carry one; it is normalized before the compare, and `--branch-override <reason>` is the logged escape for a legitimate rename) and by the one-PR-one-line rule. With no branch line the verb continues and prints `BRANCH unverified`, because requiring one would block megas whose goal files never declared it.
 
 ## Grounding
 
@@ -558,7 +580,22 @@ $ stat -f '%Lp' docs/megagoals/01-human-first-upgrade/ROADMAP.md
 644
 ```
 
-The goal-file branch for sub-goal 40 equals PR 96's `headRefName`, which is the match DEC-010 relies on.
+Distinct `**Branch:**` shapes across all 44 goal files (43 are a bare name, one carries a suffix; none is backticked or CR-ended):
+
+```
+$ grep -h '^\*\*Branch:\*\* ' goals/*.md | awk '{print NF}' | sort | uniq -c
+  43 2
+   1 3
+$ grep -H '^\*\*Branch:\*\* ' goals/01-*.md goals/02-*.md goals/40-*.md goals/44-*.md
+goals/44-uat-pack-release-gate.md:**Branch:** feat/vn-44-uat-pack-release-gate
+goals/40-drag-by-labels.md:**Branch:** feat/vn-40-drag-by-labels
+goals/01-release-pipeline.md:**Branch:** ci/release-pipeline (existing)
+goals/02-package-scaffold.md:**Branch:** feat/vn-02-package-scaffold
+$ gh pr view 21 --json headRefName 2>/dev/null
+{"headRefName":"ci/release-pipeline"}
+```
+
+The suffixed line 01 normalizes to `ci/release-pipeline`, which equals PR 21's head; sub-goal 40's line equals PR 96's head. The backticked and CR-ended shapes are not in this run; the fixture adds them because hand-written goal files elsewhere may carry them.
 
 **ROADMAP lines** (`git -C /Users/tieubao/orca/workspaces/VimMotion/next-run-2 show HEAD:docs/megagoals/01-human-first-upgrade/ROADMAP.md`):
 
@@ -647,6 +684,10 @@ Each trace: the mutation to the new code, the fixture it reads, the path it then
 | NC30 | write the box as a literal `- [x]` | none (static lint) | the section 14 scan of `lib/mega` hits the new line | `tests/test-mega-box.sh` "no reader hardcodes the box grammar" fails |
 | NC31 | omit the `# merged-ok:` marker on `gh pr view` | none (static lint) | `PAT_MERGED` hits an unmarked statement | `tests/test-shared-lookups.sh` reports `UNMARKED merged lib/mega/mega.sh` |
 | NC32 | overwrite ROADMAP.md in place instead of temp plus `mv`, and skip the symlink check | C29 symlinked ROADMAP.md | the link target is rewritten | C29 expects exit 8 and both unchanged; gets 0 |
+| NC34 | compare the raw `**Branch:**` value, no normalization | goal file 01 `ci/release-pipeline (existing)`; PR 21 head `ci/release-pipeline` | the values differ, exit 3 | C21 expects exit 0; gets 3 (C2 and C3 go red the same way for the backticked and CR shapes) |
+| NC35 | compare with an unquoted `[[ $head == $goal ]]` | goal file 50 `feat/*`; PR 48 head `feat/x` | the pattern matches, the wrong PR is recorded | C49 expects exit 3; gets 0 |
+| NC36 | apply the one-PR rule to open lines too | line 51 `see PR #96` in prose | ticking 40 with PR 96 refuses | C1 expects exit 0; gets 3 |
+| NC37 | replace record `TICK_NR` without comparing it to `TICK_OLD` | C51 concurrent edit | the other writer's edit is overwritten | C51 expects exit 8 and the edit kept; gets 0 |
 | NC33 | skip the `chmod` to the original mode | `mktemp` creates mode 600 | the ROADMAP ends at mode 600 | C1 expects mode 644; finds 600 |
 
 ## Open questions
