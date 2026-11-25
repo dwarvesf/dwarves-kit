@@ -440,6 +440,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] db-migration-worker <- /kit:execute (builder, domain=db-migration) -> migration + rollback -> end verifiers` |
 | `[D] meta-agent <- /kit:draft-agent -> staged draft -> command promotes` |
 | `[D] break-it <- /kit:battery (behavioral diff with green tests) -> input or call sequence the suite does not constrain -> advisory findings (read-only, never writes a test)` |
+| `[D] ui-acceptance-verifier <- /kit:battery (UI diff with a preview URL and a lead-written scenario file) -> runner drives the preview through the acceptance criteria -> per-criterion PASS, FAIL or NO-CHECK verdict (read-only, never writes a scenario)` |
 | `[D] slop-stripper <- /kit:review-team -> behavior-preserving AI-slop strip on the branch diff -> surgical edits` |
 | `[D] devops-triage <- on demand, no command dispatches it -> alert + Workers Logs + git around the deploy sha -> bounded root-cause verdict (read-only)` |
 | `[D] task-verifier <- /kit:execute, /kit:verify -> AC check -> PASS / FAIL:fixable / FAIL:escalate` |

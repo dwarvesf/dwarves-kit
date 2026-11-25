@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Worker page</title>
+</head>
+<body>
+<main>
+  <h1>Worker page</h1>
+  <p role="status" id="state"></p>
+</main>
+<script>
+  var worker = new Worker('/worker.js');
+  worker.onmessage = function () { document.getElementById('state').textContent = 'worker done'; };
+  worker.onerror = function () { document.getElementById('state').textContent = 'worker done'; };
+  worker.postMessage('ws://127.0.0.1:__PORT2__/socket');
+</script>
+</body>
+</html>

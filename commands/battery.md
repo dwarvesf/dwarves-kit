@@ -72,9 +72,12 @@ Add specialized lenses when the diff touches their domain; each is its own agent
 | secrets, keys, symlinks, subprocess, network, containers, persist paths | kit:security-reviewer | high |
 | a public interface / request-response shape | kit:api-reviewer | mid |
 | UI | kit:frontend-reviewer | mid |
+| UI with a preview URL for the head commit | kit:ui-acceptance-verifier | mid |
 | deploy, CI, IaC, launchd | kit:infra-reviewer | mid |
 | hot paths, N+1, allocations | kit:performance-reviewer | mid |
 | input handling, a trust boundary, a state machine, or a stated numeric/format contract, WITH tests | kit:break-it | high |
+
+The UI verifier needs a lead-written `scenario.json` and the preview URL; its brief contract is in `agents/ui-acceptance-verifier.md` `## Input`. It is a first slice, the scenario layer only: a criterion behind a sign-in cannot be checked, so its `skip` entry is NO-CHECK and the merged verdict escalates. Without a preview or a scenario, skip it and record the reason.
 
 The measured lesson behind the escalation rule: a diff that qualified for the
 security lens shipped without it, and the lens later found a HIGH (a key-persist
