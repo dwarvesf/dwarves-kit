@@ -50,17 +50,26 @@ case "$verb" in
     git rev-parse -q --verify "refs/heads/$br" >/dev/null || { echo "wt.sh: no local branch $br" >&2; exit 1; }
     # The shared merged check, PR rung only: a merged PR whose head is this branch's exact tip. A commit
     # the PR never carried, a PR into another base, or any gh failure leaves the branch in place.
-    verdict="$(branch_merged --need pr "$MAIN" master "$(_gh_state)" "$br")"
+    tip="$(git rev-parse -q --verify "refs/heads/$br")"
+    verdict="$(branch_merged --need pr --tip "$tip" "$MAIN" master "$(_gh_state)" "$br")"
     case "$verdict" in
       "SAFE squash "*) ;;
       *) echo "wt.sh: refusing to close: $br is not at the head of a merged PR (${verdict:-no answer})" >&2; exit 1 ;;
     esac
+    # gh lists the newest PR first, so one merged PR says nothing about a later one from the same head:
+    # any OPEN PR that names the head keeps the branch, and so does a list that cannot be read.
+    open="$(gh pr list --repo "$(_origin_url "$MAIN")" --head "$br" --state open --json number 2>/dev/null)" || open=""
+    if [ "$(printf '%s' "$open" | jq -r 'if type == "array" then length else -1 end' 2>/dev/null)" != 0 ]; then
+      echo "wt.sh: refusing to close: an open PR names $br, or the open-PR list could not be read" >&2; exit 1
+    fi
+    [ "$(git rev-parse -q --verify "refs/heads/$br")" = "$tip" ] || { echo "wt.sh: refusing to close: $br moved while it was checked" >&2; exit 1; }
     bash "$LIB/goal/goal-registry.sh" release "$slug" 2>/dev/null || true
     # -f -f: a single --force no-ops on a locked worktree, and the `git branch -D` below then
     # fails with "used by worktree", which reads as a second unrelated problem.
     [ -d "$wt" ] && git worktree remove -f -f "$wt"
     git branch -D "$br" >/dev/null
-    git push origin --delete "$br" >/dev/null 2>&1 || true
+    # Leased to the tip that was judged: an origin branch that moved on (a newer PR from the same head) stays.
+    git push origin --force-with-lease="refs/heads/$br:$tip" ":refs/heads/$br" >/dev/null 2>&1 || true
     git worktree prune
     # The main checkout often carries an uncommitted BACKLOG flip; park it
     # around the fast-forward so the pull never aborts on it.
