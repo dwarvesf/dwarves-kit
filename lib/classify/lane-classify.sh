@@ -527,7 +527,8 @@ _DOC_AWK='cur ~ /\.(md|markdown|txt|rst|adoc)$/ || cur ~ /(^|\/)docs\//'
 # A floor that cannot run its own tools must not answer "no hit": print a hit instead.
 _floor_tools_ok() {
   local t
-  for t in git awk sed tr grep wc; do
+  # every external command the floor verb's code path runs, read from its functions and the config readers
+  for t in git awk sed tr grep wc head cut cmp mktemp cp mv rm cat sort paste basename env; do
     command -v "$t" >/dev/null 2>&1 || { printf 'full tools-missing: %s\n' "$t"; return 1; }
   done
   return 0
@@ -818,6 +819,7 @@ AWK
 # inline `jobs:`, a quoted or complex key, a job key that is not `[A-Za-z0-9_-]+:`, a job-level `uses:`, a name
 # value that is empty, a block or folded scalar, an anchor, an alias, a tag or a flow value.
 read -r -d '' _WF_BASECHECK <<'AWK' || true
+BEGIN { pend = -1; jl = -1; pl = -1 }
 function unsafe(m) { print "unclassifiable base line " NR ": " m > "/dev/stderr"; failed = 1; exit 3 }
 function ign(m) { }
 function add(v,   p, n, seg) {
@@ -833,7 +835,9 @@ function glob(v,   o, i, j) {
     if (j == 0) unsafe("unterminated expression")   # chk:R3
     o = o substr(v, 1, i - 1) "*"; v = substr(v, i + j + 1)
   }
-  return o v
+  o = o v
+  if (index(o, "}}") || index(o, "${{")) unsafe("an expression the glob could not absorb")   # chk:R9
+  return o
 }
 function nameval(raw,   v, c) {
   v = raw; sub(/ +#.*$/, "", v); gsub(/^ +| +$/, "", v)
@@ -855,12 +859,13 @@ function nameval(raw,   v, c) {
   if (l == "---" || l ~ /^--- / || l ~ /^\.\.\./) unsafe("document marker")   # chk:R3
   if (l ~ /^ *$/ || l ~ /^ *#/) next
   match(l, /^ */); ind = RLENGTH; t = substr(lo, ind + 1)
+  if (pend >= 0) { if (ind > pend) unsafe("a name value continues on the next line"); pend = -1 }   # chk:R8
   if (t ~ /^["'?&*!{\[]/) unsafe("key shape")   # chk:R3
   if (ind == 0) {
     injobs = 0
     if (t !~ /^[a-z_][a-z0-9_-]*:/) unsafe("top-level shape")   # chk:R3
     if (t ~ /^jobs:/) { if (t !~ /^jobs: *(#.*)?$/) unsafe("inline jobs"); injobs = 1; jl = -1; pl = -1; next }   # chk:R3
-    if (t ~ /^name:/) nameval(substr(t, 6))
+    if (t ~ /^name:/) { nameval(substr(t, 6)); pend = ind }
     next
   }
   if (!injobs) next
@@ -874,7 +879,7 @@ function nameval(raw,   v, c) {
   if (ind == pl) {
     if (t !~ /^(- [^ ]|[a-z0-9_-]+ *:)/) unsafe("job property shape")   # chk:R3
     if (t ~ /^uses *:/) unsafe("job-level uses")   # chk:R3
-    if (t ~ /^name *:/) { v = t; sub(/^name *:/, "", v); nameval(v) }
+    if (t ~ /^name *:/) { v = t; sub(/^name *:/, "", v); nameval(v); pend = ind }
   }
 }
 END { if (failed) exit 3; for (v in out) print v }
