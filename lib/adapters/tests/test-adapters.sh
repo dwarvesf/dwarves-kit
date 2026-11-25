@@ -282,13 +282,12 @@ eq "an empty directory loads zero adapters in Python" "$(py_run "$W/empty" rows 
 ok "the real set holds $real adapter manifest(s); the loader skips lib/adapters/tests and docs"
 
 echo "=== the frozen core lists ==="
-# CORE_VERBS: the main() labels of board.sh that are not adapter verbs, plus the first token of each alternative
-# in the backlog.sh usage braces. Until the bridge verbs move out of main(), five labels are adapter verbs by
-# design and are excluded here: mirror status writeback mirror-cleanup hermes.
+# CORE_VERBS: the main() labels of board.sh (none of them is an adapter verb) plus the first token of each
+# alternative in the backlog.sh usage braces.
 main_labels="$(awk '/^main\(\) \{/{m=1;next} m && /^}/{m=0} m && /^    [-a-z|]+\)/{sub(/^    /,""); sub(/\).*/,""); print}' "$KIT/lib/board/board.sh" | tr '|' '\n' | grep -E '^[a-z][a-z-]*$')"
 usage_line="$(grep -m1 'usage: backlog.sh {' "$KIT/lib/board/backlog.sh")"
 backlog_verbs="$(printf '%s' "$usage_line" | sed 's/.*usage: backlog.sh {//; s/}.*//' | tr '|' '\n' | awk '{print $1}')"
-expected="$(printf '%s\n%s\n' "$main_labels" "$backlog_verbs" | grep -vxE 'mirror|status|writeback|mirror-cleanup|hermes' | sort -u | tr '\n' ' ')"
+expected="$(printf '%s\n%s\n' "$main_labels" "$backlog_verbs" | sort -u | tr '\n' ' ')"
 actual="$(bash -c '. "$0"; printf "%s\n" $CORE_VERBS' "$SH" | sort -u | tr '\n' ' ')"
 eq "CORE_VERBS equals the main() labels and the backlog.sh verbs (minus the adapter verbs)" "$actual" "$expected"
 cp "$SH" "$W/adapters-mut.sh"; sed -i.bak 's/^CORE_VERBS="all /CORE_VERBS="/' "$W/adapters-mut.sh"
@@ -300,6 +299,53 @@ eq "ADAPTERS_ENGINE_FLAGS equals the engine flags that stay core" "$engine_core"
 sweep_flags="$(awk '/^while \[ \$# -gt 0 \]; do case/{m=1;next} m && /^esac; done/{m=0} m' "$KIT/lib/sync/sweep/board-sweep" | grep -oE '^  --?[a-z][a-z|-]*\)' | tr -d ' )' | tr '|' '\n' | grep -E '^--' | sed 's/^--//' | grep -vxE 'mirror-hermes-home|mirror-snapshot|expire-kinds-file' | sort -u | tr '\n' ' ')"
 want_sweep="$(bash -c '. "$0"; printf "%s\n" $ADAPTERS_SWEEP_FLAGS' "$SH" | sort -u | tr '\n' ' ')"
 eq "ADAPTERS_SWEEP_FLAGS equals the sweep flags that stay core" "$sweep_flags" "$want_sweep"
+
+echo "=== board.sh resolves adapter verbs from the manifests ==="
+BOARD="$KIT/lib/board/board.sh"
+cat > "$W/verbs.md" <<'MD'
+# BACKLOG
+
+| ID | Item | Notes & source | Status |
+|---|---|---|---|
+| ID-001 | first thing | n | queued |
+MD
+mkdir -p "$W/ext/vx"
+printf 'verb\tfakeverb\trun.sh\tfirst-arg\nverb\tpyverb\trun.py\n' > "$W/ext/vx/adapter.tsv"
+printf '#!/bin/bash\nprintf "sh|%%s|n=%%s|lib=%%s\\n" "$1" "$#" "${KIT_LIB:-unset}"\nfor a in "$@"; do printf "[%%s]" "$a"; done; echo\n' > "$W/ext/vx/run.sh"
+printf 'import os, sys\nprint("py|" + "|".join(sys.argv[1:]) + "|lib=" + os.environ.get("KIT_LIB", "unset"))\n' > "$W/ext/vx/run.py"
+bsh() { local d="$1"; shift; env -u KIT_LIB KIT_ADAPTERS_DIR="$d" bash "$BOARD" "$@"; }
+real_next="$(env -u KIT_ADAPTERS_DIR bash "$BOARD" next --backlog-file "$W/verbs.md" 2>&1)"
+eq "board next prints the first queued id" "$real_next" "ID-001"
+for dir in "$W/empty" "$W/no-such-dir"; do
+  eq "board next works with $(basename "$dir") as the adapter directory" "$(bsh "$dir" next --backlog-file "$W/verbs.md" 2>&1)" "ID-001"
+  eq "board get works with $(basename "$dir") as the adapter directory" "$(bsh "$dir" get ID-001 --backlog-file "$W/verbs.md" 2>&1)" "$(env -u KIT_ADAPTERS_DIR bash "$BOARD" get ID-001 --backlog-file "$W/verbs.md" 2>&1)"
+  cp "$W/verbs.md" "$W/verbs-set.md"
+  bsh "$dir" set ID-001 claimed --backlog-file "$W/verbs-set.md" >/dev/null 2>&1 && grep -q 'claimed' "$W/verbs-set.md" && ok "board set works with $(basename "$dir") as the adapter directory" || bad "board set failed with $(basename "$dir") as the adapter directory"
+  out="$(bsh "$dir" mirror --backlog-file "$W/verbs.md" 2>&1)"; rc=$?
+  eq "board mirror with no adapter ends in the usage line, exit 64 ($(basename "$dir"))" "$rc" "64"
+  has "board mirror with no adapter prints the backlog.sh usage ($(basename "$dir"))" "$out" "usage: backlog.sh"
+done
+out="$(bsh "$W/ext" fakeverb "a b" c 2>&1)"
+eq "an adapter verb runs under bash: manifest args first, then the caller's, spaces kept, KIT_LIB exported" "$out" "$(printf 'sh|first-arg|n=3|lib=%s\n[first-arg][a b][c]' "$KIT/lib")"
+eq "a .py verb runs under python3 with the caller's args" "$(bsh "$W/ext" pyverb x "y z" 2>&1)" "py|x|y z|lib=$KIT/lib"
+[ "$(bsh "$W/ext" fakeverb 2>&1 | head -n 1)" != "$(bsh "$W/empty" fakeverb --backlog-file "$W/verbs.md" 2>&1 | head -n 1)" ] && ok "present differs from absent: the same verb resolves only with its adapter" || bad "absent and present read alike"
+eq "an inherited KIT_LIB is replaced by the real one for a verb script" "$(env KIT_LIB=/nonexistent KIT_ADAPTERS_DIR="$W/ext" bash "$BOARD" pyverb 2>&1)" "py||lib=$KIT/lib"
+# a manifest error is global for a verb lookup, but a core verb never reads the manifests
+mkdir -p "$W/brokenext/bx"; printf 'verb\tnext\tnope.sh\n' > "$W/brokenext/bx/adapter.tsv"
+eq "a core verb ignores a broken manifest" "$(bsh "$W/brokenext" next --backlog-file "$W/verbs.md" 2>&1)" "ID-001"
+out="$(bsh "$W/brokenext" fakeverb 2>&1)"; rc=$?
+[ "$rc" -ne 0 ] && ok "an unknown verb with a broken manifest ends non-zero ($rc)" || bad "an unknown verb with a broken manifest ended 0"
+has "an unknown verb with a broken manifest names the bad row" "$out" "adapters: $W/brokenext/bx/adapter.tsv:1:"
+for verb in mirror status writeback mirror-cleanup hermes; do
+  hit="$(sh_run bash - adapters_verb "$verb" 2>&1)"
+  case "$hit" in "$KIT/lib/adapters/hermes/"*) ok "the real set resolves $verb to the hermes directory" ;; *) bad "the real set resolves $verb to '$hit'" ;; esac
+  script="${hit%%$'\t'*}"; [ -f "$script" ] && ok "the script of $verb exists" || bad "the script of $verb is missing: $script"
+  hit2="$(sh_run /bin/bash - adapters_verb "$verb" 2>&1)"; eq "the same under /bin/bash for $verb" "$hit2" "$hit"
+done
+echo "=== board help names the effective adapter directory ==="
+has "board help shows the in-tree directory" "$(env -u KIT_ADAPTERS_DIR bash "$BOARD" help)" "adapter directory: $KIT/lib/adapters"
+has "board help shows KIT_ADAPTERS_DIR when set" "$(bsh "$W/ext" help)" "adapter directory: $W/ext"
+bash -c 'set -euo pipefail; "$@"' _ env KIT_ADAPTERS_DIR=relative bash "$BOARD" help >/dev/null 2>&1; eq "board help still prints with a bad KIT_ADAPTERS_DIR" "$?" "0"
 
 echo "=== the moved bridge scripts derive KIT_LIB from their own location ==="
 # A decoy lib/ holds a mega/box.sh and a board/parse-board.sh that write a marker if anything sources them; an

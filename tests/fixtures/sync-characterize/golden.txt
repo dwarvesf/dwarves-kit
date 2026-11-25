@@ -801,22 +801,16 @@ stub calls:
   gh	pr	list	--state	open	--json	number,headRefName
 ## 7-help-errors
 ### board help
-board.sh -- the kit's cockpit board command. `mirror`/`status` and `writeback` were added
-later as the git<->Hermes kanban bridge's read-mirror and writeback legs.
+board.sh -- the kit's cockpit board command. A verb that no case in main() names is looked up in the
+adapter manifests (lib/adapters/*/adapter.tsv, lib/adapters/README.md); the first adapter that declares it
+runs it. That is how the kanban bridge's verbs reach their scripts.
 
 The SOLE cockpit board command: it ABSORBS the render logic that used to live in ops-<NAME>'s
 `_meta/board` (the `priority` quadrant awk, single-repo) and `_meta/board-all` (the `boards.txt`
-registry walk + `priority matrix` cross-repo pivot), ADDS a `queue` subcommand that emits an
-allow-listed overnight-runner queue, ADDS `mirror`/`status`: a one-way git ->
-Hermes kanban bridge over opt-in repos + active mega-goals, native `hermes kanban` CLI only, and
-ADDS `writeback`: the reverse leg -- a Hermes-side card status move flows back into a
-repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the
-mirror snapshot's row_hash conflict rule (git wins, always). Base kanban render
+registry walk + `priority matrix` cross-repo pivot), and ADDS a `queue` subcommand that emits an
+allow-listed overnight-runner queue. Base kanban render
 (board/next/set/states) is UNCHANGED and still delegates to `lib/board/backlog.sh` -- this file never
-reimplements it. The substantial `mirror`/`status` logic (extract/diff/plan/apply) lives in
-`lib/board/board-mirror.sh`; the substantial `writeback` logic (diff/apply/PR) lives in
-`lib/board/board-writeback.sh` (which itself reuses `lib/board/board-mirror.sh`'s extract/hash machinery) --
-the same delegation shape `queue` already has with `lib/board/parse-board.sh`.
+reimplements it. `queue` delegates parsing to `lib/board/parse-board.sh`.
 
 The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
@@ -901,32 +895,7 @@ lagging repo. See `_behind_count` for the never-fetch, fail-open contract and it
                                                               regardless of the flag, so it is
                                                               currently a documented no-op.
 
-  board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
-                   [--mega-board <name>] [--board-prefix <prefix>]
-                   [--remote <user@host>] [--remote-kit-path <path>]
-                                                              project opt-in (`bridge=on`)
-                                                              cockpit boards + one card per
-                                                              ACTIVE mega-goal onto a Hermes
-                                                              kanban, idempotently. `--dry-run`
-                                                              prints the plan and applies
-                                                              nothing (no Hermes calls, no
-                                                              snapshot write). `--remote` ships
-                                                              the plan over ONE `ssh` call to a
-                                                              remote host's own board-mirror.sh
-                                                              apply-plan (argv vectors, never a
-                                                              templated shell string); default
-                                                              is local (`$HERMES_BIN`/`hermes`
-                                                              runs on this host). See
-                                                              `lib/board/board-mirror.sh` for the full
-                                                              ETL design + state-mapping table.
-  board.sh status [--repo-root <path>] [--registry <path>] [--snapshot <path>]
-                                                              mirror staleness: per opted-in
-                                                              repo, the snapshot's newest
-                                                              `seen_at` vs the BACKLOG.md's own
-                                                              last git-log touch time.
-
   board.sh board  --with-mega [--mega-code-root <path>] [--backlog-file <path>]
-  board.sh status --with-mega [--mega-code-root <path>] [--repo-root <path>] [--registry <path>]
                                                               OPT-IN (kit-modularity sub-goal
                                                               08): appends a trailing
                                                               "MEGA ROLLUP" section listing, for
@@ -938,7 +907,7 @@ lagging repo. See `_behind_count` for the never-fetch, fail-open contract and it
                                                               reconciliation, drift-flagged --
                                                               never a re-render of the roadmap's
                                                               own `[x]`/`[ ]` prose). DEFAULT OFF
-                                                              on both `board` and `status`: it
+                                                              on `board`: it
                                                               makes real `gh` calls per
                                                               sub-goal, so it must never run
                                                               inside the byte-identical render
@@ -955,45 +924,13 @@ lagging repo. See `_behind_count` for the never-fetch, fail-open contract and it
                                                               ROADMAP in ops-<NAME>, PRs/
                                                               branches in dwarves-kit).
 
-  board.sh writeback [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
-                      [--board-prefix <prefix>] [--branch <name>] [--pr-base <branch>]
-                                                              the reverse leg: reads
-                                                              each opted-in repo's live Hermes
-                                                              board (`hermes kanban --board <b>
-                                                              list --json`) + the mirror
-                                                              snapshot, builds a changeset of
-                                                              rows whose Hermes status moved,
-                                                              validates (opted-in repo, legal
-                                                              backlog.sh state, row_hash still
-                                                              matches the snapshot -- git wins on
-                                                              any mismatch), and applies matched
-                                                              rows' Status column via a fresh
-                                                              `chore/board-sync` branch (built in
-                                                              an isolated `git worktree`, never
-                                                              this repo's own checkout) + one
-                                                              attributed commit (`actor=hermes`)
-                                                              + `gh pr create` -- HELD, never
-                                                              auto-merged. `--dry-run` prints the
-                                                              changeset and applies nothing (no
-                                                              git branch/commit/push, no PR, no
-                                                              snapshot refresh; it STILL reads
-                                                              Hermes, since that read is exactly
-                                                              what a dry-run previews). Missing
-                                                              or corrupt `--snapshot` REFUSES ALL
-                                                              edits (explicit error, nonzero
-                                                              exit) rather than silently applying
-                                                              everything. See `lib/board/board-writeback.sh`
-                                                              for the full design (reverse state
-                                                              mapping, conflict rule, snapshot
-                                                              refresh semantics).
-
   board.sh sweep --registry <path> [--poster <cmd>] [--preflight <cmd>] [--on-clean <cmd>]
-                  [--mirror-hermes-home <dir>] [--dry-run] ...
+                  [--dry-run] ...
                                                               one scheduled pass over every
                                                               registry board: per-repo
                                                               `sync`, change-only digest,
-                                                              `publish`, the Hermes mirror leg
-                                                              fed from origin, one digest post
+                                                              `publish`, each adapter's legs,
+                                                              one digest post
                                                               per cluster through the operator's
                                                               --poster. Forwards to
                                                               lib/sync/sweep/board-sweep; every
@@ -1001,15 +938,6 @@ lagging repo. See `_behind_count` for the never-fetch, fail-open contract and it
   board.sh sweep verify --registry <path> --run <cmd> | --last-tick [<repo>]
                                                               prove a sweep wrote no board, or
                                                               read what the newest tick did.
-  board.sh mirror-cleanup [--registry <path>] [--snapshot <path>] [--hermes-home <dir>]
-                           [--kinds-file <path>] [--expire-only] [--apply]
-                                                              reconcile the open Hermes cards
-                                                              against the boards (dry run by
-                                                              default; never deletes). A kinds-file
-                                                              rule with an expire block archives
-                                                              its cards by age; --expire-only runs
-                                                              just that. Forwards to
-                                                              lib/board/board-mirror-cleanup.py.
   board.sh state-check --all [--strict] | --staged | --fix [--repo-root <dir>] [--states-file <path>]
                                                               check the state values a repo stores in
                                                               its own registry (default <repo>/_meta/states.toml):
@@ -1035,14 +963,6 @@ lagging repo. See `_behind_count` for the never-fetch, fail-open contract and it
                                                               `health run` and `brief run` read their flags
                                                               from --config FILE, $DWARVES_BOARD_CONFIG, or
                                                               the board.json that `config data path config board.json` prints.
-  board.sh hermes link [--home <dir>] [--profile <name>] [--cluster <c>] [--dry-run] [--yes] [--no-verify]
-  board.sh hermes check [--record]                            link a Hermes agent profile to the kit: install
-                                                              integrations/hermes/skills into the profile with a
-                                                              version stamp, record the link and the cluster's
-                                                              rail and boards, prove it with one agent turn.
-                                                              `check` finds linked profiles whose skills are
-                                                              stale (`sweep` records it, `brief` says so).
-                                                              Forwards to lib/sync/sweep/board-hermes.
 
 Registry location: `--registry F` > $KIT_BOARDS_REGISTRY > `<repo-root>/_meta/boards.txt`.
 Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
@@ -1058,10 +978,12 @@ zero-code-change, non-regressing registry format extension.
 CURRENT cwd, else cwd itself. The single-repo subcommands never need --repo-root; the shim that
 calls them always passes an explicit --backlog-file instead.
 
-DWARVES_KIT overrides where lib/board/backlog.sh + lib/board/parse-board.sh + lib/board/board-mirror.sh are found
+DWARVES_KIT overrides where lib/board/backlog.sh + lib/board/parse-board.sh are found
 relative to this file (they are always siblings in lib/, so this only matters if board.sh is
 copied standalone).
 
+
+adapter directory: <KIT>/lib/adapters (KIT_ADAPTERS_DIR replaces it; the verbs a manifest declares run from there)
 rc	0
 ### unknown verb
 usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}

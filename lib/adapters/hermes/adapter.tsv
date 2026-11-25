@@ -5,6 +5,11 @@ opt	hermes-board	hermes_board	-	kanban board slug (default: the instance's own c
 opt	hermes-assignee	hermes_assignee	-	profile name to assign every relayed task to
 opt	hermes-workspace	hermes_workspace	-	workspace for every relayed task, e.g. 'dir:/path/outbox/{id}'; `{id}` is the board id
 const	mirror-label	Hermes
+verb	mirror	bridge.sh	mirror
+verb	status	bridge.sh	status
+verb	writeback	bridge.sh	writeback
+verb	mirror-cleanup	board-mirror-cleanup.py
+verb	hermes	link.py
 hook	brief_decisions
 sweep-opt	mirror-hermes-home	MIRROR_HERMES_HOME	turn the mirror leg on, against the Hermes kanban store at D
 sweep-opt	mirror-snapshot	MIRROR_SNAPSHOT	mirror snapshot (default <repo-root>/_meta/.board-mirror-snapshot.jsonl)
