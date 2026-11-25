@@ -168,31 +168,25 @@ Exit: 0
 
 ## Negative control
 
-NEGATIVE CONTROL: three controls, each run with lib/gate/negctl.sh after a commit and restored by git checkout.
+NEGATIVE CONTROL: eight controls, each run with lib/gate/negctl.sh after a commit and restored by git checkout. Each mutation turns its suite red; the restore turns it green again.
 
-1. The guard allows a bare merge (the block of a bare `gh pr merge` in the guard template becomes a no-op).
-Command: bash tests/test-stamp-hook.sh
-Output:
-  47 passed, 0 failed   (green before the mutation)
-  42 passed, 5 failed   (under the mutation)
-  47 passed, 0 failed   (after the restore)
-Exit: 1 under the mutation, 0 after the restore
+| # | Mutation | Command | Green before | Under the mutation | Green after |
+|---|---|---|---|---|---|
+| 1 | the guard allows a bare merge (the block becomes a no-op) | bash tests/test-stamp-hook.sh | 47 passed, 0 failed | 42 passed, 5 failed | 47 passed, 0 failed |
+| 2 | the render skips the kit-path scan | bash tests/test-stamp.sh | 158 passed, 0 failed | 154 passed, 4 failed | 158 passed, 0 failed |
+| 3 | write_if_absent overwrites an edited file | bash tests/test-stamp.sh | 158 passed, 0 failed | 148 passed, 10 failed | 158 passed, 0 failed |
+| 4 | an approval no longer has to be at the judged head | bash tests/test-stamp-merge.sh | 80 passed, 0 failed | 78 passed, 2 failed | 80 passed, 0 failed |
+| 5 | the tests job loses its fork guard | bash tests/test-stamp-ci.sh | 173 passed, 0 failed | 172 passed, 1 failed | 173 passed, 0 failed |
+| 6 | the take backup skips a dangling symlink no more | bash tests/test-stamp.sh | 158 passed, 0 failed | 155 passed, 3 failed | 158 passed, 0 failed |
+| 7 | the owners check keeps the colon in a rule line | bash tests/test-stamp-refusals.sh | 224 passed, 0 failed | 223 passed, 1 failed | 224 passed, 0 failed |
+| 8 | the planted hostile repository config, run by a plain git call (the live control in Tier 1) | bash tests/gauntlet/team-stamp/tier1.sh | markers created by a plain git call | no marker through the checker | n/a |
 
-2. The render skips the kit-path scan (the check in `lib/stamp.sh` is replaced with a constant false).
-Command: bash tests/test-stamp.sh
+Command: bash tests/test-stamp-merge.sh (control 4, run by negctl)
 Output:
-  115 passed, 0 failed  (green before the mutation)
-  111 passed, 4 failed  (under the mutation)
-  115 passed, 0 failed  (after the restore)
-Exit: 1 under the mutation, 0 after the restore
-
-3. `write_if_absent` overwrites (the write step also writes a file the repo edited).
-Command: bash tests/test-stamp.sh
-Output:
-  115 passed, 0 failed  (green before the mutation)
-  105 passed, 10 failed (under the mutation)
-  115 passed, 0 failed  (after the restore)
-Exit: 1 under the mutation, 0 after the restore
+  80 passed, 0 failed   (green before the mutation)
+  78 passed, 2 failed   (under the mutation)
+  80 passed, 0 failed   (after the restore)
+Exit: 1
 Verdict: RED, as expected
 
 ## Test plan coverage
@@ -207,7 +201,7 @@ Verdict: RED, as expected
 | AC11, AC12 runner and twin | 29 to 32 | `tests/test-stamp-ci.sh`, `tests/test-stamp-e2e.sh` (actionlint, hosted-label scan) |
 | AC13 adopt interplay | 33, 34, 36 | `tests/test-stamp-adopt-interplay.sh`, `tests/test-stamp.sh` |
 | AC14 privacy | 35, 50 | `tests/test-stamp-e2e.sh` privacy section (0 hits against the denylist held outside the repo) |
-| AC16 negative controls | 40 | the block above |
+| AC16 negative controls | 40 | the block above (controls 1 to 3 are the original three; 4 to 8 cover the security fixes) |
 | AC17, AC18, AC19 guidance, repo-living files, scan-safe digests | 47, 48, 51 | `tests/test-stamp-rules.sh`, `tests/test-stamp.sh`, `tests/test-stamp-e2e.sh` |
 | AC15 the gauntlet run | 39 | Tier 1 only (`tests/gauntlet/team-stamp/tier1.sh`); Tier 2 NOT RUN, see `docs/verification/gauntlet/2026-11-25-custom-team-stamp-scratch/ROUNDS.md` |
 
