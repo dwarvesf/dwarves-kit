@@ -58,7 +58,7 @@ Exit: 1
 Output: (empty)
 Verdict: PASS
 
-Command: grep -rniE 'herdr|one-?dark|localterm|hermes|helium|tieubao|/Users/|/var/folders/|/private/' lib/proof-capture docs/verification/visual-proof-module.md docs/verification/visual-proof-module
+Command: the tenant-word and host-path scan from the Verification block of the spec, over lib/proof-capture, this file and its image directory
 Exit: 1
 Output: (empty)
 Verdict: PASS
