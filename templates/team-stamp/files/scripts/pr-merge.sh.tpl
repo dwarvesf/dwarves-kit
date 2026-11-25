@@ -10,15 +10,29 @@
 # This plan cannot make GitHub require checks before a merge, so this script does
 # it for the people and agents who follow the rules. It refuses a draft, a
 # failing or pending check, a merge conflict, and a PR that changes a door path
-# without an approving review from a second person. The PR's author never counts
-# as the second person. When a door approver is set, that person must be the one
-# who approves (unless they wrote the PR; then any other person can).
+# without an approving review from a second person.
+#
+# What binds the workflow file. GitHub runs a pull request's own copy of the workflow, so a PR can
+# edit it. This script therefore requires BOTH checks `changes` and `pr-shape`, each from the
+# workflow named CI, on the head it judged, and treats the harness's own files as doors: the
+# workflows, scripts/, .claude/, OWNERS.md, AGENTS.md, docs/TEAM-WORKFLOW.md and .kit.toml. A repo's
+# --door-paths ADD to that list. The first pull request that introduces the stamp touches every
+# door: merge it by hand, after a second person has read it.
+#
+# An approval counts only when all of these hold: it is the reviewer's latest decision, it was made
+# on the head commit this script judged (a push after the approval voids it), the reviewer's
+# association with the repo is OWNER, MEMBER or COLLABORATOR, the reviewer is not the PR's author and
+# not a bot account, and, when a door approver is set, the login matches. A review field gh does not
+# report means the approval does not count.
+#
+# This script refuses to run when its own text differs from origin/<default branch>:scripts/pr-merge.sh,
+# so a pull request's edited copy is not the copy that judges it. Never run a pull request's copy.
 #
 # Only the newest run of each check name counts, so an old failed run that was
 # fixed and rerun does not block. A check name reported by more than one producer
 # is refused: a workflow a PR adds could emit a passing check with the same name.
-# Zero checks is green only when the "changes" job passed: that job runs on every
-# pull request, so a passing "changes" job proves CI ran.
+# Zero other checks is green only when the "changes" and "pr-shape" jobs passed: they run on every
+# pull request, so passing ones prove CI ran.
 #
 # --wait polls the PR every 15 seconds until no check is pending, then judges as
 # usual. --timeout <seconds> bounds the wait: on timeout it exits 1 and names the
@@ -30,16 +44,20 @@
 # The merge is pinned to the head the script judged (--match-head-commit), so a
 # push after the check makes GitHub refuse the merge.
 #
-# Needs gh. Exit 0 merged (or dry-run clean), 1 refused or timed out, 2 bad usage.
+# Needs gh and git. Exit 0 merged (or dry-run clean), 1 refused or timed out, 2 bad usage.
 # Every refusal prints two lines on stderr: the rule, then a "Fix:" line.
 set -euo pipefail
 
-# Door paths (case globs; * crosses a slash). Empty means no path needs a second person.
+# Door paths (case globs; * crosses a slash). BASE_DOORS are the harness's own files and are always
+# doors. DOORS holds the paths this repo added with --door-paths; it may be empty.
+BASE_DOORS=(".github/workflows/*" "scripts/*" ".claude/*" "OWNERS.md" "AGENTS.md" "docs/TEAM-WORKFLOW.md" ".kit.toml")
 DOORS=({{DOOR_ARRAY}})
 # The login that must approve a door change. Empty means any person other than the author.
 APPROVER="{{DOOR_APPROVER}}"
-# The branch a PR in conflict merges from.
+# The branch this repo merges into.
 DEFAULT_BRANCH="{{DEFAULT_BRANCH}}"
+# The workflow whose checks count.
+CI_WORKFLOW="CI"
 
 usage() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
@@ -133,6 +151,7 @@ def producer: ((.workflowName // "") + "|" + (.__typename // ""));
 (.statusCheckRollup // []) as $all
 | ($all | newest) as $checks
 | .author.login as $author
+| (.headRefOid // "") as $head
 | "draft=\(.isDraft)",
   "mergeable=\(.mergeable | tostring | ctl)",
   "failing=\([$checks[] | select(cls == "failing") | nm] | join(","))",
@@ -140,12 +159,15 @@ def producer: ((.workflowName // "") + "|" + (.__typename // ""));
   "pending=\([$checks[] | select(cls == "pending") | nm] | join(","))",
   "author=\(.author.login | ctl)",
   "head=\((.headRefOid // "") | ctl)",
-  "changes_passed=\([$checks[] | select(.name == "changes" and .status == "COMPLETED" and .conclusion == "SUCCESS")] | length)",
-  "approvals=\([(.reviews // []) | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | group_by(.author.login)[] | sort_by(.submittedAt) | last | select(.state == "APPROVED" and .author.login != $author) | .author.login | ctl] | join(","))",
+  "changes_passed=\([$checks[] | select(.__typename == "CheckRun" and .name == "changes" and .workflowName == wf and .status == "COMPLETED" and .conclusion == "SUCCESS")] | length)",
+  "shape_passed=\([$checks[] | select(.__typename == "CheckRun" and .name == "pr-shape" and .workflowName == wf and .status == "COMPLETED" and .conclusion == "SUCCESS")] | length)",
+  "approvals=\([(.reviews // []) | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | group_by(.author.login)[] | sort_by(.submittedAt) | last | select(.state == "APPROVED" and (.author.login // "") != "" and .author.login != $author and ((.commit.oid // "") != "") and .commit.oid == ($head) and ((.authorAssociation // "") | IN("OWNER", "MEMBER", "COLLABORATOR")) and (.author.login | test("\\[bot\\]$|^app/") | not)) | .author.login | ctl] | join(","))",
   ((.files // [])[] | "file=\(.path | ctl)")
 '
 
-draft="" mergeable="" failing="" pending="" ambiguous="" changes_passed=0 approvals="" author="" head=""
+JQ="def wf: \"$CI_WORKFLOW\"; $JQ"
+
+draft="" mergeable="" failing="" pending="" ambiguous="" changes_passed=0 shape_passed=0 approvals="" author="" head=""
 doors="" nfiles=0
 tab=$'\t'
 
@@ -158,7 +180,7 @@ load() {
         printf 'pr-merge: gh could not read PR #%s (is gh installed and logged in?)\nFix: gh auth status\n' "$number" >&2
         return 1
     fi
-    draft="" mergeable="" failing="" pending="" ambiguous="" changes_passed=0 approvals="" author="" head=""
+    draft="" mergeable="" failing="" pending="" ambiguous="" changes_passed=0 shape_passed=0 approvals="" author="" head=""
     doors="" nfiles=0
     while IFS= read -r line; do
         case "$line" in
@@ -168,30 +190,29 @@ load() {
         pending=*) pending="${line#pending=}" ;;
         ambiguous=*) ambiguous="${line#ambiguous=}" ;;
         changes_passed=*) changes_passed="${line#changes_passed=}" ;;
+        shape_passed=*) shape_passed="${line#shape_passed=}" ;;
         approvals=*) approvals="${line#approvals=}" ;;
         author=*) author="${line#author=}" ;;
         head=*) head="${line#head=}" ;;
         file=*)
             nfiles=$((nfiles + 1))
             path="${line#file=}"
-            if [ "${#DOORS[@]}" -gt 0 ]; then
-                for pattern in "${DOORS[@]}"; do
-                    # shellcheck disable=SC2254
-                    case "$path" in
-                    $pattern)
-                        doors="${doors:+$doors, }$path"
-                        break
-                        ;;
-                    esac
-                done
-            fi
+            for pattern in "${BASE_DOORS[@]}" ${DOORS[@]+"${DOORS[@]}"}; do
+                # shellcheck disable=SC2254
+                case "$path" in
+                $pattern)
+                    doors="${doors:+$doors, }$path"
+                    break
+                    ;;
+                esac
+            done
             ;;
         esac
     done <<EOF
 $out
 EOF
-    # gh may cap the file list. With a door list set, a PR that long counts as touching a door.
-    if [ "$nfiles" -ge 100 ] && [ "${#DOORS[@]}" -gt 0 ]; then
+    # gh may cap the file list, so a PR that long counts as touching a door.
+    if [ "$nfiles" -ge 100 ]; then
         doors="${doors:+$doors, }100 or more files"
     fi
 }
@@ -207,7 +228,7 @@ wait_for_checks() {
     # GitHub also reports mergeable UNKNOWN until it computes it: wait that out too.
     while [ "$draft" != "true" ]; do
         if [ -z "$pending" ]; then
-            if [ "$changes_passed" -eq 0 ] && [ -z "$failing" ]; then
+            if { [ "$changes_passed" -eq 0 ] || [ "$shape_passed" -eq 0 ]; } && [ -z "$failing" ]; then
                 pending="checks not registered yet"
             elif [ "$mergeable" = "UNKNOWN" ] && [ -z "$failing" ]; then
                 pending="mergeability UNKNOWN"
@@ -235,7 +256,7 @@ refuse() {
 
 # The one judgment, for the PR that load just read. It fills refusals and merges nothing.
 judge() {
-    local author_lc approver_lc approvals_lc wait_fix conflict_fix reviewer_fix
+    local author_lc approver_lc approvals_lc wait_fix reviewer_fix
     refusals=""
     wait_fix="bash scripts/pr-merge.sh --wait $number"
 
@@ -243,15 +264,12 @@ judge() {
     [ -z "$failing" ] || refuse "failing check: $(clean "$failing")" "gh pr checks $number"
     [ -z "$pending" ] || refuse "pending check: $(clean "$pending")" "$wait_fix"
     [ -z "$ambiguous" ] || refuse "check reported by more than one workflow or app (a PR may add a workflow that emits the same name): $(clean "$ambiguous")" "gh pr checks $number"
-    [ "$changes_passed" -ge 1 ] || refuse "the changes job has not passed, so CI has not run" "$wait_fix"
+    [ "$changes_passed" -ge 1 ] || refuse "the changes check has not passed from the workflow $CI_WORKFLOW on this head, so CI has not run" "$wait_fix"
+    [ "$shape_passed" -ge 1 ] || refuse "the pr-shape check has not passed from the workflow $CI_WORKFLOW on this head" "$wait_fix"
     case "$mergeable" in
     MERGEABLE) ;;
     CONFLICTING)
-        conflict_fix="merge the default branch into the PR branch by hand, then push"
-        if is_safe "$DEFAULT_BRANCH"; then
-            conflict_fix="gh pr checkout $number && git fetch origin && git merge origin/$DEFAULT_BRANCH && git push"
-        fi
-        refuse "merge conflicts with the base branch" "$conflict_fix"
+        refuse "merge conflicts with the base branch" "gh pr update-branch $number"
         ;;
     *) refuse "mergeability is $(clean "$mergeable"), try again in a minute" "$wait_fix" ;;
     esac
@@ -265,7 +283,7 @@ judge() {
             reviewer_fix="gh pr edit $number --add-reviewer $APPROVER"
         fi
         if [ -z "$approvals" ]; then
-            refuse "touches a door path ($(clean "$doors")) and has no approving review from someone other than its author" "$reviewer_fix"
+            refuse "touches a door path ($(clean "$doors")) and has no approving review on this head from a second person (owner, member or collaborator, not a bot)" "$reviewer_fix"
         elif [ -n "$APPROVER" ] && [ "$approver_lc" != "$author_lc" ]; then
             case ",$approvals_lc," in
             *",$approver_lc,"*) ;;
@@ -279,6 +297,25 @@ judge() {
     fi
     return 0
 }
+
+# self_check: this copy must be the default branch's copy. A pull request's own edited copy of this
+# script is never the one that judges it.
+self_check() {
+    local self dir ref
+    self="${BASH_SOURCE[0]}"
+    dir="$(cd "$(dirname "$self")" && pwd)"
+    is_safe "$DEFAULT_BRANCH" || fail 1 "the default branch name in this script is not a plain name" "bash scripts/pr-merge.sh --help"
+    ref="origin/$DEFAULT_BRANCH"
+    if ! git -C "$dir" fetch -q origin "$DEFAULT_BRANCH" 2>/dev/null; then
+        echo "pr-merge: note: could not fetch origin $DEFAULT_BRANCH; comparing with the copy fetched last" >&2
+    fi
+    if ! git -C "$dir" cat-file -e "$ref:scripts/pr-merge.sh" 2>/dev/null; then
+        fail 1 "$ref holds no scripts/pr-merge.sh, so this copy cannot be checked: this is the pull request that introduces the stamp" "merge the first stamp pull request by hand, after a second person has read it"
+    fi
+    git -C "$dir" show "$ref:scripts/pr-merge.sh" 2>/dev/null | cmp -s - "$self" ||
+        fail 1 "this copy of scripts/pr-merge.sh differs from $ref, so it may be a pull request's own copy" "git checkout $DEFAULT_BRANCH && git pull, then run it again"
+}
+self_check
 
 load || exit 1
 if [ "$waiting" -eq 1 ]; then

@@ -32,7 +32,7 @@ for f in scripts/pr-merge.sh scripts/test-pr-merge.sh scripts/negctl.sh scripts/
 done
 expect "no {{KEY}} is left in a generated file" bash -c "! grep -rE '\{\{[A-Za-z_]+\}\}' '$A/scripts'"
 bash lib/stamp.sh --only merge "$A" >"$WORK/stamp-a2.out" 2>&1
-expect "the second run prints only unchanged lines" bash -c '[ "$(grep -vc "^unchanged: " "$1")" -eq 0 ] && [ "$(grep -c "^unchanged: " "$1")" -eq 4 ]' _ "$WORK/stamp-a2.out"
+expect "the second run prints only unchanged lines" bash -c '[ "$(grep -Evc "^(unchanged|using): " "$1")" -eq 0 ] && [ "$(grep -c "^unchanged: " "$1")" -eq 4 ]' _ "$WORK/stamp-a2.out"
 expect "--check is clean" bash lib/stamp.sh --only merge --check "$A"
 
 # 2. stamped values and the dropped behaviors
@@ -42,10 +42,10 @@ expect "door approver comes from the stamp" grep -qxF 'APPROVER="reviewer"' "$P"
 expect "door list comes from the stamp" grep -qxF 'DOORS=("docs/legal/*" "protocol/*")' "$P"
 expect "no literal main in the guard" bash -c "! grep -Eq 'origin/main|[^a-z]main[^a-z]' '$P'"
 expect "no CI-path flag" bash -c "! grep -q 'allow-ci-change' '$P'"
-expect "no stale-rules refusal" bash -c "! grep -Eiq 'stale|older than the last change|RULE_PATHS|update-branch' '$P'"
+expect "no stale-rules refusal" bash -c "! grep -Eiq 'stale|older than the last change|RULE_PATHS' '$P'"
 expect "no kit merge-head variable" bash -c "! grep -q 'KIT_' '$P'"
 expect "no --all or --refresh mode" bash -c "! grep -Eq -- '--all|--refresh' '$P'"
-expect "an empty array expansion is guarded under set -u" grep -q '\${#DOORS\[@\]}' "$P"
+expect "an empty array expansion is guarded under set -u" grep -q 'DOORS\[@\]+' "$P"
 expect "the guard cleans gh text before it is printed" grep -q '^clean() ' "$P"
 expect "the guard puts only a safe value into a Fix line" grep -q '^is_safe() ' "$P"
 for f in scripts/pr-merge.sh scripts/negctl.sh; do

@@ -6,7 +6,7 @@
 # Leaves its temp dir behind; the path is printed.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$HERE/pr-merge.sh"
+SCRIPT_SRC="$HERE/pr-merge.sh"
 if ! command -v jq >/dev/null 2>&1; then
     echo "test-pr-merge: jq not found, skipping (the fake gh needs it)"
     exit 0
@@ -16,6 +16,25 @@ echo "test dir: $T"
 
 # The values this repo was stamped with.
 DEFAULT_BRANCH="{{DEFAULT_BRANCH}}"
+
+# The script refuses to run unless its text equals origin/<default branch>:scripts/pr-merge.sh. Every
+# copy under test therefore lives in a throwaway git repo whose origin is itself, with that text on
+# the default branch. selfrepo <dir> <source script>: make <dir>/scripts/pr-merge.sh that way.
+selfrepo() {
+    mkdir -p "$1/scripts"
+    cp "$2" "$1/scripts/pr-merge.sh"
+    (
+        cd "$1" || exit 1
+        git init -q
+        git checkout -q -b "$DEFAULT_BRANCH" 2>/dev/null || git symbolic-ref HEAD "refs/heads/$DEFAULT_BRANCH"
+        git add scripts/pr-merge.sh
+        git -c user.name=t -c user.email=t@example.invalid commit -q -m copy
+        git remote add origin "$1"
+        git fetch -q origin "$DEFAULT_BRANCH"
+    ) >/dev/null 2>&1
+}
+SCRIPT="$T/self/scripts/pr-merge.sh"
+selfrepo "$T/self" "$SCRIPT_SRC"
 
 mkdir -p "$T/bin"
 # fake gh: `pr view` serves $T/case.json through the --jq expression, except that the Nth
@@ -53,19 +72,19 @@ EOF
 chmod +x "$T/bin/gh"
 export PATH="$T/bin:$PATH"
 
-CHK_OK='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}'
-CHK_DOCS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SKIPPED"}'
-CHK_FAIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE"}'
-CHK_PEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build","status":"IN_PROGRESS","conclusion":""}'
-CHK_RERUN='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-01-01T00:00:00Z"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2026-01-01T00:01:00Z"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-01-01T00:05:00Z"}'
-CHK_TWOMAKERS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"ci"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"ci"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"added-by-the-pr"}'
+CHK_OK='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}'
+CHK_DOCS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SKIPPED"}'
+CHK_FAIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE"}'
+CHK_PEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"IN_PROGRESS","conclusion":""}'
+CHK_RERUN='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","startedAt":"2026-01-01T00:00:00Z"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2026-01-01T00:01:00Z"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-01-01T00:05:00Z"}'
+CHK_TWOMAKERS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"added-by-the-pr"}'
 FILE_PLAIN='{"path":"docs/README.md"},{"path":"app/src/lib.rs"}'
 FILE_DOOR='{"path":"docs/README.md"},{"path":"zz-door/vectors/pair.json"}'
 REV_NONE=''
-REV_OTHER='{"author":{"login":"reviewer"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
-REV_CAROL='{"author":{"login":"carol"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
-REV_SELF='{"author":{"login":"author"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
-REV_REVOKED='{"author":{"login":"reviewer"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"},{"author":{"login":"reviewer"},"state":"CHANGES_REQUESTED","submittedAt":"2026-01-03T00:00:00Z"}'
+REV_OTHER='{"author":{"login":"reviewer"},"authorAssociation":"MEMBER","commit":{"oid":"head-judged"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
+REV_CAROL='{"author":{"login":"carol"},"authorAssociation":"MEMBER","commit":{"oid":"head-judged"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
+REV_SELF='{"author":{"login":"author"},"authorAssociation":"MEMBER","commit":{"oid":"head-judged"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
+REV_REVOKED='{"author":{"login":"reviewer"},"authorAssociation":"MEMBER","commit":{"oid":"head-judged"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"},{"author":{"login":"reviewer"},"authorAssociation":"MEMBER","commit":{"oid":"head-judged"},"state":"CHANGES_REQUESTED","submittedAt":"2026-01-03T00:00:00Z"}'
 
 HEAD_SHA="head-judged"
 OTHER_HEAD="head-pushed-later"
@@ -106,7 +125,7 @@ calls_are() { [ "$(grep -c '^gh ' "$T/calls")" -eq "$1" ]; }
 # every refusal is two lines on stderr: a rule line, then a "Fix: " line (progress lines are skipped)
 two_line_form() {
     awk '
-        /^pr-merge: waiting on/ { next }
+        /^pr-merge: (waiting on|note:)/ { next }
         /^Fix: / { if (!want) bad = 1; want = 0; next }
         { if (want) bad = 1; want = 1 }
         END { if (want) bad = 1; exit bad }' "$T/err-$1"
@@ -116,7 +135,8 @@ fix_is() { grep -qxF "Fix: $2" "$T/err-$1"; }
 # variant <name> <door array body> <approver>: a copy of the script with other door values
 variant() {
     mkdir -p "$T/v-$1"
-    sed -e "s|^DOORS=(.*)\$|DOORS=($2)|" -e "s|^APPROVER=\".*\"\$|APPROVER=\"$3\"|" "$SCRIPT" >"$T/v-$1/pr-merge.sh"
+    sed -e "s|^DOORS=(.*)\$|DOORS=($2)|" -e "s|^APPROVER=\".*\"\$|APPROVER=\"$3\"|" "$SCRIPT_SRC" >"$T/v-$1.src"
+    selfrepo "$T/v-$1" "$T/v-$1.src"
 }
 variant door '"zz-door/*" "zz-two/*"' ''
 variant approver '"zz-door/*"' 'carol'
@@ -165,7 +185,7 @@ expect "an old failed run, rerun green, merges: only the newest run counts" merg
 mkcase false MERGEABLE "" "$FILE_PLAIN" "$REV_NONE"
 run nochecks 7
 expect "zero checks is refused: exit 1" [ "$rc" -eq 1 ]
-expect "zero checks is refused: names the changes job" text_has nochecks "changes job has not passed"
+expect "zero checks is refused: names the changes job" text_has nochecks "changes check has not passed"
 expect "zero checks is refused: two-line form" two_line_form nochecks
 expect "zero checks is refused: no merge call" not_merged
 
@@ -203,7 +223,7 @@ mkcase false CONFLICTING "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run conflict 7
 expect "conflict refused: exit 1" [ "$rc" -eq 1 ]
 expect "conflict refused: says conflicts" text_has conflict "merge conflicts"
-expect "conflict refused: the fix merges the stamped default branch" grep -qF "git merge origin/$DEFAULT_BRANCH" "$T/err-conflict"
+expect "conflict refused: the fix is gh pr update-branch, never a checkout of the PR" fix_is conflict "gh pr update-branch 7"
 expect "conflict refused: two-line form" two_line_form conflict
 expect "conflict refused: no merge call" not_merged
 
@@ -308,7 +328,7 @@ run pinwait --wait 7
 expect "wait: merge is pinned to the head of the last poll, not the first" merged
 
 # One-way doors, with a known door list (zz-door/*, zz-two/*) and no named approver.
-SUT="$T/v-door/pr-merge.sh"
+SUT="$T/v-door/scripts/pr-merge.sh"
 mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_NONE"
 run door 7
 expect "door path without approval refused: exit 1" [ "$rc" -eq 1 ]
@@ -350,7 +370,7 @@ run files100ok 7
 expect "100 files with a door list and an approval: merges" merged
 
 # A named approver: the approval must come from that login, unless they wrote the PR.
-SUT="$T/v-approver/pr-merge.sh"
+SUT="$T/v-approver/scripts/pr-merge.sh"
 mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_OTHER"
 run approther 7
 expect "named approver, approval from someone else: refused" [ "$rc" -eq 1 ]
@@ -371,7 +391,7 @@ CASE_AUTHOR=carol mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_NONE"
 run apprauthornone 7
 expect "the approver wrote the PR, nobody approves: refused" [ "$rc" -eq 1 ]
 
-CASE_AUTHOR=carol mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" '{"author":{"login":"carol"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
+CASE_AUTHOR=carol mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" '{"author":{"login":"carol"},"authorAssociation":"MEMBER","commit":{"oid":"head-judged"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
 run apprself 7
 expect "the approver approves their own PR: refused (the author is never the second person)" [ "$rc" -eq 1 ]
 
@@ -382,7 +402,7 @@ else
     EMPTY_RUNNER="bash"
     echo "note: /bin/bash here is not bash 3.x, so the empty-door-list cases run under the bash on PATH"
 fi
-SUT="$T/v-nodoor/pr-merge.sh"
+SUT="$T/v-nodoor/scripts/pr-merge.sh"
 RUNNER="$EMPTY_RUNNER"
 mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run emptydoors 7
@@ -394,7 +414,7 @@ run emptydoorsany 7
 expect "empty door list: no path needs a second person" merged
 mkcase false MERGEABLE "$CHK_OK" "$files100" "$REV_NONE"
 run emptydoors100 7
-expect "empty door list: 100 files do not need a second person" merged
+expect "empty door list: 100 files may be a capped list, so they need a second person" not_merged
 mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run emptydoorsdry --dry-run 7
 expect "empty door list: dry-run exit 0" [ "$rc" -eq 0 ]
@@ -425,8 +445,8 @@ fi
 # in it may not forge a second Fix: line or a second file, and no printed Fix: line may run it.
 SUT="$SCRIPT"
 mkdir -p "$T/x"
-CHK_EVIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x\u001b[2J","status":"COMPLETED","conclusion":"FAILURE"}'
-CHK_EVILPEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x","status":"IN_PROGRESS","conclusion":""}'
+CHK_EVIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x\u001b[2J","status":"COMPLETED","conclusion":"FAILURE"}'
+CHK_EVILPEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x","status":"IN_PROGRESS","conclusion":""}'
 # every printed Fix: line, run through bash -c, must leave the sentinel dir and create no PWNED
 fixes_inert() {
     (cd "$T" && grep '^Fix: ' "$T/err-$1" | sed 's/^Fix: //' | while IFS= read -r f; do bash -c "$f" >/dev/null 2>&1 </dev/null; done)
@@ -456,7 +476,7 @@ expect "hostile check name, pending to timeout: exactly one Fix: line" fix_lines
 expect "hostile check name, pending to timeout: no raw payload" no_raw_payload evilpend
 expect "hostile check name, pending to timeout: Fix: lines are inert" fixes_inert evilpend
 
-SUT="$T/v-door/pr-merge.sh"
+SUT="$T/v-door/scripts/pr-merge.sh"
 mkcase false MERGEABLE "$CHK_OK" '{"path":"docs/ok.md\nfile=zz-door/forged"}' "$REV_NONE"
 run forgedfile 7
 expect "a newline in a path does not forge a door file: the PR merges" merged
@@ -481,6 +501,105 @@ expect "a head that is not a plain id: two-line form" two_line_form evilhead
 expect "a head that is not a plain id: no merge call" not_merged
 expect "a head that is not a plain id: the payload is not echoed" bash -c '! grep -qF "; touch" "$1" "$2"' _ "$T/out-evilhead" "$T/err-evilhead"
 expect "a head that is not a plain id: the Fix: lines are inert" fixes_inert evilhead
+
+
+# --- the harness's own files are doors by default; --door-paths add to them ---
+SUT="$T/v-nodoor/scripts/pr-merge.sh"
+for dp in ".github/workflows/ci.yml" "scripts/x.sh" ".claude/settings.json" "OWNERS.md" "AGENTS.md" "docs/TEAM-WORKFLOW.md" ".kit.toml"; do
+    mkcase false MERGEABLE "$CHK_OK" "{\"path\":\"$dp\"}" "$REV_NONE"
+    tag="${dp//[^A-Za-z0-9]/_}"
+    run "defdoor-$tag" 7
+    expect "default door $dp with no approval: refused, even with an empty --door-paths list" [ "$rc" -eq 1 ]
+    mkcase false MERGEABLE "$CHK_OK" "{\"path\":\"$dp\"}" "$REV_OTHER"
+    run "defdoorok-$tag" 7
+    expect "default door $dp with a second person's approval at the head: merges" merged
+done
+mkcase false MERGEABLE "$CHK_OK" '{"path":"src/app.js"}' "$REV_NONE"
+run notadoor 7
+expect "a path outside the harness's files needs no second person" merged
+SUT="$T/v-door/scripts/pr-merge.sh"
+mkcase false MERGEABLE "$CHK_OK" '{"path":"zz-two/a"},{"path":"scripts/y.sh"}' "$REV_NONE"
+run adddoor 7
+expect "--door-paths adds to the default list: a listed path is a door" [ "$rc" -eq 1 ]
+SUT="$SCRIPT"
+
+# --- an approval counts only at the judged head, from owner, member or collaborator, not a bot ---
+SUT="$T/v-door/scripts/pr-merge.sh"
+rev() { # rev <login> <association> <commit oid> [state]
+    printf '{"author":{"login":"%s"},"authorAssociation":"%s","commit":{"oid":"%s"},"state":"%s","submittedAt":"2026-01-02T00:00:00Z"}' "$1" "$2" "$3" "${4:-APPROVED}"
+}
+refused_door() { # refused_door <label> <reviews json>
+    mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$2"
+    run "appr-$1" 7
+    expect "approval rule: $1: refused, exit 1" [ "$rc" -eq 1 ]
+    expect "approval rule: $1: two-line form" two_line_form "appr-$1"
+    expect "approval rule: $1: no merge call" not_merged
+}
+refused_door stale-head "$(rev reviewer MEMBER head-an-earlier-commit)"
+refused_door contributor "$(rev reviewer CONTRIBUTOR head-judged)"
+refused_door none-association "$(rev reviewer NONE head-judged)"
+refused_door first-timer "$(rev reviewer FIRST_TIME_CONTRIBUTOR head-judged)"
+refused_door bot-login "$(rev 'dependabot[bot]' MEMBER head-judged)"
+refused_door app-login "$(rev 'app/some-app' COLLABORATOR head-judged)"
+refused_door missing-association '{"author":{"login":"reviewer"},"commit":{"oid":"head-judged"},"state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
+refused_door missing-commit '{"author":{"login":"reviewer"},"authorAssociation":"MEMBER","state":"APPROVED","submittedAt":"2026-01-02T00:00:00Z"}'
+for assoc in OWNER MEMBER COLLABORATOR; do
+    mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$(rev reviewer "$assoc" head-judged)"
+    run "assoc-$assoc" 7
+    expect "approval rule: $assoc at the head merges" merged
+done
+# an older approval at the old head plus a fresh one at the head: the latest decision counts
+mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$(rev reviewer MEMBER head-an-earlier-commit),$(rev reviewer MEMBER head-judged | sed 's/2026-01-02/2026-01-05/')"
+run "appr-refreshed" 7
+expect "approval rule: a fresh approval at the head after a stale one merges" merged
+SUT="$SCRIPT"
+
+# --- both checks, from the workflow named CI ---
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}' "$FILE_PLAIN" "$REV_NONE"
+run noshape 7
+expect "no pr-shape check: refused, exit 1" [ "$rc" -eq 1 ]
+expect "no pr-shape check: names it" text_has noshape "the pr-shape check has not passed"
+expect "no pr-shape check: no merge call" not_merged
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}' "$FILE_PLAIN" "$REV_NONE"
+run nochanges 7
+expect "no changes check: refused, exit 1" [ "$rc" -eq 1 ]
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"other"}' "$FILE_PLAIN" "$REV_NONE"
+run shapeotherwf 7
+expect "pr-shape from another workflow: refused" [ "$rc" -eq 1 ]
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"other"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}' "$FILE_PLAIN" "$REV_NONE"
+run changesotherwf 7
+expect "changes from another workflow: refused" [ "$rc" -eq 1 ]
+mkcase false MERGEABLE '{"__typename":"StatusContext","context":"changes","state":"SUCCESS"},{"__typename":"StatusContext","context":"pr-shape","state":"SUCCESS"}' "$FILE_PLAIN" "$REV_NONE"
+run statusctx 7
+expect "status contexts named changes and pr-shape do not stand in for the checks: refused" [ "$rc" -eq 1 ]
+
+# --- the guard runs only when its text equals the default branch's copy ---
+mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+mkdir -p "$T/edited"
+cp "$SCRIPT_SRC" "$T/edited.src"
+printf '# a pull request edit\n' >>"$T/edited.src"
+selfrepo "$T/edited" "$SCRIPT_SRC"
+cp "$T/edited.src" "$T/edited/scripts/pr-merge.sh"
+SUT="$T/edited/scripts/pr-merge.sh"
+run editedcopy 7
+expect "an edited copy refuses to run: exit 1" [ "$rc" -eq 1 ]
+expect "an edited copy: names the difference from the default branch" text_has editedcopy "differs from origin/$DEFAULT_BRANCH"
+expect "an edited copy: the fix is a checkout of the default branch and a pull" fix_is editedcopy "git checkout $DEFAULT_BRANCH && git pull, then run it again"
+expect "an edited copy: two-line form" two_line_form editedcopy
+expect "an edited copy: gh was never called" calls_are 0
+mkdir -p "$T/boot/scripts"
+cp "$SCRIPT_SRC" "$T/boot/scripts/pr-merge.sh"
+(cd "$T/boot" && git init -q && git remote add origin "$T/boot") >/dev/null 2>&1
+SUT="$T/boot/scripts/pr-merge.sh"
+run bootstrap 7
+expect "a default branch with no copy yet (the bootstrap PR): refused, exit 1" [ "$rc" -eq 1 ]
+expect "bootstrap: says to merge the first stamp pull request by hand" fix_is bootstrap "merge the first stamp pull request by hand, after a second person has read it"
+expect "bootstrap: two-line form" two_line_form bootstrap
+expect "bootstrap: gh was never called" calls_are 0
+SUT="$SCRIPT"
+run selfok 7
+expect "the default branch's own copy runs" merged
+expect "no Fix: line of this script tells anyone to check out a pull request" bash -c '! grep -q "gh pr checkout" "$0"' "$SCRIPT_SRC"
 
 # Usage errors are two-line refusals too.
 run helpflag --help
