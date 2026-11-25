@@ -622,6 +622,186 @@ case_8() {
   end_case
 }
 
+# ---- stub vhs -----------------------------------------------------------------------------------
+# Records its argv and pid like the stub browser, takes `-o <path>`, and acts by $STUB_MODE.
+cat >"$STUB_DIR/stub-vhs" <<'STUBEOF'
+#!/bin/bash
+PATH=/usr/bin:/bin:$PATH
+out=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = -o ]; then out=$2; fi
+  [ -z "${STUB_ARGV:-}" ] || printf '%s\n' "$1" >>"$STUB_ARGV"
+  shift
+done
+echo $$ >>"$STUB_PIDS"
+ready() { if [ -n "${STUB_READY:-}" ]; then : >"$STUB_READY"; fi; }
+case "${STUB_MODE:-ok}" in
+  ok) cp "$STUB_GIF" "$out"; ready; exit 0 ;;
+  exit-no-file) ready; exit 0 ;;
+  bad-file) echo "not a gif" >"$out"; ready; exit 0 ;;
+  exit-nonzero) cp "$STUB_GIF" "$out"; ready; exit 3 ;;
+  hang) ready; exec sleep 20 ;;
+  term-ignore)
+    trap '' TERM
+    ( trap '' TERM; exec sleep 20 ) &
+    echo $! >>"$STUB_PIDS"
+    ready
+    exec sleep 20 ;;
+esac
+exit 3
+STUBEOF
+chmod +x "$STUB_DIR/stub-vhs"
+STUB_VHS="$STUB_DIR/stub-vhs"
+
+# The smallest GIF: header, one pixel, trailer byte 3b.
+STUB_GIF="$STUB_DIR/stub.gif"
+gif_hex="47494638396101000100800000ffffff00000021f90401000000002c00000000010001000002024401003b"
+: >"$STUB_GIF"
+i=0
+while [ "$i" -lt "${#gif_hex}" ]; do
+  printf "\\x${gif_hex:$i:2}" >>"$STUB_GIF"
+  i=$((i + 2))
+done
+export STUB_GIF
+
+# stub_vhs_env <mode> <argv file>
+stub_vhs_env() {
+  reset_env
+  reset_pids
+  export PROOF_CAPTURE_VHS="$STUB_VHS"
+  export STUB_MODE="$1" STUB_ARGV="$2"
+  : >"$2"
+}
+
+# ---- case 9: the tape lane ----------------------------------------------------------------------
+case_9() {
+  local d t0 last
+  begin_case 9 "tape"
+  d=$(new_dir)
+  printf 'Sleep 1s\n' >"$d/x.tape"
+
+  # a relative tape path reaches vhs as an absolute path, with -o <partial under the private TMPDIR>
+  stub_vhs_env ok "$d/argv"
+  cd "$d" || note_bad "cd failed"
+  run_tool run tape ./x.tape "$d/o.gif"
+  cd "$HERE" || note_bad "cd back failed"
+  want_rc 0 "ok"
+  want_same_file "$d/o.gif" "$STUB_GIF" "ok"
+  [ "$(cat "$OUTF")" = "proof-capture: wrote $d/o.gif ($(wc -c <"$STUB_GIF" | tr -d ' ') bytes)" ] || note_bad "ok: the stdout line is wrong"
+  [ "$(sed -n 1p "$d/argv")" = "-o" ] || note_bad "ok: vhs did not get -o first"
+  case "$(sed -n 2p "$d/argv")" in "$TOOL_TMP"/proof-capture.*/partial.gif) ;; *) note_bad "ok: the partial is not in the private work dir" ;; esac
+  [ "$(sed -n 3p "$d/argv")" = "$d/x.tape" ] || note_bad "ok: the tape path is not absolute"
+  want_tool_tmp_clean "ok"
+  want_no_hidden_left "$d" "ok"
+
+  stub_vhs_env exit-no-file "$d/argv"
+  run_tool run tape "$d/x.tape" "$d/a.gif"
+  want_rc 1 "exit-no-file"
+  want_absent "$d/a.gif" "exit-no-file wrote an artifact"
+
+  stub_vhs_env bad-file "$d/argv"
+  run_tool run tape "$d/x.tape" "$d/b.gif"
+  want_rc 1 "bad-file"
+  want_absent "$d/b.gif" "bad-file wrote an artifact"
+
+  stub_vhs_env exit-nonzero "$d/argv"
+  run_tool run tape "$d/x.tape" "$d/c.gif"
+  want_rc 1 "non-zero exit with a valid file"
+  want_err_has "vhs exited with status 3" "non-zero exit"
+  want_absent "$d/c.gif" "non-zero exit wrote an artifact"
+
+  reset_env
+  export PROOF_CAPTURE_VHS="$SUITE_TMP/not-vhs"
+  run_tool run tape "$d/x.tape" "$d/e.gif"
+  want_rc 69 "bad PROOF_CAPTURE_VHS"
+  want_err_is "proof-capture: PROOF_CAPTURE_VHS is not an executable file: $SUITE_TMP/not-vhs" "bad PROOF_CAPTURE_VHS"
+
+  reset_env
+  RUN_PATH=""
+  run_tool run tape "$d/x.tape" "$d/f.gif"
+  unset RUN_PATH
+  want_rc 69 "no vhs on an empty PATH"
+  want_err_is "proof-capture: vhs not found; install it (brew install vhs) or set PROOF_CAPTURE_VHS=<path>" "no vhs on an empty PATH"
+
+  # control: a stub named vhs on PATH is found by name, so the 69 above is caused by the missing vhs
+  stub_vhs_env ok "$d/argv2"
+  unset PROOF_CAPTURE_VHS
+  mkdir "$d/vbin"
+  cp "$STUB_VHS" "$d/vbin/vhs"
+  RUN_PATH="$d/vbin:/usr/bin:/bin"
+  run_tool run tape "$d/x.tape" "$d/g.gif"
+  unset RUN_PATH
+  want_rc 0 "vhs found by name (control)"
+  want_same_file "$d/g.gif" "$STUB_GIF" "vhs found by name (control)"
+
+  stub_vhs_env hang "$d/argv"
+  t0=$SECONDS
+  run_tool run tape "$d/x.tape" "$d/h.gif" --deadline 2
+  want_rc 1 "hang"
+  want_err_is "proof-capture: no valid artifact within 2s" "hang"
+  want_gone_by "hang" "$t0" 17
+  want_tool_tmp_clean "hang"
+
+  stub_vhs_env term-ignore "$d/argv"
+  t0=$SECONDS
+  run_tool run tape "$d/x.tape" "$d/i.gif" --deadline 2
+  want_rc 1 "term-ignore"
+  want_gone_by "term-ignore at the deadline" "$t0" 17
+  want_tool_tmp_clean "term-ignore"
+
+  stub_vhs_env hang "$d/argv"
+  export STUB_READY="$d/ready"
+  t0=$SECONDS
+  start_tool run tape "$d/x.tape" "$d/j.gif"
+  if wait_ready "$d/ready"; then
+    kill -s TERM "$TOOL_PID"
+  else
+    note_bad "the stub never became ready"
+    kill -TERM "$TOOL_PID" 2>/dev/null
+  fi
+  wait_tool 15
+  want_rc 1 "TERM mid-run"
+  want_err_is "proof-capture: interrupted" "TERM mid-run"
+  want_gone_by "TERM mid-run" "$t0" 17
+  want_tool_tmp_clean "TERM mid-run"
+  want_absent "$d/j.gif" "TERM mid-run wrote an artifact"
+
+  reset_env
+  run_tool run tape "-x.tape" "$d/k.gif"
+  want_rc 64 "tape path starting with a dash"
+  end_case
+}
+
+# ---- case 10: the standalone lint ----------------------------------------------------------------
+# lint_file <file>: succeeds when the non-comment lines hold none of the forbidden tokens (a kit path or kit
+# config, a climb out of the module, a name-based kill, the live desktop, a process-table listing).
+lint_file() {
+  grep -v '^[[:space:]]*#' "$1" | grep -qE 'DWARVES_KIT|kit-config|\.\./\.\./|pkill|killall|pgrep|osascript|screencapture|ps -A' && return 1
+  return 0
+}
+
+case_10() {
+  local d bad_a bad_b bad_c
+  begin_case 10 "standalone lint"
+  d=$(new_dir)
+  lint_file "$ENTRY" || note_bad "the module executable holds a forbidden token"
+
+  # the lint must be able to fail: plant each violation in a copy
+  bad_a="$d/kit-dependency"
+  cp "$ENTRY" "$bad_a"
+  printf 'source ../../config/kit-config.sh\n' >>"$bad_a"
+  if lint_file "$bad_a"; then note_bad "the lint missed a planted kit dependency"; fi
+  bad_b="$d/name-kill"
+  cp "$ENTRY" "$bad_b"
+  printf 'pkill -f chrome\n' >>"$bad_b"
+  if lint_file "$bad_b"; then note_bad "the lint missed a planted name-based kill"; fi
+  bad_c="$d/commented"
+  cp "$ENTRY" "$bad_c"
+  printf '# pkill -f chrome in a comment is fine\n' >>"$bad_c"
+  lint_file "$bad_c" || note_bad "the lint flagged a comment line"
+  end_case
+}
+
 # ---- case 11: real browser (opt-in) -------------------------------------------------------------
 # Runs only with PROOF_CAPTURE_REAL=1. A wrapper records its pid and execs the real browser, so the recorded pid is
 # the process group id; after the run the group must be empty. The browser is PROOF_CAPTURE_REAL_BROWSER, else the
@@ -693,6 +873,8 @@ run_case 5 case_5
 run_case 6 case_6
 run_case 7 case_7
 run_case 8 case_8
+run_case 9 case_9
+run_case 10 case_10
 run_case 11 case_11
 run_case 12 case_12
 run_case 13 case_13

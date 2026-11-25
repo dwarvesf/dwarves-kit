@@ -170,12 +170,24 @@ resolve_browser() {
   exit 69
 }
 
-if [ "$KIND" = page ]; then
-  resolve_browser
-fi
+resolve_vhs() {
+  VHS=""
+  if [ -n "${PROOF_CAPTURE_VHS:-}" ]; then
+    if [ -f "$PROOF_CAPTURE_VHS" ] && [ -x "$PROOF_CAPTURE_VHS" ]; then
+      VHS=$PROOF_CAPTURE_VHS
+      return 0
+    fi
+    printf 'proof-capture: PROOF_CAPTURE_VHS is not an executable file: %s\n' "$PROOF_CAPTURE_VHS" >&2
+    exit 69
+  fi
+  if try_candidate vhs; then VHS=$FOUND; return 0; fi
+  printf 'proof-capture: vhs not found; install it (brew install vhs) or set PROOF_CAPTURE_VHS=<path>\n' >&2
+  exit 69
+}
+
+if [ "$KIND" = page ]; then resolve_browser; else resolve_vhs; fi
 
 # ---- everything below may call external commands ----------------------------------------------
-[ "$KIND" = page ] || usage_fail "run tape is not built yet"
 
 WORK=""; PARTIAL=""; PROFILE=""; CPID=""; WDPID=""; FINAL_TMP=""
 REAPING=0; REAP_DONE=0; INTR=0; NOGROUP=0
@@ -291,7 +303,7 @@ finish() {
 # capture_run <command...>: start the child in its own process group, check that, start the watchdog, poll for a
 # valid artifact until the deadline. Job control (set -m) makes the group id equal to the child's pid.
 capture_run() {
-  local end pg wd_end
+  local end pg wd_end vrc
   {
     set -m
     "$@" </dev/null >/dev/null 2>&1 &
@@ -320,9 +332,17 @@ capture_run() {
   fi
   end=$((SECONDS + DEADLINE))
   while :; do
-    if [ -s "$PARTIAL" ] && artifact_stable "$KIND" "$PARTIAL"; then finish; fi
+    if [ "$KIND" = page ] && [ -s "$PARTIAL" ] && artifact_stable page "$PARTIAL"; then finish; fi
     if ! kill -0 "$CPID" 2>/dev/null; then
-      artifact_valid "$KIND" "$PARTIAL" && finish
+      if [ "$KIND" = tape ]; then
+        # vhs only counts as done when it exited 0 and left a valid GIF.
+        { wait "$CPID"; } 2>/dev/null
+        vrc=$?
+        [ "$vrc" = 0 ] || fail "vhs exited with status $vrc"
+        artifact_stable tape "$PARTIAL" && finish
+        fail "vhs exited without a valid artifact"
+      fi
+      artifact_valid page "$PARTIAL" && finish
       fail "the browser exited without a valid artifact"
     fi
     [ "$SECONDS" -lt "$end" ] || fail "no valid artifact within ${DEADLINE}s"
@@ -334,10 +354,15 @@ BASE=${TMPDIR:-/tmp}
 BASE=${BASE%/}
 WORK=$(mktemp -d "$BASE/proof-capture.XXXXXX" 2>/dev/null) || { WORK=""; fail "cannot create a work directory under $BASE"; }
 PROFILE="$WORK/profile"
-PARTIAL="$WORK/partial.png"
 
-set -- --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars \
-  "--user-data-dir=$PROFILE" "--window-size=$WIDTH,$HEIGHT"
-[ -z "$WAIT_MS" ] || set -- "$@" "--virtual-time-budget=$WAIT_MS"
-set -- "$@" "--screenshot=$PARTIAL" "$URL"
-capture_run "$BROWSER" "$@"
+if [ "$KIND" = page ]; then
+  PARTIAL="$WORK/partial.png"
+  set -- --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars \
+    "--user-data-dir=$PROFILE" "--window-size=$WIDTH,$HEIGHT"
+  [ -z "$WAIT_MS" ] || set -- "$@" "--virtual-time-budget=$WAIT_MS"
+  set -- "$@" "--screenshot=$PARTIAL" "$URL"
+  capture_run "$BROWSER" "$@"
+else
+  PARTIAL="$WORK/partial.gif"
+  capture_run "$VHS" -o "$PARTIAL" "$TAPE_ABS"
+fi
