@@ -248,6 +248,7 @@ level: L1
 caption: Blue is the left arm (build), green the right arm (test), rose the static quality gates (review, not test execution). Dashed green edges pair each right-arm verifier with the left-arm level it tests; rose edges show the static gate that reviews that level.
 review:
   - "Lanes skip whole levels: tiny runs only build and review, bug starts at test-plan, backfill never builds. Is that the right floor, or should the bug lane also run design critique for a risky fix?"
+  - "`/kit:execute` dispatches task, integration and acceptance verifiers, but system-verifier runs only from `/kit:verify`. Should execute run the system level on the full lane, so it is not on-demand only?"
 lanes:
   - {id: gates, name: static quality gates, tone: rose}
 nodes:
@@ -265,6 +266,7 @@ nodes:
   - {id: task, name: task-verifier, note: "each task's criteria", tone: green, at: [5, 3]}
   - {id: recheck, name: recheck-verifier, note: re-audit of a sampled PASS, tone: green, at: [5, 4]}
   - {id: integ, name: integration-verifier, note: cross-task wiring, tone: green, at: [6, 2]}
+  - {id: system, name: system-verifier, note: whole project suite, tone: green, at: [7, 1]}
   - {id: accept, name: acceptance-verifier, note: "spec Verification section", tone: green, at: [8, 0]}
 edges:
   - {from: bgate, to: brief, label: reviews, tone: rose}
@@ -279,9 +281,11 @@ edges:
   - {from: testplan, to: builder, label: target matrix, tone: green}
   - {from: execute, to: task, tone: green}
   - {from: task, to: integ, tone: green}
-  - {from: integ, to: accept, tone: green}
+  - {from: integ, to: system, tone: green}
+  - {from: system, to: accept, tone: green}
   - {from: recheck, to: task, label: re-audits, tone: green}
   - {from: accept, to: brief, label: verifies, dashed: true, tone: green}
+  - {from: system, to: design, label: verifies, dashed: true, tone: green}
   - {from: integ, to: spec, label: verifies, dashed: true, tone: green}
   - {from: task, to: execute, label: verifies, dashed: true, tone: green}
 ```
