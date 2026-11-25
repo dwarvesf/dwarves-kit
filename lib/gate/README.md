@@ -234,6 +234,10 @@ the kit default), each key explained in a comment; delete a line to follow the o
 again. The proof classifier treats a `.kit.toml`-only diff as inert, whatever key it touches:
 harness config owes no proof-of-done. Proof: `tests/test-gate-opt-out.sh`, `tests/test-gate-opt-in.sh`.
 
+## The merged check
+
+`branch-merged.sh` is sourced, not a verb. `branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] [--numbers] <repo> <default> <gh state> <branch>` is the one answer to "has this branch reached the default branch". It prints one line, `SAFE ancestor|absorbed|squash <phrase>`, `LEAVE tip <sha>`, `LEAVE base <name>`, `LEAVE none <phrase>` or `LEAVE nogh <note>`; callers branch on the first two words. Default rungs: ancestor of `origin/<default>`, absorbed content, a same-repo merged PR at the exact tip. `--need pr` keeps only the PR rung (`wt.sh close`, the origin sweep, adopt, carry); a gh failure, a fork PR, a PR into another base or a tip past the PR head is always LEAVE. `wrap scan`, `apply`, `land`, `adopt`, `carry`, the origin sweep and `lib/goal/wt.sh close` call it. The checks that read one PR number the script just merged, the up-to-date direction (`is-ancestor origin/<default> HEAD`) and the `git cherry` and patch-id reads are different questions and carry `merged-ok: <reason>` markers; `tests/test-shared-lookups.sh` pins the list.
+
 ## Specs and decisions
 
 | Where | What |

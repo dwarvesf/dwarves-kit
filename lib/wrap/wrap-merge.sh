@@ -115,7 +115,7 @@ _pr_detail_at_head() {
 # `unreadable`. Nothing GitHub returns is echoed unless it is one of the three words.
 _resync_state() {
   local s
-  s="$(gh pr view "$2" --repo "$1" --json state 2>/dev/null | jq -r '.state // ""' 2>/dev/null)"
+  s="$(gh pr view "$2" --repo "$1" --json state 2>/dev/null | jq -r '.state // ""' 2>/dev/null)" # merged-ok: the state of one PR number the caller names, not a branch tip
   case "$s" in OPEN|CLOSED|MERGED) printf '%s' "$s" ;; *) printf 'unreadable' ;; esac
 }
 
@@ -206,7 +206,7 @@ _pr_head_resync_body() {
 
   # Step 1: a fresh read right before acting. Every field must be present; a missing one
   # fails its test, never a `// false` default that would read it as a pass.
-  pre="$(gh pr view "$n" --repo "$url" --json state,isDraft,isCrossRepository,headRefOid,autoMergeRequest 2>/dev/null)"
+  pre="$(gh pr view "$n" --repo "$url" --json state,isDraft,isCrossRepository,headRefOid,autoMergeRequest 2>/dev/null)" # merged-ok: the pre-close read of one PR number before a merge, not a branch tip
   [ -z "$_RS_HIT" ] || return 130  # pre-close check: interrupted during the read
   head="$(printf '%s' "$pre" | jq -r '.headRefOid // ""' 2>/dev/null)"
   case "$head" in *[!0-9a-f]*|'') head="" ;; esac
@@ -661,17 +661,16 @@ _stacked_parent() {
   local repo="$1" url="$2" def="$3" head_oid="$4" list cands c o i j best="" ok
   local -a oids=() prs=()
   STK_PARENT=""; STK_PARENT_PR=""
-  list="$(gh pr list --repo "$url" --state merged --base "$def" --limit 100 \
-    --json number,headRefOid,baseRefName,mergedAt 2>/dev/null)" || {
+  list="$(gh pr list --repo "$url" --state merged --base "$def" --limit 100 --json number,headRefOid,baseRefName,mergedAt 2>/dev/null)" || { # merged-ok: stacked-parent detection reads merged PRs under a child head, deletes nothing
     echo "     the merged-PR query on ${url} failed"; return 2; }
   cands="$(printf '%s' "$list" | jq -r --arg d "$def" \
-    '.[] | select(.mergedAt != null and .baseRefName == $d) | "\(.number) \(.headRefOid)"' 2>/dev/null)" || {
+    '.[] | select(.mergedAt != null and .baseRefName == $d) | "\(.number) \(.headRefOid)"' 2>/dev/null)" || { # merged-ok: stacked-parent detection, same list as above
     echo "     the merged-PR list on ${url} did not parse"; return 2; }
   while read -r c o; do
     [ -n "$o" ] && [ "$o" != "$head_oid" ] || continue
     git -C "$repo" cat-file -e "${o}^{commit}" 2>/dev/null || continue
     git -C "$repo" merge-base --is-ancestor "$o" "$head_oid" 2>/dev/null || continue
-    git -C "$repo" merge-base --is-ancestor "$o" "origin/${def}" 2>/dev/null && continue
+    git -C "$repo" merge-base --is-ancestor "$o" "origin/${def}" 2>/dev/null && continue # merged-ok: stacked-parent detection, a plain merge already holds the parent
     oids+=("$o"); prs+=("$c")
   done <<< "$cands"
   [ "${#oids[@]}" -gt 0 ] || return 1
@@ -1378,7 +1377,7 @@ cmd_merge() {
   fi
 
   local after state sha
-  after="$(gh pr view "$first_eligible" --repo "$url" --json state,mergeCommit 2>/dev/null)"
+  after="$(gh pr view "$first_eligible" --repo "$url" --json state,mergeCommit 2>/dev/null)" # merged-ok: confirms the state of the PR number this script just merged, not a branch tip
   state="$(printf '%s' "$after" | jq -r '.state // ""' 2>/dev/null)"
   sha="$(printf '%s' "$after" | jq -r '.mergeCommit.oid // ""' 2>/dev/null)"
   if [ "$state" != "MERGED" ]; then

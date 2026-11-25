@@ -70,8 +70,8 @@ source "$LIB_ROOT/proof/digest.sh" || { echo "FATAL: lib/proof/digest.sh missing
 # shellcheck source=lib/spec/spec-find.sh
 # A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
 if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
-  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
-  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
 fi
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
@@ -418,7 +418,7 @@ _negctl_required() {
     full) kit_config_tracked_clean "$root/.kit.toml" && mode=full ;;
   esac
   [ "$mode" = full ] || { echo yes; return 0; }
-  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")"
+  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")" # spec-active-ok: the enforcement name pick, the answer spec_active returns by default
   if [ -n "${spec:-}" ]; then
     lane="$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$spec" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//')"
     [ "$lane" = full ] && { echo yes; return 0; }

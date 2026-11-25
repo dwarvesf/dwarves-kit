@@ -3,45 +3,6 @@
 
 _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 
-# _absorbed <repo> <default branch> <commit> -- 0 when every path the commit changed since its
-# merge base with origin/<def> is byte-identical (same blob and mode, or absent on both) at the
-# commit and on origin/<def>. It covers a subagent branch whose lead re-committed the work under
-# its own PR: new hashes, no PR for the branch, so neither other proof can ever hold. It never
-# merges: a merge would run .gitattributes drivers, and keep-ours or union can return the
-# default branch's side while the branch's edit exists nowhere else. Plain tree diffs read no
-# attributes and write no objects. Like the squash proof, it guarantees the branch's net change,
-# not content its own intermediate commits added and removed; `branch -D` prints the tip sha.
-# Callers pass a full ref or a sha, so a tag named like the branch cannot stand in for it.
-# --no-relative: diff.relative with a subdirectory <repo> would drop paths from both lists.
-_absorbed() {
-  local repo="$1" def="$2" tip="$3" main base changed differ rest path nl=$'\n'
-  # core.quotePath=true makes both lists pure ASCII: bash 5 in a UTF-8 locale truncates a
-  # string at a backslash before an invalid byte, which once dropped an overlapping path.
-  # LC_ALL=C reaches git through env, never as a bash variable: Homebrew bash 5.3 on macOS
-  # SIGSEGVs (rc 139) in setlocale when a function exit restores LC_ALL, about 1 call in 20
-  # under load, and the proof then reads as "not absorbed".
-  local -a g=(env LC_ALL=C git -C "$repo" --no-replace-objects -c core.quotePath=true)
-  main="$("${g[@]}" rev-parse --verify --quiet "refs/remotes/origin/${def}^{commit}")" || return 1
-  tip="$("${g[@]}" rev-parse --verify --quiet "${tip}^{commit}")" || return 1
-  base="$("${g[@]}" merge-base "$main" "$tip" 2>/dev/null)" || return 1
-  changed="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
-    "$base" "$tip")" || return 1
-  [ -n "$changed" ] || return 1
-  differ="$("${g[@]}" diff --no-relative --no-renames --ignore-submodules=none --name-only \
-    "$tip" "$main")" || return 1
-  # Both lists use git's quoted path form, one path per line, so an odd path still compares
-  # exactly. The comparison is pure bash: no pipe, file, or subprocess that could fail and read
-  # as "no overlap". A pipe into `grep -q` once read SIGPIPE's 141 as absorbed; a here-string
-  # temp file and a <(...) operand can each vanish (full disk, no free descriptor) and leave
-  # grep reading nothing. A quoted "$path" in a case pattern matches literally.
-  rest="$changed"
-  while [ -n "$rest" ]; do
-    path="${rest%%"$nl"*}"
-    case "$rest" in *"$nl"*) rest="${rest#*"$nl"}" ;; *) rest="" ;; esac
-    case "$nl$differ$nl" in *"$nl$path$nl"*) return 1 ;; esac
-  done
-  return 0
-}
 
 # _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
 # `locked` file in that worktree's admin directory, the same state `worktree list` reports.
@@ -208,7 +169,7 @@ _apply_worktrees() {
     if [ "$fetch_succeeded" != 1 ]; then
       echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
     fi
-    read -r lcode _ proof <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$wtb")"
+    read -r lcode _ proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
     if [ "$lcode" != SAFE ]; then
       echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
     fi
@@ -286,8 +247,8 @@ _apply_branches() {
     # -D, not -d: the proof is wrap's own, against origin/<def>. `branch -d` judges against the
     # branch's OWN upstream (or HEAD when it has none), so it refused a branch that tracks
     # another ref or nothing even though origin/<def> already holds its tip. The proof judges the
-    # sha read above, see _merge_ladder.
-    read -r lcode lreason ldetail <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$b" "$tip")"
+    # sha read above, see branch_merged.
+    read -r lcode lreason ldetail <<< "$(branch_merged --tip "$tip" "$repo" "$def" "$ghs" "$b")"
     case "${lcode} ${lreason}" in
       "SAFE ancestor"|"SAFE absorbed")
         run "$repo" "delete ${b} (${ldetail})" git -C "$repo" branch -D "$b" ;;
@@ -335,7 +296,7 @@ _apply_archive_unmerged() {
     echo "     SKIP archive sweep: fetch failed, stale data"; return 0
   fi
   local b tip pushed cherry n slug ref err first rl
-  # Full refs throughout, as in _merge_ladder: a tag named like the branch once made the push
+  # Full refs throughout, as in branch_merged: a tag named like the branch once made the push
   # source ambiguous, and a bare origin/<def> can resolve a tag or local branch.
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) continue ;; esac
@@ -348,7 +309,7 @@ _apply_archive_unmerged() {
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
       echo "     SKIP ${b}: held by a worktree"; continue
     fi
-    cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "refs/heads/${b}" 2>/dev/null)"
+    cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "refs/heads/${b}" 2>/dev/null)" # merged-ok: git cherry counts unique patches for the archive-first sweep, nothing is deleted on it alone
     n="$(printf '%s\n' "$cherry" | grep -c '^+')"
     if [ "$n" -eq 0 ]; then
       echo "     ${b}: nothing unique, left for the merged sweep"; continue
@@ -718,12 +679,12 @@ _archive_worktree_one() {
   case $'\n'"$lv" in *$'\n'[[:lower:]S]' '*)
     echo "     SKIP ${wt_s}: skip-worktree or assume-unchanged entries hide their edits"; return ;;
   esac
-  cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "$head" 2>/dev/null)"
+  cherry="$(git -C "$repo" cherry "refs/remotes/origin/${def}" "$head" 2>/dev/null)" # merged-ok: git cherry counts unique patches for the archive-first sweep, nothing is deleted on it alone
   n="$(printf '%s\n' "$cherry" | grep -c '^+')"
   if [ "$WT_ST_DIRTY" = 0 ]; then
     if [ "$n" -eq 0 ]; then echo "     ${wt_s}: nothing unique, left alone"; return; fi
     if [ -n "$wtb" ]; then
-      read -r lcode _ proof <<< "$(_merge_ladder "$repo" "$def" "$ghs" "$wtb")"
+      read -r lcode _ proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
       if [ "$lcode" = SAFE ]; then
         echo "     SKIP ${wt_s}: $(_san "$wtb") proven merged (${proof}), left for --worktrees"; return
       fi
@@ -894,25 +855,44 @@ _apply_origin_branches() {
   esac
   [ "$ghs" = "ok" ] || { echo "     SKIP origin sweep: $(_gh_note "$ghs")"; return 0; }
   url="$(_origin_url "$repo")"
-  # A failed read leaves its list empty, which jq refuses as JSON, so the sweep skips.
-  merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" \
-    --json headRefName,headRefOid,isCrossRepository 2>/dev/null)" || merged=""
+  # A failed read leaves its list empty, which is no JSON array, so the sweep skips.
+  merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" --json headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null)" || merged="" # merged-ok: the one repo-wide list branch_merged --prs-json judges
   open="$(gh pr list --repo "$url" --state open --limit "$_ORIGIN_PR_LIMIT" \
     --json headRefName,baseRefName 2>/dev/null)" || open=""
   # A full open page may hide the PR that protects a base branch, so the sweep stands down.
   if [ "$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)" = "$_ORIGIN_PR_LIMIT" ]; then
     echo "     SKIP origin sweep: ${_ORIGIN_PR_LIMIT}+ open PRs, an unread one could need a branch"; return 0
   fi
-  # One "<name> <tip>" line per eligible branch.
-  elig="$(git -C "$repo" ls-remote --heads origin 2>/dev/null \
-    | jq -R -r --argjson m "$merged" --argjson o "$open" --arg def "$def" --argjson own "$own_json" '
-        split("\t") as [$tip, $ref] | ($ref | ltrimstr("refs/heads/")) as $b
-        | select($b != $def)
-        | select($own == null or any($own[]; . == $b))
-        | select(any($m[]; .isCrossRepository == false and .headRefName == $b and .headRefOid == $tip))
-        | select(any($o[]; .headRefName == $b or .baseRefName == $b) | not)
-        | "\($b) \($tip)"' 2>/dev/null)" \
+  local heads_out protect mnames mfile b tip verdict nl=$'\n'
+  if ! printf '%s' "$merged" | jq -e 'type == "array"' >/dev/null 2>&1 \
+     || ! printf '%s' "$open" | jq -e 'type == "array" and all(.[]; (.headRefName | type) == "string" and (.baseRefName | type) == "string")' >/dev/null 2>&1 \
+     || ! heads_out="$(git -C "$repo" ls-remote --heads origin 2>/dev/null)"; then
+    echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
+  fi
+  # One "<name> <tip>" line per eligible branch. The merged-ness of each is branch_merged's answer on
+  # the one merged-PR list read above; the sweep keeps its own guards on top: not the default branch,
+  # inside the --own scope, and no OPEN PR uses the branch as head or base.
+  protect="$(printf '%s' "$open" | jq -r '.[] | (.headRefName, .baseRefName) | select(. != null)' 2>/dev/null)" \
     || { echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0; }
+  mnames="$(printf '%s' "$merged" | jq -r '.[].headRefName // empty' 2>/dev/null | sort -u)"
+  mfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" \
+    || { echo "     SKIP origin sweep: no scratch file for the merged-PR list"; return 0; }
+  printf '%s' "$merged" > "$mfile"
+  elig=""
+  while IFS=$'\t' read -r tip b; do
+    b="${b#refs/heads/}"
+    [ -n "$tip" ] && [ -n "$b" ] && [ "$b" != "$def" ] || continue
+    # Matched in the shell with a case on newline-delimited text, never through a pipe into grep -q:
+    # grep exits on its first hit, the writer takes SIGPIPE, and under pipefail the "found" answer
+    # reads as "not found" once the list passes the pipe buffer, which would let a protected branch go.
+    if [ -n "$OWN_SET" ]; then case "$nl$OWN_BRANCHES$nl" in *"$nl$b$nl"*) ;; *) continue ;; esac; fi
+    case "$nl$mnames$nl" in *"$nl$b$nl"*) ;; *) continue ;; esac
+    case "$nl$protect$nl" in *"$nl$b$nl"*) continue ;; esac
+    verdict="$(branch_merged --need pr --tip "$tip" --prs-json "$mfile" "$repo" "$def" ok "$b")"
+    case "$verdict" in "SAFE squash "*) elig="${elig}${b} ${tip}"$'\n' ;; esac
+  done <<< "$heads_out"
+  rm -f "$mfile"
+  elig="${elig%$'\n'}"
   names="$(printf '%s' "$elig" | cut -d' ' -f1)"
   n="$(printf '%s' "$names" | grep -c .)"
   if [ "$n" -eq 0 ]; then echo "     no merged branches left on origin"; return 0; fi
@@ -1043,7 +1023,7 @@ _apply_repo() {
     # --pull-only skips the stray-commits carry, so name what it leaves behind rather than
     # letting unpushed commits on the default branch go silent run after run.
     if [ "$PULL_ONLY" = 1 ] && [ "$fetch_succeeded" = 1 ]; then
-      local ahead; ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+      local ahead; ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: ahead count of the main checkout's default branch for the pull step, no delete rides on it
       [ "${ahead:-0}" -gt 0 ] 2>/dev/null && \
         echo "     NOTE: ${def} is ${ahead} commits ahead of origin/${def}; --pull-only never carries them, plain apply --apply does"
     fi

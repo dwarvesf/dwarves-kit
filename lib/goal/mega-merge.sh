@@ -180,7 +180,7 @@ _ship_rules_gate() {
   local rid="$1" lane="$2" root="$3" head="$4" base="$5" spec=""
   [ -n "$head" ] || return 0
   # shellcheck source=lib/spec/spec-find.sh
-  if [ -r "$SPEC_FIND" ] && source "$SPEC_FIND" 2>/dev/null; then spec="$(spec_for_slug "$root" "$rid")"; fi
+  if [ -r "$SPEC_FIND" ] && source "$SPEC_FIND" 2>/dev/null; then spec="$(spec_for_slug "$root" "$rid")"; fi # spec-active-ok: the enforcement name pick, the answer spec_active returns by default
   # The hook runs the large-spec rule only with a spec and only while [gate] lane_gates is on at the merge base.
   if [ -n "$spec" ] && ship_rules_switch_on lane_gates "$root" "$base"; then
     ship_rule_large_spec "$spec" "$rid" "$lane" "$GATE_LEDGER" || return 1

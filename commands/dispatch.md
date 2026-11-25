@@ -159,7 +159,7 @@ Exit 0 = clean (eligible to converge). Exit 1 = drift (out-of-glob or hands-off 
 - Integrate the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, tool.toml, BACKLOG, retro, marketplace.json, test-meta.sh) **once**, via `/kit:ship`. Workers never wrote them; this is the only place they are written. See WORKFLOW.md "Lead-owned convergence."
 - **No auto-merge.** The human merges each `goal/<slug>` branch at ship.
 - Release each task's attempt record once the task is settled: its result is committed and merged (`commit-result` ran), or it is lost and abandoned. `release` deletes the whole `<task>.task` record, attempt history included, so nothing survives it for audit; the durable trail is the merged branch and the run ledger, not the attempt store. Release only after the record has served its purpose, or a resumed worker's state is gone while the task is still in flight.
-- GC each worktree after its branch is PR'd/merged. The harness LOCKS agent worktrees, so a bare `git worktree remove --force` fails (`cannot remove a locked working tree`). The sequence is:
+- GC each worktree after its branch is PR'd/merged, and only once `bash -c 'source lib/gate/branch-merged.sh; branch_merged --need pr "$PWD" master "$(_gh_state)" goal/<slug>'` prints `SAFE squash` (the shared merged check; never remove a worktree or `branch -D` on a guess). The harness LOCKS agent worktrees, so a bare `git worktree remove --force` fails (`cannot remove a locked working tree`). The sequence is:
 
 ```bash
 bash lib/goal/attempt-state.sh release <slug>   # settled task: drop the attempt record

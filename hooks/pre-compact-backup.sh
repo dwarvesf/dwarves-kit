@@ -45,19 +45,22 @@ $(git log --oneline -5 2>/dev/null || echo "no commits")
 $(git diff --stat 2>/dev/null || echo "none")
 
 ### Active spec
-$(SPEC=""
-SPEC_STATUS_SH="$(dirname "${BASH_SOURCE[0]}")/../lib/spec/spec-status.sh"
-SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true)
-if [ -n "$SPEC_LIST" ]; then
-  # Highest-numbered open spec; a spec with no Status header counts as open. Without lib/ the highest spec.
-  # shellcheck disable=SC2086 # spec paths never contain spaces
-  if [ -f "$SPEC_STATUS_SH" ]; then SPEC=$(bash "$SPEC_STATUS_SH" live --none live $SPEC_LIST 2>/dev/null | sed -n 1p || true)
-  else SPEC=$(printf '%s\n' "$SPEC_LIST" | sed -n 1p); fi
+$(SPEC=""; AMBIG=""
+# One lookup (lib/spec/spec-active.sh): the branch's own spec, the lone open spec, or ambiguous.
+# Without the lib no spec is resolved.
+SPEC_ACTIVE_SH="$(dirname "${BASH_SOURCE[0]}")/../lib/spec/spec-active.sh"
+if [ -r "$SPEC_ACTIVE_SH" ] && . "$SPEC_ACTIVE_SH" 2>/dev/null; then
+  OUT=$(spec_active --live --branch "$(git branch --show-current 2>/dev/null || true)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" 2>/dev/null || true)
+  SPEC=$(printf '%s\n' "$OUT" | awk -F'\t' '$1 != "ambiguous" && $2 != "" { print $2; exit }')
+  AMBIG=$(printf '%s\n' "$OUT" | awk -F'\t' '$1 == "ambiguous" { n = split($2, p, "/"); f = p[n]; if (match(f, /^SPEC-[0-9]+/)) f = substr(f, 1, RLENGTH); printf "%s%s", sep, f; sep = ", " }')
+  SPEC="${SPEC#"$(pwd -P)"/}"
 fi
 if [ -n "$SPEC" ]; then
   echo "Spec: $SPEC"
   # Extract just the task breakdown section
   sed -n '/## Task Breakdown/,/## /p' "$SPEC" 2>/dev/null | head -30 || echo "(could not extract tasks)"
+elif [ -n "$AMBIG" ]; then
+  echo "Spec: ambiguous ($AMBIG)"
 else
   echo "No spec found (docs/specs/)"
 fi)
