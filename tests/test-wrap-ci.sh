@@ -439,9 +439,9 @@ chk "merge --with-ci pending --pr: the pending run was read past before the merg
 out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=40 GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 111)" \
   GH_STUB_PR_111="$(zc_json 111 UNSTABLE "$PD_PEND_RUN")" \
   "$WRAP" merge --apply --with-ci --pr 111 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
-chk "merge --with-ci still pending: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk "merge --with-ci still pending: exits 4, not merged and nothing failed" "$([ "$rc" -eq 4 ]; echo $?)"
 chk_has "merge --with-ci still pending: says it ran out, with the seconds waited" "$out" \
-  "FAILED merge #111: checks still pending after 40s; left open"
+  "SKIP #111: checks still pending after 40s; left open"
 chk_no "merge --with-ci still pending: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
@@ -519,9 +519,9 @@ chk_has "merge --with-ci bare, pending: merged once the checks read green" "$out
 out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=40 GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 119)" \
   GH_STUB_PR_119="$(zc_json 119 UNSTABLE "$PD_PEND_RUN")" \
   "$WRAP" merge --apply --with-ci "$TMPD/clone-scan-main" 2>&1)"; rc=$?
-chk "merge --with-ci bare, still pending: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk "merge --with-ci bare, still pending: exits 4, not merged and nothing failed" "$([ "$rc" -eq 4 ]; echo $?)"
 chk_has "merge --with-ci bare, still pending: says it ran out, with the seconds waited" "$out" \
-  "FAILED merge #119: checks still pending after 40s; left open"
+  "SKIP #119: checks still pending after 40s; left open"
 mv "$TMPD/clone-scan-main/.github" "$TMPD/pw-wf-discard"
 
 echo "--- zero-check --pr: a head that already reports checks never probes the labels"

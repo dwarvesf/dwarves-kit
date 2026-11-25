@@ -179,7 +179,7 @@ chk "merge --apply --pr that merged nothing: the checkout's main is untouched" "
 build_pull carry
 out="$(env GH_STUB_OPEN_PRS="$(pl_open 97)" "GH_STUB_PR_97=$(pl_json 97 "$PL_TIP")" \
   GH_STUB_LAND_REPO="$PL_CLONE" GH_STUB_LAND_REMOTE="$PL_BARE" GH_STUB_LAND_BRANCH=feat/pl GH_STUB_LAND_DEF=main \
-  bash -c 'source "$1" help >/dev/null; _autoland_carry() { ( cmd_merge --apply --pr 97 "$2" ); }; _autoland_carry x "$2"' _ \
+  bash -c 'source "$1" help >/dev/null; declare -F _autoland_carry >/dev/null || { echo "NO_CARRY_FN: wrap-carry.sh lost _autoland_carry, the guard has no caller to name"; exit 9; }; _autoland_carry() { ( cmd_merge --apply --pr 97 "$2" ); }; _autoland_carry x "$2"' _ \
   "$KIT_DIR/lib/wrap/wrap.sh" "$PL_CLONE" 2>&1)"; rc=$?
 chk "merge called from apply's carry: exits 0" "$rc"
 chk_has "merge called from apply's carry: merged" "$out" "tree verified"

@@ -968,8 +968,9 @@ _merge_pending_only() {
 # in flight never reached them and the sweep ended on `nothing eligible`. Holds with the usual
 # bounded wait (KIT_WRAP_CARRY_CHECKS_SECS), then re-reads the PR once GitHub has settled
 # mergeability and sets PW_DETAIL for the caller to re-gate. Returns 0 to re-gate; 2 when the
-# head moved during the wait (the same refusal the label wait makes) or the checks were still
-# pending when the bound ran out; the refusal is printed and the PR stays open.
+# head moved during the wait (the same refusal the label wait makes); WRAP_MERGE_NOT_MERGED_RC
+# (4) when the checks were still pending as the bound ran out: nothing failed and the PR stays
+# open, the code `apply`'s autoland carry already reads as "left open for step 3".
 _merge_pending_wait() {
   local url="$1" n="$2" detail="$3" head_oid new_head
   head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
@@ -984,8 +985,8 @@ _merge_pending_wait() {
   fi
   case "${CI_WAIT_END:-}" in
     ''|*[!0-9]*|0) ;;
-    *) echo "FAILED merge #${n}: checks still pending after ${KIT_WRAP_CARRY_CHECKS_SECS}s; left open" >&2
-       return 2 ;;
+    *) echo "SKIP #${n}: checks still pending after ${KIT_WRAP_CARRY_CHECKS_SECS}s; left open"
+       return "$WRAP_MERGE_NOT_MERGED_RC" ;;
   esac
   return 0
 }
