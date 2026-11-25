@@ -85,6 +85,14 @@ Index by loop stage (formerly "leg"; [`reference/lifecycle.md`](reference/lifecy
 **When to invoke:** the first time in a repo, or after editing `[modules]` in `.kit.toml` (`--refresh` re-wires). `--check` is status only. `--with a,b,c` seeds those modules in a FRESH `.kit.toml`. `--single-source` keeps one agent guide instead of a CLAUDE.md/AGENTS.md pair. Several repos at once: `bin/wrap adopt <repo>...`.
 **Common gotcha:** idempotent and non-destructive. A repo's own `AGENTS.md`, `CLAUDE.md`, or `.kit.toml` is never overwritten, and `--with` on an existing `.kit.toml` is a no-op. It installs pointers, never a copy of `lib/` or the full WORKFLOW. Detail: `commands/adopt.md`.
 
+### `/kit:stamp`
+
+**Phase:** front door (a kit-free harness for a repo whose team does not run the kit)
+**Reads:** the target dir, its `origin/HEAD` for the default branch, its existing `AGENTS.md`, `.kit.toml`, `.claude/settings.json` and `.claude/team-stamp.lock`, and `templates/team-stamp/`
+**Writes:** plain repo-owned files: a self-contained `AGENTS.md` and `docs/TEAM-WORKFLOW.md`, a project hook that blocks a bare merge and a push or commit on the default branch, session-start lessons, a ship playbook, a PR shape CI job with its local twin `scripts/check.sh`, an owners check, a merge guard, a negative control, an Issues work queue, a tagged changelog with release notes, a digest, a proof guide, and the lock. It merges `.claude/settings.json` by entry and commits nothing
+**When to invoke:** once per repo, by the operator (`--owner <login>` is required), then `--check` to confirm and `--refresh` after a kit upgrade, which prints a diff per file and the `--take <path>` command for it
+**Common gotcha:** a file the repo edited is never overwritten, and `--take` refuses it and prints the diff to apply by hand. The generated files run with no kit installed. The workflow always runs on `[self-hosted]`; without a runner, `scripts/check.sh` is the check. Detail: `lib/stamp/README.md`
+
 ### `/kit:grill`
 
 **Phase:** intake (between type classification and the phase-0 `Done=` line)
