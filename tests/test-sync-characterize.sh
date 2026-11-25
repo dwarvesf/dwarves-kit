@@ -11,6 +11,11 @@
 # Sections (each headed `## <name>` in the golden):
 #   1-sync-argv      `board sync` argv: config matrix -> the flags the engine receives
 #   2-engine-flags   `backlog_sync.py --help`, reduced to sorted `flag<TAB>help` lines
+#   3-engine-dry-run each of the seven apps through build_source and sync_source(dry_run) with a canned fake
+#   4-sweep          `board sweep`: no leg flags, the three leg flags, the same with --dry-run, --health, --help
+#   5-health-brief   `board health` and `board brief`: both --help outputs, run --dry-run over a fixture registry
+#   6-bridge-verbs   mirror (dry run, apply, again), status (with and without --with-mega), writeback --dry-run,
+#                    mirror-cleanup, hermes check and link --help
 #   7-help-errors    `board help`, an unknown verb, the engine with no --apps and with a bad app,
 #                    `board sweep` with an unknown flag
 #
@@ -187,6 +192,9 @@ cenv() {
 }
 
 # ---- normalization ---------------------------------------------------------------------------------
+# The boundary lint scans fixture text for the operator's repo name and `board help` prints it, so the
+# golden carries that name as ops-<NAME>. A 64-hex row hash keeps its first 12 hex digits: the commit scan
+# refuses a 64-hex string as a possible key, and 48 bits still change whenever a row's content does.
 sed_esc() { printf '%s' "$1" | sed 's/[][\.*^$/#|+?(){}]/\\&/g'; }
 norm() {
   sed -E \
@@ -194,7 +202,10 @@ norm() {
     -e 's/[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z?/<TS>/g' \
     -e 's/(origin\.[A-Za-z0-9_-]+)\.[0-9]+\.md/\1.<PID>.md/g' \
     -e 's/(board-(mirror|sweep)[A-Za-z-]*\.)[A-Za-z0-9]{6}/\1<RAND>/g' \
-    -e 's/\[[0-9a-f]{8}\]/[<NONCE>]/g'
+    -e 's/\[[0-9a-f]{8}\]/[<NONCE>]/g' \
+    -e 's/key=[0-9a-f]{32}/key=<KEY>/g' \
+    -e "s/ops-""toolkit/ops-<NAME>/g" \
+    -e 's/([0-9a-f]{12})[0-9a-f]{52,}/\1<hash>/g'
 }
 
 # ---- helpers shared by the sections ------------------------------------------------------------------
@@ -430,6 +441,452 @@ section_2() {
 }
 
 # ==================================================================================================
+# section 3: the engine dry run of each app, through build_source and sync_source
+# ==================================================================================================
+# The harness imports backlog_sync and calls build_source(name, args) then sync_source(..., dry_run=True),
+# the two seams that stay in place after every move. Each source's transport (`runner`) is replaced by a
+# canned fake lifted from that app's own unit tests; a call a fake does not script raises, and the
+# transport guard raises on any real subprocess or socket.
+cat > "$W/engine_dryrun.py" <<'EOF'
+import argparse
+import contextlib
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+kit = Path(os.environ["CHAR_KIT"])
+backlog = Path(sys.argv[1])
+work = backlog.parent.parent
+sys.path.insert(0, str(kit / "lib" / "sync"))
+sys.path.insert(0, str(kit / "lib" / "config"))
+os.environ["MULTICA_TOKEN"] = "fixture"
+import backlog_sync as bs  # noqa: E402
+
+# every option of the engine, under the config key and, for the one dest that differs today, the legacy dest
+KEYS = ["reminders_list", "list_name", "notion_db", "notion_parent", "notion_title", "github_repo",
+        "hermes_target", "hermes_home", "hermes_board", "hermes_assignee", "hermes_workspace",
+        "notion_taskboard_db", "notion_taskboard_status_map", "notion_taskboard_status_default",
+        "notion_taskboard_priority_map", "notion_taskboard_weight_map", "notion_taskboard_owner",
+        "notion_taskboard_props", "notion_taskboard_types", "notion_taskboard_pull_db",
+        "notion_taskboard_pull_props", "notion_taskboard_pull_done_option",
+        "multica_url", "multica_workspace", "multica_project"]
+
+
+def ns(**kw):
+    base = {k: None for k in KEYS}
+    if "reminders_list" in kw:
+        base["list_name"] = kw["reminders_list"]
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def title(bid, text):
+    return "%s · %s" % (bid, text)
+
+
+# ---- the fakes ------------------------------------------------------------------------------------
+def fake_reminders(rec):
+    def run(script, *args):
+        rec.append({"args": list(args)})
+        if list(args) != ["Backlog"] or "rems.id()" not in script:
+            raise AssertionError("unscripted reminders call: %r" % (args,))
+        return json.dumps([
+            {"rid": "r1", "title": title("ID-1", "Do the thing"), "body": "", "completed": False},
+            {"rid": "r2", "title": title("ID-3", "Executing thing"), "body": "", "completed": True},
+            {"rid": "r3", "title": "Idea captured on the phone", "body": "", "completed": False}])
+    return run
+
+
+def fake_ntn(rec, schema, pages):
+    def run(args, data=None):
+        a = list(args)
+        rec.append({"args": a, "data": data})
+        if a[:2] == ["datasources", "resolve"]:
+            return {"data_sources": [{"id": "ds-" + a[2]}]}
+        if a[0] == "api" and a[1].startswith("v1/data_sources/"):
+            if a[1].endswith("/query"):
+                return {"results": pages, "has_more": False}
+            return schema
+        raise AssertionError("unscripted ntn call: %r" % (a,))
+    return run
+
+
+NOTION_SCHEMA = {"properties": {
+    "Name": {"type": "title", "title": {}},
+    "Status": {"type": "select", "select": {"options": [{"name": "queued"}, {"name": "shipped"}]}},
+    "Notes": {"type": "rich_text", "rich_text": {}},
+    "Tags": {"type": "multi_select", "multi_select": {}}}}
+NOTION_PAGES = [
+    {"id": "pg-1", "properties": {
+        "Name": {"title": [{"plain_text": title("ID-1", "Do the thing")}]},
+        "Status": {"select": {"name": "executing"}}, "Notes": {"rich_text": []},
+        "Tags": {"multi_select": []}}},
+    {"id": "pg-2", "properties": {
+        "Name": {"title": [{"plain_text": "Page made in Notion"}]},
+        "Status": {"select": {"name": "queued"}}, "Notes": {"rich_text": [{"plain_text": "note"}]},
+        "Tags": {"multi_select": [{"name": "idea"}]}}}]
+
+TASKBOARD_SCHEMA = {"properties": {
+    "Task": {"type": "title", "title": {}},
+    "Status": {"type": "status", "status": {"options": [
+        {"name": "Backlog"}, {"name": "In progress"}, {"name": "Waiting"}, {"name": "Done"}]}},
+    "Priority": {"type": "select", "select": {"options": [{"name": "P0"}, {"name": "P1"}]}},
+    "Weight": {"type": "number", "number": {}},
+    "Owner": {"type": "people", "people": {}}}}
+
+PULL_PAGES = [{"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "properties": {
+    "Task": {"title": [{"plain_text": "Fix the sync on the team board"}]},
+    "Notes": {"rich_text": [{"plain_text": "details from a teammate"}]}}}]
+
+
+def fake_github(rec):
+    def run(argv):
+        rec.append({"argv": list(argv)})
+        if argv[:2] != ["issue", "list"]:
+            raise AssertionError("unscripted gh call: %r" % (argv,))
+        return json.dumps([
+            {"number": 7, "title": title("ID-1", "Do the thing"), "state": "OPEN", "body": "b"},
+            {"number": 8, "title": title("ID-5", "Shipped thing"), "state": "CLOSED", "body": ""}])
+    return run
+
+
+def fake_hermes(rec):
+    def run(script):
+        rec.append({"script": script})
+        if "list --json" not in script:
+            raise AssertionError("unscripted hermes call")
+        live = [{"id": "t_1", "title": title("ID-2", "Claimed thing"), "status": "ready", "body": ""},
+                {"id": "t_2", "title": "Card from a teammate", "status": "triage", "body": "from chat"}]
+        archived = [{"id": "t_3", "title": title("ID-5", "Shipped thing"), "status": "archived", "body": ""}]
+        return json.dumps(live) + "\n@@SEP@@\n" + json.dumps(archived) + "\n"
+    return run
+
+
+def fake_multica(rec):
+    def run(method, path, body=None):
+        rec.append({"method": method, "path": path, "body": body})
+        if method != "GET":
+            raise AssertionError("unscripted multica call: %s %s" % (method, path))
+        return {"issues": [
+            {"id": "mi_1", "title": title("ID-4", "Parked thing"), "status": "blocked", "description": "d"},
+            {"id": "mi_2", "title": "Filed in Multica", "status": "todo", "description": "e"}], "total": 2}
+    return run
+
+
+APPS = [
+    ("reminders", ns(reminders_list="Backlog"), lambda rec: fake_reminders(rec)),
+    ("notion", ns(notion_db="db1", notion_title="Backlog"),
+     lambda rec: fake_ntn(rec, NOTION_SCHEMA, NOTION_PAGES)),
+    ("notion-taskboard", ns(notion_taskboard_db="tb1",
+                            notion_taskboard_status_map="queued=Backlog,executing=In progress,parked=Waiting,shipped=Done",
+                            notion_taskboard_status_default="Backlog",
+                            notion_taskboard_priority_map="u-hi=P0,u-mid=P1",
+                            notion_taskboard_weight_map="f-hi=2,f-mid=5"),
+     lambda rec: fake_ntn(rec, TASKBOARD_SCHEMA, [])),
+    ("notion-taskboard-pull", ns(notion_taskboard_pull_db="pull1"),
+     lambda rec: fake_ntn(rec, {}, PULL_PAGES)),
+    ("github", ns(github_repo="o/r"), lambda rec: fake_github(rec)),
+    ("hermes", ns(hermes_target="box", hermes_home="/srv/hermes", hermes_board="crew"),
+     lambda rec: fake_hermes(rec)),
+    ("multica", ns(multica_url="https://multica.invalid", multica_workspace="ws", multica_project="pj"),
+     lambda rec: fake_multica(rec)),
+]
+
+for app, args, make_fake in APPS:
+    buf, rec = io.StringIO(), []
+    try:
+        with contextlib.redirect_stdout(buf):
+            src = bs.build_source(app, args)
+            src.runner = make_fake(rec)
+            ok = bs.sync_source(src, backlog, work / ("%s.state.json" % app), True, filt=None, cap=20,
+                                allow=0, allow_flips=0, archive=None, allow_closes=0)
+        result = "clean" if ok else "refused"
+    except SystemExit as e:
+        result = "exit: %s" % (e.code,)
+    except Exception as e:  # noqa: BLE001
+        result = "error: %s: %s" % (type(e).__name__, e)
+    print("### " + app)
+    print("result\t" + result)
+    print(buf.getvalue().rstrip("\n") or "(no output)")
+    for c in rec:
+        print("call\t" + json.dumps(c, sort_keys=True))
+
+print("### missing flags")
+for app, kw in [("hermes", {}), ("hermes", {"hermes_home": "/h"}), ("multica", {}),
+                ("multica", {"multica_url": "u"}), ("notion-taskboard", {}),
+                ("notion-taskboard", {"notion_taskboard_db": "d"}), ("notion-taskboard-pull", {}),
+                ("bogus", {})]:
+    try:
+        bs.build_source(app, ns(**kw))
+        print("%s %s\tbuilt" % (app, sorted(kw)))
+    except SystemExit as e:
+        print("%s %s\t%s" % (app, sorted(kw), e.code))
+EOF
+
+section_3() {
+  local d="$W/s3"; mkdir -p "$d/_meta"
+  printf '%s\n' "$BOARD_ROWS" > "$d/_meta/BACKLOG.md"
+  git -C "$d" init -q -b main
+  : > "$W/stub.log"
+  cenv "$d" "$PY" "$W/engine_dryrun.py" "$d/_meta/BACKLOG.md"
+  drain_logs
+}
+
+# ==================================================================================================
+# section 4: `board sweep` over a fixture registry with a stub board command
+# ==================================================================================================
+s4_world() {
+  local w="$W/s4"; mkdir -p "$w/crew/_meta" "$w/solo"
+  printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| AB-1 | one | | queued |\n| AB-2 | two | | executing |\n' > "$w/crew/_meta/BACKLOG.md"
+  git -C "$w/crew" init -q -b main; repo_with_origin "$w/crew" 1767225600
+  printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| SO-1 | solo | | queued |\n' > "$w/solo/BACKLOG.md"
+  git -C "$w/solo" init -q -b main; git_seed "$w/solo" 1767225600
+  printf '%s\n' "crew  $w/crew/_meta/BACKLOG.md  on rail=crew" "solo  $w/solo/BACKLOG.md  rail=pers" > "$w/boards.txt"
+  printf '[]\n' > "$w/kinds.json"
+  printf '#!/bin/bash\ncat >> "$FAKE_POSTED"; echo >> "$FAKE_POSTED"\n' > "$w/poster"; chmod +x "$w/poster"
+  cat > "$w/board" <<'EOF'
+#!/bin/bash
+{ printf 'board'; for a in "$@"; do printf '\t%s' "$a"; done; printf '\n'
+  printf '  env\tHERMES_HOME=%s\tGH_TOKEN=%s\tGIT_ASKPASS=%s\n' "${HERMES_HOME:-UNSET}" "${GH_TOKEN:-UNSET}" "${GIT_ASKPASS:-UNSET}"; } >> "${CHAR_STUB_LOG:?}"
+case "${1:-}" in
+  sync)
+    if [ "$(basename "$PWD")" = crew ]; then printf 'synced reminders: 2 spoke items, 4 board rows\n  ~ board AB-2 -> shipped\n'
+    else printf 'synced notion: 1 spoke items, 2 board rows\n(nothing to do)\n'; fi ;;
+  publish) echo "publish stub" ;;
+  mirror) echo "mirror stub plan applied" ;;
+  mirror-cleanup) echo "expire stub: 0 archived" ;;
+esac
+exit 0
+EOF
+  chmod +x "$w/board"
+}
+
+# s4_run <label> <sweep args...>
+s4_run() {
+  local label="$1"; shift
+  local w="$W/s4" out rc
+  command rm -f "$w/digest.json" "$w/health.json"
+  : > "$W/stub.log"
+  printf '### %s\n' "$label"
+  : > "$w/posted.out"
+  out="$(cenv "$w" FAKE_POSTED="$w/posted.out" "$KIT/bin/board" sweep --registry "$w/boards.txt" --board-cmd "$w/board" \
+         --repo-root "$w/crew" --state-file "$w/digest.json" --health-state-file "$w/health.json" \
+         --name char "$@" 2>&1)"; rc=$?
+  printf '%s\nrc\t%s\n' "$out" "$rc"
+  drain_logs
+  if [ -s "$w/posted.out" ]; then printf 'posted\t'; jq -r '[.kind, .cluster] | join(":")' "$w/posted.out" | paste -sd, -; fi
+  if [ -s "$w/health.json" ]; then
+    printf 'health state\t'; jq -S -c '{keys: keys, mirror_rc: (.mirror.rc // null), sync_repos: ((.sync // {}) | keys)}' "$w/health.json"
+  fi
+  if ls -A "$w/crew" 2>/dev/null | grep -q 'board-mirror-origin'; then echo "STRAY origin copy left in the repo root"; fi
+}
+
+section_4() {
+  s4_world
+  local w="$W/s4"
+  local legs=(--mirror-hermes-home "$w/hermes-home" --mirror-snapshot "$w/snap.jsonl" --expire-kinds-file "$w/kinds.json")
+  s4_run "no leg flags"
+  s4_run "three leg flags" "${legs[@]}"
+  s4_run "three leg flags, dry run" "${legs[@]}" --dry-run
+  s4_run "three leg flags, the poster and the health leg" "${legs[@]}" --poster "$w/poster" \
+    --cluster-map "alpha=crew,beta=pers" --health --health-force
+  printf '### help\n'
+  cenv "$w" "$KIT/bin/board" sweep --help 2>&1; printf 'rc\t%s\n' "$?"
+}
+
+# ==================================================================================================
+# section 5: `board health` and `board brief` over a fixture registry and health state
+# ==================================================================================================
+section_5() {
+  local w="$W/s5" now=1790000000 day=86400
+  mkdir -p "$w/crew/_meta" "$w/solo"
+  printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| AB-1 | one | | queued |\n| AB-2 | two | | executing |\n| AB-3 | waits | | parked [later] |\n| AB-4 | done | | shipped |\n| AB-5 | five | | claimed |\n' > "$w/crew/_meta/BACKLOG.md"
+  git -C "$w/crew" init -q -b main; git_seed "$w/crew" $((now - 10 * day))
+  git -C "$w/crew" clone -q --bare "$w/crew" "$w/crew.origin.git" 2>/dev/null
+  git -C "$w/crew" remote add origin "$w/crew.origin.git"; git -C "$w/crew" fetch -q origin
+  git -C "$w/crew" remote set-head origin main >/dev/null 2>&1
+  printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| SO-1 | one | | queued |\n' > "$w/solo/BACKLOG.md"
+  git -C "$w/solo" init -q -b main; git_seed "$w/solo" $((now - 1 * day))
+  printf '%s\n' "crew  $w/crew/_meta/BACKLOG.md  on rail=crew" "solo  $w/solo/BACKLOG.md  rail=pers" > "$w/boards.txt"
+  cat > "$w/kanban" <<'EOF'
+#!/bin/bash
+if [ "$1 $2" = "boards list" ]; then
+  printf '[{"slug":"work","archived":false,"counts":{"triage":2,"ready":1,"done":4,"archived":5}},{"slug":"crew","archived":false,"counts":{"ready":4}}]'
+elif [ "$2" = "crew" ]; then
+  printf '['; first=1
+  for c in AB-1 AB-2 AB-3 AB-4; do
+    [ "$first" -eq 0 ] && printf ','; first=0
+    printf '{"id":"m-%s","status":"ready","body":"origin: crew:%s\\nnotes: x","created_at":%s}' "$c" "$c" "$((FAKE_NOW - 86400))"
+  done
+  printf ']'
+else
+  printf '[{"id":"a","title":"Fix the long running sync problem on the notion bridge","status":"triage","created_at":%s},{"id":"c","title":"Y","status":"triage","created_at":%s},{"id":"b","title":"Fine","status":"ready","created_at":%s}]' \
+    "$((FAKE_NOW - 3 * 86400))" "$((FAKE_NOW - 2 * 86400))" "$((FAKE_NOW - 86400))"
+fi
+EOF
+  cat > "$w/poster" <<'EOF'
+#!/bin/bash
+cat >> "$FAKE_POSTED"; echo >> "$FAKE_POSTED"
+EOF
+  chmod +x "$w/kanban" "$w/poster"
+  local hs="$w/health.json" ds="$w/digest.json"
+  echo '{}' > "$ds"; command rm -f "$hs"; : > "$w/posted.out"
+  local common=(--registry "$w/boards.txt" --cluster-map "alpha=crew,beta=pers" --state-file "$ds"
+                --health-state-file "$hs" --kanban "alpha=$w/kanban" --now "$now")
+  local e=(FAKE_NOW="$now" FAKE_POSTED="$w/posted.out")
+  : > "$W/stub.log"
+  printf '### health help\n'; cenv "$w" "$KIT/bin/board" health --help 2>&1; printf 'rc\t%s\n' "$?"
+  printf '### brief help\n'; cenv "$w" "$KIT/bin/board" brief --help 2>&1; printf 'rc\t%s\n' "$?"
+  printf '### health run help\n'; cenv "$w" "$KIT/bin/board" health run --help 2>&1; printf 'rc\t%s\n' "$?"
+  printf '### brief run help\n'; cenv "$w" "$KIT/bin/board" brief run --help 2>&1; printf 'rc\t%s\n' "$?"
+  printf 'synced notion: 1 spoke items, 5 board rows\n' | cenv "$w" "$KIT/bin/board" health record --repo crew --rc 0 --now "$now" --health-state-file "$hs"
+  printf 'synced notion: 1 spoke items, 1 board rows\n' | cenv "$w" "$KIT/bin/board" health record --repo solo --rc 0 --now "$now" --health-state-file "$hs"
+  printf 'board-mirror: ERROR cannot complete t_8fbaac45\n' | cenv "$w" "$KIT/bin/board" health record --leg mirror --rc 0 --now "$now" --health-state-file "$hs"
+  jq '.hermes_links = [{"label":"chief","profile":"p","cluster":"alpha","stale":true,"reason":"no stamp"}]' "$hs" > "$hs.tmp" && mv "$hs.tmp" "$hs"
+  printf '### health state\n'; jq -S . "$hs"
+  printf '### health run dry run\n'
+  cenv "$w" "${e[@]}" "$KIT/bin/board" health run "${common[@]}" --poster "$w/poster" --dry-run 2>&1; printf 'rc\t%s\n' "$?"
+  printf '### brief run dry run\n'
+  cenv "$w" "${e[@]}" "$KIT/bin/board" brief run "${common[@]}" --poster "$w/poster" --hub alpha=crew --board alpha=work \
+    --cluster alpha --dry-run 2>&1; printf 'rc\t%s\n' "$?"
+  drain_logs
+  [ ! -s "$w/posted.out" ] || echo "POSTED something in a dry run"
+}
+
+# ==================================================================================================
+# section 6: the bridge verbs (mirror, status, writeback, mirror-cleanup, hermes) against stubs
+# ==================================================================================================
+cat > "$W/kanban_state.py" <<'EOF'
+import json
+import sys
+import time
+
+d = sys.argv[1]
+now = int(time.time())
+
+
+def card(cid, status, origin=None, by="user", title="t", age_days=0):
+    body = "[AUTOMATED MIRROR]\norigin: %s\nnotes: n" % origin if origin else "free text"
+    return {"id": cid, "title": title, "body": body, "status": status, "created_by": by,
+            "created_at": now - age_days * 86400 - 3600}
+
+
+json.dump([{"slug": s, "archived": False} for s in ("fixR", "megagoals", "chatter", "default")],
+          open(d + "/boards.json", "w"))
+json.dump([card("c1", "triage", "fixR:ID-001"), card("c2", "blocked", "fixR:ID-006"),
+           card("c3", "triage", "fixR:ID-007"), card("c4", "blocked", "fixR:ID-008"),
+           card("c5", "triage", "fixR:ID-099"), card("kid1", "scheduled", None, by="auto-decomposer"),
+           card("c11", "triage", "fixZ:Z-1")], open(d + "/fixR.json", "w"))
+json.dump([card("m1", "ready", "megagoals:fixR/mymega"), card("m3", "ready", "megagoals:fixR/ghost")],
+          open(d + "/megagoals.json", "w"))
+json.dump([card("s1", "triage", None, by="chat-desk", age_days=1),
+           card("s2", "triage", None, by="chat-desk", age_days=9),
+           card("s3", "triage", None, by="chat-aux", age_days=20)], open(d + "/chatter.json", "w"))
+json.dump([card("i1", "blocked", None, title="[alarm] CRIT x")], open(d + "/default.json", "w"))
+json.dump({"parents": [{"id": "kid1"}]}, open(d + "/show-c3.json", "w"))
+EOF
+
+s6_mega_world() {
+  local w="$W/s6m"; mkdir -p "$w/boardrepo/_meta/megagoals/testmega/goals" "$w/coderoot"
+  git -C "$w/coderoot" init -q -b master
+  echo init > "$w/coderoot/README"; git_seed "$w/coderoot" 1767225600
+  git -C "$w/coderoot" branch feat/testmega-03-gamma master
+  git -C "$w/coderoot" branch feat/testmega-05-epsilon master
+  git -C "$w/coderoot" checkout -q -b feat/testmega-06-zeta master
+  echo a >> "$w/coderoot/README"; git -C "$w/coderoot" commit -qam "zeta 1"
+  git -C "$w/coderoot" checkout -q master
+  cat > "$w/boardrepo/_meta/megagoals/testmega/ROADMAP.md" <<'EOF'
+# Mega-goal: testmega
+
+## Sub-goals
+
+- [x] 01-alpha (testrepo), does alpha, `auto`, PR #101 merged abc123def0 (shipped clean)
+- [x] 02-beta (testrepo), does beta, `auto`, PR #999 merged deadbeef00 (roadmap claims merged, PR isn't)
+- [ ] 03-gamma (testrepo), does gamma, `auto`, PR #
+- [ ] 04-delta (testrepo), does delta, `auto`, PR #104
+- [ ] 05-epsilon (testrepo), does epsilon, `auto`, PR #
+- [ ] 06-zeta (testrepo), does zeta, `auto`, PR #
+- [ ] 07-eta (testrepo), does eta, `auto`, PR #
+- [~] 08-theta (testrepo), rehomed into a sibling mega, `auto`, PR #
+EOF
+  printf '**Branch:** feat/testmega-03-gamma\n' > "$w/boardrepo/_meta/megagoals/testmega/goals/03-gamma.md"
+  printf '**Branch:** feat/testmega-05-epsilon\n' > "$w/boardrepo/_meta/megagoals/testmega/goals/05-epsilon.md"
+  printf '**Branch:** feat/testmega-06-zeta\n' > "$w/boardrepo/_meta/megagoals/testmega/goals/06-zeta.md"
+  printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-001 | Mega-goal: testmega | scaffold | queued |\n' > "$w/boardrepo/_meta/BACKLOG.md"
+  git -C "$w/boardrepo" init -q -b main; git_seed "$w/boardrepo" 1767225600
+  printf 'mega  %s/boardrepo/_meta/BACKLOG.md  off\n' "$w" > "$w/boards.txt"
+  cat > "$w/gh" <<'EOF'
+#!/bin/bash
+printf 'gh' >> "${CHAR_STUB_LOG:?}"; for a in "$@"; do printf '\t%s' "$a" >> "$CHAR_STUB_LOG"; done; echo >> "$CHAR_STUB_LOG"
+case "$1 $2" in
+  "pr view") case "$3" in 101) echo MERGED ;; 999) echo OPEN ;; 104) echo MERGED ;; *) exit 1 ;; esac ;;
+  "pr list") echo '[{"number":205,"headRefName":"feat/testmega-05-epsilon"}]' ;;
+  *) echo "gh stub: unhandled call: $*" >&2; exit 1 ;;
+esac
+EOF
+  chmod +x "$w/gh"
+}
+
+# s6_cmd <label> [VAR=val ...] -- <command...>: stdout and stderr kept apart, then the exit code and the stub calls
+s6_cmd() {
+  local label="$1" envs=(); shift
+  while [ "$1" != "--" ]; do envs+=("$1"); shift; done; shift
+  local w="$W/s6" out rc
+  printf '### %s\n' "$label"
+  out="$(cenv "$w" ${envs[@]+"${envs[@]}"} "$@" 2>"$w/err")"; rc=$?
+  printf 'stdout:\n%s\nstderr:\n' "$out"; sed 's/^/  /' "$w/err"
+  printf 'rc\t%s\n' "$rc"
+  drain_logs
+}
+
+section_6() {
+  local w="$W/s6" snap reg
+  mkdir -p "$w/fixR/_meta/megagoals/mymega/goals" "$w/fixTrading/_meta"
+  printf '# Backlog\n## Active queue\n| ID | Item | Notes & source | Status |\n|----|------|-----------------|--------|\n| ID-001 | Do the thing | some notes here | queued |\n| ID-002 | Claimed thing | notes2 | claimed |\n| ID-003 | Parked thing | notes3 | parked |\n| ID-004 | Executing thing | notes4 | executing |\n| ID-005 | Shipped thing | notes5 | shipped |\n' > "$w/fixR/_meta/BACKLOG.md"
+  printf '# Mega-goal: My Test Mega\n\n- [x] 01-thing done, merged\n- [ ] 02-thing pending, `gate`, PR #12 awaiting review\n' > "$w/fixR/_meta/megagoals/mymega/ROADMAP.md"
+  printf '# Backlog\n## Active queue\n| ID | Item | Notes & source | Status |\n|----|------|-----------------|--------|\n| TR-001 | Secret trading thing | should never mirror | queued |\n' > "$w/fixTrading/_meta/BACKLOG.md"
+  git -C "$w/fixR" init -q -b main; repo_with_origin "$w/fixR" 1767225600
+  git -C "$w/fixTrading" init -q -b main; git_seed "$w/fixTrading" 1767225600
+  reg="$w/boards.txt"; snap="$w/snapshot.jsonl"
+  printf '%s\n' "fixR  $w/fixR/_meta/BACKLOG.md  on rail=personal" "fixTrading  $w/fixTrading/_meta/BACKLOG.md  off" > "$reg"
+  local flags=(--repo-root "$w" --registry "$reg" --snapshot "$snap")
+  : > "$W/stub.log"; echo 0 > "$W/state/idcounter"
+  s6_cmd "mirror dry run" -- "$KIT/bin/board" mirror --dry-run "${flags[@]}"
+  s6_cmd "mirror apply" -- "$KIT/bin/board" mirror "${flags[@]}"
+  printf '### snapshot after apply\n'; jq -S -c 'del(.seen_at)' "$snap" | sort
+  s6_cmd "mirror again" -- "$KIT/bin/board" mirror "${flags[@]}"
+  s6_cmd "status" -- "$KIT/bin/board" status "${flags[@]}"
+  # a Hermes-side move for the writeback: the first card went to ready, the third to done
+  local id1 id3
+  id1="$(jq -r 'select(.origin=="fixR:ID-001").hermes_id' "$snap")"; id3="$(jq -r 'select(.origin=="fixR:ID-003").hermes_id' "$snap")"
+  jq -nc --arg a "$id1" --arg b "$id3" '[{id:$a,status:"ready",title:"Do the thing"},{id:$b,status:"done",title:"Parked thing"}]' > "$w/list.json"
+  s6_cmd "writeback dry run" CHAR_KANBAN_LIST="$w/list.json" -- "$KIT/bin/board" writeback --dry-run "${flags[@]}"
+  # mirror-cleanup against the stateful kanban stub
+  mkdir -p "$w/kstub"; cp "$HERE_KIT/tests/fixtures/board-sweep/stub-hermes-kanban" "$w/kanban-stub"; chmod +x "$w/kanban-stub"
+  "$PY" -I "$W/kanban_state.py" "$w/kstub"
+  printf '[{"kind":"alert","owner_rule":"closes with its ticket","match":{"title_prefix":"[alarm]"}},{"kind":"decomposer-child","owner_rule":"owned by its root","match":{"created_by":["auto-decomposer"]}},{"kind":"chatter","owner_rule":"expires by age","age_report":"archive chatter cards in triage after 14 days","match":{"board":"chatter","created_by":["chat-desk","chat-aux"]}}]\n' > "$w/kinds.json"
+  jq -nc '{origin:"fixR:ID-001",repo:"fixR",id:"ID-001",board:"fixR",hermes_id:"c1",row_hash:"h",hermes_status:"triage",seen_at:"t"}' > "$w/cleanup-snap.jsonl"
+  jq -nc '{origin:"fixR:ID-007",repo:"fixR",id:"ID-007",board:"fixR",hermes_id:"c3",row_hash:"h",hermes_status:"triage",seen_at:"t"}' >> "$w/cleanup-snap.jsonl"
+  s6_cmd "mirror-cleanup" HERMES_BIN="$w/kanban-stub" STUB_DIR="$w/kstub" -- "$KIT/bin/board" mirror-cleanup \
+    --registry "$reg" --snapshot "$w/cleanup-snap.jsonl" --hermes-home "$w/hermes-home" --kinds-file "$w/kinds.json" --source working
+  printf 'kanban stub calls:\n'; sed 's/^/  /' "$w/kstub/calls.log"
+  # the hermes link check: one profile linked, no skills installed, so it reads stale
+  printf '{"links":[{"label":"chief","home":"%s/nohome","profile":"p","cluster":"alpha","skills_dir":"%s/noskills"}]}\n' "$w" "$w" > "$w/links.json"
+  s6_cmd "hermes check" DWARVES_HERMES_LINKS="$w/links.json" -- "$KIT/bin/board" hermes check
+  s6_cmd "hermes check with no links file" DWARVES_HERMES_LINKS="$w/none.json" -- "$KIT/bin/board" hermes check
+  s6_cmd "hermes link help" -- "$KIT/bin/board" hermes link --help
+  # status --with-mega over the mega fixture, gh stubbed through GH_BIN
+  s6_mega_world
+  local m="$W/s6m"
+  s6_cmd "status with mega" GH_BIN="$m/gh" -- "$KIT/bin/board" status --with-mega --mega-code-root "$m/coderoot" \
+    --repo-root "$m/boardrepo" --registry "$m/boards.txt" --snapshot "$m/none.jsonl"
+  s6_cmd "board with mega" GH_BIN="$m/gh" -- "$KIT/bin/board" board --with-mega --mega-code-root "$m/coderoot" \
+    --backlog-file "$m/boardrepo/_meta/BACKLOG.md"
+}
+
+# ==================================================================================================
 # section 7: help text and error paths
 # ==================================================================================================
 section_7() {
@@ -463,7 +920,7 @@ section_7() {
 # ==================================================================================================
 # the guard and the run
 # ==================================================================================================
-SECTIONS="1-sync-argv:section_1 2-engine-flags:section_2 7-help-errors:section_7"
+SECTIONS="1-sync-argv:section_1 2-engine-flags:section_2 3-engine-dry-run:section_3 4-sweep:section_4 5-health-brief:section_5 6-bridge-verbs:section_6 7-help-errors:section_7"
 
 # guard_paths_ok <stub dir> <PATH>: every transport program resolves into the stub dir.
 guard_paths_ok() {
@@ -519,6 +976,27 @@ split_sections() {  # <capture> <dir>
   awk -v d="$2" '/^## /{ f = d "/" substr($0, 4); printf "" > f; next } f { print > f }' "$1"
 }
 
+# parts_differ <golden section> <actual section>: the `### <part>` names (an app, a case) whose text differs
+parts_differ() {
+  local d="$W/parts.$$" side f n names=""
+  for side in golden actual; do
+    mkdir -p "$d/$side"
+    f="$1"; [ "$side" = actual ] && f="$2"
+    awk -v d="$d/$side" '
+      /^### / { n = substr($0, 5); k = n; gsub(/[^A-Za-z0-9._-]/, "_", k); cur = d "/" k; printf "" > cur
+                print n >> (d "/.names"); next }
+      { print >> (cur ? cur : d "/_head") }' "$f"
+  done
+  while IFS= read -r n; do
+    k="$(printf '%s' "$n" | tr -c 'A-Za-z0-9._-' '_')"
+    cmp -s "$d/golden/$k" "$d/actual/$k" 2>/dev/null || names="${names:+$names; }$n"
+  done < <(cat "$d/golden/.names" "$d/actual/.names" 2>/dev/null | sort -u)
+  if [ -e "$d/golden/_head" ] || [ -e "$d/actual/_head" ]; then
+    cmp -s "$d/golden/_head" "$d/actual/_head" 2>/dev/null || names="${names:+$names; }(top)"
+  fi
+  printf '%s' "$names"
+}
+
 echo "=== sections ==="
 if [ ! -f "$GOLDEN" ]; then bad "no golden at $GOLDEN (run with CHARACTERIZE_UPDATE=1 on a clean tree)"; fi
 if [ -f "$GOLDEN" ]; then
@@ -529,7 +1007,7 @@ if [ -f "$GOLDEN" ]; then
     elif [ ! -f "$W/cmp/golden/$name" ]; then bad "section $name is missing from the golden"
     elif cmp -s "$W/cmp/golden/$name" "$W/cmp/actual/$name"; then ok "section $name matches the golden"
     else
-      bad "section $name differs from the golden"
+      bad "section $name differs from the golden in: $(parts_differ "$W/cmp/golden/$name" "$W/cmp/actual/$name")"
       diff -u "$W/cmp/golden/$name" "$W/cmp/actual/$name" | sed -n '1,60p' | sed 's/^/      /'
     fi
   done
