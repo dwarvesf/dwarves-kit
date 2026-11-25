@@ -102,7 +102,7 @@ def test_queued_page_becomes_one_inbox_row(tmp_path):
     b = board_with(tmp_path)
     backlog_sync.sync_pull_only(src, b, dry_run=False)
     text = b.read_text()
-    assert "### Reminders inbox" in text
+    assert "### Intake inbox" in text
     rows = parse_board(text, prefix=detect_prefix(text))
     new = [r for r in rows.values() if HEX_A in r.notes]
     assert len(new) == 1

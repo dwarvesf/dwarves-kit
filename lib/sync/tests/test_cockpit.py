@@ -1,5 +1,5 @@
 """Tests for the shared card-content helpers in cockpit.py: the untrusted-content
-markers, secret redaction, and the git-root resolver. No network, no Hermes.
+markers, secret redaction, and the git-root resolver. No network, no remote store.
 The old extract/plan half of the module was removed with the `--engine sync`
 dry-run path; `board mirror` has one engine, board-mirror.sh.
 """

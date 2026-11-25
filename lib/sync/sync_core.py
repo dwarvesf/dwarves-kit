@@ -59,7 +59,7 @@ MAX_ARCHIVED_CLOSES = 20
 # human has confirmed the bulk change is real.
 MAX_BOARD_STATUS_FLIPS = 10
 BOARD_STATES = [s for s, _ in _BOARD_MACHINE]
-INBOX_HEADING = "### Reminders inbox"
+INBOX_HEADING = "### Intake inbox"
 CLOSED_HEADING = "## Recently closed"
 TABLE_HEADER = "| ID | Item | Notes & source | Status |"
 TABLE_RULE = "|---|---|---|---|"
@@ -296,7 +296,7 @@ def titles_agree(spoke_title: str, board_title: str) -> bool:
     """Same id, different item text (beyond whitespace/case/#tags) is a
     collision, not a link: a bare/empty side has nothing to disagree about.
     Tags are not title text: a row keeps `#u-hi` in its item cell while a
-    spoke such as Reminders hands the title back without it."""
+    spoke such as a binary one hands the title back without it."""
     a = " ".join(strip_tags(spoke_title).split()).casefold()
     b = " ".join(strip_tags(board_title).split()).casefold()
     return not a or not b or a == b
@@ -321,7 +321,7 @@ def row_tags(row) -> list[str]:
 
 def keep_item_tags(new_title: str, old_item: str) -> str:
     """A title adopted from a spoke keeps the tags the board item carried:
-    the spoke never held them (Reminders strips them), so taking its text
+    the spoke never held them (some spokes strip them), so taking its text
     verbatim would silently erase the row's tags."""
     if extract_tags(new_title):
         return new_title
@@ -535,7 +535,7 @@ def plan_sync(rows: dict, items: list, state: dict,
             snap_kw = snap.get("status", board_kw)
             board_changed = board_kw != snap_kw
             if it.get("status") is None:
-                # Binary spoke (GitHub, Reminders): open/done is the whole
+                # Binary spoke (open or done only): open/done is the whole
                 # signal, so compare DONENESS, not the derived keyword.
                 # Comparing keywords oscillates: a dropped row's closed issue
                 # re-derives "shipped" != snapshot "dropped" on every sync and
@@ -579,7 +579,7 @@ def plan_sync(rows: dict, items: list, state: dict,
         snap_item = snapd.get("title", row.item)
         _, it_title = parse_title(it["title"])
         # Titles compare without #tags: the item cell keeps them, a spoke
-        # such as Reminders hands the title back without. Treating that gap
+        # such as a binary one hands the title back without. Treating that gap
         # as a retitle would strip the tags off the board item.
         board_t_changed = strip_tags(row.item) != strip_tags(snap_item)
         src_t_changed = strip_tags(it_title) != strip_tags(snap_item)
@@ -609,12 +609,12 @@ def plan_sync(rows: dict, items: list, state: dict,
             p.src_set_body.append((it["rid"], row.notes))
 
     # Archived rows: the row left the board, so the loop above never visits it
-    # and its card stays open forever (measured live: orphan Reminders cards
+    # and its card stays open forever (measured live: orphan spoke cards
     # went 23 -> 69 in four days after one archive pass). Close the card, but
     # only against a row found in the archive carrying a closed status. An id
     # missing from both files stays open and keeps its orphan note. A done
     # card whose row sits in the archive closed is settled on both sides: no
-    # write and no note (it was ~500 notes per tick on one Notion spoke).
+    # write and no note (it was ~500 notes per tick on one spoke).
     closes = []
     for bid, it, entry in unrowed:
         arch = (archived or {}).get(bid)
@@ -671,8 +671,8 @@ def plan_sync(rows: dict, items: list, state: dict,
     # Bulk-flip circuit breaker: a spoke reporting more than the cap's worth
     # of status writes in one tick is not evidence of real work, it is a spoke
     # side-effect (a bulk close script, a status-mapping bug) masquerading as
-    # 66-71 individually-earned closes (measured live: a bulk `hermes kanban
-    # complete` closed 71 sync-owned cards in one tick). Drop the whole batch,
+    # 66-71 individually-earned closes (measured live: a bulk close in a spoke's
+    # own tool closed 71 sync-owned cards in one tick). Drop the whole batch,
     # never a partial subset, so a mis-mapped run cannot half-apply either.
     flip_cap = max(MAX_BOARD_STATUS_FLIPS, allow_flips)
     if len(p.board_set_status) > flip_cap:
@@ -769,11 +769,13 @@ def plan_pull_only(text: str, items: list, cap: int = INTAKE_CAP) -> Plan:
 
 
 def apply_board(text: str, plan: Plan, prefix: str = "ID",
-                path=None) -> tuple[str, dict[str, str]]:
+                path=None, heading: str = INBOX_HEADING
+                ) -> tuple[str, dict[str, str]]:
     """Apply board-side actions. Returns (new_text, {rid: assigned_board_id}).
 
     `path` is the board file this text came from; it raises the mint floor to
     include ids only git history knows about (see `history_max_id`).
+    `heading` is the intake section new rows join, or open when absent.
     """
     lines = text.splitlines(keepends=True)
     rows = parse_board(text, prefix=prefix)
@@ -818,21 +820,22 @@ def apply_board(text: str, plan: Plan, prefix: str = "ID",
             notes = f"{UNTRUSTED_PREFIX} {notes}" if notes else UNTRUSTED_PREFIX
             new_rows.append(f"| {bid} | {escape(title)} | {escape(notes)} "
                             f"| {kw} |\n")
-        lines = insert_inbox_rows(lines, new_rows)
+        lines = insert_inbox_rows(lines, new_rows, heading)
     return "".join(lines), assigned
 
 
-def insert_inbox_rows(lines: list[str], new_rows: list[str]) -> list[str]:
+def insert_inbox_rows(lines: list[str], new_rows: list[str],
+                      heading: str = INBOX_HEADING) -> list[str]:
     stripped = [l.rstrip("\n") for l in lines]
-    if INBOX_HEADING in stripped:
-        i = stripped.index(INBOX_HEADING) + 1
+    if heading in stripped:
+        i = stripped.index(heading) + 1
         while i < len(lines) and (stripped[i].startswith("|") or not stripped[i].strip()):
             i += 1
         # backtrack over trailing blank lines so rows join the table
         while i > 0 and not stripped[i - 1].strip():
             i -= 1
         return lines[:i] + new_rows + lines[i:]
-    section = [f"{INBOX_HEADING}\n", "\n", TABLE_HEADER + "\n", TABLE_RULE + "\n",
+    section = [f"{heading}\n", "\n", TABLE_HEADER + "\n", TABLE_RULE + "\n",
                *new_rows, "\n"]
     if CLOSED_HEADING in stripped:
         i = stripped.index(CLOSED_HEADING)

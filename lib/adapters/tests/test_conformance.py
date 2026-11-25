@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 import adapters
+import sync_core
 
 LIB = Path(__file__).resolve().parents[2]
 CORE_DIRS = [str(LIB / "sync"), str(LIB / "sync" / "sweep"), str(LIB / "config")]
@@ -187,6 +188,48 @@ def test_the_adapter_imports_alone_in_a_fresh_interpreter(app, tmp_path):
     assert r.stdout.strip() == "ok", r.stderr
 
 
+def _probe_adapter_dir(tmp_path):
+    """A temp adapter directory: the real Reminders adapter (it supplies the heading) beside a pull-only probe."""
+    ext = tmp_path / "ext"
+    ext.mkdir()
+    (ext / "reminders").symlink_to(LIB / "adapters" / "reminders")
+    probe = ext / "probe"
+    probe.mkdir()
+    (probe / "adapter.tsv").write_text("app\tprobe-pull\tpull-only\n")
+    (probe / "adapter.py").write_text(
+        "from __future__ import annotations\n"
+        "from types import SimpleNamespace\n\n\n"
+        "def build(app, opts, ctx):\n"
+        "    items = [{'rid': 'p1', 'title': 'Intake item', 'body': '', 'marker': 'probe-marker'}]\n"
+        "    return SimpleNamespace(name=app, sync_fields=False, create_only=False, pull_only=True,\n"
+        "                           read=lambda: items)\n")
+    return ext
+
+
+def _run_probe(tmp_path, monkeypatch, board_text):
+    import backlog_sync
+    monkeypatch.setattr(backlog_sync.kit_data, "path", lambda *a: str(tmp_path / "default-state"))
+    monkeypatch.setattr(sync_core, "history_max_id", lambda *a: 0)
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(_probe_adapter_dir(tmp_path)))
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(board_text)
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    try:
+        backlog_sync.main(["--apps", "probe-pull", "--backlog", str(board),
+                           "--state-root", str(tmp_path / "state")])
+    finally:
+        sys.path[:] = before_path
+        for name in set(sys.modules) - before_mods:
+            if name.startswith("kit_adapter_"):
+                del sys.modules[name]
+    return board.read_text()
+
+
+_BOARD = ("# Backlog\n\n### Section A\n\n| ID | Item | Notes & source | Status |\n|---|---|---|---|\n"
+          "| ID-10 | Fix it | n | queued |\n\n## Recently closed\n\n"
+          "| ID | Item | Notes & source | Status |\n|---|---|---|---|\n| ID-5 | Old | n | shipped |\n")
+
+
 def test_legacy_reminders_state_is_copied_once_and_only_when_named(tmp_path, monkeypatch, capsys):
     legacy = tmp_path / "home" / ".cache" / "backlog-reminders-sync" / "state.json"
     legacy.parent.mkdir(parents=True)
@@ -213,22 +256,39 @@ def test_a_run_naming_another_app_copies_no_legacy_state(tmp_path, monkeypatch, 
     legacy = tmp_path / "home" / ".cache" / "backlog-reminders-sync" / "state.json"
     legacy.parent.mkdir(parents=True)
     legacy.write_text('{"map": {}}')
-    ext = tmp_path / "ext"
-    ext.mkdir()
-    (ext / "reminders").symlink_to(LIB / "adapters" / "reminders")
-    fake = LIB / "sync" / "tests" / "fixtures" / "adapters" / "fake"
-    (ext / "fake").mkdir()
-    for name in ("adapter.tsv", "adapter.py"):
-        (ext / "fake" / name).write_bytes((fake / name).read_bytes())
-    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(ext))
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(_probe_adapter_dir(tmp_path)))
     board = tmp_path / "BACKLOG.md"
-    board.write_text("## Active\n\n| ID | Item | Status | Notes |\n|---|---|---|---|\n"
-                     "| ID-1 | x | queued | n |\n\n## Recently closed\n")
+    board.write_text(_BOARD)
     root = tmp_path / "state-root"
-    backlog_sync.main(["--backlog", str(board), "--state-root", str(root),
-                       "--apps", "fake-two", "--dry-run"])
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    try:
+        backlog_sync.main(["--backlog", str(board), "--state-root", str(root),
+                           "--apps", "probe-pull", "--dry-run"])
+    finally:
+        sys.path[:] = before_path
+        for name in set(sys.modules) - before_mods:
+            if name.startswith("kit_adapter_"):
+                del sys.modules[name]
     assert "migrated" not in capsys.readouterr().out
     assert not list(root.glob("*/reminders.state.json"))
+
+
+def test_the_reminders_adapter_supplies_the_intake_heading(tmp_path, monkeypatch):
+    assert adapters.load().const("inbox-heading", "### Intake inbox") == "### Reminders inbox"
+    text = _run_probe(tmp_path, monkeypatch, _BOARD)
+    assert text.index("### Reminders inbox") < text.index("## Recently closed")
+    assert "### Intake inbox" not in text
+    assert "Intake item" in text
+
+
+def test_an_existing_reminders_section_keeps_receiving_rows(tmp_path, monkeypatch):
+    old = ("### Reminders inbox\n\n| ID | Item | Notes & source | Status |\n|---|---|---|---|\n"
+           "| ID-90 | Old intake | n | queued |\n\n")
+    text = _run_probe(tmp_path, monkeypatch, _BOARD.replace("## Recently closed", old + "## Recently closed"))
+    assert text.count("### Reminders inbox") == 1
+    assert "### Intake inbox" not in text
+    section = text[text.index("### Reminders inbox"):text.index("## Recently closed")]
+    assert "Old intake" in section and "Intake item" in section
 
 
 def test_github_takes_its_repo_from_the_flag_and_its_cwd_from_the_project_root(monkeypatch, tmp_path):

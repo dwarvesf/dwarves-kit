@@ -1,2 +1,3 @@
 app	reminders	two-way
 opt	list	reminders_list	-	Reminders list name
+const	inbox-heading	### Reminders inbox

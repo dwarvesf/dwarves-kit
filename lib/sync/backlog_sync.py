@@ -30,8 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "config"))
 import adapters  # noqa: E402
 import kit_data  # noqa: E402
 
-from sync_core import (ID_TOKEN, apply_board, board_lock, build_state,  # noqa: E402
-                       describe, detect_prefix, parse_board,
+from sync_core import (ID_TOKEN, INBOX_HEADING, apply_board,  # noqa: E402
+                       board_lock, build_state, describe, detect_prefix,
+                       parse_board,
                        plan_create_only, plan_pull_only, plan_sync)
 
 # Apps the engine still builds itself, until each one's adapter takes it over (the registry is asked
@@ -148,7 +149,8 @@ def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
     print(describe(plan, created))
 
 
-def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
+def sync_pull_only(src, backlog: Path, dry_run: bool,
+                   heading: str = INBOX_HEADING) -> None:
     """One-way, insert-only INTAKE from a read-only source. Writes
     only the board file: no spoke write (the source has no write method), and
     no state file at all. Identity lives in the board row's own notes cell, so
@@ -167,7 +169,8 @@ def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
             print(f"dry-run {header}")
             print(describe(plan))
             return
-        new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
+        new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog,
+                                         heading=heading)
         if new_text != text:
             atomic_write(backlog, new_text)
         print(f"synced {header}")
@@ -258,11 +261,12 @@ def read_archive(path: Path | None, prefix: str) -> dict:
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
                 filt: dict | None = None, cap: int = 20,
                 allow: int = 0, allow_flips: int = 0,
-                archive: Path | None = None, allow_closes: int = 0) -> bool:
+                archive: Path | None = None, allow_closes: int = 0,
+                heading: str = INBOX_HEADING) -> bool:
     """Returns True when the run is clean, False when it hit a refusal the
     caller should reflect in the process exit code (the bulk-flip breaker)."""
     if getattr(src, "pull_only", False):
-        sync_pull_only(src, backlog, dry_run)
+        sync_pull_only(src, backlog, dry_run, heading)
         return True
     if getattr(src, "create_only", False):
         sync_create_only(src, backlog, state_path, dry_run, filt)
@@ -301,7 +305,8 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
             # still surface a flip refusal, or the alarm is lost silently (this
             # path used to always return True regardless of plan.flips_refused).
             return not plan.flips_refused
-        new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog)
+        new_text, assigned = apply_board(text, plan, prefix=prefix, path=backlog,
+                                         heading=heading)
         if new_text != text:
             atomic_write(backlog, new_text)
         rows_after = parse_board(new_text, prefix=prefix)
@@ -550,6 +555,7 @@ def main(argv=None):
     if not warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id):
         sys.exit(1)
 
+    heading = reg.const("inbox-heading", INBOX_HEADING)
     ok = True
     for name in names:
         state_path = state_dir / f"{name}.state.json"
@@ -568,7 +574,8 @@ def main(argv=None):
                            allow=args.allow_scope_exit,
                            allow_flips=args.allow_flips,
                            archive=archive,
-                           allow_closes=args.allow_archived_closes):
+                           allow_closes=args.allow_archived_closes,
+                           heading=heading):
             ok = False
     if not ok:
         sys.exit(1)
