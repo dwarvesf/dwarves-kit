@@ -10,7 +10,7 @@ _Figure: adoption writes a few small pointer files. The engine stays in the kit 
 
 - `/kit:onboard` is the guided first run. It detects how the kit is installed, offers to adopt the current repo, lets you pick modules, and ends with a short tour.
 - `/kit:adopt` is the part that writes. It calls `lib/adopt.sh`, which only creates files and never overwrites one you wrote.
-- The files are small pointers. `AGENTS.md` carries four rules and a link to the full contract. `WORKFLOW.md` points at the installed lane matrix.
+- The files are small pointers. `AGENTS.md` carries four default rules, which apply only where the repo states no rule of its own, and a link to the full contract. `WORKFLOW.md` points at the installed lane matrix.
 - `CLAUDE.md` gets a loader block, because Claude Code reads `CLAUDE.md` and not `AGENTS.md`.
 - The proof marker `docs/verification/README.md` is what makes the ship gate engage. A fresh `.kit.toml` turns `proof_of_done` and `lane_gates` on for the repo.
 
