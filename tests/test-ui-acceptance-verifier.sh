@@ -301,6 +301,11 @@ case_guard_refusals() {
     refused "an allowed private address $ip" "s.target.url='https://$ip/';s.target.allow_hosts=['$ip'];s.target.allow_loopback=false"
   done
   refused "an allowed unique-local address [fc00::1]" 's.target.url="https://[fc00::1]/";s.target.allow_hosts=["[fc00::1]"];s.target.allow_loopback=false'
+  for ip in '[64:ff9b::808:808]' '[2002:808:808::1]' '[::2]' '[fec0::1]'; do
+    refused "an allowed IPv6 transition or site-local address $ip" "s.target.url='https://$ip/';s.target.allow_hosts=['$ip'];s.target.allow_loopback=false"
+  done
+  passes_guards "a public IPv6 neighbour of 2002::/16 ([2003::1])" 's.target.url="https://[2003::1]/";s.target.allow_hosts=["[2003::1]"];s.target.allow_loopback=false'
+  passes_guards "a public IPv6 neighbour of 64:ff9b::/96 ([64:ff9a::1])" 's.target.url="https://[64:ff9a::1]/";s.target.allow_hosts=["[64:ff9a::1]"];s.target.allow_loopback=false'
   refused "an allowed loopback literal without allow_loopback" 's.target.url="https://127.0.0.1/";s.target.allow_hosts=["127.0.0.1"];s.target.allow_loopback=false'
   passes_guards "a public address literal" 's.target.url="https://1.1.1.1/";s.target.allow_hosts=["1.1.1.1"];s.target.allow_loopback=false'
 
@@ -365,6 +370,8 @@ case_guard_refusals() {
   passes_guards "identity with a header only" 's.identity={header:"x-build-sha"}'
   refused "an unknown top-level key" 's.extra=1'
   refused "an unknown key in a step" 's.scenarios[0].steps[0].extra=1'
+  refused "a step verb named like an object property (constructor)" 's.scenarios[0].steps.unshift({do:"constructor"})'
+  refused "a step verb named __proto__" 's.scenarios[0].steps.unshift({do:"__proto__"})'
   refused "an unknown step verb" 's.scenarios[0].steps.unshift({do:"hover",role:"button",name:"x"})'
   refused "an id that is not AC-<digits>" 's.scenarios[0].id="AC-x"'
   refused "a kind that is not criterion or negative" 's.scenarios[0].kind="other"'
@@ -380,7 +387,7 @@ case_guard_refusals() {
 
 # fake_install <dir> <version> [with-browser]: the files the doctor reads, nothing more.
 fake_install() {
-  mkdir -p "$1/node_modules/playwright"
+  mkdir -p "$1/node_modules/playwright"; chmod 755 "$1"
   printf '{"name":"playwright","version":"%s"}\n' "$2" > "$1/node_modules/playwright/package.json"
   if [ "${3:-}" = with-browser ]; then mkdir -p "$1/browsers/chromium-1"; fi
 }
@@ -389,6 +396,31 @@ doctor() {
   DOC=$(cd "${DOCTOR_CWD:-$KIT_DIR}" && UI_VERIFY_HOME="$1" "${TIMEOUT[@]}" node "${2:-$RUNNER}" --doctor 2>&1); RC=$?
 }
 days_ago() { node -e 'process.stdout.write(new Date(Date.now()-Number(process.argv[1])*864e5).toISOString().slice(0,10))' "$1"; }
+
+# untrusted_case <label> <dir> <detail> <pin>: a complete install at <dir> that must not be used, in the doctor and in a run.
+# The dir name picks how it is made untrusted.
+untrusted_case() {
+  local label=$1 home=$2 detail=$3 pin=$4 out want="install root not trusted: $3"
+  case "$home" in
+    */dr-intree) mkdir -p "$home"; git init -q "$home" >/dev/null 2>&1; fake_install "$home" "$pin" with-browser ;;
+    */dr-group) fake_install "$home" "$pin" with-browser; chmod 775 "$home" ;;
+    */dr-world) fake_install "$home" "$pin" with-browser; chmod 777 "$home" ;;
+  esac
+  doctor "$home"
+  { [ "$RC" = 20 ] && printf '%s\n' "$DOC" | grep -qF "NOT READY: $want"; }; check "doctor: $label is not used, state 'NOT READY: $want' (exit $RC)" $?
+  RUN_HOME="$home"; out=$(next_out); run_runner "$CWD" "$BASE" "$out"
+  { [ "$RC" = 2 ] && [ "$(jget "$out/result.json" "j.rows.length>0&&j.rows.every(r=>r.status==='NO-CHECK'&&r.reason==='$want')")" = true ]; }; check "run: $label is NO-CHECK '$want' (exit $RC)" $?
+  RUN_HOME="$T/home-empty"
+}
+
+# quoted_install_command <root>: the install command the doctor prints must not run anything from the root path.
+quoted_install_command() {
+  local root=$1 first
+  doctor "$root"
+  first=$(printf '%s\n' "$DOC" | sed -n 's/^install: *//p' | sed 's/ && cp .*//')
+  ( cd "$CWD" && bash -c "$first" ) >/dev/null 2>&1
+  [ -d "$root" ] && [ ! -e "$T/pwned" ]; check "doctor: an install root with a space, a quote and a command substitution is quoted, nothing runs from it"  $?
+}
 
 case_doctor_and_skip() {
   echo "--- doctor-and-skip"
@@ -443,6 +475,14 @@ case_doctor_and_skip() {
     fi
   done
 
+  untrusted_case "an install root inside a git work tree" "$T/dr-intree" 'inside a git work tree' "$pin"
+  untrusted_case "a group-writable install root" "$T/dr-group" 'writable by group or others' "$pin"
+  untrusted_case "a world-writable install root" "$T/dr-world" 'writable by group or others' "$pin"
+  if [ "$(id -u)" != 0 ] && [ -d /var/empty ] && [ "$(ls -ldn /var/empty | awk '{print $3}')" != "$(id -u)" ]; then
+    untrusted_case "an install root owned by another user (/var/empty)" /var/empty 'not owned by the current user' "$pin"
+  else skip "doctor-and-skip: no root-owned directory to use as a foreign install root"; fi
+  quoted_install_command "$T/dr-quote/a b'c \$(touch $T/pwned)"
+
   doctor "$T/dr-empty"
   case "$(printf '%s\n' "$DOC" | awk '/^state:/{print}')" in *"NOT READY: "*) ok "the doctor state line carries the reason the browser cases print after SKIP" ;; *) no "doctor state line lacks a reason" ;; esac
 
@@ -475,12 +515,12 @@ case_fixture_serves() {
   echo "--- fixture-serves"
   need_node fixture-serves || return 0
   local page code count file
-  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/otherport.html tests/fixtures/ui-verify/many.html tests/fixtures/ui-verify/nobody.html tests/fixtures/ui-verify/wall.html; do
+  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/otherport.html tests/fixtures/ui-verify/many.html tests/fixtures/ui-verify/nobody.html tests/fixtures/ui-verify/meta.html tests/fixtures/ui-verify/wall.html; do
     [ -s "$KIT_DIR/$file" ]; check "fixture file exists: $file" $?
   done
   if ! start_fixture; then no "the fixture server printed a port line and a port2 line"; stop_fixture; return 0; fi
   case "$FIX_PORT$FIX_PORT2" in *[!0-9]*|"") no "port and port2 are numbers ($FIX_PORT, $FIX_PORT2)" ;; *) ok "the server prints a port line and a port2 line" ;; esac
-  for page in index.html hostile.html offsite.html otherport.html many.html nobody.html wall.html; do
+  for page in index.html hostile.html offsite.html otherport.html many.html nobody.html meta.html wall.html; do
     code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/$page"); [ "$code" = 200 ]; check "$page answers 200 (got $code)" $?
   done
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/"); [ "$code" = 200 ]; check "/ answers 200" $?
@@ -508,7 +548,7 @@ case_fixture_serves() {
   stop_fixture
 
   local copy="$T/fixcopy"
-  mkdir -p "$copy"; cp "$FIXDIR/serve.mjs" "$FIXDIR/index.html" "$FIXDIR/hostile.html" "$FIXDIR/offsite.html" "$FIXDIR/otherport.html" "$FIXDIR/many.html" "$FIXDIR/nobody.html" "$copy/"
+  mkdir -p "$copy"; cp "$FIXDIR/serve.mjs" "$FIXDIR/index.html" "$FIXDIR/hostile.html" "$FIXDIR/offsite.html" "$FIXDIR/otherport.html" "$FIXDIR/many.html" "$FIXDIR/nobody.html" "$FIXDIR/meta.html" "$copy/"
   FIX_SRC="$copy"
   if start_fixture; then
     code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/wall.html"); [ "$code" = 404 ]; check "control: a fixture copy without wall.html answers 404 for it (got $code)" $?
@@ -798,6 +838,9 @@ case_identity_and_readiness() {
   identity_case "no identity key in the scenario, a mismatching header on the page" ffffffffffffffffffffffffffffffffffffffff unverified 0 "" 'delete s.identity'
 
   stop_fixture; start_fixture
+  page_scenario "$f" /meta.html "Meta page" "s.identity={meta:'build'};s.scenarios=[{id:'AC-1',kind:'criterion',steps:[{do:'goto',path:'/meta.html'},{do:'expect_text',text:'Meta page'}]}]"
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  [ "$(jget "$out/result.json" 'j.identity.status+"|"+j.identity.seen')" = "unverified|ab/cd'ef" ]; check "identity.seen from a meta tag carries no pipe or backtick (exit $RC)" $?
   page_scenario "$f" /wall.html "Kit fixture app" 's.scenarios=[s.scenarios[3]]'
   out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 3000
   [ "$RC" = 2 ]; check "the login wall (200, no ready text) exits 2 (exit $RC)" $?

@@ -3,7 +3,7 @@
 //   node serve.mjs [--build-sha <value>]
 // Main listener: /, /index.html, /hostile.html, /offsite.html, /otherport.html (reaches the second listener by the
 // allowed host name on its other port), /wall.html; /hang never answers;
-// /nobody.html removes its own body; /many.html requests 61 distinct hosts off the list;
+// /meta.html carries a build id with a pipe and a backtick; /nobody.html removes its own body; /many.html requests 61 distinct hosts off the list;
 // /leave.html links to the second listener as localhost; /redirect answers 302 to the second listener as
 // localhost, /redirect-port answers 302 to it by the allowed name on its other port, /redirect-ok answers 302 to /.
 // Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted.
@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html', '/nobody.html': 'nobody.html' };
+const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html', '/nobody.html': 'nobody.html', '/meta.html': 'meta.html' };
 const args = process.argv.slice(2);
 const buildSha = args[0] === '--build-sha' ? args[1] : '';
 
