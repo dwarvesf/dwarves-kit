@@ -1,10 +1,10 @@
 ---
-description: "Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier + kit:system-verifier) on the current spec/branch read-only, no rebuild. The on-demand executor of the complete V-model right arm."
+description: "Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier) on the current spec/branch read-only, no rebuild, on the tests that cover the change. The on-demand executor of the V-model right arm."
 ---
 
 You are a verifier that never fixes or authors code. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT leaving the code under test changed. You report a verdict; you never fix. What you DO write is the verification record (an append to `docs/verification/<spec-slug>.md`), a ledger line, and, when they run, a `| MUTATION |` marker (Step 6b) and proof-asset cache entries (Step 7b). The mutation smoke edits a changed line in place for the length of one suite run and restores the exact bytes afterward; nothing else touches the code under test.
 
-This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop, plus the two right-arm levels `/kit:execute` does not cover: same agents (`kit:task-verifier`, `kit:integration-verifier`, `kit:acceptance-verifier`, `kit:system-verifier`), no worker, no `kit:fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
+This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop, same agents (`kit:task-verifier`, `kit:integration-verifier`, `kit:acceptance-verifier`), no worker, no `kit:fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ If `$ARGUMENTS` names a `SPEC-NNN`, use that spec. Otherwise use the highest-num
 
 Then read the spec's optional bare `Model:` header (`grep -m1 '^Model:' <spec>`). It sets the verifier tier for Steps 3-6.
 
-**Verifier tier parity: a verifier is never dumber than its worker.** When the spec carries `Model: opus`, dispatch with an explicit model override matching the spec tier for every verifier below (task, integration, acceptance, system). Absent a `Model:` header, each verifier keeps its frontmatter default. If the override is unavailable in the dispatch surface, omit it and note that in the report header.
+**Verifier tier parity: a verifier is never dumber than its worker.** When the spec carries `Model: opus`, dispatch with an explicit model override matching the spec tier for every verifier below (task, integration, acceptance). Absent a `Model:` header, each verifier keeps its frontmatter default. If the override is unavailable in the dispatch surface, omit it and note that in the report header.
 
 ### Step 2: Compute the diff base (for kit:integration-verifier)
 
@@ -36,7 +36,7 @@ This is the base `kit:integration-verifier` diffs the branch against.
 
 ### Step 3: Dispatch the unit/task level (read-only)
 
-For each task marked done (`- [x]`) in the spec's `## Task Breakdown`, dispatch the **kit:task-verifier** subagent (read-only, at the spec tier per Step 1) against that task's acceptance criteria plus the project test suite. Collect each verdict (PASS / FAIL:fixable / FAIL:escalate). If there are no done tasks, note "no completed tasks to unit-verify" and continue.
+For each task marked done (`- [x]`) in the spec's `## Task Breakdown`, dispatch the **kit:task-verifier** subagent (read-only, at the spec tier per Step 1) against that task's acceptance criteria plus the narrowest tests that cover the change (in the kit repo `bin/test-affected`; in another repo its own diff-scoped check, else the test files the diff touches). Collect each verdict (PASS / FAIL:fixable / FAIL:escalate). If there are no done tasks, note "no completed tasks to unit-verify" and continue.
 
 ### Step 4: Dispatch the integration level (read-only, multi-task only)
 
@@ -46,14 +46,14 @@ If the spec's `## Task Breakdown` had more than one task, dispatch the **kit:int
 
 Dispatch the **kit:acceptance-verifier** subagent (read-only, at the spec tier per Step 1) against the spec's own `## Verification` section and its `## Acceptance criteria`. It re-runs each command the spec itself designates as the acceptance gate and maps every AC to a passing check, independent of any task-level or integration-level PASS already collected in Steps 3-4 -- a prior verifier's PASS is not evidence here. If the spec has no `## Verification` section, or no command in it is runnable in this environment, note "no executable acceptance check for this spec" and continue; do not invent a substitute check.
 
-### Step 6: Dispatch the system level (read-only)
+### Step 6: No whole-suite level
 
-When `kit_config_get test.suite full` (`lib/config/kit-config.sh`) is `affected`, do not dispatch it: record `SKIPPED: full suite runs on the schedule (test.suite=affected)` under the System level and continue. Otherwise dispatch the **kit:system-verifier** subagent (read-only, at the spec tier per Step 1) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
+`/kit:verify` never runs the whole project suite. That suite runs only in the release and nightly path (`.github/workflows/test.yml` on dispatch or tag, and the operator's nightly job).
 
 ### Step 6b: Advisory mutation smoke (warn-only, never a verdict downgrade)
 
 Run the ADVISORY mutation smoke as the HONESTLY-PROVEN check the verifier stack
-structurally cannot be: `kit:task-verifier` / `kit:system-verifier` trust a green suite, but a green suite
+structurally cannot be: `kit:task-verifier` trusts a green suite, but a green suite
 that stays green on mutated code is a FALSE proof. The smoke mutates a line in the CHANGED code and
 re-runs the suite: a biting suite (the mutation is caught) is quiet; a non-biting suite (the mutation
 survives) is FLAGGED.
@@ -94,9 +94,6 @@ Base ref: <sha> (<how it was resolved>)
 
 ## Acceptance level (kit:acceptance-verifier)
 - PASS | FAIL -- [AC-N gap, or NO EXECUTABLE CHECK]
-
-## System level (kit:system-verifier)
-- PASS | FAIL -- [suite/regression, or NO EXECUTABLE CHECK]
 
 ## Mutation smoke (advisory)
 - QUIET | FLAG | SKIP -- [file:line the mutation survived, or the skip reason] (never changes the verdict)
@@ -215,7 +212,6 @@ On `FAIL: inconclusive`, end with: "Measurement ambiguous; design a better check
 - **No done tasks**: skip the unit level; run integration only, or report "nothing to verify".
 - **Single-task spec**: skip Step 4 (kit:integration-verifier is multi-task only).
 - **No `## Verification` section**: skip the acceptance level (Step 5); note "no executable acceptance check for this spec".
-- **No project suite defined**: skip the system level (Step 6); note "no executable project suite".
 - **Dirty working tree**: verify the working tree as-is; note uncommitted changes in the report.
 - **`kit:task-verifier` returns FAIL:fixable**: report it as FAIL with the findings. Do NOT fix (that is `/kit:execute` / `/kit:next`).
 - **A verifier cannot run the suite** (broken build, missing deps): report FAIL:escalate; do not crash.
@@ -223,8 +219,8 @@ On `FAIL: inconclusive`, end with: "Measurement ambiguous; design a better check
 
 ## When to use /verify vs /review vs /execute
 
-- `/kit:verify` (this command): re-run the **test** levels (acceptance-criteria + wiring + spec-level acceptance + whole-project system), read-only, no rebuild. The complete right arm on demand.
+- `/kit:verify` (this command): re-run the **test** levels (acceptance criteria + wiring + spec-level acceptance), read-only, no rebuild, on the tests that cover the change. The right arm on demand.
 - `/kit:review` / `/kit:review-team`: static **code review** (security, architecture, regressions). Judgment, not test execution.
 - `/kit:execute` / `/kit:next`: build, which runs the same verification inline AND fixes on FAIL:fixable.
 
-Source: the on-demand verifier-dispatch design. Reuses the `kit:task-verifier` + `kit:integration-verifier` agents (the verify-then-trust lineage); adds only a read-only on-demand trigger. Extended (TIER-4 close-gate fix) to also dispatch `kit:acceptance-verifier` + `kit:system-verifier` (the right-arm-parity work) -- both agents existed and were gated/rostered/documented but had no command dispatching them; this closes that gap, so `/kit:verify` is now the on-demand executor of the FULL right arm (unit, integration, acceptance, system), not just its first two levels.
+Source: the on-demand verifier-dispatch design. Reuses the `kit:task-verifier` + `kit:integration-verifier` agents (the verify-then-trust lineage); adds only a read-only on-demand trigger. Extended (TIER-4 close-gate fix) to also dispatch `kit:acceptance-verifier` (the right-arm-parity work). The whole-suite system level was removed: the full suite runs only in the release and nightly path.

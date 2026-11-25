@@ -52,10 +52,10 @@ Do not infer a removal trigger that the criteria do not state. This check fires 
 
 ### 2. Test suite (weight: critical) -- run it and capture the run
 
-Run the project's test suite and **record the run as a re-runnable artifact**. A prose
+Run the narrowest tests that cover the change (in the kit repo `bin/test-affected`; in any other repo its own diff-scoped check, else the test files the diff touches), never the whole suite, and **record the run as a re-runnable artifact**. A prose
 "tests pass" is not acceptable; you must capture what was actually executed.
 
-- `npm test`, `go test ./...`, `pytest`, `cargo test`, or for a doc/config/command task
+- `npm test -- <files>`, `go test <changed packages>`, `pytest <files>`, `cargo test <filter>`, or for a doc/config/command task
   the project's own check (e.g. `bash tests/test-meta.sh`, or the `grep`/`bash`
   assertion the task's verify step used) depending on the stack.
 - Capture three things verbatim, never retyped from memory: the **exact command** you
@@ -63,7 +63,7 @@ Run the project's test suite and **record the run as a re-runnable artifact**. A
   counts, the failing assertion, the summary line). These go in the `Verification record`
   block of your verdict (see Output format).
 - If tests fail, capture the failure output verbatim.
-- **Tiered mega-goal node.** The lead resolves the scope with `lib/gate/known-failures.sh suite` and names it in your input (normally `affected`: the narrowest tests that cover the change). Run exactly that selection, never the whole suite, and never read the node's own config for it. You cannot run the script and do not judge a failure known yourself: report a red run as a FAIL with its full output; the lead runs `known-failures.sh classify` on it and routes a `known` result.
+- **Tiered mega-goal node.** Run the same affected selection. You cannot run the script and do not judge a failure known yourself: report a red run as a FAIL with its full output; the lead runs `known-failures.sh classify` on it and routes a `known` result.
 - **If no runnable check exists** (subjective prose, design judgment, a doc with no
   assertion), do NOT pass it silently and do NOT call it a soft warning. Record the
   verdict line as `[NO EXECUTABLE CHECK: <reason>]`. An honest no-check is allowed; a

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test-right-arm-parity.sh -- SPEC-092, kit-hardening SG-04.
-# Validates the 4 new right-arm-parity agents (brief-reviewer, acceptance-verifier,
-# system-verifier, recheck-verifier): they exist, conform to ADR-0029, pass the SG-01
-# gate, fill the previously agent-less Acceptance/System-test rows, carry the pinned
+# Validates the right-arm-parity agents (brief-reviewer, acceptance-verifier,
+# recheck-verifier): they exist, conform to ADR-0029, pass the SG-01
+# gate, fill the previously agent-less Acceptance row, carry the pinned
 # re-execution-not-read-back semantics (recheck-verifier), and that execute.md wires the
 # fresh-context re-audit lens over a right-arm PASS.
 #
@@ -27,9 +27,9 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${
 
 echo "=== right-arm review parity (SPEC-092 AC1-AC5) ==="
 
-AGENTS="brief-reviewer acceptance-verifier system-verifier recheck-verifier"
+AGENTS="brief-reviewer acceptance-verifier recheck-verifier"
 
-# --- AC1: the 4 agents exist, conform (on-axis name, read-only-or-scoped-Bash tools, ----
+# --- AC1: the agents exist, conform (on-axis name, read-only-or-scoped-Bash tools, ----
 # --- valid model), and each passes the SG-01 gate mode individually. -------------------
 for NAME in $AGENTS; do
   A="$KIT_DIR/agents/$NAME.md"
@@ -50,10 +50,10 @@ for NAME in $AGENTS; do
   fi
 done
 
-# --- AC2: the Acceptance and System-test rows in the V-phase inventory are non-empty ---
+# --- AC2: the Acceptance row in the V-phase inventory is non-empty; the whole-suite System level is gone ---
 [ -f "$ARCH" ]; assert "AC2: docs/reference/architecture.md exists" $?
 grep -q 'acceptance-verifier' "$ARCH"; assert "AC2: architecture.md's Acceptance row names acceptance-verifier" $?
-grep -q 'system-verifier' "$ARCH"; assert "AC2: architecture.md's System-test row names system-verifier" $?
+[ ! -f "$KIT_DIR/agents/system-verifier.md" ] && ! grep -q 'system-verifier' "$ARCH" "$KIT_DIR/commands/verify.md"; assert "AC2: no system-verifier agent and no whole-suite System level in architecture.md or verify.md" $?
 grep -qi 'brief-reviewer' "$ARCH"; assert "AC2: architecture.md carries a brief-reviewer row (the brief mirror)" $?
 grep -qi 'recheck-verifier' "$ARCH"; assert "AC2: architecture.md carries a recheck-verifier row (the re-audit lens)" $?
 

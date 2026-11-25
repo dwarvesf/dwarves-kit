@@ -41,7 +41,6 @@ NF_KIT_TOML="[mega]
 verify = \"tiered\"
 
 [test]
-suite = \"full\"
 join_cmd = \"bash tests/suite.sh\"
 known_failures = \"tests/known-failures.txt\"
 failure_line = '^  FAIL: (.*)\$'

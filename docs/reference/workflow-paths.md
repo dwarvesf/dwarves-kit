@@ -311,7 +311,7 @@ Off-ramp entries that also land in Shape: `[H/I] /kit:onboard` (first run, orche
 
  On-demand re-verification, read-only, no rebuild:
  [H/I] /kit:verify ──> [D] task-verifier + integration-verifier
-                        + acceptance-verifier + system-verifier ──> verdict only
+                        + acceptance-verifier ──> verdict only
  Escalation lens inside /kit:battery: [D] break-it (advisory; hunts an input the green suite misses).
  Ad hoc on any load-bearing claim: [D] claim-verifier ──> HOLDS / REFUTED majority verdict.
  Lib verbs on this path: [V] classify floor / lane data / push-refs feed ship-gate; [V] recheck-sample
@@ -460,7 +460,6 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] agent-effectiveness <- /kit:draft-agent (diff-keyed) -> 4-lens validation -> advisory` |
 | `[D] doc-verifier <- /kit:docs -> docs-vs-code check -> PASS/FAIL back to /kit:docs` |
 | `[D] acceptance-verifier <- /kit:verify -> executes spec ## Verification -> verdict` |
-| `[D] system-verifier <- /kit:verify -> whole project suite -> verdict` |
 
 ### Skills
 

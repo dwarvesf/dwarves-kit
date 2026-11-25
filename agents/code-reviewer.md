@@ -66,7 +66,7 @@ Focus exclusively on test quality:
 - Are edge cases from the spec tested? Cross-check against `~/.claude/dwarves-kit/docs/impl-playbook/test-case-design.md`: boundary values tested at the edges (not one interior value), and any case with 3+ interacting conditions covered by more than a single happy-path assertion.
 - Are error paths tested? (not just happy path)
 - Are integration tests present for API/DB changes?
-- Run the test suite and report: total, passed, failed, skipped.
+- Run the tests that cover the diff (in the kit repo `bin/test-affected`), never the whole suite, and report: total, passed, failed, skipped.
 
 ## Decision protocol
 
