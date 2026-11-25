@@ -58,14 +58,15 @@ rows="$(awk -F'|' '
     END { flush() }
 ' "$OWNERS")"
 
-tracked="$(git ls-files scripts .github/workflows)"
-owned_paths="$(printf '%s\n' "$rows" | awk -F'\037' '$1 != "" { print $1 }')"
+# Paths are compared in lower case: SCRIPTS/x.sh or .GitHub/workflows/ci.yml needs a row too.
+tracked="$(git ls-files | awk 'tolower($0) ~ /^(scripts|\.github\/workflows)\//')"
+owned_paths="$(printf '%s\n' "$rows" | awk -F'\037' '$1 != "" { print tolower($1) }')"
 
 count=0
 while IFS= read -r file; do
     [ -n "$file" ] || continue
     count=$((count + 1))
-    if ! printf '%s\n' "$owned_paths" | grep -Fxq -- "$file"; then
+    if ! printf '%s\n' "$owned_paths" | grep -Fxq -- "$(printf '%s' "$file" | tr 'A-Z' 'a-z')"; then
         if safe "$file"; then
             fix="printf '%s\\n' '| \`$file\` | what it does | @github-login | |' >> $OWNERS"
         else

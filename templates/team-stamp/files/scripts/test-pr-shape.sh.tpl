@@ -621,6 +621,28 @@ finish
 run pabsent "docs: change the rules" ""
 expect "one rule file absent at head: parity is skipped, exit 0" rc_is 0
 
+# 7b. two paths that differ only in case are refused (the guard compares lower case; a case-insensitive
+# checkout would let one overwrite the other). The paths go straight into the index.
+for pair in ".claude/settings.json:.CLAUDE/settings.json" "scripts/a.sh:SCRIPTS/a.sh" "OWNERS.md:Owners.md"; do
+    new_repo
+    first="${pair%%:*}"; second="${pair##*:}"
+    blob1="$(printf 'one\n' | g hash-object -w --stdin)"; blob2="$(printf 'two\n' | g hash-object -w --stdin)"
+    g update-index --add --cacheinfo "100644,$blob1,$first"
+    g update-index --add --cacheinfo "100644,$blob2,$second"
+    g commit -q -m change
+    HEAD_="$(g rev-parse HEAD)"
+    tag="case-$(printf '%s' "$pair" | tr -c 'A-Za-z0-9' '_')"
+    run "$tag" "docs: add two files" "no-proof: a case plant for the test, no behavior change"
+    expect "case collision $pair: exit 1" rc_is 1
+    expect "case collision $pair: two-line refusal" rc_pairs 1 "$tag"
+    expect "case collision $pair: names the rule" failed "$tag" "two paths differ only in case"
+done
+new_repo
+printf 'x\n' >"$R/docs/guides/other.md"
+finish
+run casefine "docs: add a guide" "no-proof: a plain docs change, no behavior change"
+expect "no case collision: the case check passes" has casefine "ok    case: no two paths differ only in case"
+
 # 8. every failed check prints, in one run
 behav_repo "-"
 run many "Update stuff" ""

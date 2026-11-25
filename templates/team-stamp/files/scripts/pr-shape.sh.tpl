@@ -38,6 +38,8 @@
 #                 it fails when CI=true
 #   6. parity     AGENTS.md and docs/TEAM-WORKFLOW.md change together, and every AGENTS.md
 #                 heading has a link [Heading](../AGENTS.md#anchor) in docs/TEAM-WORKFLOW.md.
+#   7. case       no two paths of the head tree differ only in case (the merge guard and the owners
+#                 check compare paths in lower case)
 #                 A body line "no-rule-mirror: <reason of 10+ characters>" waives it
 # A reason line starts at the first column of a body line. A reason that is a placeholder in
 # angle brackets does not count.
@@ -419,6 +421,16 @@ EOF
         refuse "$nolink AGENTS.md heading(s) have no link in docs/TEAM-WORKFLOW.md, anchors: ${nolink_slugs%, }" \
             "add a line [Heading text](../AGENTS.md#anchor) to docs/TEAM-WORKFLOW.md for each anchor named above"
     fi
+fi
+
+# ---- 7. no two paths that differ only in case. The merge guard and the owners check compare paths in
+# lower case, and a case-insensitive checkout (macOS, Windows) can write one over the other.
+collide="$(git ls-tree -r --name-only -z "$head_sha" 2>/dev/null | tr '\0' '\n' | awk '{ k = tolower($0); if (k in seen) { if (n++ < 3) printf "%s ", $0 } else seen[k] = 1 } END { exit 0 }')"
+if [ -z "$collide" ]; then
+    ok "case: no two paths differ only in case"
+else
+    refuse "two paths differ only in case, so one can overwrite the other on a case-insensitive checkout: $(clean "${collide% }")" \
+        "git mv <one of the paths> <a name that differs in more than case>"
 fi
 
 printf 'checks: %s failed, %s passed\n' "$fails" "$passed"

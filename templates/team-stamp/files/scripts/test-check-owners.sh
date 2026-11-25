@@ -66,6 +66,19 @@ expect "complete table: exit 0" [ "$rc" -eq 0 ]
 expect "complete table: reports the count" has full "check-owners: 3 paths, all owned"
 expect "complete table: stderr empty" [ ! -s "$T/full.err" ]
 
+# 1b. paths are compared in lower case: a script in a differently cased directory needs a row too
+for odd in "SCRIPTS/x.sh" "Scripts/Y.sh" ".GitHub/Workflows/ci2.yml"; do
+    r="$(mkrepo)"
+    # written straight into the index, so the case survives a case-insensitive filesystem
+    blob="$(printf '%s\n' '#!/usr/bin/env bash' | git -C "$r" hash-object -w --stdin)"
+    git -C "$r" update-index --add --cacheinfo "100644,$blob,$odd"
+    write_owners "$r" "$FULL_ROWS"
+    tag="case-$(printf '%s' "$odd" | tr -c 'A-Za-z0-9' '_')"
+    run "$r" "$tag"
+    expect "differently cased $odd with no row: exit 1" [ "$rc" -eq 1 ]
+    expect "differently cased $odd with no row: names it" has "$tag.err" "no owner yet for $odd"
+done
+
 # 2. a tracked script with no row
 r="$(mkrepo)"
 printf '%s\n' '#!/usr/bin/env bash' >"$r/scripts/new-thing.sh"

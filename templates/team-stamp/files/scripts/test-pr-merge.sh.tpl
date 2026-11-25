@@ -37,30 +37,58 @@ SCRIPT="$T/self/scripts/pr-merge.sh"
 selfrepo "$T/self" "$SCRIPT_SRC"
 
 mkdir -p "$T/bin"
-# fake gh: `pr view` serves $T/case.json through the --jq expression, except that the Nth
-# `pr view` call serves $T/seq-N.json when that file exists (a rollup that changes between
-# polls). `pr merge` is recorded, and fails the way GitHub does when the pinned head is not
-# the live head in $T/live-head.
-cat >"$T/bin/gh" <<EOF
+# fake gh. `pr view` serves $T/case.json through the --jq expression, except that the Nth `pr view`
+# call serves $T/seq-N.json when that file exists (a rollup that changes between polls). `gh api` serves
+# the REST shapes the script reads, built from the same case file and run through the script's own --jq
+# expression: the pull request (head), its files, the workflow runs of its head, its timeline. Setting
+# FAKE_API_FAIL=<part of an endpoint> makes the matching api call fail. `pr merge` is recorded, and fails
+# the way GitHub does when the pinned head is not the live head in $T/live-head.
+cat >"$T/bin/gh" <<'EOF'
 #!/bin/bash
-echo "gh \$*" >> "$T/calls"
-if [ "\$1 \$2" = "pr view" ]; then
-    expr=""
-    while [ \$# -gt 0 ]; do
-        if [ "\$1" = "--jq" ]; then expr="\$2"; fi
-        shift
-    done
-    n=\$(grep -c '^gh pr view' "$T/calls")
+T="@T@"
+echo "gh $*" >> "$T/calls"
+pick() { # the case file for the next pr view
+    local n src
+    n=$(( $(grep -c '^gh pr view' "$T/calls") + $1 ))
     src="$T/case.json"
-    if [ -f "$T/seq-\$n.json" ]; then src="$T/seq-\$n.json"; fi
-    jq -r "\$expr" "\$src"
-elif [ "\$1 \$2" = "pr merge" ]; then
-    want=""
-    while [ \$# -gt 0 ]; do
-        if [ "\$1" = "--match-head-commit" ]; then want="\$2"; fi
+    if [ -f "$T/seq-$n.json" ]; then src="$T/seq-$n.json"; fi
+    printf '%s' "$src"
+}
+if [ "$1 $2" = "pr view" ]; then
+    expr=""
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "--jq" ]; then expr="$2"; fi
         shift
     done
-    if [ -f "$T/live-head" ] && [ "\$want" != "\$(cat "$T/live-head")" ]; then
+    jq -r "$expr" "$(pick 0)"
+elif [ "$1" = "api" ]; then
+    ep="" expr=""
+    shift
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --jq) expr="$2"; shift ;;
+        --paginate) ;;
+        -*) ;;
+        *) ep="$1" ;;
+        esac
+        shift
+    done
+    if [ -n "${FAKE_API_FAIL:-}" ]; then case "$ep" in *"$FAKE_API_FAIL"*) echo "gh: HTTP 500" >&2; exit 1 ;; esac; fi
+    src="$(pick 1)"
+    case "$ep" in
+    repos/*/pulls/*/files*) jq '[.files[] | {filename: .path, previous_filename: (.previous // null)}]' "$src" | jq -r "$expr" ;;
+    repos/*/actions/runs*) jq '{workflow_runs: (.apiRuns // [{id: 101, event: "pull_request", path: ".github/workflows/ci.yml", pull_requests: [{number: 7}]}])}' "$src" | jq -r "$expr" ;;
+    repos/*/issues/*/timeline*) jq '(.apiTimeline // [])' "$src" | jq -r "$expr" ;;
+    repos/*/pulls/*) jq '{head: {sha: .headRefOid}}' "$src" | jq -r "$expr" ;;
+    *) echo "fake gh: unexpected api call: $ep" >&2; exit 1 ;;
+    esac
+elif [ "$1 $2" = "pr merge" ]; then
+    want=""
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "--match-head-commit" ]; then want="$2"; fi
+        shift
+    done
+    if [ -f "$T/live-head" ] && [ "$want" != "$(cat "$T/live-head")" ]; then
         echo "GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)" >&2
         exit 1
     fi
@@ -69,15 +97,16 @@ else
     exit 1
 fi
 EOF
+sed -i.bak "s|@T@|$T|" "$T/bin/gh" && rm -f "$T/bin/gh.bak"
 chmod +x "$T/bin/gh"
 export PATH="$T/bin:$PATH"
 
-CHK_OK='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}'
-CHK_DOCS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SKIPPED"}'
-CHK_FAIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE"}'
-CHK_PEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"IN_PROGRESS","conclusion":""}'
-CHK_RERUN='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","startedAt":"2026-01-01T00:00:00Z"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2026-01-01T00:01:00Z"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-01-01T00:05:00Z"}'
-CHK_TWOMAKERS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"added-by-the-pr"}'
+CHK_OK='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}'
+CHK_DOCS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SKIPPED"}'
+CHK_FAIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE"}'
+CHK_PEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"IN_PROGRESS","conclusion":""}'
+CHK_RERUN='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1","startedAt":"2026-01-01T00:00:00Z"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2026-01-01T00:01:00Z"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-01-01T00:05:00Z"}'
+CHK_TWOMAKERS='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"added-by-the-pr"}'
 FILE_PLAIN='{"path":"docs/README.md"},{"path":"app/src/lib.rs"}'
 FILE_DOOR='{"path":"docs/README.md"},{"path":"zz-door/vectors/pair.json"}'
 REV_NONE=''
@@ -89,12 +118,15 @@ REV_REVOKED='{"author":{"login":"reviewer"},"authorAssociation":"MEMBER","commit
 HEAD_SHA="head-judged"
 OTHER_HEAD="head-pushed-later"
 
+DEFAULT_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","pull_requests":[{"number":7}]}]'
+
 # mkcase_at <file> <isDraft> <mergeable> <checks> <files> <reviews>
 mkcase_at() {
     local file="$1"
     shift
-    printf '{"isDraft":%s,"mergeable":"%s","author":{"login":"%s"},"statusCheckRollup":[%s],"files":[%s],"reviews":[%s],"headRefOid":"%s","headRefName":"%s"}\n' \
-        "$1" "$2" "${CASE_AUTHOR:-author}" "$3" "$4" "$5" "${CASE_HEAD-$HEAD_SHA}" "${CASE_BRANCH:-feature/x}" >"$file"
+    printf '{"isDraft":%s,"mergeable":"%s","author":{"login":"%s"},"statusCheckRollup":[%s],"files":[%s],"reviews":[%s],"headRefOid":"%s","headRefName":"%s","baseRefName":"%s","apiRuns":%s,"apiTimeline":%s}\n' \
+        "$1" "$2" "${CASE_AUTHOR:-author}" "$3" "$4" "$5" "${CASE_HEAD-$HEAD_SHA}" "${CASE_BRANCH:-feature/x}" "${CASE_BASE:-$DEFAULT_BRANCH}" \
+        "${CASE_RUNS:-$DEFAULT_RUNS}" "${CASE_TIMELINE:-[]}" >"$file"
 }
 # mkcase <isDraft> <mergeable> <checks> <files> <reviews>: what every pr view serves;
 # it also drops the sequence of the case before. Call mkseq after it.
@@ -121,7 +153,8 @@ expect() { # expect <label> <condition command...>
 merged() { grep -qx "gh pr merge 7 --squash --delete-branch --match-head-commit $HEAD_SHA" "$T/calls"; }
 not_merged() { ! grep -q "^gh pr merge" "$T/calls"; }
 views_are() { [ "$(grep -c '^gh pr view' "$T/calls")" -eq "$1" ]; }
-calls_are() { [ "$(grep -c '^gh ' "$T/calls")" -eq "$1" ]; }
+calls_are() { [ "$(grep '^gh ' "$T/calls" | grep -vc '^gh api')" -eq "$1" ]; }
+api_calls_are() { [ "$(grep -c '^gh api' "$T/calls")" -eq "$1" ]; }
 # every refusal is two lines on stderr: a rule line, then a "Fix: " line (progress lines are skipped)
 two_line_form() {
     awk '
@@ -223,7 +256,7 @@ mkcase false CONFLICTING "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run conflict 7
 expect "conflict refused: exit 1" [ "$rc" -eq 1 ]
 expect "conflict refused: says conflicts" text_has conflict "merge conflicts"
-expect "conflict refused: the fix is gh pr update-branch, never a checkout of the PR" fix_is conflict "gh pr update-branch 7"
+expect "conflict refused: the fix is a plain instruction for the author's own branch, never a checkout of the PR" text_has conflict "on your own branch run: git fetch origin && git merge origin/$DEFAULT_BRANCH, resolve the conflicts, push, then run bash scripts/pr-merge.sh --wait 7 from a $DEFAULT_BRANCH checkout"
 expect "conflict refused: two-line form" two_line_form conflict
 expect "conflict refused: no merge call" not_merged
 
@@ -355,7 +388,7 @@ mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run nodoorpath 7
 expect "a PR that touches no door path merges without a review" merged
 
-# 100 files or more may be a capped list: with a door list it counts as touching a door.
+# The changed files come from the REST list: 100 files are read like any other; 3000 or more cannot be judged.
 files100=""
 i=0
 while [ "$i" -lt 100 ]; do
@@ -364,10 +397,18 @@ while [ "$i" -lt 100 ]; do
 done
 mkcase false MERGEABLE "$CHK_OK" "$files100" "$REV_NONE"
 run files100 7
-expect "100 files with a door list and no approval: refused" [ "$rc" -eq 1 ]
-mkcase false MERGEABLE "$CHK_OK" "$files100" "$REV_OTHER"
-run files100ok 7
-expect "100 files with a door list and an approval: merges" merged
+expect "100 plain files are read and merge (no 100-file cap)" merged
+files3000=""
+i=0
+while [ "$i" -lt 3000 ]; do
+    files3000="${files3000:+$files3000,}{\"path\":\"docs/g$i.md\"}"
+    i=$((i + 1))
+done
+mkcase false MERGEABLE "$CHK_OK" "$files3000" "$REV_NONE"
+run files3000 7
+expect "3000 files cannot be judged: refused" [ "$rc" -eq 1 ]
+expect "3000 files: says too many files" text_has files3000 "too many files"
+expect "3000 files: no merge call" not_merged
 
 # A named approver: the approval must come from that login, unless they wrote the PR.
 SUT="$T/v-approver/scripts/pr-merge.sh"
@@ -414,7 +455,7 @@ run emptydoorsany 7
 expect "empty door list: no path needs a second person" merged
 mkcase false MERGEABLE "$CHK_OK" "$files100" "$REV_NONE"
 run emptydoors100 7
-expect "empty door list: 100 files may be a capped list, so they need a second person" not_merged
+expect "empty door list: 100 plain files merge with no second person" merged
 mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run emptydoorsdry --dry-run 7
 expect "empty door list: dry-run exit 0" [ "$rc" -eq 0 ]
@@ -445,8 +486,8 @@ fi
 # in it may not forge a second Fix: line or a second file, and no printed Fix: line may run it.
 SUT="$SCRIPT"
 mkdir -p "$T/x"
-CHK_EVIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x\u001b[2J","status":"COMPLETED","conclusion":"FAILURE"}'
-CHK_EVILPEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x","status":"IN_PROGRESS","conclusion":""}'
+CHK_EVIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x\u001b[2J","status":"COMPLETED","conclusion":"FAILURE"}'
+CHK_EVILPEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x","status":"IN_PROGRESS","conclusion":""}'
 # every printed Fix: line, run through bash -c, must leave the sentinel dir and create no PWNED
 fixes_inert() {
     (cd "$T" && grep '^Fix: ' "$T/err-$1" | sed 's/^Fix: //' | while IFS= read -r f; do bash -c "$f" >/dev/null 2>&1 </dev/null; done)
@@ -555,18 +596,18 @@ expect "approval rule: a fresh approval at the head after a stale one merges" me
 SUT="$SCRIPT"
 
 # --- both checks, from the workflow named CI ---
-mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}' "$FILE_PLAIN" "$REV_NONE"
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"}' "$FILE_PLAIN" "$REV_NONE"
 run noshape 7
 expect "no pr-shape check: refused, exit 1" [ "$rc" -eq 1 ]
 expect "no pr-shape check: names it" text_has noshape "the pr-shape check has not passed"
 expect "no pr-shape check: no merge call" not_merged
-mkcase false MERGEABLE '{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}' "$FILE_PLAIN" "$REV_NONE"
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"}' "$FILE_PLAIN" "$REV_NONE"
 run nochanges 7
 expect "no changes check: refused, exit 1" [ "$rc" -eq 1 ]
-mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"other"}' "$FILE_PLAIN" "$REV_NONE"
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"other"}' "$FILE_PLAIN" "$REV_NONE"
 run shapeotherwf 7
 expect "pr-shape from another workflow: refused" [ "$rc" -eq 1 ]
-mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"other"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI"}' "$FILE_PLAIN" "$REV_NONE"
+mkcase false MERGEABLE '{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"other"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/101/job/1"}' "$FILE_PLAIN" "$REV_NONE"
 run changesotherwf 7
 expect "changes from another workflow: refused" [ "$rc" -eq 1 ]
 mkcase false MERGEABLE '{"__typename":"StatusContext","context":"changes","state":"SUCCESS"},{"__typename":"StatusContext","context":"pr-shape","state":"SUCCESS"}' "$FILE_PLAIN" "$REV_NONE"
@@ -600,6 +641,58 @@ SUT="$SCRIPT"
 run selfok 7
 expect "the default branch's own copy runs" merged
 expect "no Fix: line of this script tells anyone to check out a pull request" bash -c '! grep -q "gh pr checkout" "$0"' "$SCRIPT_SRC"
+
+
+# --- case, instruction files, renames, base, runs of another PR, base changes, failed reads ---
+SUT="$T/v-nodoor/scripts/pr-merge.sh"
+for dp in ".CLAUDE/settings.json" "SCRIPTS/x.sh" "Owners.md" "Docs/Team-Workflow.md" ".GitHub/actions/a/action.yml" "CLAUDE.md" "tools/deep/CLAUDE.md" "pkg/AGENTS.md" ".mcp.json" ".github/actions/setup/action.yml"; do
+    tag="${dp//[^A-Za-z0-9]/_}"
+    mkcase false MERGEABLE "$CHK_OK" "{\"path\":\"$dp\"}" "$REV_NONE"
+    run "door2-$tag" 7
+    expect "door by case or by instruction file: $dp refused with no approval" [ "$rc" -eq 1 ]
+    expect "door by case or by instruction file: $dp: no merge call" not_merged
+done
+mkcase false MERGEABLE "$CHK_OK" '{"path":"docs/old.json","previous":".claude/settings.json"}' "$REV_NONE"
+run renamedout 7
+expect "a rename out of a door is a door change: refused" [ "$rc" -eq 1 ]
+expect "a rename out of a door: names the previous path" text_has renamedout ".claude/settings.json"
+mkcase false MERGEABLE "$CHK_OK" '{"path":"docs/old.json","previous":".claude/settings.json"}' "$REV_OTHER"
+run renamedoutok 7
+expect "a rename out of a door with a second person's approval merges" merged
+CASE_BASE=other-branch mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run wrongbase 7
+expect "a base that is not the default branch: refused" [ "$rc" -eq 1 ]
+expect "a base that is not the default branch: says so, two-line form" two_line_form wrongbase
+expect "a base that is not the default branch: the fix retargets the PR" fix_is wrongbase "gh pr edit 7 --base $DEFAULT_BRANCH"
+CHK_OTHERPR='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/999/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"SUCCESS","workflowName":"CI","detailsUrl":"https://github.com/o/r/actions/runs/999/job/2"}'
+mkcase false MERGEABLE "$CHK_OTHERPR" "$FILE_PLAIN" "$REV_NONE"
+run otherpr 7
+expect "green checks that belong to another PR's runs on the same head do not count: refused" [ "$rc" -eq 1 ]
+expect "green checks of another PR's runs: says the checks have not passed" text_has otherpr "has not passed"
+CHK_OTHERFAIL="$CHK_OK"',{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://github.com/o/r/actions/runs/999/job/3"}'
+mkcase false MERGEABLE "$CHK_OTHERFAIL" "$FILE_PLAIN" "$REV_NONE"
+run otherprfail 7
+expect "a failed run of another PR does not block this PR" merged
+CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/other.yml","pull_requests":[{"number":7}]}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run otherworkflow 7
+expect "a run of another workflow file does not count: refused" [ "$rc" -eq 1 ]
+CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-03T00:00:00Z"},{"event":"labeled","created_at":"2026-01-09T00:00:00Z"}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_OTHER"
+SUT="$T/v-door/scripts/pr-merge.sh"
+run basechg 7
+expect "an approval submitted before the last base change does not count: refused" [ "$rc" -eq 1 ]
+CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-01T00:00:00Z"}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_OTHER"
+run basechgold 7
+expect "an approval submitted after the last base change counts: merges" merged
+SUT="$T/v-nodoor/scripts/pr-merge.sh"
+for part in "actions/runs" "/files" "/timeline" "pulls/7"; do
+    mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+    : >"$T/calls"; rc=0
+    (cd "$T" && FAKE_API_FAIL="$part" bash "$SUT" 7) >"$T/out-apifail" 2>"$T/err-apifail" || rc=$?
+    expect "a failed read of $part refuses: exit 1" [ "$rc" -eq 1 ]
+    expect "a failed read of $part: no merge call" not_merged
+    expect "a failed read of $part: two-line form" two_line_form apifail
+done
+SUT="$SCRIPT"
 
 # Usage errors are two-line refusals too.
 run helpflag --help
