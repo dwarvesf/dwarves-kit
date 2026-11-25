@@ -151,12 +151,15 @@ eq "no hub is named, so no hub line and no per-repo dump" "$(jq -r '[.fields[] |
 p2="$(grep '"cluster":"beta"' "$WORK/dry.out" | tail -n 1)"
 eq "a hub with no origin falls back to the working copy" "$(jq -c '.data.hubs.solo | [.open, .stale]' <<<"$p2")" '[1,1]'
 
-echo "case hub line (active, parked, and the Hermes mirror against the hub):"
+mkdir -p "$WORK/none-adapters"
+echo "case hub line (active, parked, and the mirror against the hub):"
 KB=(--kanban "alpha=$WORK/kanban" --cluster alpha)
 run "$NOW" --dry-run "${KB[@]}" --hub "alpha=crew" > "$WORK/dry.out"
 p="$(tail -n 1 "$WORK/dry.out")"
 eq "the hub line matches the mirror" "$(jq -r '.fields[] | select(.name=="hub") | .value' <<<"$p")" '🗂️ crew: 3 active, 1 parked · Hermes mirror 4 open = hub ✅'
 eq "a matching hub is not a fault" "$(jq -r '.attention' <<<"$p")" 'false'
+KIT_ADAPTERS_DIR="$WORK/none-adapters" run "$NOW" --dry-run "${KB[@]}" --hub "alpha=crew" > "$WORK/dry.out"
+eq "with no adapter the hub line says 'mirror target'" "$(tail -n 1 "$WORK/dry.out" | jq -r '.fields[] | select(.name=="hub") | .value')" '🗂️ crew: 3 active, 1 parked · mirror target mirror 4 open = hub ✅'
 FAKE_MIRROR_N=6 run "$NOW" --dry-run "${KB[@]}" --hub "alpha=crew" > "$WORK/dry.out"
 p="$(tail -n 1 "$WORK/dry.out")"
 eq "a mirror that differs is a fault line" "$(jq -r '[.fields[] | select(.name=="fault") | .value] | first' <<<"$p")" '⚠️ crew: 3 active, 1 parked · Hermes mirror 6 open ≠ hub'
@@ -279,6 +282,14 @@ printf 'board-mirror: ERROR cannot complete t_8fbaac45\n' | python3 "$HEALTH" re
 run "$NOW" --cluster alpha
 case "$(field attention)" in *"hermes mirror failed: board-mirror: ERROR cannot complete"*) ok "a mirror error line is attention even at rc 0";; *) bad "no mirror error: $(field attention)";; esac
 eq "sync line shows the mirror down" "$(field sync)" '🔄 sync: reminders ✅ · hermes mirror ❌ · last sweep 1 error'
+LD="$WORK/labels"; mkdir -p "$LD/none" "$LD/named/lab"
+printf 'const\tmirror-label\tFixture\n' > "$LD/named/lab/adapter.tsv"
+KIT_ADAPTERS_DIR="$LD/none" run "$NOW" --cluster alpha --force
+case "$(field attention)" in *"mirror target mirror failed: board-mirror: ERROR cannot complete"*) ok "with no adapter the mirror word falls back to 'mirror target'";; *) bad "fallback word: $(field attention)";; esac
+eq "and so does the sync line" "$(field sync)" '🔄 sync: reminders ✅ · mirror target mirror ❌ · last sweep 1 error'
+KIT_ADAPTERS_DIR="$LD/named" run "$NOW" --cluster alpha --force
+eq "an adapter's mirror-label constant names the mirror in the sync line (lower case)" "$(field sync)" '🔄 sync: reminders ✅ · fixture mirror ❌ · last sweep 1 error'
+case "$(field attention)" in *"fixture mirror failed:"*) ok "and in the attention line";; *) bad "attention word: $(field attention)";; esac
 fresh
 run "$NOW" --cluster beta
 case "$(field attention)" in *"no sweep record yet"*) ok "no record at all is said, not hidden";; *) bad "silent on no data: $(field attention)";; esac

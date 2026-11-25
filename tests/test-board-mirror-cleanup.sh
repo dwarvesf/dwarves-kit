@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for lib/board/board-mirror-cleanup.py (`board mirror-cleanup`): the reconcile of open Hermes cards
+# Tests for lib/adapters/hermes/board-mirror-cleanup.py (`board mirror-cleanup`): the reconcile of open Hermes cards
 # against the BACKLOG.md hub. A stateful stub stands in for `hermes kanban`; no
 # real Hermes, board, or snapshot is touched.
 #
@@ -15,7 +15,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-CLEANUP="$HERE/../lib/board/board-mirror-cleanup.py"
+CLEANUP="$HERE/../lib/adapters/hermes/board-mirror-cleanup.py"
 STUB_SRC="$HERE/fixtures/board-sweep/stub-hermes-kanban"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }

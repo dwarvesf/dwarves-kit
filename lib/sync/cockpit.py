@@ -3,14 +3,13 @@
 The file name is historic: it began as the Python port of the `board mirror`
 bridge (extract + keyed diff, dry-run only). That port had no consumer and a
 second implementation of the same job, so it was removed; `board mirror`,
-`status`, and `writeback` run one engine, lib/board/board-mirror.sh and
-board-writeback.sh. What remains is what live callers import:
+`status`, and `writeback` run one engine, board-mirror.sh and
+board-writeback.sh (in the mirror adapter's directory under lib/adapters/). What remains is what live callers import:
 
   * the untrusted-content markers (`mark_untrusted_*`, `unmark_untrusted_*`),
-    byte-identical to board-mirror.sh `MIRROR_UNTRUSTED_*`, used by
-    sources/hermes.py;
-  * `redact_secrets`, used by sources/hermes.py and
-    sources/notion_taskboard_pull.py;
+    byte-identical to board-mirror.sh `MIRROR_UNTRUSTED_*`, used by the
+    adapter that creates mirror cards;
+  * `redact_secrets`, used by that adapter and by the intake adapter;
   * `repo_root_of`, used by lib/mega/runs-dashboard.py.
 
 Pure logic + stdlib only.
@@ -22,9 +21,9 @@ from pathlib import Path
 
 # Untrusted-content markers (board-mirror.sh `MIRROR_UNTRUSTED_*`): a mirrored
 # card's title/body/comment is git-board content = DATA, never instructions to
-# whatever agent later reads the Hermes board. The legacy engine prefixes every
+# whatever agent later reads the mirror board. The legacy engine prefixes every
 # card BODY and CHANGE comment with the full sentence and every card TITLE with
-# the compact tag, at card-build (LOAD) time. A LOAD leg (sources/hermes.py)
+# the compact tag, at card-build (LOAD) time. A LOAD leg (the adapter that creates cards)
 # routes card text through `mark_untrusted_*` at create; the SAME leg MUST route
 # read-back text through `unmark_untrusted_*` so the sync engine's own
 # title-prefix re-link (parse_title) still sees the bare `ID-NNN` and does not
@@ -70,7 +69,7 @@ def unmark_untrusted_body(body: str) -> str:
 
 # High-signal credential shapes (AWS/GitHub/Slack/OpenAI keys, PEM headers).
 # Shared by every LOAD leg that copies free-text ticket/task content into a
-# git-tracked board (sources/notion_taskboard_pull.py, sources/hermes.py):
+# git-tracked board (the intake adapter and the card adapter):
 # that commit cannot be recalled, so a real token a teammate pasted into a
 # ticket title or body must not survive the trip into board history.
 _SECRETISH = re.compile(

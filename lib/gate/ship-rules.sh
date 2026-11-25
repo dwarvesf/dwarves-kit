@@ -113,7 +113,7 @@ _sr_log_all() {
 }
 
 # _sr_relay <rid>: turn the floor's stderr (stdin) into "A<TAB>advisory" and "L<TAB>log tail" lines.
-# Entry skips and refused configs always pass; test-path skips and sqli-payload skips pass up to 20 each,
+# Entry skips and refused configs always pass; a sized workflow add always passes, comment-only sizing passes up to 20 lines then one count line; test-path skips and sqli-payload skips pass up to 20 each,
 # then one count line each; sqli fallbacks give one advisory and one log line each. A
 # printed path or reason has every byte outside printable ASCII, and any |, folded to ? (the log keeps
 # its columns; a bidi control cannot reorder the line).
@@ -138,6 +138,15 @@ _sr_relay() {
       }
       next
     }
+    $1 == "floor-sized" {
+      p = $0; for (i = 0; i < 6; i++) p = substr(p, index(p, "\t") + 1)
+      p = fold(p); kind = fold($2); rule = fold($3)
+      if (rule != "comment-only" || ++nz <= 20) {
+        print "A\t[advisory] hard-path sized " kind ": " p " (" rule ")"
+        print "L\tSIZED | floor | " rid " (" kind ": " p "; " rule ")"
+      }
+      next
+    }
     $1 == "floor-note" && $3 == "sqli-fallback" {
       r = fold($4)
       if (!nf++) print "A\t[advisory] data-loss sqli carve-out fell back to the raw scan (" r ")"
@@ -151,7 +160,11 @@ _sr_relay() {
       print "A\tWARNING: hard-path exemptions refused: " l ". Every hard path applies until the base .kit.toml is fixed."
       print "L\tEXEMPT-REFUSED | floor | " rid " (" l ")"
     }
-    END { if (nt > 20) print "A\t[advisory] hard-path skip auth: " (nt - 20) " more test paths (built-in test-path default)"
+    END { if (nz > 20) {
+        print "A\t[advisory] hard-path sized: " (nz - 20) " more comment-only files"
+        print "L\tSIZED | floor | " rid " (comment-only: " (nz - 20) " more files)"
+      }
+      if (nt > 20) print "A\t[advisory] hard-path skip auth: " (nt - 20) " more test paths (built-in test-path default)"
       if (ns > 20) print "A\t[advisory] data-loss skip: " (ns - 20) " more sqli-payload literals" }
   '
 }

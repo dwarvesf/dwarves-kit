@@ -437,35 +437,38 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# SPEC-147: the board-bridge mirror. board-mirror.sh exists and is executable, board.sh wires
-# both mirror and status dispatch cases to it, and the doc-impact map (MANUAL + architecture.md)
-# mentions the new lib file. A drop on any leg means the bridge is silently unwired.
+# SPEC-147: the board-bridge mirror. board-mirror.sh exists and is executable, the adapter manifest
+# routes the mirror and status verbs to bridge.sh and board.sh resolves them through adapters_verb, and
+# the doc-impact map (MANUAL + architecture.md) mentions the new lib file. A drop on any leg means the bridge is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board/board-mirror.sh" ] \
-   && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board-mirror.sh' "$STRUCTURE_DOC" \
+if [ -x "$KIT_DIR/lib/adapters/hermes/board-mirror.sh" ] \
+   && [ -x "$KIT_DIR/lib/adapters/hermes/bridge.sh" ] \
+   && grep -qF 'adapters_verb' "$KIT_DIR/lib/board/board.sh" \
+   && grep -qE '^verb[[:space:]]+mirror[[:space:]]+bridge\.sh[[:space:]]+mirror$' "$KIT_DIR/lib/adapters/hermes/adapter.tsv" \
+   && grep -qE '^verb[[:space:]]+status[[:space:]]+bridge\.sh[[:space:]]+status$' "$KIT_DIR/lib/adapters/hermes/adapter.tsv" \
+   && grep -qF 'lib/adapters/hermes/board-mirror.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/reference/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
+  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/adapters/hermes/board-mirror.sh executable, the manifest routes mirror+status, doc-impact map updated (SPEC-147)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/board/board-mirror.sh executable, board.sh mirror/status dispatch, MANUAL + architecture.md mentions (SPEC-147)"
+  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/adapters/hermes/board-mirror.sh executable, bridge.sh, the mirror/status verb rows in adapter.tsv, MANUAL + architecture.md mentions (SPEC-147)"
   FAIL=$((FAIL + 1))
 fi
 
 # SPEC-149: the board-bridge writeback (the reverse leg). board-writeback.sh exists and is
-# executable, board.sh wires the writeback dispatch case to it, and the doc-impact map
+# executable, the adapter manifest routes the writeback verb to bridge.sh, and the doc-impact map
 # (MANUAL + architecture.md) mentions the new lib file. A drop on any leg means the writeback
 # leg is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board/board-writeback.sh" ] \
-   && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board-writeback.sh' "$STRUCTURE_DOC" \
+if [ -x "$KIT_DIR/lib/adapters/hermes/board-writeback.sh" ] \
+   && [ -x "$KIT_DIR/lib/adapters/hermes/bridge.sh" ] \
+   && grep -qE '^verb[[:space:]]+writeback[[:space:]]+bridge\.sh[[:space:]]+writeback$' "$KIT_DIR/lib/adapters/hermes/adapter.tsv" \
+   && grep -qF 'lib/adapters/hermes/board-writeback.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/reference/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
+  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/adapters/hermes/board-writeback.sh executable, the manifest routes writeback, doc-impact map updated (SPEC-149)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/board/board-writeback.sh executable, board.sh writeback dispatch, MANUAL + architecture.md mentions (SPEC-149)"
+  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/adapters/hermes/board-writeback.sh executable, bridge.sh, the writeback verb row in adapter.tsv, MANUAL + architecture.md mentions (SPEC-149)"
   FAIL=$((FAIL + 1))
 fi
 

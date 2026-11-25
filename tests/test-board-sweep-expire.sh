@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-sweep-expire.sh -- the expiry leg of `board sweep`: one
+# test-board-sweep-expire.sh -- the expiry leg of `board sweep` (lib/adapters/hermes/legs/expire.sh): one
 # `board mirror-cleanup --expire-only` call per tick against the mirror's Hermes
 # store. The board command is a stub; no real hermes, board, or kanban is touched.
 #
@@ -85,6 +85,29 @@ out="$(run_sweep --mirror-hermes-home "$WORK/home" --expire-kinds-file "$WORK/ki
 [ "$rc" -eq 0 ] && ok "sweep exits 0" || bad "sweep exited $rc"
 grep -q "expire skipped: hermes CLI not on PATH" <<<"$out" && ok "honest skip line" || bad "log: $out"
 grep -q "mirror-cleanup" "$FAKE_CALL_LOG" && bad "mirror-cleanup called without hermes" || ok "mirror-cleanup never called"
+
+mv -f "$WORK/hermes.away" "$WORK/.local/bin/hermes"
+echo "AC4: a crashing leg script: one line, the sweep's exit code and the mirror record are unchanged"
+XDIR="$WORK/ext-adapters"; mkdir -p "$XDIR/hermes/legs"
+for f in adapter.py adapter.tsv hermes.py; do command cp "$HERE/../lib/adapters/hermes/$f" "$XDIR/hermes/$f"; done
+for f in mirror.sh link-check.sh; do command cp "$HERE/../lib/adapters/hermes/legs/$f" "$XDIR/hermes/legs/$f"; done
+printf 'echo "  expire leg started"\nexit 9\n' > "$XDIR/hermes/legs/expire.sh"
+FAKE_CALL_LOG="$WORK/c4.log"; : > "$FAKE_CALL_LOG"
+hs="$WORK/c4-health.json"; rm -f "$hs"
+out="$(KIT_ADAPTERS_DIR="$XDIR" run_sweep --health-state-file "$hs" --mirror-hermes-home "$WORK/home" --expire-kinds-file "$WORK/kinds.json" 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "sweep still exits 0" || bad "sweep exited $rc"
+grep -qxF "  leg expire exited 9 (non-fatal)" <<<"$out" && ok "the non-fatal line names the leg" || bad "log: $out"
+[ "$(jq -r '.mirror.rc' "$hs" 2>/dev/null)" = "0" ] && ok "the mirror record is its own clean one, not the expiry crash" || bad "health state: $(cat "$hs" 2>/dev/null)"
+
+echo "AC5: the expiry script is gone: the sweep fails after the syncs, mirror-cleanup is never called"
+GDIR="$WORK/ext-adapters-gone"; mkdir -p "$GDIR/hermes/legs"
+for f in adapter.py adapter.tsv hermes.py; do command cp "$HERE/../lib/adapters/hermes/$f" "$GDIR/hermes/$f"; done
+for f in mirror.sh link-check.sh; do command cp "$HERE/../lib/adapters/hermes/legs/$f" "$GDIR/hermes/legs/$f"; done
+FAKE_CALL_LOG="$WORK/c5.log"; : > "$FAKE_CALL_LOG"
+out="$(KIT_ADAPTERS_DIR="$GDIR" run_sweep --mirror-hermes-home "$WORK/home" --expire-kinds-file "$WORK/kinds.json" 2>&1)"; rc=$?
+[ "$rc" -eq 1 ] && ok "sweep exits 1" || bad "sweep exited $rc"
+grep -qxF "  leg expire failed: $GDIR/hermes/legs/expire.sh not found" <<<"$out" && ok "the failed line names the script" || bad "log: $out"
+grep -q "mirror-cleanup" "$FAKE_CALL_LOG" && bad "mirror-cleanup called with no leg script" || ok "mirror-cleanup never called"
 
 echo
 echo "  TOTAL: $((PASS+FAIL))   PASS: $PASS   FAIL: $FAIL"

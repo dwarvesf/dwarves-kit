@@ -3,10 +3,13 @@ adapter with fake transports; live runs are recorded in docs/proof-of-done.md.
 """
 
 import json
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +29,7 @@ from sync_core import (  # noqa: E402
     next_id,
     parse_board,
     parse_title,
+    plan_create_only,
     plan_sync,
     strip_tags,
     title_for,
@@ -300,16 +304,16 @@ def _bulk_flip_case(n: int):
 
 def test_bulk_flip_breaker_drops_the_whole_batch_over_cap():
     rows, items, state = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS + 1)
-    p = plan_sync(rows, items, state, app_name="hermes")
+    p = plan_sync(rows, items, state, app_name="spoke-a")
     assert p.board_set_status == []
     assert p.flips_refused == MAX_BOARD_STATUS_FLIPS + 1
-    assert any("hermes" in n and str(MAX_BOARD_STATUS_FLIPS + 1) in n
+    assert any("spoke-a" in n and str(MAX_BOARD_STATUS_FLIPS + 1) in n
               for n in p.notes)
 
 
 def test_bulk_flip_breaker_allows_exactly_the_cap():
     rows, items, state = _bulk_flip_case(MAX_BOARD_STATUS_FLIPS)
-    p = plan_sync(rows, items, state, app_name="hermes")
+    p = plan_sync(rows, items, state, app_name="spoke-a")
     assert len(p.board_set_status) == MAX_BOARD_STATUS_FLIPS
     assert p.flips_refused == 0
 
@@ -374,9 +378,9 @@ def test_wiring_over_cap_flips_exit_nonzero_board_unchanged(tmp_path):
     text, items, state = _flip_fixture(MAX_BOARD_STATUS_FLIPS + 1)
     board = tmp_path / "BACKLOG.md"
     board.write_text(text)
-    state_path = tmp_path / "hermes.state.json"
+    state_path = tmp_path / "spoke-a.state.json"
     state_path.write_text(json.dumps(state))
-    ok = backlog_sync.sync_source(FakeTwoWaySource("hermes", items), board,
+    ok = backlog_sync.sync_source(FakeTwoWaySource("spoke-a", items), board,
                                   state_path, dry_run=False)
     assert ok is False
     assert board.read_text() == text
@@ -390,9 +394,9 @@ def test_wiring_allow_flips_override_applies_all(tmp_path):
     text, items, state = _flip_fixture(n)
     board = tmp_path / "BACKLOG.md"
     board.write_text(text)
-    state_path = tmp_path / "hermes.state.json"
+    state_path = tmp_path / "spoke-a.state.json"
     state_path.write_text(json.dumps(state))
-    ok = backlog_sync.sync_source(FakeTwoWaySource("hermes", items), board,
+    ok = backlog_sync.sync_source(FakeTwoWaySource("spoke-a", items), board,
                                   state_path, dry_run=False, allow_flips=n)
     assert ok is True
     rows = parse_board(board.read_text())
@@ -407,14 +411,14 @@ def test_wiring_clean_run_at_cap_exits_zero(tmp_path):
     text, items, state = _flip_fixture(n)
     board = tmp_path / "BACKLOG.md"
     board.write_text(text)
-    state_path = tmp_path / "hermes.state.json"
+    state_path = tmp_path / "spoke-a.state.json"
     state_path.write_text(json.dumps(state))
-    ok = backlog_sync.sync_source(FakeTwoWaySource("hermes", items), board,
+    ok = backlog_sync.sync_source(FakeTwoWaySource("spoke-a", items), board,
                                   state_path, dry_run=False)
     assert ok is True
 
 
-def test_wiring_duplicate_ids_refuse_before_any_source_runs(tmp_path,
+def test_wiring_duplicate_ids_refuse_before_any_source_runs(fake_adapters, tmp_path,
                                                             monkeypatch):
     """(d) a board with duplicate row ids: main() exits non-zero, the board
     is untouched, and no source is ever built (the duplicate check runs
@@ -432,7 +436,7 @@ def test_wiring_duplicate_ids_refuse_before_any_source_runs(tmp_path,
     monkeypatch.setattr(backlog_sync, "build_source", _must_not_be_called)
 
     with pytest.raises(SystemExit) as exc:
-        backlog_sync.main(["--apps", "hermes", "--backlog", str(board),
+        backlog_sync.main(["--apps", "fake-two", "--backlog", str(board),
                           "--state-root", str(tmp_path / "state")])
     assert exc.value.code != 0 and exc.value.code is not None
     assert board.read_text() == text
@@ -459,11 +463,11 @@ def test_wiring_scope_exit_abort_still_reports_a_flip_refusal(tmp_path):
     text = "".join(lines)
     board = tmp_path / "BACKLOG.md"
     board.write_text(text)
-    state_path = tmp_path / "hermes.state.json"
+    state_path = tmp_path / "spoke-a.state.json"
     state_path.write_text(json.dumps({"map": smap}))
 
     ok = backlog_sync.sync_source(
-        FakeTwoWaySource("hermes", items), board, state_path, dry_run=False,
+        FakeTwoWaySource("spoke-a", items), board, state_path, dry_run=False,
         filt={"skip_tags": {"family"}})
     assert ok is False
 
@@ -615,13 +619,13 @@ def test_apply_board_add_inbox_section_and_status():
                            ("r10", "call bank", "", "queued")])
     new_text, assigned = apply_board(BOARD, plan)
     assert assigned == {"r9": "ID-14", "r10": "ID-15"}
-    assert new_text.index("### Reminders inbox") < new_text.index("## Recently closed")
+    assert new_text.index("### Intake inbox") < new_text.index("## Recently closed")
     rows = parse_board(new_text)
     assert rows["ID-14"].status_kw == "claimed"
     assert rows["ID-14"].notes.startswith(UNTRUSTED_PREFIX)
     plan2 = Plan(board_add=[("r11", "third", "", "queued")])
     text3, assigned2 = apply_board(new_text, plan2)
-    assert text3.count("### Reminders inbox") == 1
+    assert text3.count("### Intake inbox") == 1
     assert assigned2 == {"r11": "ID-16"}
 
 
@@ -636,7 +640,7 @@ def test_second_run_is_idempotent():
              for bid in created]
     p2 = plan_sync(rows, items, state)
     assert p2.empty(), "unexpected plan:\n" + describe(p2)
-    # same for a done-flag-only spoke (reminders shape)
+    # same for a done-flag-only spoke (binary shape)
     items3 = [item(created[bid], title_for(bid, rows[bid].item),
                    body=rows[bid].notes) for bid in created]
     p3 = plan_sync(rows, items3, state)
@@ -842,7 +846,7 @@ def test_rotation_guard_still_allows_real_retitle():
     assert p.conflicts == []
 
 
-def test_worktree_fence_refuses_sync(tmp_path):
+def test_worktree_fence_refuses_sync(fake_adapters, tmp_path):
     """Spokes are shared per board; a worktree checkout's divergent rows
     poison them for every other checkout. The engine refuses the path
     outright (KIT_SYNC_ALLOW_WORKTREE=1 is the explicit override)."""
@@ -853,9 +857,10 @@ def test_worktree_fence_refuses_sync(tmp_path):
     (wt / "BACKLOG.md").write_text(BOARD)
     engine = Path(__file__).resolve().parents[1] / "backlog_sync.py"
     env = {k: v for k, v in os.environ.items() if k != "KIT_SYNC_ALLOW_WORKTREE"}
+    env["KIT_ADAPTERS_DIR"] = str(fake_adapters)
     r = subprocess.run(
         [sys.executable, str(engine), "--backlog", str(wt / "BACKLOG.md"),
-         "--apps", "reminders", "--dry-run"],
+         "--apps", "fake-two", "--dry-run"],
         capture_output=True, text=True, env=env)
     assert r.returncode != 0
     assert "refusing to sync a worktree" in (r.stderr + r.stdout)
@@ -1071,10 +1076,10 @@ def test_archived_closes_one_over_the_cap_plan_none():
     to review, and a half-applied one cannot be read back."""
     n = MAX_ARCHIVED_CLOSES + 1
     items, state, archive = _close_case(n)
-    p = plan_sync({}, items, state, archived=archive, app_name="reminders")
+    p = plan_sync({}, items, state, archived=archive, app_name="spoke-b")
     assert p.src_set_status == []
     assert p.closes_refused == n
-    assert any(f"refused {n} archive-driven closes on reminders" in note
+    assert any(f"refused {n} archive-driven closes on spoke-b" in note
                for note in p.notes)
     assert any("--allow-archived-closes" in note for note in p.notes)
 
@@ -1114,7 +1119,7 @@ def _unmapped(bid, title, done=False, status=None):
 
 def test_done_card_for_an_archived_closed_row_is_quiet():
     """Finished on both sides: nothing to write and nothing to report. This
-    was the ~500 orphan notes per tick on the ops-toolkit Notion spoke."""
+    was the ~500 orphan notes per tick on one ops-toolkit spoke."""
     for bid, title, kw in (("ID-40", "Shipped thing", "shipped"),
                            ("ID-41", "Dropped thing", "dropped")):
         rows, items, state = _unmapped(bid, title, done=True, status=kw)
@@ -1233,7 +1238,7 @@ def own_snap(bid, rid, title, status, notes):
 
 
 def test_open_spoke_item_never_reopens_a_dropped_row():
-    # DF-611: a human dropped the row, the Reminders item stayed open, and
+    # DF-611: a human dropped the row, the binary-spoke item stayed open, and
     # the binary-spoke "reopened" read wrote the row back to queued.
     rows = parse_board(BOARD_OWN)
     items = [item("r20", "ID-20 · Dropped by a human")]  # open, status None
@@ -1256,7 +1261,7 @@ def test_open_spoke_item_never_reopens_a_shipped_row():
 
 
 def test_definitive_active_status_never_reopens_a_terminal_row():
-    # A spoke that states a keyword (Notion select) gets the same guard.
+    # A spoke that states a keyword (a select field) gets the same guard.
     rows = parse_board(BOARD_OWN)
     items = [item("r20", "ID-20 · Dropped by a human", status="queued")]
     state = {"map": own_snap("ID-20", "r20", "Dropped by a human",
@@ -1297,7 +1302,7 @@ def test_item_tag_scope_exit_closes_the_spoke_item():
 
 
 def test_item_tags_do_not_churn_a_linked_spoke_title():
-    # Reminders hands back a tag-stripped title; the board item keeps its
+    # A binary spoke hands back a tag-stripped title; the board item keeps its
     # tags. The pair must read as equal, never as a retitle either way.
     rows = parse_board(BOARD_OWN)
     items = [item("r23", "ID-23 · Tagged in the item")]
@@ -1344,3 +1349,315 @@ def test_intake_skip_re_also_sees_the_title():
                   filt={"intake": "all", "intake_skip_re": r"^\[to:"})
     assert [a[0] for a in p.board_add] == ["r41"]
     assert any("intake filtered" in n and "[to:chonky]" in n for n in p.notes)
+
+
+# --- create-only planner: the bound-marker parameter ---------------------
+
+FAKE_ID = "0123456789abcdef0123456789abcdef"
+FAKE_MARKER_RE = re.compile(r"fake-id:([0-9a-f]{32})")
+
+
+def _marker_rows():
+    return {"ID-1": Row("ID-1", "has a marker", "queued", 0,
+                        f"intake ; fake-id:{FAKE_ID} ; body"),
+            "ID-2": Row("ID-2", "plain row", "queued", 1, "no marker")}
+
+
+def test_create_only_with_no_bound_re_adopts_nothing():
+    p = plan_create_only(_marker_rows(), {})
+    assert [c[0] for c in p.src_create] == ["ID-1", "ID-2"]
+    assert p.src_adopt == []
+
+
+def test_create_only_binds_a_row_carrying_the_sink_marker():
+    p = plan_create_only(_marker_rows(), {}, bound_re=FAKE_MARKER_RE)
+    assert p.src_adopt == [("ID-1", FAKE_ID)]
+    assert [c[0] for c in p.src_create] == ["ID-2"]
+
+
+def test_describe_words_an_adopted_row_neutrally():
+    p = plan_create_only(_marker_rows(), {}, bound_re=FAKE_MARKER_RE)
+    assert ("= spoke     ID-1 bound to an existing remote item "
+            "(pull marker), not created") in describe(p)
+
+
+# --- the engine over a fixture adapter (KIT_ADAPTERS_DIR) -----------------
+
+FAKE_DIR = Path(__file__).resolve().parent / "fixtures" / "adapters"
+
+
+@pytest.fixture
+def fake_adapters(monkeypatch):
+    """Point the loader at the neutral fixture adapter and undo what the loader leaves in the process."""
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(FAKE_DIR))
+    yield FAKE_DIR
+    sys.path[:] = before_path
+    for name in set(sys.modules) - before_mods:
+        if name.startswith("kit_adapter_"):
+            del sys.modules[name]
+
+
+def _board_and_state(tmp_path):
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD)
+    return board, tmp_path / "state"
+
+
+def _run_engine(tmp_path, *extra, apps):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    backlog_sync.main(["--apps", apps, "--backlog", str(board),
+                       "--state-root", str(state), "--dry-run", *extra])
+    return state
+
+
+@pytest.mark.parametrize("app,header", [
+    ("fake-two", "dry-run fake-two: 0 spoke items, "),
+    ("fake-create", "dry-run fake-create: "),
+    ("fake-pull", "dry-run fake-pull: 0 to intake")])
+def test_engine_syncs_a_board_through_each_fixture_mode(fake_adapters, tmp_path, capsys,
+                                                         app, header):
+    _run_engine(tmp_path, apps=app)
+    assert capsys.readouterr().out.startswith(header)
+
+
+def test_engine_flags_and_modes_come_from_the_manifest(fake_adapters, tmp_path, capsys):
+    import backlog_sync
+    with pytest.raises(SystemExit):
+        backlog_sync.main(["--help"])
+    help_text = capsys.readouterr().out
+    assert "--fake-name" in help_text and "name of the fixture store (a field with spaces)" in help_text
+    reg = backlog_sync.adapters.load()
+    assert reg.create_only_apps() == {"fake-create"} and reg.pull_only_apps() == {"fake-pull"}
+
+
+def test_build_source_asks_the_registry_first(fake_adapters):
+    import backlog_sync
+    ns = SimpleNamespace(fake_name="x", fake_url=None)
+    src = backlog_sync.build_source("fake-two", ns)
+    assert src.name == "fake-two" and not src.create_only and not src.pull_only
+    assert backlog_sync.build_source("fake-pull", ns).pull_only is True
+
+
+def test_build_source_hands_the_adapter_every_opt_and_the_context(fake_adapters, tmp_path,
+                                                                   monkeypatch):
+    import backlog_sync
+    seen = {}
+    reg = backlog_sync.adapters.load()
+    real = reg.build
+
+    def spy(app, opts, ctx):
+        seen.update(opts=dict(opts), ctx=ctx)
+        return real(app, opts, ctx)
+
+    reg.build = spy
+    monkeypatch.setenv("KIT_PROJECT_ROOT", "/some/root")
+    backlog_sync.build_source("fake-two", SimpleNamespace(fake_name="n"), reg,
+                              tmp_path / "s.json")
+    assert seen["opts"] == {"fake_name": "n", "fake_url": None}
+    assert seen["ctx"].state_path == tmp_path / "s.json"
+    assert seen["ctx"].project_root == "/some/root"
+
+
+def test_a_skipped_app_is_not_synced(fake_adapters, tmp_path, capsys):
+    _run_engine(tmp_path, "--fake-name", "skip", apps="fake-two")
+    out = capsys.readouterr().out
+    assert "fake-two: skipped (fixture)" in out and "dry-run" not in out
+
+
+def test_no_apps_is_an_error(tmp_path, capsys):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    for argv in ([], ["--apps", ""], ["--apps", " , "]):
+        with pytest.raises(SystemExit) as exc:
+            backlog_sync.main([*argv, "--backlog", str(board), "--state-root", str(state)])
+        assert exc.value.code == 2
+    assert "backlog_sync: no apps (--apps)" in capsys.readouterr().err
+    assert not state.exists()
+
+
+def test_unknown_app_exits_before_the_lock_and_syncs_nothing(fake_adapters, tmp_path, capsys):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        backlog_sync.main(["--apps", "fake-two,nosuch", "--backlog", str(board),
+                           "--state-root", str(state), "--dry-run"])
+    assert str(exc.value) == f"no adapter provides nosuch (searched: {FAKE_DIR})"
+    assert not state.exists()           # no state dir, so no lock was taken
+    assert "fake-two" not in capsys.readouterr().out
+
+
+def test_a_guard_refusal_runs_before_the_generic_checks(fake_adapters, tmp_path):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    # the run also breaks the pull-only rule and names an unknown app; the guard answers first
+    with pytest.raises(SystemExit, match="refused by the fixture guard"):
+        backlog_sync.main(["--apps", "fake-pull,fake-two,nosuch", "--fake-name", "refuse",
+                           "--backlog", str(board), "--state-root", str(state), "--dry-run"])
+    assert not state.exists()
+
+
+def test_a_guard_checks_only_runs_that_name_one_of_its_apps(fake_adapters, tmp_path, capsys,
+                                                            monkeypatch):
+    other = tmp_path / "adapters"
+    shutil.copytree(FAKE_DIR, other)
+    other_dir = other / "other"
+    other_dir.mkdir()
+    (other_dir / "adapter.tsv").write_text("app\tother-app\ttwo-way\n")
+    (other_dir / "adapter.py").write_text(
+        "from __future__ import annotations\n\nfrom types import SimpleNamespace\n\n\n"
+        "def build(app, opts, ctx):\n"
+        "    return SimpleNamespace(name=app, sync_fields=True, create_only=False, pull_only=False,\n"
+        "                           read=lambda: [], apply=lambda *a, **k: {})\n")
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(other))
+    _run_engine(tmp_path, "--fake-name", "refuse", apps="other-app")
+    assert "dry-run other-app" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="refused by the fixture guard"):
+        _run_engine(tmp_path, "--fake-name", "refuse", apps="fake-two")
+
+
+def test_pull_only_fixture_app_runs_alone(fake_adapters, tmp_path):
+    with pytest.raises(SystemExit, match="fake-pull: a pull app runs alone"):
+        _run_engine(tmp_path, apps="fake-pull,fake-two")
+
+
+def test_pull_only_fixture_app_takes_no_filter(fake_adapters, tmp_path):
+    with pytest.raises(SystemExit, match="fake-pull: this app takes no --filter"):
+        _run_engine(tmp_path, "--filter", "fake-pull:only_tags=x", apps="fake-pull")
+    _run_engine(tmp_path, "--filter", "fake-two:only_tags=x", apps="fake-pull")
+
+
+def _isolation(names, filters=None):
+    import backlog_sync
+    backlog_sync.check_pull_isolation(names, SimpleNamespace(), filters,
+                                      backlog_sync.adapters.load())
+
+
+def test_pull_app_refuses_to_share_an_invocation(fake_adapters):
+    with pytest.raises(SystemExit, match="runs alone"):
+        _isolation(["fake-pull", "fake-two"])
+
+
+def test_pull_app_alone_is_fine(fake_adapters):
+    _isolation(["fake-pull"])
+    _isolation(["fake-two", "fake-create"])
+
+
+def test_pull_app_takes_no_filter(fake_adapters):
+    with pytest.raises(SystemExit, match="no --filter"):
+        _isolation(["fake-pull"], {"fake-pull": {"intake": "none"}})
+
+
+def test_filters_for_other_apps_are_untouched(fake_adapters):
+    _isolation(["fake-pull"], {"fake-two": {"intake": "none"}})
+
+
+def test_a_manifest_mode_must_match_the_source_object(tmp_path, monkeypatch):
+    import backlog_sync
+    d = tmp_path / "adapters" / "bad"
+    d.mkdir(parents=True)
+    (d / "adapter.tsv").write_text("app\tbad-two\ttwo-way\n")
+    (d / "adapter.py").write_text(
+        "from __future__ import annotations\n\nfrom types import SimpleNamespace\n\n\n"
+        "def build(app, opts, ctx):\n"
+        "    return SimpleNamespace(name=app, sync_fields=True, create_only=False, pull_only=True,\n"
+        "                           read=lambda: [])\n")
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(tmp_path / "adapters"))
+    try:
+        with pytest.raises(SystemExit, match="bad-two: the manifest says two-way but the source "
+                                             "object is pull-only"):
+            backlog_sync.build_source("bad-two", SimpleNamespace())
+    finally:
+        sys.path[:] = before_path
+        for name in set(sys.modules) - before_mods:
+            if name.startswith("kit_adapter_"):
+                del sys.modules[name]
+
+
+def test_create_only_fixture_app_reads_boards_with_any_prefix(fake_adapters, tmp_path, capsys):
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD.replace("ID-", "DF-"))
+    import backlog_sync
+    backlog_sync.main(["--apps", "fake-create", "--backlog", str(board),
+                       "--state-root", str(tmp_path / "s"), "--dry-run"])
+    assert "dry-run fake-create: 5 board rows, 5 to create" in capsys.readouterr().out
+
+
+# --- the intake heading comes from an adapter constant ---------------------
+
+INTAKE_ADAPTER = '''"""A probe adapter: a pull-only app that hands the engine INTAKE_COUNT items."""
+from __future__ import annotations
+
+import os
+from types import SimpleNamespace
+
+
+def build(app, opts, ctx):
+    count = int(os.environ["INTAKE_COUNT"])
+    items = [{"rid": "p%d" % n, "title": "Intake item %d" % n, "body": "",
+              "marker": "intake-marker-%d" % n} for n in range(1, count + 1)]
+    return SimpleNamespace(name=app, sync_fields=False, create_only=False, pull_only=True,
+                           read=lambda: items)
+'''
+
+
+@pytest.fixture
+def intake_dir(monkeypatch, tmp_path):
+    """Build a temp adapter directory holding the probe adapter, with or without a heading constant."""
+    before_path, before_mods = list(sys.path), set(sys.modules)
+
+    def make(heading=None):
+        probe = tmp_path / "ext" / "probe"
+        probe.mkdir(parents=True)
+        rows = "app\tprobe-pull\tpull-only\n"
+        if heading:
+            rows += f"const\tinbox-heading\t{heading}\n"
+        (probe / "adapter.tsv").write_text(rows)
+        (probe / "adapter.py").write_text(INTAKE_ADAPTER)
+        monkeypatch.setenv("KIT_ADAPTERS_DIR", str(tmp_path / "ext"))
+        return tmp_path / "ext"
+
+    yield make
+    sys.path[:] = before_path
+    for name in set(sys.modules) - before_mods:
+        if name.startswith("kit_adapter_"):
+            del sys.modules[name]
+
+
+def _intake_run(monkeypatch, tmp_path, board, count):
+    import backlog_sync
+    monkeypatch.setenv("INTAKE_COUNT", str(count))
+    backlog_sync.main(["--apps", "probe-pull", "--backlog", str(board),
+                       "--state-root", str(tmp_path / "state")])
+
+
+def test_a_new_intake_section_takes_the_heading_an_adapter_supplies(intake_dir, tmp_path,
+                                                                    monkeypatch):
+    intake_dir("### Fixture inbox")
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD)
+    _intake_run(monkeypatch, tmp_path, board, 1)
+    text = board.read_text()
+    assert text.index("### Fixture inbox") < text.index("## Recently closed")
+    assert "### Intake inbox" not in text
+    _intake_run(monkeypatch, tmp_path, board, 2)
+    text = board.read_text()
+    assert text.count("### Fixture inbox") == 1
+    assert "Intake item 1" in text and "Intake item 2" in text
+
+
+def test_with_no_heading_adapter_a_new_section_is_neutral_and_an_existing_one_is_left_alone(
+        intake_dir, tmp_path, monkeypatch):
+    intake_dir()
+    old = ("### Fixture inbox\n\n| ID | Item | Notes & source | Status |\n|---|---|---|---|\n"
+           "| ID-90 | Old intake | n | queued |\n\n")
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD.replace("## Recently closed", old + "## Recently closed"))
+    _intake_run(monkeypatch, tmp_path, board, 1)
+    text = board.read_text()
+    assert old in text
+    assert text.count("### Fixture inbox") == 1
+    assert text.index("### Intake inbox") < text.index("## Recently closed")
+    assert text.index("Intake item 1") > text.index("### Intake inbox")

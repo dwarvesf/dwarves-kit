@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
-# board.sh -- the kit's cockpit board command. `mirror`/`status` and `writeback` were added
-# later as the git<->Hermes kanban bridge's read-mirror and writeback legs.
+# board.sh -- the kit's cockpit board command. A verb that no case in main() names is looked up in the
+# adapter manifests (lib/adapters/*/adapter.tsv, lib/adapters/README.md); the first adapter that declares it
+# runs it. That is how the kanban bridge's verbs reach their scripts.
 #
 # The SOLE cockpit board command: it ABSORBS the render logic that used to live in ops-toolkit's
 # `_meta/board` (the `priority` quadrant awk, single-repo) and `_meta/board-all` (the `boards.txt`
-# registry walk + `priority matrix` cross-repo pivot), ADDS a `queue` subcommand that emits an
-# allow-listed overnight-runner queue, ADDS `mirror`/`status`: a one-way git ->
-# Hermes kanban bridge over opt-in repos + active mega-goals, native `hermes kanban` CLI only, and
-# ADDS `writeback`: the reverse leg -- a Hermes-side card status move flows back into a
-# repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the
-# mirror snapshot's row_hash conflict rule (git wins, always). Base kanban render
+# registry walk + `priority matrix` cross-repo pivot), and ADDS a `queue` subcommand that emits an
+# allow-listed overnight-runner queue. Base kanban render
 # (board/next/set/states) is UNCHANGED and still delegates to `lib/board/backlog.sh` -- this file never
-# reimplements it. The substantial `mirror`/`status` logic (extract/diff/plan/apply) lives in
-# `lib/board/board-mirror.sh`; the substantial `writeback` logic (diff/apply/PR) lives in
-# `lib/board/board-writeback.sh` (which itself reuses `lib/board/board-mirror.sh`'s extract/hash machinery) --
-# the same delegation shape `queue` already has with `lib/board/parse-board.sh`.
+# reimplements it. `queue` delegates parsing to `lib/board/parse-board.sh`.
 #
 # The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 # describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
@@ -99,32 +93,7 @@
 #                                                               regardless of the flag, so it is
 #                                                               currently a documented no-op.
 #
-#   board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
-#                    [--mega-board <name>] [--board-prefix <prefix>]
-#                    [--remote <user@host>] [--remote-kit-path <path>]
-#                                                               project opt-in (`bridge=on`)
-#                                                               cockpit boards + one card per
-#                                                               ACTIVE mega-goal onto a Hermes
-#                                                               kanban, idempotently. `--dry-run`
-#                                                               prints the plan and applies
-#                                                               nothing (no Hermes calls, no
-#                                                               snapshot write). `--remote` ships
-#                                                               the plan over ONE `ssh` call to a
-#                                                               remote host's own board-mirror.sh
-#                                                               apply-plan (argv vectors, never a
-#                                                               templated shell string); default
-#                                                               is local (`$HERMES_BIN`/`hermes`
-#                                                               runs on this host). See
-#                                                               `lib/board/board-mirror.sh` for the full
-#                                                               ETL design + state-mapping table.
-#   board.sh status [--repo-root <path>] [--registry <path>] [--snapshot <path>]
-#                                                               mirror staleness: per opted-in
-#                                                               repo, the snapshot's newest
-#                                                               `seen_at` vs the BACKLOG.md's own
-#                                                               last git-log touch time.
-#
 #   board.sh board  --with-mega [--mega-code-root <path>] [--backlog-file <path>]
-#   board.sh status --with-mega [--mega-code-root <path>] [--repo-root <path>] [--registry <path>]
 #                                                               OPT-IN (kit-modularity sub-goal
 #                                                               08): appends a trailing
 #                                                               "MEGA ROLLUP" section listing, for
@@ -136,7 +105,7 @@
 #                                                               reconciliation, drift-flagged --
 #                                                               never a re-render of the roadmap's
 #                                                               own `[x]`/`[ ]` prose). DEFAULT OFF
-#                                                               on both `board` and `status`: it
+#                                                               on `board`: it
 #                                                               makes real `gh` calls per
 #                                                               sub-goal, so it must never run
 #                                                               inside the byte-identical render
@@ -153,45 +122,13 @@
 #                                                               ROADMAP in ops-toolkit, PRs/
 #                                                               branches in dwarves-kit).
 #
-#   board.sh writeback [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
-#                       [--board-prefix <prefix>] [--branch <name>] [--pr-base <branch>]
-#                                                               the reverse leg: reads
-#                                                               each opted-in repo's live Hermes
-#                                                               board (`hermes kanban --board <b>
-#                                                               list --json`) + the mirror
-#                                                               snapshot, builds a changeset of
-#                                                               rows whose Hermes status moved,
-#                                                               validates (opted-in repo, legal
-#                                                               backlog.sh state, row_hash still
-#                                                               matches the snapshot -- git wins on
-#                                                               any mismatch), and applies matched
-#                                                               rows' Status column via a fresh
-#                                                               `chore/board-sync` branch (built in
-#                                                               an isolated `git worktree`, never
-#                                                               this repo's own checkout) + one
-#                                                               attributed commit (`actor=hermes`)
-#                                                               + `gh pr create` -- HELD, never
-#                                                               auto-merged. `--dry-run` prints the
-#                                                               changeset and applies nothing (no
-#                                                               git branch/commit/push, no PR, no
-#                                                               snapshot refresh; it STILL reads
-#                                                               Hermes, since that read is exactly
-#                                                               what a dry-run previews). Missing
-#                                                               or corrupt `--snapshot` REFUSES ALL
-#                                                               edits (explicit error, nonzero
-#                                                               exit) rather than silently applying
-#                                                               everything. See `lib/board/board-writeback.sh`
-#                                                               for the full design (reverse state
-#                                                               mapping, conflict rule, snapshot
-#                                                               refresh semantics).
-#
 #   board.sh sweep --registry <path> [--poster <cmd>] [--preflight <cmd>] [--on-clean <cmd>]
-#                   [--mirror-hermes-home <dir>] [--dry-run] ...
+#                   [--dry-run] ...
 #                                                               one scheduled pass over every
 #                                                               registry board: per-repo
 #                                                               `sync`, change-only digest,
-#                                                               `publish`, the Hermes mirror leg
-#                                                               fed from origin, one digest post
+#                                                               `publish`, each adapter's legs,
+#                                                               one digest post
 #                                                               per cluster through the operator's
 #                                                               --poster. Forwards to
 #                                                               lib/sync/sweep/board-sweep; every
@@ -199,15 +136,6 @@
 #   board.sh sweep verify --registry <path> --run <cmd> | --last-tick [<repo>]
 #                                                               prove a sweep wrote no board, or
 #                                                               read what the newest tick did.
-#   board.sh mirror-cleanup [--registry <path>] [--snapshot <path>] [--hermes-home <dir>]
-#                            [--kinds-file <path>] [--expire-only] [--apply]
-#                                                               reconcile the open Hermes cards
-#                                                               against the boards (dry run by
-#                                                               default; never deletes). A kinds-file
-#                                                               rule with an expire block archives
-#                                                               its cards by age; --expire-only runs
-#                                                               just that. Forwards to
-#                                                               lib/board/board-mirror-cleanup.py.
 #   board.sh state-check --all [--strict] | --staged | --fix [--repo-root <dir>] [--states-file <path>]
 #                                                               check the state values a repo stores in
 #                                                               its own registry (default <repo>/_meta/states.toml):
@@ -233,14 +161,6 @@
 #                                                               `health run` and `brief run` read their flags
 #                                                               from --config FILE, $DWARVES_BOARD_CONFIG, or
 #                                                               the board.json that `config data path config board.json` prints.
-#   board.sh hermes link [--home <dir>] [--profile <name>] [--cluster <c>] [--dry-run] [--yes] [--no-verify]
-#   board.sh hermes check [--record]                            link a Hermes agent profile to the kit: install
-#                                                               integrations/hermes/skills into the profile with a
-#                                                               version stamp, record the link and the cluster's
-#                                                               rail and boards, prove it with one agent turn.
-#                                                               `check` finds linked profiles whose skills are
-#                                                               stale (`sweep` records it, `brief` says so).
-#                                                               Forwards to lib/sync/sweep/board-hermes.
 #
 # Registry location: `--registry F` > $KIT_BOARDS_REGISTRY > `<repo-root>/_meta/boards.txt`.
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
@@ -256,7 +176,7 @@
 # CURRENT cwd, else cwd itself. The single-repo subcommands never need --repo-root; the shim that
 # calls them always passes an explicit --backlog-file instead.
 #
-# DWARVES_KIT overrides where lib/board/backlog.sh + lib/board/parse-board.sh + lib/board/board-mirror.sh are found
+# DWARVES_KIT overrides where lib/board/backlog.sh + lib/board/parse-board.sh are found
 # relative to this file (they are always siblings in lib/, so this only matters if board.sh is
 # copied standalone).
 
@@ -265,91 +185,20 @@ set -euo pipefail
 BOARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKLOG_SH="$BOARD_DIR/backlog.sh"
 PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
-BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
-BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
 BOARD_RUN_SH="$BOARD_DIR/board-run.sh"
 BOARD_SWEEP_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep"                  # lib/sync/sweep/
 BOARD_SWEEP_VERIFY_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep-verify"
-BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
 BOARD_STATE_CHECK_PY="$BOARD_DIR/state_check.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
-BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
-MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
-# shellcheck source=../mega/box.sh
-. "$(dirname "$MEGA_SH")/box.sh" || exit 1
+KIT_LIB="$(cd "$BOARD_DIR/.." && pwd)"  # lib/, one level up from lib/board/; script-local, never read from the environment
+export KIT_LIB
+# shellcheck source=board-lib.sh
+. "$BOARD_DIR/board-lib.sh" || exit 1
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
 [ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
-[ -f "$BOARD_MIRROR_SH" ]    || { echo "board: lib/board/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
-[ -f "$BOARD_WRITEBACK_SH" ] || { echo "board: lib/board/board-writeback.sh not found at $BOARD_WRITEBACK_SH" >&2; exit 1; }
 [ -f "$BOARD_RUN_SH" ]       || { echo "board: lib/board/board-run.sh not found at $BOARD_RUN_SH" >&2; exit 1; }
-
-# ---------------------------------------------------------------------------
-# Flag parsing (shared): extracts --backlog-file / --repo-root / --registry / --dry-run plus the
-# mirror-only flags (--snapshot / --mega-board / --board-prefix / --remote / --remote-kit-path)
-# from anywhere in argv, leaving the rest in POSITIONAL in order. Re-callable per subcommand (each
-# resets its own OPT_* vars first). The mirror-only flags are harmless no-ops for every OTHER
-# subcommand (board/next/set/states/priority/all/queue never read them), so folding them into the
-# one shared parser costs nothing and keeps a single flag-parsing surface (by design).
-# ---------------------------------------------------------------------------
-OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
-OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
-OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
-POSITIONAL=()
-_parse_flags() {
-  OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
-  OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
-  OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
-  POSITIONAL=()
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --backlog-file)    OPT_BACKLOG_FILE="${2:-}"; shift 2 ;;
-      --repo-root)       OPT_REPO_ROOT="${2:-}"; shift 2 ;;
-      --registry)        OPT_REGISTRY="${2:-}"; shift 2 ;;
-      --dry-run)         OPT_DRY_RUN=1; shift ;;
-      --snapshot)        OPT_SNAPSHOT="${2:-}"; shift 2 ;;
-      --mega-board)      OPT_MEGA_BOARD="${2:-}"; shift 2 ;;
-      --board-prefix)    OPT_BOARD_PREFIX="${2:-}"; shift 2 ;;
-      --remote)          OPT_REMOTE="${2:-}"; shift 2 ;;
-      --remote-kit-path) OPT_REMOTE_KIT_PATH="${2:-}"; shift 2 ;;
-      --branch)          OPT_BRANCH="${2:-}"; shift 2 ;;
-      --pr-base)         OPT_PR_BASE="${2:-}"; shift 2 ;;
-      --with-mega)       OPT_WITH_MEGA=1; shift ;;
-      --mega-code-root)  OPT_MEGA_CODE_ROOT="${2:-}"; shift 2 ;;
-      *) POSITIONAL+=("$1"); shift ;;
-    esac
-  done
-}
-
-# _mega_rollups <repo-root> <code-root> -- one `mega status <slug> --rollup-only` line per
-# ACTIVE mega under <repo-root>/_meta/megagoals/*/ROADMAP.md (>=1 open sub-goal box, same
-# activeness convention lib/board/board-mirror.sh's own extract_megas already uses). Silent no-op
-# (empty output) when there is no megagoals dir, no mega.sh, or a mega's status call errors --
-# this is an OPT-IN surfacing feature (--with-mega), never a hard requirement of board render.
-_mega_rollups() {  # <repo-root> <code-root>
-  local repo_root="$1" code_root="$2" mg_root dir slug rf out
-  mg_root="$repo_root/_meta/megagoals"
-  [ -d "$mg_root" ] || return 0
-  [ -f "$MEGA_SH" ] || return 0
-  for dir in "$mg_root"/*/; do
-    [ -d "$dir" ] || continue
-    slug="$(basename "$dir")"
-    rf="$dir/ROADMAP.md"
-    [ -f "$rf" ] || continue
-    grep -qE "^$(box_re open)" "$rf" 2>/dev/null || continue   # skip fully-shipped / parked-only / non-checkbox megas
-    out="$(bash "$MEGA_SH" status "$slug" --megagoals-root "$mg_root" --code-root "$code_root" --rollup-only 2>/dev/null)" || true
-    [ -n "$out" ] && printf '  %s\n' "$out"
-  done
-}
-
-_default_repo_root() { git rev-parse --show-toplevel 2>/dev/null || pwd; }
-
-_resolve_repo_root() {
-  if [ -n "$OPT_REPO_ROOT" ]; then printf '%s\n' "$OPT_REPO_ROOT"; return; fi
-  if [ -n "${REPO_ROOT:-}" ]; then printf '%s\n' "$REPO_ROOT"; return; fi
-  _default_repo_root
-}
 
 # _behind_count <path-to-backlog-md> -- how many commits that file's checkout trails its upstream.
 #
@@ -394,30 +243,6 @@ _stale_trailer() {
   local joined="$*"
   [ -n "$joined" ] || return 0
   printf '\nSTALE CHECKOUTS, rows above may be out of date: %s\n' "$joined"
-}
-
-# _repo_root_for <path-to-backlog-md> -- the git top-level containing that file, else its dir.
-_repo_root_for() {
-  local dir; dir="$(cd "$(dirname "$1")" && pwd)"
-  git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$dir"
-}
-
-# _iso_to_utc_z <ISO8601-with-offset> -- normalizes `git log --format=%cI`'s local-offset
-# timestamp ("2026-07-05T04:42:21+07:00") to a UTC "Z" timestamp, so `status`'s string
-# comparison against the snapshot's own UTC `seen_at` values is an apples-to-apples same-instant
-# check, not a same-INSTANT-but-different-clock-face false positive. BSD `date -j -f '...%z'`
-# (macOS) requires the offset WITHOUT a colon ("+0700"); git's ISO8601 format always has one, so
-# it is stripped before parsing (verified empirically: BSD date rejects "+07:00" outright and,
-# with `set -e` off, silently falls through, which is exactly the false-positive this function
-# exists to prevent). GNU `date -d` (Linux/CI) accepts the colon form natively and is tried as a
-# second path. If BOTH conversions fail, the original string is returned unmodified rather than
-# aborting `status` (an honestly-imprecise staleness read beats no read at all).
-_iso_to_utc_z() {
-  local raw="$1" nocolon
-  nocolon="$(printf '%s' "$raw" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
-  date -u -j -f '%Y-%m-%dT%H:%M:%S%z' "$nocolon" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-    || date -u -d "$raw" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-    || printf '%s\n' "$raw"
 }
 
 # ---------------------------------------------------------------------------
@@ -666,220 +491,6 @@ cmd_queue() {
   return 0
 }
 
-# ---------------------------------------------------------------------------
-# mirror -- git<->Hermes kanban bridge, read-mirror leg.
-# Delegates ALL substantial logic (extract/diff/plan/apply) to lib/board/board-mirror.sh, exactly the
-# way `queue` above delegates parsing to lib/board/parse-board.sh; this function is the thin,
-# human-facing wrapper: resolve config, get a plan, apply it (locally or over one `ssh` call),
-# persist the snapshot incrementally as results stream back, print a summary. Never mutates any
-# BACKLOG.md (mirror is one-way: git -> Hermes; writeback owns the reverse leg).
-# ---------------------------------------------------------------------------
-cmd_mirror() {
-  _parse_flags "$@"
-  local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
-  local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
-
-  _legacy_bridge_note
-  [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
-
-  local plan_args=(plan --registry "$registry" --snapshot "$snapshot")
-  [ -n "$OPT_MEGA_BOARD" ]   && plan_args+=(--mega-board "$OPT_MEGA_BOARD")
-  [ -n "$OPT_BOARD_PREFIX" ] && plan_args+=(--board-prefix "$OPT_BOARD_PREFIX")
-
-  local plan; plan="$(mktemp "${TMPDIR:-/tmp}/board-mirror-plan.XXXXXX")"
-  bash "$BOARD_MIRROR_SH" "${plan_args[@]}" > "$plan"
-
-  if [ "$OPT_DRY_RUN" -eq 1 ]; then
-    cat "$plan"
-    rm -f "$plan"
-    return 0
-  fi
-
-  if [ ! -s "$plan" ]; then
-    echo "mirror: 0 changes" >&2
-    rm -f "$plan"
-    return 0
-  fi
-
-  local results
-  if [ -n "$OPT_REMOTE" ]; then
-    # ONE ssh call: the remote host execs its OWN copy of board-mirror.sh's apply-plan (argv
-    # vectors decoded from the piped plan JSON, never a templated shell string -- card text stays
-    # opaque data end to end). The remote host is expected to already have a dwarves-kit checkout
-    # reachable at --remote-kit-path (default matches the existing DWARVES_KIT convention used by
-    # ops-toolkit's own board-all shim); provisioning that checkout is a separate, later step.
-    local remote_kit="${OPT_REMOTE_KIT_PATH:-\$HOME/.claude/dwarves-kit}"
-    # shellcheck disable=SC2029  # intentional: ${remote_kit} expands client-side (it names the
-    # remote path as a local variable); the remote command itself has no other variables to expand.
-    results="$(ssh "$OPT_REMOTE" "bash ${remote_kit}/lib/board/board-mirror.sh apply-plan" < "$plan")"
-  else
-    results="$(bash "$BOARD_MIRROR_SH" apply-plan < "$plan")"
-  fi
-  rm -f "$plan"
-
-  local created=0 changed=0 moved=0 archived=0 errors=0
-  local rline op origin hermes_id hermes_status status err
-  while IFS= read -r rline; do
-    [ -n "$rline" ] || continue
-    status="$(printf '%s' "$rline" | jq -r '.status')"
-    origin="$(printf '%s' "$rline" | jq -r '.origin')"
-    op="$(printf '%s' "$rline" | jq -r '.op')"
-    if [ "$status" != "ok" ]; then
-      errors=$((errors+1))
-      err="$(printf '%s' "$rline" | jq -r '.error // empty')"
-      echo "mirror: ERROR $origin ($op): $err" >&2
-      continue
-    fi
-    case "$op" in
-      create)  created=$((created+1)) ;;
-      change)  changed=$((changed+1)) ;;
-      move)    moved=$((moved+1)) ;;
-      archive) archived=$((archived+1)) ;;
-    esac
-    hermes_id="$(printf '%s' "$rline" | jq -r '.hermes_id')"
-    hermes_status="$(printf '%s' "$rline" | jq -r '.hermes_status')"
-    echo "mirror: ${op} ${origin} -> ${hermes_id} (${hermes_status})" >&2
-    # Persisted PER LINE, as results arrive (a mid-sync crash never loses a completed row).
-    printf '%s' "$rline" | bash "$BOARD_MIRROR_SH" snapshot-upsert "$snapshot"
-  done <<< "$results"
-
-  echo "mirror: applied ${created} create, ${changed} change, ${moved} move, ${archived} archive, ${errors} error(s)" >&2
-  [ "$errors" -eq 0 ]
-}
-
-# ---------------------------------------------------------------------------
-# status -- mirror staleness report. Compares the snapshot's newest `seen_at` per
-# opted-in repo against that repo's BACKLOG.md's own last git-log touch time; never touches
-# Hermes or the snapshot file (read-only).
-# ---------------------------------------------------------------------------
-cmd_status() {
-  _legacy_bridge_note
-  _parse_flags "$@"
-  local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
-  local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
-  [ -f "$registry" ] || { echo "status: no registry at $registry" >&2; return 1; }
-
-  local snap_tsv; snap_tsv="$(mktemp "${TMPDIR:-/tmp}/board-mirror-status.XXXXXX")"
-  bash "$BOARD_MIRROR_SH" snapshot-read "$snapshot" > "$snap_tsv"
-
-  local name path bridge rroot last_mirror last_touch changed=0 total_bridged=0 newest=""
-  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge
-    [ -n "${name:-}" ] || continue
-    case "$name" in \#*) continue ;; esac
-    [ "${bridge:-}" = "on" ] || continue
-    total_bridged=$((total_bridged+1))
-    path="${path/#\~/$HOME}"
-    if [ ! -f "$path" ]; then
-      echo "status: ${name}: never mirrored (BACKLOG.md missing at $path)" >&2
-      changed=$((changed+1))
-      continue
-    fi
-    rroot="$(_repo_root_for "$path")"
-    # Match by ORIGIN prefix ("<repo>:"), not by recorded board name: the board name can carry a
-    # --board-prefix the registry's repo name never does, so origin is the robust join key.
-    last_mirror="$(awk -F'\t' -v r="${name}:" 'index($1, r)==1{print $6}' "$snap_tsv" | sort | tail -n1)"
-    last_touch="$(git -C "$rroot" log -1 --format=%cI -- "$path" 2>/dev/null || true)"
-    [ -n "$last_touch" ] && last_touch="$(_iso_to_utc_z "$last_touch")"
-    if [ -n "$last_mirror" ] && [ -n "$newest" ] && [ "$last_mirror" '>' "$newest" ]; then newest="$last_mirror"; fi
-    [ -z "$newest" ] && [ -n "$last_mirror" ] && newest="$last_mirror"
-    if [ -z "$last_mirror" ]; then
-      echo "status: ${name}: never mirrored" >&2
-      changed=$((changed+1))
-    elif [ -n "$last_touch" ] && [ "$last_touch" '>' "$last_mirror" ]; then
-      echo "status: ${name}: changed since last mirror (touched ${last_touch}, mirrored ${last_mirror})" >&2
-      changed=$((changed+1))
-    else
-      echo "status: ${name}: up to date (mirrored ${last_mirror})" >&2
-    fi
-  done < "$registry"
-  rm -f "$snap_tsv"
-
-  echo "${changed} repos changed since last mirror, last synced ${newest:-never}"
-
-  # --with-mega (OPT-IN, kit-modularity sub-goal 08): a trailing MEGA ROLLUP section, one line
-  # per ACTIVE mega per registry repo. Off by default (real `gh` calls per sub-goal; must never
-  # fire inside test-board-mirror.sh's fixture registry, which never passes this flag).
-  if [ "$OPT_WITH_MEGA" -eq 1 ]; then
-    echo ""
-    echo "MEGA ROLLUP:"
-    while read -r name path _rest; do
-      [ -n "${name:-}" ] || continue
-      case "$name" in \#*) continue ;; esac
-      path="${path/#\~/$HOME}"
-      [ -f "$path" ] || continue
-      local mrepo_root mcode_root mrollups
-      mrepo_root="$(_repo_root_for "$path")"
-      mcode_root="${OPT_MEGA_CODE_ROOT:-$mrepo_root}"
-      mrollups="$(_mega_rollups "$mrepo_root" "$mcode_root")"
-      [ -n "$mrollups" ] && printf '%s\n' "$mrollups"
-    done < "$registry"
-  fi
-}
-
-# ---------------------------------------------------------------------------
-# writeback -- git<->Hermes bridge, the WRITEBACK leg.
-# Delegates ALL substantial logic (diff/validate/apply/PR) to lib/board/board-writeback.sh, the same
-# thin-wrapper shape `mirror` above has with lib/board/board-mirror.sh: resolve config, get a validated
-# changeset, apply it (branch+commit+push+PR per affected repo), refresh the snapshot per applied
-# origin, print a summary. `--dry-run` computes the changeset (which DOES read Hermes -- that read
-# is exactly what a preview needs) but applies nothing: no branch, no commit, no push, no PR, no
-# snapshot write.
-# ---------------------------------------------------------------------------
-cmd_writeback() {
-  _legacy_bridge_note
-  _parse_flags "$@"
-  local repo_root; repo_root="$(_resolve_repo_root)"
-  local registry="${OPT_REGISTRY:-${KIT_BOARDS_REGISTRY:-$repo_root/_meta/boards.txt}}"
-  local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
-  local branch="${OPT_BRANCH:-chore/board-sync}"
-  [ -f "$registry" ] || { echo "writeback: no registry at $registry" >&2; return 1; }
-
-  local diff_args=(diff --registry "$registry" --snapshot "$snapshot")
-  [ -n "$OPT_BOARD_PREFIX" ] && diff_args+=(--board-prefix "$OPT_BOARD_PREFIX")
-
-  local changeset; changeset="$(mktemp "${TMPDIR:-/tmp}/board-writeback-plan.XXXXXX")"
-  # `if cmd; then rc=0; else rc=$?; fi` (NOT `if ! cmd; then rc=$?; fi`): bash sets `$?` to the
-  # NEGATED (`!`-inverted) status inside an `if ! cmd; then` block, not cmd's own exit code (a real
-  # bug this build's own smoke test caught -- `rc` always read back as 0). This is the same
-  # command-substitution/exit-code gotcha lib/board/board-mirror.sh's `cmd_apply_plan` already documents
-  # for its own `if out=$(...); then rc=0; else rc=$?; fi` pattern.
-  local rc
-  if bash "$BOARD_WRITEBACK_SH" "${diff_args[@]}" > "$changeset"; then rc=0; else rc=$?; fi
-  if [ "$rc" -ne 0 ]; then
-    rm -f "$changeset"
-    return "$rc"
-  fi
-
-  if [ ! -s "$changeset" ]; then
-    echo "writeback: 0 changes" >&2
-    rm -f "$changeset"
-    return 0
-  fi
-
-  if [ "$OPT_DRY_RUN" -eq 1 ]; then
-    cat "$changeset"
-    rm -f "$changeset"
-    return 0
-  fi
-
-  local apply_args=(apply --branch "$branch")
-  [ -n "$OPT_PR_BASE" ] && apply_args+=(--pr-base "$OPT_PR_BASE")
-
-  local results
-  results="$(bash "$BOARD_WRITEBACK_SH" "${apply_args[@]}" < "$changeset")"
-  rm -f "$changeset"
-
-  local rline
-  while IFS= read -r rline; do
-    [ -n "$rline" ] || continue
-    printf '%s' "$rline" | bash "$BOARD_MIRROR_SH" snapshot-upsert "$snapshot"
-  done <<< "$results"
-
-  return 0
-}
-
 # board sync [--dry-run] [--sources a,b] ... -- two-way spoke sync (the `sync`
 # module, lib/sync/). Consumer shims append --backlog-file; translate it to the
 # engine's --backlog. Config resolution happens HERE, per the kit's stage-taxonomy decision: a command
@@ -922,7 +533,7 @@ SHIM
 # capture: file ONE item from a working session -- a queued row on the board,
 # pushed to the configured spokes immediately, and (when the github app is on)
 # the new issue's URL printed and put on the clipboard. This is the
-# harness-agnostic "file this" verb: Claude Code, Codex, pi and Hermes all just
+# harness-agnostic "file this" verb: Claude Code, Codex and pi all just
 # run `board capture "<title>" [-b <notes>]`.
 cmd_capture() {
   local backlog="" title="" notes="" a
@@ -997,6 +608,7 @@ cmd_sync() {
   backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
   [ -f "$backlog" ] || { echo "board sync: no backlog at $backlog" >&2; exit 2; }
   . "$BOARD_DIR/../config/kit-config.sh"
+  . "$BOARD_DIR/../sync/adapters.sh"
   # git-aware repo root: BACKLOG.md lives at _meta/ in some repos and at repo
   # root in others; _repo_root_for handles both
   KIT_PROJECT_ROOT="$(_repo_root_for "$backlog")"
@@ -1007,80 +619,57 @@ cmd_sync() {
   [ -n "$v" ] || v="$(kit_config_get sync.sources "")"   # older legacy alias
   if [ -z "$v" ]; then
     echo "board sync: no [sync] apps configured in $KIT_PROJECT_ROOT/.kit.toml" >&2
-    printf '  add e.g.:\n  [sync]\n  apps = "reminders"\n' >&2
+    printf '  add e.g.:\n  [sync]\n  apps = "<app>"\n' >&2
     exit 2
   fi
   args+=(--apps "$v")
-  local app fk
-  for app in reminders notion hermes multica github; do
-    for fk in only_tags skip_tags intake; do
-      v="$(kit_config_get "sync.${app}_${fk}" "")"
-      [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
-    done
-  done
+  local fk
   v="$(kit_config_get sync.scope_exit_cap "")"; [ -n "$v" ] && args+=(--scope-exit-cap "$v")
   # only for a repo whose archive is not BACKLOG-archive.md beside the board
   v="$(kit_config_get sync.archive_file "")"; [ -n "$v" ] && args+=(--archive-file "$v")
-  v="$(kit_config_get sync.reminders_list "")";  [ -n "$v" ] && args+=(--list "$v")
-  v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
-  v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
-  v="$(kit_config_get sync.notion_title "")";    [ -n "$v" ] && args+=(--notion-title "$v")
-  # notion-taskboard: one-way, insert-only push to a foreign team board
-  #. Down-filter only (a write-only sink has no intake path); the
-  # keys are TOML-friendly underscores but the engine's --filter app token
-  # keeps the hyphenated adapter name.
-  for fk in only_tags skip_tags; do
-    v="$(kit_config_get "sync.notion_taskboard_${fk}" "")"
-    [ -n "$v" ] && args+=(--filter "notion-taskboard:${fk}=${v}")
-  done
-  v="$(kit_config_get sync.notion_taskboard_db "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-db "$v")
-  v="$(kit_config_get sync.notion_taskboard_status_map "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-status-map "$v")
-  v="$(kit_config_get sync.notion_taskboard_status_default "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-status-default "$v")
-  v="$(kit_config_get sync.notion_taskboard_priority_map "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-priority-map "$v")
-  v="$(kit_config_get sync.notion_taskboard_weight_map "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-weight-map "$v")
-  v="$(kit_config_get sync.notion_taskboard_owner "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-owner "$v")
-  v="$(kit_config_get sync.notion_taskboard_props "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-props "$v")
-  v="$(kit_config_get sync.notion_taskboard_types "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
-  # notion-taskboard-pull: read-only intake FROM the same foreign team board
-  #. No filter keys: the source board's own Agent Queue checkbox is
-  # the gate, and a second gate has no user.
-  v="$(kit_config_get sync.notion_taskboard_pull_db "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-pull-db "$v")
-  v="$(kit_config_get sync.notion_taskboard_pull_props "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-pull-props "$v")
-  v="$(kit_config_get sync.notion_taskboard_pull_done_option "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-pull-done-option "$v")
-  v="$(kit_config_get sync.github_repo "")";     [ -n "$v" ] && args+=(--github-repo "$v")
-  v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
-  v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
-  v="$(kit_config_get sync.hermes_board "")";    [ -n "$v" ] && args+=(--hermes-board "$v")
-  v="$(kit_config_get sync.hermes_assignee "")"; [ -n "$v" ] && args+=(--hermes-assignee "$v")
-  v="$(kit_config_get sync.hermes_workspace "")"; [ -n "$v" ] && args+=(--hermes-workspace "$v")
-  # multica_url and multica_token_ref pick the host and the secret that host receives: operator
-  # and kit-root files only, because a project .kit.toml rides inside an untrusted PR.
-  v="$(kit_config_get_root sync.multica_url "")"; _sync_note_shadow sync.multica_url "$v"
-  [ -n "$v" ] && args+=(--multica-url "$v")
-  v="$(kit_config_get sync.multica_workspace "")"; [ -n "$v" ] && args+=(--multica-workspace "$v")
-  v="$(kit_config_get sync.multica_project "")";   [ -n "$v" ] && args+=(--multica-project "$v")
-  # token goes through the env, never argv (ps leaks argv); Keychain-cached
-  # 1P read per the runtime-secret rule, raw `op read` as the fallback.
-  v="$(kit_config_get_root sync.multica_token_ref "")"; _sync_note_shadow sync.multica_token_ref "$v"
-  if [ -n "$v" ] && [ -z "${MULTICA_TOKEN:-}" ]; then
-    if command -v secret-cache-read >/dev/null 2>&1; then
-      MULTICA_TOKEN="$(secret-cache-read --ttl 21600 MULTICA_TOKEN "$v")"
+  # The adapter manifests (lib/adapters/*/adapter.tsv) declare the rest: per-app filter keys, one engine
+  # flag per `opt` row, one env secret per `secret` row. A manifest error is global and loud. An `opt`
+  # row of scope root and every `secret` row read the operator and kit-root files only, because a
+  # project .kit.toml rides inside an untrusted PR and these pick the host and the secret it receives.
+  local rows rdir rflag rkey rscope rapp rmode renv rval fks
+  rows="$(adapters_rows app)" || exit 1
+  while IFS=$'\t' read -r rdir rapp rmode; do
+    [ -n "$rapp" ] || continue
+    case "$rmode" in
+      two-way) fks="only_tags skip_tags intake" ;;
+      create-only) fks="only_tags skip_tags" ;;
+      *) fks="" ;;
+    esac
+    for fk in $fks; do
+      v="$(kit_config_get "sync.${rapp//-/_}_${fk}" "")"
+      [ -n "$v" ] && args+=(--filter "${rapp}:${fk}=${v}")
+    done
+  done <<< "$rows"
+  rows="$(adapters_rows opt)" || exit 1
+  while IFS=$'\t' read -r rdir rflag rkey rscope _; do
+    [ -n "$rflag" ] || continue
+    if [ "$rscope" = root ]; then
+      v="$(kit_config_get_root "sync.$rkey" "")"; _sync_note_shadow "sync.$rkey" "$v"
     else
-      MULTICA_TOKEN="$(op read "$v")"
+      v="$(kit_config_get "sync.$rkey" "")"
     fi
-    export MULTICA_TOKEN
-  fi
+    [ -n "$v" ] && args+=("--$rflag" "$v")
+  done <<< "$rows"
+  # a secret rides the environment, never argv (ps leaks argv): root-only ref, Keychain-cached read
+  # first, raw `op read` as the fallback, skipped when the variable is already set
+  rows="$(adapters_rows secret)" || exit 1
+  while IFS=$'\t' read -r rdir renv rkey; do
+    [ -n "$renv" ] || continue
+    v="$(kit_config_get_root "sync.$rkey" "")"; _sync_note_shadow "sync.$rkey" "$v"
+    if [ -n "$v" ] && [ -z "${!renv:-}" ]; then
+      if command -v secret-cache-read >/dev/null 2>&1; then
+        rval="$(secret-cache-read --ttl 21600 "$renv" "$v")"
+      else
+        rval="$(op read "$v")"
+      fi
+      export "$renv=$rval"
+    fi
+  done <<< "$rows"
   exec python3 "$BOARD_DIR/../sync/backlog_sync.py" "${args[@]}" ${fwd[@]+"${fwd[@]}"}
 }
 
@@ -1203,34 +792,48 @@ cmd_promote() {
   exec "$BOARD_DIR/bin/add-backlog" ${args+"${args[@]}"}
 }
 
-# mirror/status/writeback run one engine, the cockpit bridge (board-mirror.sh and
-# board-writeback.sh). The per-repo spoke sync is a separate job: `board sync`.
-_legacy_bridge_note() {
-  echo "note: mirror/status/writeback are the cockpit bridge engine (board-mirror.sh);" >&2
-  echo "      the per-repo spoke sync is \`board sync\`, a separate engine." >&2
+# _run_adapter_verb <verb> [args...] -- when an adapter manifest declares <verb> (lib/adapters/*/adapter.tsv, a
+# `verb` row), exec its script with the manifest args first, then the caller's args; return 1 on a miss, so the
+# caller falls through. A core verb answers 1 at once, without a scan, so `board next` pays for one sourced file.
+# KIT_LIB (the absolute lib/) is exported for out-of-tree scripts; in-tree scripts derive their own.
+_run_adapter_verb() {
+  case "${1:-}" in ''|-*) return 1 ;; esac
+  . "$BOARD_DIR/../sync/adapters.sh"
+  local verb_line verb_script
+  local -a verb_args
+  verb_line="$(adapters_verb "$1")" || return 1
+  IFS=$'\t' read -r -a verb_args <<< "$verb_line"
+  verb_script="${verb_args[0]}"
+  unset 'verb_args[0]'
+  shift
+  export KIT_LIB
+  case "$verb_script" in
+    *.py) exec python3 "$verb_script" ${verb_args[@]+"${verb_args[@]}"} "$@" ;;
+    *) exec bash "$verb_script" ${verb_args[@]+"${verb_args[@]}"} "$@" ;;
+  esac
 }
 
-usage() { sed -n '2,/^set -euo pipefail$/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
+usage() {
+  sed -n '2,/^set -euo pipefail$/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'
+  local dir; dir="$(. "$BOARD_DIR/../sync/adapters.sh"; adapters_dir 2>/dev/null)" || dir=""
+  [ -z "$dir" ] || printf '\nadapter directory: %s (KIT_ADAPTERS_DIR replaces it; the verbs a manifest declares run from there)\n' "$dir"
+  return 0
+}
 
 main() {
   local first="${1:-}"
   case "$first" in
     all)    shift; cmd_all "$@" ;;
     queue)  shift; cmd_queue "$@" ;;
-    mirror) shift; cmd_mirror "$@" ;;
-    status) shift; cmd_status "$@" ;;
-    writeback) shift; cmd_writeback "$@" ;;
     sync) shift; cmd_sync "$@" ;;
     publish) shift; cmd_publish "$@" ;;
     sweep)
       shift
       if [ "${1:-}" = "verify" ]; then shift; exec bash "$BOARD_SWEEP_VERIFY_SH" "$@"; fi
       exec bash "$BOARD_SWEEP_SH" "$@" ;;
-    mirror-cleanup) shift; exec python3 "$BOARD_MIRROR_CLEANUP_PY" "$@" ;;
     state-check) shift; exec python3 "$BOARD_STATE_CHECK_PY" "$@" ;;
     health) shift; exec python3 "$BOARD_HEALTH_PY" "$@" ;;
     brief) shift; exec python3 "$BOARD_BRIEF_PY" "$@" ;;
-    hermes) shift; exec python3 "$BOARD_HERMES_PY" "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; cmd_promote "$@" ;;
@@ -1238,7 +841,7 @@ main() {
     run) shift; exec "$BOARD_RUN_SH" "$@" ;;
     work) shift; exec bash "$BOARD_DIR/work.sh" "$@" ;;
     -h|--help|help) usage ;;
-    *) cmd_board_single "$@" ;;
+    *) _run_adapter_verb "$@" || true; cmd_board_single "$@" ;;
   esac
 }
 

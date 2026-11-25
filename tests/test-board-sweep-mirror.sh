@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-sweep-mirror.sh -- the mirror leg of `board sweep` (lib/sync/sweep/board-sweep):
+# test-board-sweep-mirror.sh -- the mirror leg of `board sweep` (lib/adapters/hermes/legs/mirror.sh, run by lib/sync/sweep/board-sweep):
 # the git->Hermes kanban bridge riding every sweep tick, fed from each repo's
 # ORIGIN copy of the board rather than a stale-or-dirty checkout.
 #
@@ -14,6 +14,11 @@
 #   AC7  build_origin_mirror_registry reads origin/<default>, never the dirty working tree
 #   AC8  a killed run still moves every temp artifact out of the repo root
 #   AC9  --dry-run reaches `board mirror`
+#   AC10 --dry-run with a mirror leg leaves a real health-state.json byte identical
+#   AC11 INT or TERM during `board mirror`: exit 130 or 143, no origin copy left at the repo root,
+#        no health record of a run that never finished
+#   AC12 the leg script is gone: the sweep fails (rc 1) after the syncs, the mirror is recorded failed,
+#        `board mirror` is never called, and the other legs still run
 #
 # A scratch $HOME gives the sweep its own $HOME/.local/bin (hermes, gh). The
 # board command is a stub: no real hermes, board, or kanban is ever touched.
@@ -21,6 +26,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SWEEP="$HERE/../lib/sync/sweep/board-sweep"
+MIRROR_LEG="$HERE/../lib/adapters/hermes/legs/mirror.sh"
 PASS=0; FAIL=0
 
 ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }
@@ -36,15 +42,21 @@ cat > "$WORK/board" <<'EOF'
 echo "board called: $*" >> "${FAKE_CALL_LOG:-/dev/null}"
 echo "board env HERMES_HOME=${HERMES_HOME:-UNSET}" >> "${FAKE_CALL_LOG:-/dev/null}"
 if [ "${1:-}" = "mirror" ]; then
+  [ -n "${FAKE_MIRROR_UP:-}" ] && : > "$FAKE_MIRROR_UP"
+  if [ -n "${FAKE_MIRROR_RELEASE:-}" ]; then
+    i=0; while [ ! -f "$FAKE_MIRROR_RELEASE" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+  fi
   echo "mirror stub plan applied"
   exit "${FAKE_MIRROR_RC:-0}"
 fi
 exit 0
 EOF
 chmod +x "$WORK/board"
+printf '#!/usr/bin/env bash\necho "on-clean ran" >> "$FAKE_CALL_LOG"\n' > "$WORK/hook-clean"
+chmod +x "$WORK/hook-clean"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/.local/bin/hermes"
 chmod +x "$WORK/.local/bin/hermes"
-export FAKE_CALL_LOG FAKE_MIRROR_RC
+export FAKE_CALL_LOG FAKE_MIRROR_RC FAKE_MIRROR_RELEASE FAKE_MIRROR_UP
 
 run_sweep() {  # extra sweep args...
   HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
@@ -132,10 +144,62 @@ FAKE_CALL_LOG="$WORK/call-dry.log"; : > "$FAKE_CALL_LOG"
 FAKE_MIRROR_RC=0 run_sweep --dry-run >/dev/null 2>&1
 grep -qE "^board called: mirror .* --dry-run\$" "$FAKE_CALL_LOG" && ok "mirror is planned, not applied" || bad "no --dry-run on mirror: $(cat "$FAKE_CALL_LOG")"
 
+echo "case dry-run-health (a dry run with the mirror leg leaves a real health-state.json byte identical):"
+HSR="$WORK/real-health.json"; printf '{"keep":"me"}\n' > "$HSR"; before="$(cksum < "$HSR")"
+echo '[]' > "$WORK/kinds.json"
+FAKE_CALL_LOG="$WORK/call-dryhealth.log"; : > "$FAKE_CALL_LOG"
+out="$(FAKE_MIRROR_RC=1 run_sweep --dry-run --health-state-file "$HSR" --mirror-snapshot "$WORK/dry-snap.jsonl" --expire-kinds-file "$WORK/kinds.json" 2>&1)"
+grep -q "mirror rc=1" <<<"$out" && ok "the mirror leg ran and failed in the dry run" || bad "no mirror line: $out"
+grep -q "expire rc=0" <<<"$out" && ok "and the expiry leg ran (all three flags given)" || bad "no expire line: $out"
+grep -qE "^board called: mirror .* --snapshot $WORK/dry-snap\.jsonl --dry-run\$" "$FAKE_CALL_LOG" && ok "the snapshot flag reached the mirror" || bad "snapshot: $(grep 'called: mirror' "$FAKE_CALL_LOG")"
+[ "$(cksum < "$HSR")" = "$before" ] && ok "the real health state is byte identical (the leg recorded into the scratch copy)" || bad "a dry run wrote the real health state: $(cat "$HSR")"
+
+echo "case leg-signal (INT or TERM during board mirror: the sweep ends 130 or 143, nothing is left at the repo root):"
+mirror_sig_case() {  # <INT|TERM> <expected rc>
+  local sig="$1" want="$2" i=0 pid rc hs="$WORK/sig-health.json"
+  rm -f "$hs" "$WORK/mirror.up" "$WORK/mirror.release"; FAKE_CALL_LOG="$WORK/call-sig.log"; : > "$FAKE_CALL_LOG"
+  set -m
+  FAKE_MIRROR_RELEASE="$WORK/mirror.release" FAKE_MIRROR_UP="$WORK/mirror.up" HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
+    "$SWEEP" --registry "$WORK/boards.txt" --board-cmd "$WORK/board" --repo-root "$WORK" --mirror-hermes-home "$WORK/hermes-home" \
+    --health-state-file "$hs" --on-clean "$WORK/hook-clean" > "$WORK/sig.out" 2>&1 < /dev/null &
+  pid=$!
+  set +m
+  while [ ! -f "$WORK/mirror.up" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+  if [ ! -f "$WORK/mirror.up" ]; then bad "$sig: board mirror never started"; kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return; fi
+  [ -n "$(ls -A "$FIXTURE_ROOT" | grep 'board-mirror-origin' || true)" ] && ok "$sig: (control) the origin copy exists while board mirror runs" || bad "$sig: no origin copy during the run"
+  kill -"$sig" "$pid"
+  : > "$WORK/mirror.release"   # only now may the stub return, so the signal always lands during board mirror
+  wait "$pid"; rc=$?
+  [ "$rc" -eq "$want" ] && ok "$sig: the sweep exits $want" || bad "$sig: exit $rc (want $want): $(cat "$WORK/sig.out")"
+  [ -z "$(ls -A "$FIXTURE_ROOT" | grep 'board-mirror-origin' || true)" ] && ok "$sig: no origin copy left at the repo root" || bad "$sig: a stray origin copy: $(ls -A "$FIXTURE_ROOT")"
+  [ "$(jq -r '.mirror // "none"' "$hs" 2>/dev/null)" = "none" ] && ok "$sig: no mirror record for a run that never finished" || bad "$sig: health state: $(cat "$hs")"
+  grep -q "board-sweep: end" "$WORK/sig.out" && bad "$sig: the end line was printed" || ok "$sig: no end line"
+  grep -q "on-clean ran" "$FAKE_CALL_LOG" && bad "$sig: on-clean ran" || ok "$sig: no on-clean hook"
+}
+mirror_sig_case TERM 143
+mirror_sig_case INT 130
+
+echo "case leg-missing (the mirror leg script is gone: the syncs ran, the sweep fails, board mirror is never called):"
+XDIR="$WORK/ext-adapters"; mkdir -p "$XDIR/hermes/legs"
+for f in adapter.py adapter.tsv hermes.py; do command cp "$HERE/../lib/adapters/hermes/$f" "$XDIR/hermes/$f"; done
+for f in expire.sh link-check.sh; do command cp "$HERE/../lib/adapters/hermes/legs/$f" "$XDIR/hermes/legs/$f"; done
+FAKE_CALL_LOG="$WORK/call-missing.log"; : > "$FAKE_CALL_LOG"
+hs="$WORK/missing-health.json"; rm -f "$hs"
+out="$(KIT_ADAPTERS_DIR="$XDIR" FAKE_MIRROR_RC=0 run_sweep --health-state-file "$hs" --on-clean "$WORK/hook-clean" 2>&1)"; rc=$?
+[ "$rc" -eq 1 ] && ok "the sweep ends rc 1" || bad "exit $rc: $out"
+grep -q "leg mirror failed: $XDIR/hermes/legs/mirror.sh not found" <<<"$out" && ok "the line names the leg and its script" || bad "no failed line: $out"
+grep -q "board called: mirror" "$FAKE_CALL_LOG" && bad "board mirror ran with no leg script" || ok "board mirror never called"
+[ "$(jq -r '.mirror.rc' "$hs" 2>/dev/null)" = "1" ] && ok "the mirror is recorded failed" || bad "health state: $(cat "$hs" 2>/dev/null)"
+grep -q "board called: sync" "$FAKE_CALL_LOG" && ok "the per-repo sync ran" || bad "no sync call: $(cat "$FAKE_CALL_LOG")"
+grep -q "on-clean ran" "$FAKE_CALL_LOG" && bad "on-clean ran" || ok "on-clean held"
+FAKE_CALL_LOG="$WORK/call-present.log"; : > "$FAKE_CALL_LOG"
+out="$(FAKE_MIRROR_RC=0 run_sweep --on-clean "$WORK/hook-clean" 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q "on-clean ran" "$FAKE_CALL_LOG" && ! grep -q "leg mirror failed" <<<"$out" && ok "(control) with the script present the same sweep ends rc 0 and runs on-clean" || bad "control: rc=$rc $out"
+
 # ---- build_origin_mirror_registry in isolation ------------------------------
 # Extract the function alone. Sourcing the whole sweep would run the sweep.
 TMP="$WORK/unit"; mkdir -p "$TMP"
-sed -n '/^build_origin_mirror_registry() {/,/^}/p' "$SWEEP" > "$TMP/fn.sh"
+sed -n '/^build_origin_mirror_registry() {/,/^}/p' "$MIRROR_LEG" > "$TMP/fn.sh"
 
 fail=0
 assert() {  # $1 label, $2 expected substring, $3 actual
@@ -216,7 +280,7 @@ assert "fetch failure records the repo name in failed_list" "broken" "$(cat "$FA
 assert_not "fetch failure never falls back to the live checkout path" "$BROKEN/_meta/BACKLOG.md" "$(cat "$OUT_REGISTRY2")"
 
 echo "case trap (a killed run still moves every temp artifact out of the repo root):"
-sed -n '/^    # BEGIN mirror-cleanup-trap/,/^    # END mirror-cleanup-trap/p' "$SWEEP" > "$TMP/trap.sh"
+sed -n '/^    # BEGIN mirror-cleanup-trap/,/^    # END mirror-cleanup-trap/p' "$MIRROR_LEG" > "$TMP/trap.sh"
 assert "trap block extracted" "trap 'mirror_cleanup; exit 143' TERM" "$(cat "$TMP/trap.sh")"
 TRAP_ROOT="$TMP/trap-fixture"; mkdir -p "$TRAP_ROOT"
 bash -c '

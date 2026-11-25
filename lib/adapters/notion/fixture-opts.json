@@ -1,0 +1,8 @@
+{
+  "notion_taskboard_status_map": "queued=Backlog",
+  "notion_taskboard_priority_map": "u-hi=P0",
+  "notion_taskboard_weight_map": "f-hi=2",
+  "notion_taskboard_props": "{}",
+  "notion_taskboard_types": "{}",
+  "notion_taskboard_pull_props": "{}"
+}

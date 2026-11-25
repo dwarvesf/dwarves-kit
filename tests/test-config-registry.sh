@@ -384,12 +384,18 @@ _root_only_declared() {
 # treating a self-test call as "a consumer reads this key root-only" would demand a registry
 # row for a key that has none, and none of gauntlet.* has an env<->key row at all (a
 # pre-existing, separately-documented gap under "## Known gaps", not this AC's job).
+# The adapter manifests (lib/adapters/*/adapter.tsv) are the other place a root-only read is
+# declared: `board sync` resolves every `opt` row of scope `root` and every `secret` row with
+# kit_config_get_root, so each such row counts as a call site for `sync.<key>`.
 _root_only_actual() {
-  grep -rhoE 'kit_config_get_root[[:space:]]+"?[A-Za-z_]+\.[A-Za-z_]+"?' \
-    "$KIT_DIR/lib" "$KIT_DIR/commands" "$KIT_DIR/hooks" "$KIT_DIR/bin" 2>/dev/null \
-    --exclude="$(basename "$KIT_DIR/lib/config/kit-config.sh")" \
-    | sed -E 's/kit_config_get_root[[:space:]]+"?([A-Za-z_]+\.[A-Za-z_]+)"?/\1/' \
-    | sort -u
+  {
+    grep -rhoE 'kit_config_get_root[[:space:]]+"?[A-Za-z_]+\.[A-Za-z_]+"?' \
+      "$KIT_DIR/lib" "$KIT_DIR/commands" "$KIT_DIR/hooks" "$KIT_DIR/bin" 2>/dev/null \
+      --exclude="$(basename "$KIT_DIR/lib/config/kit-config.sh")" \
+      | sed -E 's/kit_config_get_root[[:space:]]+"?([A-Za-z_]+\.[A-Za-z_]+)"?/\1/'
+    awk -F'\t' '/^#/ { next } $1 == "opt" && $4 == "root" { print "sync." $3 } $1 == "secret" { print "sync." $3 }' \
+      "$KIT_DIR"/lib/adapters/*/adapter.tsv 2>/dev/null
+  } | sort -u
 }
 
 DECLARED="$(_root_only_declared)"

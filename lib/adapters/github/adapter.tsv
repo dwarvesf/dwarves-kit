@@ -1,0 +1,2 @@
+app	github	two-way
+opt	github-repo	github_repo	-	owner/repo for the github app (default: the cwd's origin remote, as gh resolves it)

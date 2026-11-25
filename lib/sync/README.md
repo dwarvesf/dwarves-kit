@@ -1,28 +1,33 @@
 # board sync (backlog-sync)
 
 Two-way sync between an adopted repo's kanban `BACKLOG.md` (the hub, source
-of truth) and its spokes: **Apple Reminders**, a **Notion board**, the
-**Hermes kanban**, and a **Multica board** (the self-hosted team pilot, see
-ops-toolkit `tools/multica-deploy/`). Registered kit module `sync` (stage: Shape, formerly Specify) at `lib/sync/`;
-front door is the `board sync` verb, so every adopted repo's `_meta/board`
-shim already reaches it. Design: `docs/specs/SPEC-001-multi-source-sync.md`
-(subsystem-local). Spokes plug in per repo via the `[sync]` section of
-`.kit.toml` (see below); no `sources` entry, no sync, that's the whole plugin
-mechanism. Boundary with the one-way `bridge` cockpit mirror is recorded in
-`lib/config/module-registry.md`.
+of truth) and its spokes. A spoke is an app behind the adapter interface: a
+task app, a note app, a kanban, an issue tracker. This directory is the
+engine, the planner and the sweep; it names no app. Each app lives in
+`lib/adapters/<name>/` with its own manifest and README, and the contract
+every adapter follows is `lib/adapters/README.md`. Registered kit module `sync`
+(stage: Shape, formerly Specify) at `lib/sync/`; front door is the `board sync`
+verb, so every adopted repo's `_meta/board` shim already reaches it. Design:
+`lib/adapters/docs/specs/SPEC-001-multi-source-sync.md` (subsystem-local). Spokes plug
+in per repo via the `[sync]` section of `.kit.toml` (see below); no `apps`
+entry, no sync, that's the whole plugin mechanism. Boundary with the one-way
+`bridge` cockpit mirror is recorded in `lib/config/module-registry.md`.
 
 ```
                       _meta/BACKLOG.md  (hub)
-                
-        Apple Reminders   Notion DB   Hermes kanban   Multica project
-        (osascript JXA)   (ntn CLI)   (ssh + hermes)  (REST + PAT)
+                              |
+        spoke A         spoke B         spoke C        ...   one adapter each
+        (lib/adapters/<name>/: manifest + adapter.py + its transport)
 ```
 
 Each app syncs independently: three-way merge against a per-spoke snapshot
 in `<sync state dir>/<source>.state.json` (`config data path state backlog-sync`). On conflict the board wins.
 A spoke-side deletion tombstones the row (mirroring stops; the board is never
-touched). New spoke items without an `ID-` prefix become queued rows in a
-`### Reminders inbox` section and get retitled/keyed with their assigned ID.
+touched). New spoke items without an `ID-` prefix become queued rows in an
+intake section and get retitled/keyed with their assigned ID. The section
+heading comes from the adapter that supplies one (manifest `const
+inbox-heading`); with none installed a new section is `### Intake inbox`, and an
+existing section with another heading keeps receiving rows.
 
 An archive pass moves a closed row out of `BACKLOG.md`, so the planner stops
 seeing it and its card used to stay open forever. A linked card now closes
@@ -50,8 +55,7 @@ spoke with its closed status; the sync never trashes it.
   writes nothing to the board. Active rows stay two-way.
 - Tag filters (`only_tags`, `skip_tags`) read the item cell and the notes
   cell. Titles compare without `#tags`, so a tag in the item cell never reads
-  as a retitle; Reminders drops item-cell tags from the title text and
-  suffixes only the notes tags.
+  as a retitle; how an app carries tags is in its adapter README.
 - Intake dedupe ("title already on board") looks at rows still in play. A new
   item titled like a shipped or dropped row is new work.
 - `intake_skip_re` is searched against `title + "\n" + body` (MULTILINE), so
@@ -59,60 +63,52 @@ spoke with its closed status; the sync never trashes it.
 
 ## What each app can hold
 
-| Field | Reminders | Notion | Hermes | Multica |
-|---|---|---|---|---|
-| title `ID-NNN · item` | ✓ bisync | ✓ bisync | ✓ frozen at create (no edit verb) | ✓ bisync |
-| status | open/completed only (completed ⇄ shipped) | full: `Status` select bisyncs every board state | create=`todo`; `complete` ⇄ shipped, `archive` ⇄ dropped/parked; active moves n/a | full bisync via a fixed-enum map + a `<!-- board:kw -->` description marker (see below) |
-| notes/desc | body (board wins, lazy) | `Notes` rich_text (board wins, lazy) | `--body` at create, frozen | description (board wins, lazy); marker appended |
-| #tags | in body text (Reminders exposes NO tag API, sdef has zero tag surface) | `Tags` multi_select only; stripped out of the Notes text | in body text | in body text |
+Each adapter README has its own table of what the app holds (title, status,
+notes, tags) and where it is frozen or one-way by the app's own capability.
+The planner treats an app by its mode, declared in the manifest:
 
-Reminders tags have no AppleScript surface; Hermes has no title/body edit or
-reopen verb, those cells say "frozen"/"n/a" by capability, not by choice.
+| Mode | Reads | Writes | Notes |
+|---|---|---|---|
+| `two-way` | yes | yes | three-way merge against its snapshot; filter keys `<app>_only_tags`, `<app>_skip_tags`, `<app>_intake` |
+| `create-only` | no | on create only | a push that never edits what a team member changed; filter keys `<app>_only_tags`, `<app>_skip_tags` |
+| `pull-only` | yes | no | read-only intake into queued rows; runs alone in its own invocation, takes no filter |
 
-Multica's status enum is one notch coarser than the board's state machine
-(`speccing`/`claimed` both land on `todo`), so each issue carries its exact
-board state in a trailing `<!-- board:kw -->` description marker; the marker
-is trusted while the Multica status still equals its forward image, and the
-reverse map speaks the moment someone moves the issue on the Multica board.
-Issues are always created UNASSIGNED (assigning an agent is what dispatches
-execution in Multica; that stays a human act on the Multica UI).
+Each adapter that ships with the kit has its own directory under
+`lib/adapters/`. A new one is one new directory and no edit here.
 
 ## Run
 
 ```
 _meta/board sync                     # from any adopted repo: all configured spokes
-_meta/board sync --dry-run --apps notion
+_meta/board sync --dry-run --apps <app>
 ```
 
 Configure spokes in the repo's `.kit.toml` `[sync]` section (the ADR-0034
 config layer; keys declared kit-wide in `kit.toml`, registered in
 `lib/config/module-registry.md`). An app plugs in by appearing in `apps` (legacy aliases: `surfaces`, `sources`)
-and filling its `<spoke>_*` keys; CLI flags override:
+and filling its `<app>_*` keys; CLI flags override. The keys of each app are in
+its adapter README:
 
 ```toml
 [sync]
-apps              = "reminders,notion,hermes,multica"
-reminders_list    = "Backlog"
-notion_db         = "<database_id>"   # or notion_parent = "<page_id>" to bootstrap
-hermes_target     = "<ssh-host>"      # an ssh host, or "local", or "sudo:<user>"; no default
-hermes_home       = "<HERMES_HOME>"   # the kanban store to sync against; no default
-# optional, for an instance whose board, workers, and deliverables are shared:
-# hermes_board     = "dw-ops"
-# hermes_assignee  = "chief-of-staff"
-# hermes_workspace = "dir:<HERMES_HOME>/outbox/backlog/{id}"
-multica_url       = "https://multica.d.foundation"   # multica_url and multica_token_ref are root-only: set them in the operator kit.toml, a project .kit.toml value is ignored
-multica_workspace = "<workspace_uuid>"
-multica_project   = "<project_uuid>"
-multica_token_ref = "op://Toolkit/multica-sync-bot/credential"
+apps = "<app>,<app>"      # adapter names; no default
 ```
 
 Resolution happens in `board.sh cmd_sync` via `kit-config.sh` (the one TOML
-reader); the python engine takes flags only and reads no config file. Flags:
-`--apps a,b` · `--backlog PATH` · `--state-root PATH` · `--dry-run` ·
-`--list` · `--notion-db` / `--notion-parent` · `--hermes-target` /
-`--hermes-home` / `--hermes-board` / `--hermes-assignee` /
-`--hermes-workspace`. State snapshots live per board at
+reader); the python engine takes flags only and reads no config file. The
+adapter manifests (`lib/adapters/*/adapter.tsv`) declare every other flag: one
+engine flag per `opt` row, one environment secret per `secret` row, one set of
+filter keys per `app` row. Core flags: `--apps a,b` · `--backlog PATH` ·
+`--archive-file PATH` · `--state-root PATH` · `--dry-run` · `--filter app:key=value` ·
+`--scope-exit-cap N` · `--allow-scope-exit` · `--allow-flips` ·
+`--allow-archived-closes N`. State snapshots live per board at
 `<sync state dir>/<board-slug>/<source>.state.json`.
+
+An app name no adapter provides ends the run with `no adapter provides <app>
+(searched: <dir>)` before the lock, and an engine run with no `--apps` ends
+`backlog_sync: no apps (--apps)`. The adapter directory is `lib/adapters/` of
+the running kit, or `KIT_ADAPTERS_DIR` (an absolute path) for tests and
+extensions; `board help` prints the one in effect.
 
 ### Scheduled runs (cron)
 
@@ -123,7 +119,7 @@ unattended:
 
 ```toml
 [sync]
-apps = "reminders,notion"
+apps = "<app>"
 mode = "cron"
 interval_secs = 3600   # optional; default 3600 (hourly)
 ```
@@ -147,7 +143,7 @@ over a registry (the `boards.txt` that `board all` renders from), all in
 `lib/sync/sweep/`.
 
 ```
-board sweep --registry boards.txt --poster ./post --mirror-hermes-home <dir>
+board sweep --registry boards.txt --poster ./post
 board sweep --registry boards.txt --dry-run          # plan the whole sweep, write nothing
 board sweep verify --registry boards.txt --run "board sweep ..."    # prove no board changed
 board sweep verify --last-tick [repo]                # read the newest tick from the log
@@ -158,9 +154,9 @@ registry row ──▶ board sync (own [sync] config) ──▶ digest parse ─
                        (per repo, in order)          (state file)     (only if the sync wrote)
                                 │
                                 ▼  after the loop
-   board mirror (origin copy of every bridge=on board) ──▶ one digest post per cluster ──▶ on-clean hook
-                                                                     │
-                                                         your --poster command
+   adapter legs (after-sync) ──▶ one digest post per cluster ──▶ health leg ──▶ adapter legs (last) ──▶ on-clean hook
+                                          │
+                              your --poster command
 ```
 
 Each repo's own `.kit.toml [sync]` still decides whether it syncs; a repo with
@@ -190,18 +186,26 @@ forward: the next payload merges it, shows the redacted reason as
 `carried_error`, and raises severity to `warn`. The payload is neutral:
 
 ```
-{cluster, rail, key, severity: info|warn|crit, title, fields: [{name, value}], carried_error?}
+{cluster, rail, key, severity: info|warn, title, fields: [{name, value}], carried_error?}
 ```
 
 `--crit-prefix P` makes a payload `crit` when an adopted row's title starts
 with P. The poster maps severity to its own marks and colors.
 
-**Mirror leg.** With `--mirror-hermes-home`, the sweep feeds `board mirror` from
-`git show origin/<default>:<board>` per repo, not the working tree, so a stale
-or mid-branch checkout cannot leak rows into the kanban. If any repo's origin
-cannot be resolved, the whole mirror call is skipped for that tick: the
-planner archives any card whose row is missing from the extract, so a partial
-registry would close that repo's live cards.
+**Adapter legs and flags.** An adapter may add sweep flags (manifest `sweep-opt`
+rows) and legs (manifest `leg` rows). `board sweep --help` lists the flags of
+the adapters installed, each leg runs as `"$BASH" <script>` with the `SWEEP_*`
+environment (`SWEEP_NAME`, `SWEEP_BOARDS`, `SWEEP_REPO_ROOT`, `SWEEP_DRY_RUN`,
+`SWEEP_BOARD_CMD`, `SWEEP_HEALTH_BIN`, `SWEEP_HEALTH_STATE`) and the
+`sweep-opt` variables, and a leg is in one of two phases: `after-sync` (after
+the per-repo loop, before the digest posts) or `last` (right after the health
+leg). A flag no adapter and no core case accepts ends `board sweep: unknown
+arg: <arg> (adapter dir: <dir>)` with exit 64, before any sync. A leg that
+runs and fails is observational and never changes the sweep's exit code; a
+leg whose script is missing fails that leg only, after the per-repo syncs
+ran, and ends the sweep with exit 1. INT or TERM during a leg signals the
+leg, waits for it, and ends the sweep with 130 or 143 and nothing after it.
+Which legs ship, and what each does, is in the adapter README.
 
 **Health digest.** The change digest says what moved. `board health` (also the
 sweep's `--health` leg) says whether the boards and the sync legs are healthy,
@@ -210,13 +214,14 @@ sync and mirror outcome (spokes seen, rc, error lines) into
 `health-state.json` in the sync state dir; `--health` then builds one payload
 per cluster once `--health-every-days` (default 3) has passed since its last
 delivered post. A failed post is not stamped, so it retries next tick and
-rides `carried_error`.
+rides `carried_error`. The word for the mirror target in these lines is the
+`mirror-label` constant an adapter supplies (fallback `mirror target`).
 
 | Line | Source |
 |---|---|
 | extra | each stdout line of `--health-line CLUSTER=CMD`, for facts only the operator knows; a line that opens with the warning mark counts as a fault |
-| hub | the one hub named by `--health-hub CLUSTER=NAME`: `NAME: <active> active, <parked> parked · Hermes mirror <n> open = hub`. Rows come from `git blame` on the origin copy of the board; the mirror count is the open cards of kanban board NAME whose body says `origin: NAME:`. A mismatch is a fault line instead. |
-| board | each kanban board named by `--health-board CLUSTER=SLUG` (reader: `--health-kanban CLUSTER=CMD`, a `hermes kanban` wrapper): open cards with their status, stale cards, tickets created since the last delivered run |
+| hub | the one hub named by `--health-hub CLUSTER=NAME`: `NAME: <active> active, <parked> parked · <label> mirror <n> open = hub`. Rows come from `git blame` on the origin copy of the board; the mirror count is the open cards of kanban board NAME whose body says `origin: NAME:`. A mismatch is a fault line instead. |
+| board | each kanban board named by `--health-board CLUSTER=SLUG` (reader: `--health-kanban CLUSTER=CMD`, a wrapper over the mirror target's kanban CLI): open cards with their status, stale cards, tickets created since the last delivered run |
 | archived | cards archived since the last delivered run, one total; omitted on a baseline run |
 | fault | one line per kanban board over the triage threshold (`--health-triage-open`, default 20 cards, or `--health-triage-days`, default 14 days for the oldest), three at most, then `+N more boards over threshold` |
 | sync | per spoke and the mirror leg, ok or failed, from the tick records |
@@ -253,7 +258,7 @@ says what to do (bold) and what happens if it is ignored.
 | Part | Source |
 |---|---|
 | lede | `▌ Two things wait on you today: a memo draft that parks tonight, a new alert kind to triage. The bots handled the rest.` Count words One, Two, Three, else digits; up to two item ledes, then `and N more`; an item without a lede counts but adds no phrase. No items and no error: `▌ Nothing waits on you today. The bots handled everything.` |
-| Your call | items, most urgent first: those with a `due` epoch (or a ` by <Day D Mon>` date in a plain line) nearest first; incident rows ("Triage or map" before "Close"); the hook's explicit `decisions`; other 👉 items by `wait_days`; hub/mirror drift; board triage, longest wait first; stale kit skills last. Three items show, the rest is `+N more`. |
+| Your call | items, most urgent first: those with a `due` epoch (or a ` by <Day D Mon>` date in a plain line) nearest first; incident rows ("Triage or map" before "Close"); the hook's explicit `decisions`; other 👉 items by `wait_days`; hub/mirror drift; board triage, longest wait first; the items an adapter's `brief_decisions` hook adds last. Three items show, the rest is `+N more`. |
 | Handled | `▌ Handled by bots: ...` joins the `--line` hook sentences that open with 🤖, `N incidents are with chonky.`, and `sync and bots ran clean.` or the error form. An agent fault is never a decision. |
 | Details | a follow-up field, `ℹ️ Details`, on Mondays in Vietnam time (or under `--show-boards`): the board lines, the other `--line` lines, the hook's `details`, the bot counts. Any other day it is dropped unless an error exists, then it holds the error lines only. |
 
@@ -262,7 +267,7 @@ An item is `• `[tag]` [title](<url>)` and its lines. Item sources:
 - A `--line` hook line `👉 {json}` with `{"tag", "title", "url", "lines": [...], "lede", "due": epoch, "wait_days": N}`. Any other text after 👉 stays one plain line.
 - An incident row with an `action`: tag `quiet Nd` or `firing`, the linked id and label, `fired Nx on <host>. **close the ticket.**` (Close) or `**triage it or add a rule.**` (Triage or map), and what happens if ignored. Without an `action`: one line with the closing question in bold.
 - A board past its triage threshold: tag `waiting Nd`, `N cards wait in <board> triage`, up to two quoted titles of 40 chars (the `untrusted ` marker dropped), `**move each card to ready, blocked or done.**`
-- Drift and stale kit skills: one plain line, no tag.
+- Drift and the lines an adapter's `brief_decisions` hook returns: one plain line, no tag. A hook that raises, fails to import or lacks the function adds one attention line, `report hook <adapter> failed: <ExceptionClass>`, and the brief still exits 0; the full text goes to stderr.
 
 `severity` is `warn` only when Your call is not empty or an error exists. The
 payload carries `footer_tail` (true on a Details day) and `date_label` and
@@ -301,204 +306,39 @@ else `$DWARVES_BOARD_CONFIG`, else the file `config data path config board.json`
 `common`, `health`, and `brief` sections, each key a long flag with `-` as `_`
 (a list repeats the flag, `true` is a bare flag). Command-line flags come
 after the file. This is what lets an agent run `board health run --dry-run`
-with no flags of its own. Tests: `tests/test-board-brief.sh`. Where the kit's
-Hermes skills sit on top: `docs/reference/hermes-layering.md`.
+with no flags of its own. Tests: `tests/test-board-brief.sh`.
 
-**Hermes link.** `board hermes link [--home DIR] [--profile NAME] [--cluster C] [--dry-run] [--yes]
-[--no-verify]` links one Hermes agent profile to the kit: it detects Hermes homes (`--home`,
-`$HERMES_HOME`, `hermes config path`, `~/hermes-*/home`, `~/.hermes`), picks the profile that speaks for
-the operator, installs `integrations/hermes/skills/*` into that profile's skills dir with a stamp file
-(`.dwarves-kit-skills.json`: a digest of the skill files, the kit version and sha), records the link in
-the file `config data path state hermes-links.json` prints (with the cluster's rail, hub, and boards read from the kit flag
-file), and verifies with one real agent turn: the agent must run `board health run --dry-run --force` and
-answer a nonce, then the command prints `linked`. It previews the plan and asks on a terminal; without
-one it writes only with `--yes`. A profile in another account's home uses `--sudo-user`. No Hermes found
-is a skip line and exit 0. `board hermes check [--record]` compares each recorded link's stamp with this
-kit (stale: no stamp, a different digest, a missing skill); `board sweep` records it every tick under
-`hermes_links` in the health state, and `board brief` turns a stale link into one decision line, `kit
-skills on <label> are stale: re-run board hermes link`, for the link's cluster (the first cluster when
-none is named). Tests: `tests/test-board-hermes.sh`.
-
-**Exit code.** 0 when every sync, publish, and preflight leg was clean. The
-digest, mirror, and health legs are observational and never flip it.
-
-`board mirror-cleanup` reconciles the open Hermes cards against the boards (dry
-run by default, never deletes). `--kinds-file` takes a JSON rule list that
-sorts the bot-made cards the mirror never owns; without it only the Hermes
-decomposer rule is built in. A rule with an `expire` block
-(`{"days": 14, "board": "social", "status": "triage"}`) archives the cards of
-its kind that sat in that status for that long on that board; `--expire-only`
-runs just that step (no registry, no BACKLOG reads) and prints one line,
-`expired N cards on <board> (limit Nd)`, or `would expire ...` on a dry run.
-`board sweep --expire-kinds-file F` runs it every tick against the mirror's
-Hermes store (`--dry-run` only reports). Design notes and tests: `tests/test-board-mirror-expire.sh`,
-`tests/test-board-sweep-expire.sh`,
-`tests/test-board-sweep*.sh`, `tests/test-board-digest.sh`,
-`tests/test-board-mirror-cleanup.sh`.
+**Exit code.** 0 when every sync, publish, and preflight leg was clean (and no
+leg script was missing). The digest, health, and adapter legs that run and fail
+are observational and never flip it.
 
 ### Bootstrap per app
 
-- **Reminders**: list auto-created on first run.
-- **Notion, no board**: `--notion-parent <page_id>` creates a database
-  (Name / Status select with every board state / Tags / Notes) and persists
-  the binding in the snapshot. **Has board**: `--notion-db <id>` discovers the
-  title prop and a `Status` select/status prop, adds missing Notes/Tags/Status
-  to the schema, and adopts foreign pages through the inbox flow. Status-type
-  props (API can't add options) map by group: Complete ⇄ shipped.
-- **Hermes**: the store IS the board; a fresh `HERMES_HOME` initializes on
-  first create. Writes go through `hermes kanban` verbs only (CAS + events +
-  Discord notify stay intact); seeds carry `--idempotency-key bls-ID-NNN`.
-- **Multica**: no auto-bootstrap; point `multica_workspace`/`multica_project`
-  at an existing project (the pilot's sync-bot account, workspace, and
-  project ids live in `op://Toolkit/multica-sync-bot`). The token resolves
-  from `multica_token_ref` at invocation (Keychain-cached `secret-cache-read`,
-  raw `op read` fallback) and reaches the engine via the `MULTICA_TOKEN` env
-  var, never argv.
+Each adapter README says what a first run creates or needs. A secret an adapter
+declares (manifest `secret` row) resolves from a 1Password ref in `[sync]` at
+invocation (Keychain-cached `secret-cache-read`, raw `op read` fallback) and
+reaches the engine through an environment variable, never argv.
 
-Live wiring (2026-07-16): Notion DB `612f123c-7476-4a78-90e2-e1465c0a0df6`
-("ops-toolkit Backlog" under US Operating, **Dwarves workspace**, the only
-workspace `ntn` is logged into; move it if a personal workspace gets
-connected). Hermes: the operator sets `hermes_target` + `hermes_home` per machine; neither
-key has a default, so an unset one aborts the run instead of guessing a host.
+## Cockpit bridge verbs are a separate engine
 
-## One-way push to a foreign team board (`notion-taskboard`, SPEC-003)
-
-A fifth app, `notion-taskboard`, is NOT part of the two-way mesh: it is a
-one-way, **insert-only** push of a repo's board rows to a foreign, team-OWNED
-Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). This push direction (BACKLOG.md rows UP) complements the opposite intake, now served by `notion-taskboard-pull` below, which absorbs the standalone dfoundation cron that used to pull Task Board rows straight into Hermes. Both apps target the same database by design; they never run in the same invocation, and the engine refuses a run that aims a write-capable app at the pull app's database. The board is the source of truth; the sink is never read for merge and the board
-file is never written. Fields are set ONLY on page-create, so a team member's
-later edits on the card are never overwritten. The local sync-state map is the
-identity index (a `bid` already pushed is never re-pushed), because the team
-board's own ID column is a read-only auto-increment that cannot hold `DF-NN`.
-
-Status / Priority / Weight are mapped to the team board's OWN option names via
-config, so the sink never mutates the team schema: it reads the schema (never
-PATCHes it) and validates every mapped option name exists BEFORE any create, so
-a typo'd map value is a hard error instead of a silently auto-created select
-option. `dropped` rows are skipped; a state absent from the map uses
-`status_default` or, if unset, is a hard guided error. Validation runs at
-preflight, so `--dry-run` surfaces config errors with zero writes, and state is
-checkpointed after each create so a mid-batch failure never re-pushes a page.
-
-A row whose notes already carry `notion-page:<32-hex>` (the identity marker
-`notion-taskboard-pull` below writes on intake) is never pushed as a create,
-whatever its tags: `plan_create_only` binds it into the state map instead
-(`{"rid": pid, "via": "pull-marker"}`), with no network call. This is what
-stops a team-approved intake row from minting a second, title-prefixed copy of
-the very page it came from the moment human triage strips its `#inbox`
-quarantine tag; a consumer's own `notion_taskboard_skip_tags` config is
-belt-and-braces on top, not the only guard. `describe()` prints one line per
-adoption (`= spoke DF-412 bound to an existing Notion page (pull marker), not
-created`); a steady-state run afterward reads `(nothing to do)` like any other.
-
-```toml
-[sync]
-apps                             = "notion-taskboard"
-notion_taskboard_db              = "<database_id>"      # tenant id: consumer repo only
-notion_taskboard_status_map      = "queued=Backlog,executing=In progress,parked=Waiting,shipped=Done"
-notion_taskboard_status_default  = "Backlog"            # claimed/speccing/validated land here
-notion_taskboard_priority_map    = "u-hi=P0,u-mid=P1,u-lo=P2"
-notion_taskboard_weight_map      = "f-hi=2,f-mid=5,f-lo=13"   # optional
-notion_taskboard_owner           = "<notion_person_id>"      # optional (people prop)
-```
-
-Manual full-reconcile (the v1 trigger; a `board set` hook and Discord-on-shipped
-are deferred, the latter needs update-detection insert-only v1 does not do):
-
-```
-_meta/board sync --apps notion-taskboard --dry-run    # preview, no writes
-_meta/board sync --apps notion-taskboard              # push new rows
-```
-
-Prop NAMES/TYPES are overridable via `notion_taskboard_props` /
-`notion_taskboard_types` (JSON); defaults are Task/Status/Priority/Weight/
-Owner/Notes and status/select/number/people.
-
-## Read-only intake from a foreign team board (`notion-taskboard-pull`, SPEC-004)
-
-A sixth app, `notion-taskboard-pull`, is the mirror image of the push above and
-absorbs dfoundation's standalone `infra/hermes-kanban-sync` cron (kit ID-479).
-It READS the same foreign, team-OWNED Notion board and turns approved rows into
-queued hub rows; the existing `hermes` spoke then relays them to the Hermes
-kanban, so one engine owns both directions. Rows qualify exactly as the cron
-selected them: the `Agent Queue` checkbox is checked and `Status` is not `Done`.
-A human ticking that checkbox is the whole gate.
-
-Pull-only by SHAPE: the adapter has a `read()` and no write method, no
-page-create, no schema PATCH. Nothing to configure, nothing to flip. It also
-writes no state file, because identity lives in the board itself: each intake
-row carries the Notion page id in its notes cell, matched against the raw board
-text, so a run is a pure function of (board, query result) and safe to
-recompute after a lost git push.
-
-Everything the Task Board hands over is untrusted, title as much as notes. Both
-ride inside a per-item nonce-delimited fence (a fixed sentinel is forgeable
-with a doubled space or a homoglyph), and five token classes are defanged: the
-fence sentinel, a page id, a board id (`next_id` scans the whole board text), a
-`#tag` (it decides which apps the row reaches), and credential shapes. Notes
-clip at 2000 characters and a run intakes at most 25 rows.
-
-The page body (the card's block children) never rides the board row, which must
-stay one line. The `hermes` spoke fetches it when it creates a task from an
-intake row, through `ntn` (paragraph, heading, list, to-do, callout and quote
-text, one level of nesting, paginated), and splices it into the row's fence
-under `Page body:`. It clips at 8000 characters, passes the same defang and
-redaction as the other fields, and freezes with the rest of the card body. A
-failed read still creates the task and the fence says `(page body unavailable)`.
-
-```toml
-[sync]
-notion_taskboard_pull_db          = "<database_id>"   # tenant id: consumer repo only
-notion_taskboard_pull_props       = '{"queue": "Agent Queue"}'   # optional
-notion_taskboard_pull_done_option = "Done"            # optional
-```
-
-The app is NOT listed in `apps`. It runs alone, on one clone, in its own
-invocation, and the engine refuses anything else:
-
-```
-board sync --apps notion-taskboard-pull      # 1. intake
-<commit + push the board>                    # 2. publish
-board sync --apps hermes                     # 3. relay
-```
-
-That ordering is load-bearing, not stylistic. Intake mints a board id and the
-Hermes spoke keys its create on it, so the id must be published before anything
-keys on it; otherwise a rejected push discards the row while the kanban task
-survives, and the next tick mints a new id and creates a duplicate task. The
-engine also refuses a run where `notion_db` or `notion_taskboard_db` points at
-the same database, since those apps write. Design, including the git model and
-the honest residuals: `docs/specs/SPEC-004-pull-mode-intake.md`.
-
-## Cockpit bridge (`board mirror`) is a separate engine
-
-`board mirror`, `status`, and `writeback` run one engine, `lib/board/board-mirror.sh` and
-`lib/board/board-writeback.sh`. It is a MANY-source -> ONE-cockpit channel, distinct from the
-per-repo two-way spoke sync above: it reads a `boards.txt` registry (every `bridge=on` repo's
-BACKLOG.md plus its active `_meta/megagoals/*/ROADMAP.md`) and keys every card by ORIGIN
-(`<repo>:<id>`, `megagoals:<repo>/<slug>`). The board always wins, and the git board keyword maps
-to the Hermes reachable-state set `{triage, ready, blocked}`; a card leaves the board by archive:
-
-| Row status | Card state | When the card is elsewhere |
-|---|---|---|
-| `queued` | `triage` | replace (archive, then create) |
-| `claimed`, `speccing`, `validated`, `executing` | `ready` | from `blocked`: `promote`; from `triage`: replace |
-| `parked` | `blocked` | from `ready`: `block`; from `triage`: replace |
-| `shipped`, `dropped`, row gone | archived | `archive` from any live state, so a card with unfinished parents or in `triage` still closes |
-
-`complete` is never used: hermes refuses it on a `triage` card, and the old mirror read that
-refusal as "already terminal" and orphaned the card. A move whose verb fails is recorded as not
-moved and planned again next tick.
-
-A Python port of the extract and diff (`board mirror --engine sync --dry-run`) was removed: it
-never ran live and duplicated the bash engine. `cockpit.py` keeps only what live spokes import
-(the untrusted-content markers, `redact_secrets`, `repo_root_of`).
+The bridge verbs of the board (`mirror`, `status`, `writeback`, `mirror-cleanup`
+and the link verb) are provided by an adapter, not by this engine: the manifest
+maps each verb to a script, and `lib/board/board.sh` runs it. The bridge is a
+many-source to one-cockpit channel, distinct from the per-repo two-way spoke
+sync above, and its text is in the adapter README that ships it.
+`cockpit.py` keeps only what live spokes import (the untrusted-content
+markers, `redact_secrets`, `repo_root_of`); a Python port of the extract and
+diff (the old `--engine sync` dry run) was removed because it never ran live
+and duplicated the bash engine.
 
 ## Tests
 
 ```
-tests/test-sync.sh    # kit wrapper: pytest over lib/sync/tests (incl. test_cockpit.py)
+tests/test-sync.sh                       # kit wrapper: pytest over lib/sync/tests (test_core.py, test_cockpit.py and more) and lib/adapters/tests
+lib/adapters/tests/test-adapters.sh      # the manifest grammar, both readers, the frozen lists, the verb lookup
+tests/test-sync-characterize.sh          # the golden capture of every entry point, diffed against deltas.txt
+tests/test-core-purity.sh                # core names no app
 ```
 
 No network in pytest; the live proofs (bootstrap, reverse flips, inbox,
-idempotence, per spoke) are recorded in `docs/proof-of-done.md`.
+idempotence, per spoke) are recorded in `lib/adapters/docs/proof-of-done.md`.

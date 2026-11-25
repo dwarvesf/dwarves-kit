@@ -111,7 +111,7 @@ ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" --all 2>&1 | gre
 eq "megagoals --all shows it as 1/2" "$ml" "1/2"
 
 # ---- 7. board mirror: progress counts parked in the total; a parked-only mega is not active ----
-mg="$(bash "$KIT_DIR/lib/board/board-mirror.sh" extract-megas "$REPO" r 2>&1)"
+mg="$(bash "$KIT_DIR/lib/adapters/hermes/board-mirror.sh" extract-megas "$REPO" r 2>&1)"
 eq "mirror emits the active mega with progress 3/8" "$(printf '%s\n' "$mg" | awk -F'\t' '$3 == "r/fixture" { print $5 }')" "progress 3/8"
 eq "mirror skips the mega with no open box" "$(printf '%s\n' "$mg" | grep -c 'donepark')" "0"
 
@@ -144,7 +144,7 @@ printf '| ID | Item | Notes & source | Status |\n|----|------|----------------|-
 printf 'r %s/_meta/BACKLOG.md on\n' "$CR" > "$TMP/reg.txt"
 act="$(python3 - "$KIT_DIR" "$TMP/reg.txt" <<'PY'
 import importlib.util, sys
-s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/board/board-mirror-cleanup.py")
+s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/adapters/hermes/board-mirror-cleanup.py")
 m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 print(" ".join(f"{k}={v}" for k, v in sorted(m.load_sources(sys.argv[2], "working")["r"]["megas"].items())))
 PY

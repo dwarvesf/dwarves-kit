@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for the age expiry in lib/board/board-mirror-cleanup.py: a kinds-file rule
+# Tests for the age expiry in lib/adapters/hermes/board-mirror-cleanup.py: a kinds-file rule
 # with an "expire" block archives its cards after N days in triage, per board.
 # A stateful stub stands in for `hermes kanban`; no real Hermes store is touched.
 #
@@ -16,7 +16,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-CLEANUP="$HERE/../lib/board/board-mirror-cleanup.py"
+CLEANUP="$HERE/../lib/adapters/hermes/board-mirror-cleanup.py"
 STUB_SRC="$HERE/fixtures/board-sweep/stub-hermes-kanban"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }

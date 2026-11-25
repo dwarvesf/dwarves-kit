@@ -5,8 +5,8 @@
 # BACKLOG.md path as argv[1], so this script never needs per-repo templating
 # and stays byte-identical across every consumer repo's installed job.
 #
-# BTM/TCC note: shebang is #!/bin/bash (Apple-signed), not `env bash` -- the
-# reminders spoke drives Automation/Reminders via osascript, and TCC keys that
+# BTM/TCC note: shebang is #!/bin/bash (Apple-signed), not `env bash` -- a
+# spoke that drives an app via osascript needs an Automation grant, and TCC keys that
 # grant to the resolved interpreter binary. A brew-upgraded `env bash` would
 # silently lose the grant on the next `brew upgrade bash` (the fleet-wide
 # precedent this mirrors: ops-toolkit CLAUDE.md's plist-authoring rule 3).
@@ -24,7 +24,7 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Optional consumer env (launchd gives a bare env; settings.json env only
 # exists inside Claude Code sessions). Per-machine secrets/paths (e.g. a
-# MULTICA_TOKEN override) live here, never in the kit repo.
+# token override) live here, never in the kit repo.
 CONSUMER_ENV="$HOME/.config/board-sync-cron/env"
 # shellcheck disable=SC1090
 [ -f "$CONSUMER_ENV" ] && . "$CONSUMER_ENV"

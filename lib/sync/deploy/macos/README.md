@@ -105,7 +105,7 @@ this one.
 
 **Consumer env (optional).** launchd gives jobs a bare env. If
 `~/.config/board-sync-cron/env` exists, the launcher sources it before
-running (e.g. a per-machine `MULTICA_TOKEN` override), never committed to
+running (e.g. a per-machine token override), never committed to
 the kit repo.
 
 **Consumer bridge (optional).** If an executable exists at
@@ -118,8 +118,8 @@ endpoint, no secret): symmetric with kit-weekly's own
 
 BTM rules honored: `ProgramArguments[0]` is `board-sync-cron`'s own absolute
 path (never `/bin/sh`), the launcher has no `.sh` extension, and its shebang
-is `#!/bin/bash` (Apple-signed) rather than `env bash` -- the reminders spoke
-drives Automation/Reminders via `osascript`, and TCC keys that grant to the
+is `#!/bin/bash` (Apple-signed) rather than `env bash` -- a spoke that
+drives an app via `osascript` needs an Automation grant, and TCC keys that grant to the
 resolved interpreter binary, so a brew-upgraded `env bash` would silently
 lose the grant on the next `brew upgrade bash`.
 

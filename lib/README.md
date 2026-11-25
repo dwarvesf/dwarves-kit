@@ -13,6 +13,7 @@ Every `lib/` directory has one row.
 
 | Dir | Purpose |
 |---|---|
+| [`adapters/`](adapters/README.md) | Connectors behind one interface (Apple Reminders, Notion, Hermes kanban, Multica, GitHub issues): a manifest and an entry module each. Core `board` and `sync` read the manifests and name no app. |
 | [`adopt/`](adopt/README.md) | `/kit:adopt` support: the AGENTS pointer template, known old-copy hashes, `onboarding-cost.sh`. The driver is `adopt.sh` at the root. |
 | [`audit/`](audit/README.md) | `audit.sh`, the cadence trigger for the audit-loop instances (`bin/audit`). |
 | [`bench/`](bench/README.md) | The bench plane: a comparative benchmark runner, its `dashboard.py` control-plane view, and the lens eval. Backs `skills/observe`. |
@@ -46,7 +47,7 @@ Every `lib/` directory has one row.
 | [`skill-curator/`](skill-curator/README.md) | The skill half of the self-improvement loop: drafts a SKILL.md from a session, a promote gate, and a consolidating curator (`bin/skill-improve`, `bin/skill-review`). |
 | [`spec/`](spec/README.md) | Spec index, depth, find, next and task-done helpers. Entry: `bin/spec`. |
 | [`stats/`](stats/README.md) | The read plane: a stateless, read-only projection over the append-only ledgers (Python, run via `uv`). Entry: `bin/stats`. |
-| [`sync/`](sync/README.md) | Board sync: two-way sync between `BACKLOG.md` and its spokes (Apple Reminders, Notion, Hermes kanban, Multica). |
+| [`sync/`](sync/README.md) | Board sync: the engine, planner and sweep for two-way sync between `BACKLOG.md` and its spokes. The spokes are adapters in `adapters/`. |
 | [`system-design/`](system-design/README.md) | The UML drawing-set engine behind `skills/system-design`: renders `docs/SYSTEM-DESIGN.md` as HTML with the delta marked (bash + git to build, node optional). |
 | [`telemetry/`](telemetry/README.md) | Lane telemetry, the durable log-dir resolver (`kit-log-dir.sh`), hook-log dir, ledger migration, egress-fail. |
 | [`webcheck/`](webcheck/README.md) | Audits a live public website for agent readiness (stdlib Python, read-only HTTP). |
