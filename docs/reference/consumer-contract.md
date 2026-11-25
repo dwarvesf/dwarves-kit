@@ -97,7 +97,7 @@ callers at `bin/reflect`. The table above lists the main entrypoints, not every 
 `ls bin` is the full set.
 
 Module CLIs keep their module names (ADR-0034 two-class rule): `bin/prose-rag`,
-`bin/worktree-provision`.
+`bin/worktree-provision`, `bin/proof-capture`.
 
 A consumer that points at `bin/<name>` survives an internal `lib/` reorg unchanged; a consumer
 that reaches a deep lib path does not.
