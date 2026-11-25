@@ -30,3 +30,11 @@ A model wrote into the probe's repository, its `.git/config` and its `scripts/` 
 ## After a campaign
 
 The operator rotates or revokes the probe key after every round. The scrub matches the exact key only, not a slice or an encoded form of it, so rotation is the real protection. Put this line in the run record's `ROUNDS.md`.
+
+## Run record template
+
+Every run record's `ROUNDS.md` carries these three lines, copied as written:
+
+- The container path (`docker build`, the probe container, the checker container) was not executed on the host that built this runner (no container runtime there). The first run is the first test of that code.
+- The key scrub matches the exact key only, not a slice or an encoded form of it.
+- The operator rotates or revokes the probe key after every round.
