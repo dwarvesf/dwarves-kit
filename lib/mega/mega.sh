@@ -138,7 +138,6 @@
 #     (default 30, via timeout/gtimeout; unbounded when neither exists), MEGA_TICK_LOCK_WAIT_SECS
 #     (default 10, 0 or a decimal, 0.2 s polls). Test-only: MEGA_TICK_TEST=1 with
 #     MEGA_TICK_TEST_PAUSE_FILE pauses after the line read while that file exists (max 30 s).
-#     Spec: docs/specs/SPEC-430-mega-tick-verb.md.
 #
 # GH_BIN / GIT_BIN override the `gh`/`git` binaries (tests point them at PATH-injected stubs
 # that log argv and return canned JSON, per the suite's existing convention -- see
@@ -497,7 +496,7 @@ _tick_args() {
         case "$1" in
           --pr) T_PR="$2" ;;
           --note) T_NOTE="$2"; T_HAS_NOTE=1 ;;
-          --attempt) T_ATTEMPT="$2" ;;
+          --attempt) T_ATTEMPT="$2"; [ -n "$2" ] || { _tick_refuse 64 "--attempt needs an id"; return; } ;;
           --branch-override) T_OVERRIDE="$2"; T_HAS_OVERRIDE=1 ;;
           --megagoals-root) OPT_MEGAGOALS_ROOT="$2" ;;
           --code-root) OPT_CODE_ROOT="$2" ;;
@@ -518,6 +517,7 @@ _tick_args() {
   [[ "$T_ID" =~ ^$(box_id_re slug)$ ]] || { _tick_refuse 64 "'$(_tick_clean "$T_ID")' is not an NN-slug sub-goal id"; return; }
   [[ "$T_PR" =~ ^[1-9][0-9]{0,8}$ ]] || { _tick_refuse 64 "--pr wants a PR number (1 to 9 digits, no leading zero)"; return; }
   [ "$T_HAS_NOTE" -eq 1 ] && [ "$T_KEEP" -eq 1 ] && { _tick_refuse 64 "--note and --keep-note are exclusive"; return; }
+  [ "$T_HAS_NOTE" -eq 0 ] || [ -n "$T_NOTE" ] || { _tick_refuse 64 "--note needs non-empty text"; return; }
   [ -n "$T_ATTEMPT" ] && [ "$T_NO_ATTEMPT" -eq 1 ] && { _tick_refuse 64 "--attempt and --no-attempt are exclusive"; return; }
   if [ "$T_HAS_NOTE" -eq 1 ]; then _tick_text_ok "--note" "$T_NOTE" || return; fi
   if [ "$T_HAS_OVERRIDE" -eq 1 ]; then
@@ -587,7 +587,9 @@ _tick_store() {
   else
     for root in "$croot" "$ltop"; do
       d="$(cd "$root" 2>/dev/null && _tick_as dir 2>/dev/null)" && [ -n "$d" ] || { _tick_refuse 5 "the attempt store does not resolve from $(_tick_clean "$root")"; return; }
-      case " ${cands[*]:-} " in *" $d "*) ;; *) cands+=("$d") ;; esac
+      local seen=0 c
+      for c in "${cands[@]:-}"; do [ "$c" = "$d" ] && seen=1; done
+      [ "$seen" -eq 1 ] || cands+=("$d")
     done
   fi
   for d in "${cands[@]}"; do
@@ -662,9 +664,11 @@ _tick_lock() {
       pid2="$(_tick_lock_pid "$lk")"
       if [ "$pid2" = "$pid" ]; then
         aside="$(mktemp "${TMPDIR:-/tmp}/mega-tick-pid.XXXXXX")" && mv -f "$lk/pid" "$aside" 2>/dev/null
-        rmdir "$lk" 2>/dev/null
+        rmdir "$lk" 2>/dev/null && continue
       fi
-      continue
+      # A reclaim that could not complete counts as a poll, so the wait stays bounded.
+      [ "$i" -ge "$polls" ] && { _tick_refuse 7 "$lk holds dead pid $pid and could not be reclaimed; once no driver is running: rmdir $(printf '%q' "$lk")"; return; }
+      sleep 0.2; i=$((i + 1)); continue
     fi
     if [ "$i" -ge "$polls" ]; then
       if [ -n "$pid" ]; then _tick_refuse 7 "$lk is held by live pid $pid; retry once pid $pid exits"
@@ -732,7 +736,7 @@ _tick_line() {
   T_NEW="- $(box_token done) $id, PR #$pr, merged $sha7"
   if [ "$T_KEEP" -eq 1 ]; then
     [ -n "$ann" ] || { _tick_refuse 3 "--keep-note given, but the $id line has no annotation to keep"; return; }
-    _tick_text_ok "the kept annotation" "$ann" || return
+    if _tick_has_ctl "$ann"; then _tick_refuse 3 "the kept annotation holds a control character"; return; fi
     T_NEW="$T_NEW ($ann)"
   elif [ "$T_HAS_NOTE" -eq 1 ]; then
     T_NEW="$T_NEW ($T_NOTE)"
@@ -817,11 +821,11 @@ cmd_tick() {
       "$T_STORE" "${ATTEMPT_STATE_BIN:-$BOX_DIR/../goal/attempt-state.sh}" "$T_ID" "$T_AID" "$ref" >&2
     return 6
   fi
-  printf '%s\n' "$out"
+  printf '%s\n' "$(_tick_clean "$out")"
   return 0
 }
 
-usage() { sed -n '2,141p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,140p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"

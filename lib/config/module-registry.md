@@ -158,6 +158,8 @@ real reader consumes it today (all rows below are, except where noted).
 | WAVE_MERGE_CMD | env-only | `$LIB_ROOT/goal/mega-merge.sh merge` | [impl] | mega | Override the merge command a completed wave invokes. |
 | WAVE_MERGE_LANE | env-only | `full` | [impl] | mega | Override the risk lane used at wave-merge time. |
 | WAVE_POLL_SECS | env-only | `0.2` | [impl] | mega | Polling interval while waiting for wave admission. |
+| MEGA_TICK_GH_TIMEOUT_S | env-only | `30` | [impl] | mega | Seconds `mega tick`'s one `gh pr view` may run (through `timeout` or `gtimeout`; unbounded when neither exists). |
+| MEGA_TICK_LOCK_WAIT_SECS | env-only | `10` | [impl] | mega | Seconds `mega tick` waits for the shared `flip.lock` before exit 7; `0` or a decimal, polled every 0.2 s. |
 
 ### queue (single-goal driver, `lib/queue/queue.sh`)
 
@@ -517,6 +519,8 @@ against any of these bare tokens as covered without a registry row.
 | KIT_LOG_DIR | the RESOLVED ledger root, exported by `lib/telemetry/kit-log-dir.sh` for child tools (`mega review`/`mega report` read it); operators configure `KIT_LEDGER_DIR` / `[ledger].location`, never this |
 |---|---|
 | KIT_LOAD_STUB | `lib/host/load-warn.sh` test seam: a number that replaces the real load average so `tests/test-host-load-warn.sh` runs on any host. Never set outside tests. |
+| MEGA_TICK_TEST | `lib/mega/mega.sh` `mega tick` test seam: with `=1`, `MEGA_TICK_TEST_PAUSE_FILE` is honored. Never set outside `tests/test-mega-tick.sh`. |
+| MEGA_TICK_TEST_PAUSE_FILE | `lib/mega/mega.sh` `mega tick` test seam: while this file exists (and `MEGA_TICK_TEST=1`), the verb pauses after the line read, holding the lock, at most 30 s. Never set outside tests. |
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |

@@ -503,7 +503,7 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 
 Live samples, read-only, taken 2026-11-25.
 
-**gh PR shape, merged** (`cd /Users/tieubao/orca/workspaces/VimMotion/next-run-2`):
+**gh PR shape, merged** (`cd <VimMotion checkout>`):
 
 ```
 $ gh pr view 96 --json state,mergeCommit,baseRefName,number,headRefName
@@ -597,7 +597,7 @@ $ gh pr view 21 --json headRefName 2>/dev/null
 
 The suffixed line 01 normalizes to `ci/release-pipeline`, which equals PR 21's head; sub-goal 40's line equals PR 96's head. The backticked and CR-ended shapes are not in this run; the fixture adds them because hand-written goal files elsewhere may carry them.
 
-**ROADMAP lines** (`git -C /Users/tieubao/orca/workspaces/VimMotion/next-run-2 show HEAD:docs/megagoals/01-human-first-upgrade/ROADMAP.md`):
+**ROADMAP lines** (`git -C <VimMotion checkout> show HEAD:docs/megagoals/01-human-first-upgrade/ROADMAP.md`):
 
 ```
 Format on completion: `- [x] NN-slug, PR #N, merged <sha>`. A line is checked only with a PR number and a merge sha.
@@ -619,11 +619,11 @@ $ git log -p -- docs/megagoals/01-human-first-upgrade/ROADMAP.md           # com
 +- [x] 21-app-shell-seams, PR #57, merged OPEN 
 ```
 
-**Attempt store** (VimMotion git common dir `/Users/tieubao/workspace/dwarvesf/VimMotion/.git/kit-attempts/`; task files are named by sub-goal id; worker ids masked):
+**Attempt store** (VimMotion git common dir `<VimMotion git dir>/kit-attempts/`; task files are named by sub-goal id; worker ids masked):
 
 ```
 $ bash lib/goal/attempt-state.sh dir                     # cwd: the VimMotion checkout
-/Users/tieubao/workspace/dwarvesf/VimMotion/.git/kit-attempts
+<VimMotion git dir>/kit-attempts
 $ (cd /tmp && bash lib/goal/attempt-state.sh dir; echo rc=$?)
 attempt-state: not a git repository (the store lives under .git)
 rc=3

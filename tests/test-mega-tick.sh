@@ -87,6 +87,7 @@ Format on completion: `- [x] NN-slug, PR #N, merged <sha>`.
 - [ ] 51-cites, see PR #96 for context, PR #
 - [ ] 52-cites-other, see PR #37, PR #
 EOF
+awk '{ if ($0 ~ /merged OPEN$/) $0 = $0 " "; print }' "$MD/ROADMAP.md" > "$TPL/rm.tmp" && cat "$TPL/rm.tmp" > "$MD/ROADMAP.md"  # the real incident line ends in a space
 chmod 644 "$MD/ROADMAP.md"
 printf '# goal\n\n**Branch:** ci/release-pipeline (existing)\n' > "$MD/goals/01-release-pipeline.md"
 printf '# goal\n\n**Branch:** `feat/13`\n' > "$MD/goals/13-hintkit-labels.md"
@@ -129,7 +130,8 @@ status_of() { ATTEMPT_REGISTRY_DIR="$1" bash "$AS" status "$2" 2>&1 | head -2 | 
 
 # ================================================================ TASK-003: audit, branch, line
 echo "== happy path, incidents, idempotence =="
-fresh; asc dispatch 40-drag-by-labels w1; snap
+refs() { G -C "$WK/code" for-each-ref; G -C "$WK/ledger" for-each-ref; }
+fresh; asc dispatch 40-drag-by-labels w1; snap; REFS0="$(refs)"
 tick 40-drag-by-labels --pr 96
 eq "C1 exit 0" "$RC" 0
 has "C1 AUDIT line" "$OUT" "AUDIT acme/code PR #96 MERGED base=develop head=feat/vn-40-drag-by-labels merge=0c471eb999dcbbcb51723e4ea22912d217e73fb8"
@@ -142,6 +144,7 @@ eq "C1 mode kept" "$(stat -f %Lp "$RM" 2>/dev/null || stat -c %a "$RM")" 644
 [ ! -e "$MDIR/.orchestrate/flip.lock" ] && [ -d "$MDIR/.orchestrate" ] && ok "C1 lock released, .orchestrate kept" || no "C1 lock state"
 eq "C47 one gh call" "$(wc -l < "$WK/gh.log" | tr -d ' ')" 1
 has "C47 gh argv" "$(cat "$WK/gh.log")" "argv=pr view 96 --json state,mergeCommit,baseRefName,headRefName,url cwd=$WK/code prompt=1 stdin_tty=no"
+eq "C47 no git ref written or fetched" "$(refs)" "$REFS0"
 cp "$RM" "$WK/rm.after1"
 tick 40-drag-by-labels --pr 96
 eq "C4 rerun exit 0" "$RC" 0
@@ -156,9 +159,11 @@ eq "C2 exit 0" "$RC" 0
 eq "C2 wrong sha repaired" "$(grep -c -x -F -- '- [x] 13-hintkit-labels, PR #37, merged 281992a' "$RM")" 1
 has "C2 backticked branch line" "$OUT" "BRANCH ok feat/13"
 has "C33 ATTEMPT none names the store" "$OUT" "ATTEMPT none 13-hintkit-labels (no 13-hintkit-labels.task in $CS"
+eq "C33 no new file in either store" "$(stores)" "$SNAP"
 
 fresh; snap; tick 21-app-shell-seams --pr 57
 eq "C3 exit 0" "$RC" 0
+eq "C3 one-line diff" "$(difflines)" 2
 eq "C3 merged OPEN repaired" "$(grep -c -x -F -- '- [x] 21-app-shell-seams, PR #57, merged 5555555' "$RM")" 1
 has "C3 CR-ended branch line" "$OUT" "BRANCH ok feat/x"
 
@@ -170,7 +175,7 @@ fresh; snap; tick 44-uat-pack-release-gate --pr 105; has "C8 gh stderr in messag
 fresh; snap; tick 44-uat-pack-release-gate --pr 103; has "C6 retry hint" "$ERR" "retry shortly"
 fresh; snap
 OUT="$(cd "$WK/ledger" && GH_BIN="$TMP/nope/gh" bash "$MEGA" tick m1 44-uat-pack-release-gate --pr 96 --megagoals-root "$WK/ledger/docs/megagoals" --code-root "$WK/code" 2>"$WK/err")"; RC=$?; ERR="$(cat "$WK/err")"
-refused "C12a gh missing" 1
+refused "C12a gh missing" 1; has "C12a names gh" "$ERR" "gh ("
 NJ="$TMP/nojq"; mkdir -p "$NJ"
 for t in bash git env dirname tr wc cut sed awk head cat mktemp rm; do ln -sf "$(command -v "$t")" "$NJ/$t"; done
 OUT="$(cd "$WK/ledger" && PATH="$NJ" GH_BIN="$GHS" bash "$MEGA" tick m1 44-uat-pack-release-gate --pr 96 --megagoals-root "$WK/ledger/docs/megagoals" --code-root "$WK/code" 2>"$WK/err")"; RC=$?; ERR="$(cat "$WK/err")"
@@ -178,9 +183,11 @@ refused "C12b jq missing" 1; has "C12b names jq" "$ERR" "jq"
 fresh; G -C "$WK/code" update-ref -d refs/remotes/origin/HEAD; G -C "$WK/code" update-ref -d refs/remotes/origin/develop; snap
 tick 40-drag-by-labels --pr 96
 refused "C13 no code-root default" 1; has "C13 names the fix" "$ERR" "remote set-head origin -a"
+has "C13 names the resolver" "$ERR" "kit_default_branch_here"; has "C13 names the code root" "$ERR" "git -C $WK/code"
 
 echo "== branch check =="
 fresh; snap; tick 44-uat-pack-release-gate --pr 108; refused "C14 goal branch differs from head" 3
+has "C14 names both branches" "$ERR" "names branch 'feat/vn-44-uat' but PR #108's head is 'feat/someone-else'"
 fresh; snap; tick 44-uat-pack-release-gate --pr 108 --branch-override "branch renamed after review"
 eq "C48 override exit 0" "$RC" 0
 has "C48 AUDIT carries reason" "$OUT" 'branch-override=branch\ renamed\ after\ review'
@@ -195,7 +202,7 @@ eq "C21 note" "$(grep -c -x -F -- '- [x] 01-release-pipeline, PR #21, merged 222
 echo "== line refusals =="
 fresh; snap; tick 49-open-other --pr 57; refused "C15 another done line names the PR" 3
 fresh; snap; tick 99-missing --pr 120; refused "C16a no line" 3
-fresh; snap; tick 13-hintkit --pr 120; refused "C16b prefix id" 3
+fresh; snap; tick 13-hintkit --pr 37; refused "C16b prefix id" 3
 fresh; snap; tick 13-hintkit-labels --pr 96 --branch-override "test the PR compare"; refused "C17 ticked with another PR" 3
 fresh; snap; tick 45-parked-thing --pr 120; refused "C18a parked" 3
 fresh; snap; tick 46-dup-line --pr 120; refused "C18b duplicate" 3
@@ -222,6 +229,8 @@ fresh; awk '{ printf "%s\r\n", $0 }' "$RM" > "$WK/x" && cat "$WK/x" > "$RM"; sna
 tick 40-drag-by-labels --pr 96; refused "C25 CRLF line" 3
 fresh; snap; tick 40-drag-by-labels --pr 96 --note "$(printf '%0201d' 0)"; refused "C50a note over 200 bytes" 3
 fresh; snap; tick 44-uat-pack-release-gate --pr 108 --branch-override "$(printf 'a\tb')"; refused "C50b override reason with a tab" 3
+fresh; snap; tick 40-drag-by-labels --pr 96 --note "$(printf '%0200d' 0)"; eq "C50c a 200-byte note is accepted" "$RC" 0
+fresh; snap; tick 44-uat-pack-release-gate --pr 999999999; refused "C50d a 9-digit PR passes usage (gh then refuses)" 1
 fresh; snap; tick 52-cites-other --pr 120
 eq "C52 open line citing another PR ticks" "$RC" 0
 eq "C52 line" "$(grep -c -x -F -- '- [x] 52-cites-other, PR #120, merged 4444444' "$RM")" 1
@@ -289,11 +298,12 @@ echo "== lock =="
 fresh; mkdir -p "$MDIR/.orchestrate/flip.lock"; sleep 30 & SPID=$!; echo "$SPID" > "$MDIR/.orchestrate/flip.lock/pid"; snap
 t0=$(date +%s); MEGA_TICK_LOCK_WAIT_SECS=0.4 tick 40-drag-by-labels --pr 96; t1=$(date +%s)
 kill "$SPID" 2>/dev/null; wait "$SPID" 2>/dev/null
-refused "C39 live holder" 7; has "C39 names the pid" "$ERR" "live pid $SPID"
+refused "C39 live holder" 7; has "C39 names the pid" "$ERR" "live pid $SPID"; has "C39 retry hint" "$ERR" "retry once pid $SPID exits"
 [ $((t1 - t0)) -le 5 ] && ok "C39 bounded wait ($((t1 - t0))s)" || no "C39 waited $((t1 - t0))s"
 fresh; mkdir -p "$MDIR/.orchestrate/flip.lock"; sh -c 'exit 0' & DPID=$!; wait "$DPID"; echo "$DPID" > "$MDIR/.orchestrate/flip.lock/pid"; snap
-tick 40-drag-by-labels --pr 96
+mkdir -p "$WK/tmpd"; TMPDIR="$WK/tmpd" tick 40-drag-by-labels --pr 96
 eq "C40 dead holder reclaimed: exit 0" "$RC" 0
+eq "C40 stale pid file moved aside, not deleted" "$(cat "$WK"/tmpd/mega-tick-pid.* 2>/dev/null | grep -cx "$DPID")" 1
 [ ! -e "$MDIR/.orchestrate/flip.lock" ] && ok "C40 lock released after" || no "C40 lock left"
 fresh; mkdir -p "$MDIR/.orchestrate/flip.lock"; snap
 MEGA_TICK_LOCK_WAIT_SECS=0 tick 40-drag-by-labels --pr 96; refused "C41 no pid file" 7; has "C41 rmdir hint" "$ERR" "rmdir"
@@ -332,6 +342,8 @@ for a in "SG-01 --pr 96" "40-drag-by-labels --pr 96 --note x --keep-note" "40-dr
          "40-drag-by-labels" "40-drag-by-labels --pr 096" "40-drag-by-labels --pr 1234567890" "40-drag-by-labels --pr 9a"; do
   tick $a; eq "C46 usage: $a" "$RC" 64
 done
+tick 40-drag-by-labels --pr 96 --note ""; eq "C46 usage: empty --note" "$RC" 64
+tick 40-drag-by-labels --pr 96 --attempt ""; eq "C46 usage: empty --attempt" "$RC" 64
 for s in "../x" ".hidden"; do
   OUT="$(cd "$WK/ledger" && GH_BIN="$GHS" bash "$MEGA" tick "$s" 40-drag-by-labels --pr 96 2>/dev/null)"; RC=$?
   eq "C46 mega slug $s" "$RC" 64
