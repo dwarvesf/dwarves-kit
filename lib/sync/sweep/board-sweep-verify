@@ -5,7 +5,7 @@
 # Why this exists. `board sync` is TWO-WAY: it writes status back from the
 # spoke into BACKLOG.md. A misconfigured spoke can therefore silently flip live
 # rows to `shipped`, and the sweep still reports rc=0 with every board "synced".
-# A shared Reminders list did exactly that to 30 rows across four repos, and the
+# A shared task list did exactly that to 30 rows across four repos, and the
 # only signal was a `git diff` nobody had run.
 #
 # So the real check is not the exit code. It is: after a full sweep, is every
@@ -21,7 +21,7 @@
 #   --log FILE     the sweep's log (default ~/Library/Logs/dwarves-kit/<LABEL>.log)
 #
 # A hand-run `board sync --dry-run` over ssh can die on a spoke's local
-# permission (an Apple Reminders Automation prompt, say), and that exit 1 is not
+# permission (an Apple Automation prompt, say), and that exit 1 is not
 # a sync refusal. For a no-write proof over ssh, run a sweep whose syncs avoid
 # that spoke.
 set -u
