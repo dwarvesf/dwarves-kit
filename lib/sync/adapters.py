@@ -357,6 +357,20 @@ class Registry:
             out.append(self._hook_fn(a, name))
         return out
 
+    def providers(self, name: str) -> list:
+        """(adapter name, callable, None) for every adapter that declares the hook, in name order; a provider that
+        fails to import or lacks the function is (adapter name, None, the error), so one caller (the brief) can
+        survive a bad provider instead of stopping at it."""
+        out = []
+        for a in self.adapters:
+            if not a.declares_hook(name):
+                continue
+            try:
+                out.append((a.name, self._hook_fn(a, name), None))
+            except HookFailure as failure:
+                out.append((a.name, None, failure.exc))
+        return out
+
     def hook(self, name: str):
         """The first provider's callable, or None when no adapter declares the hook at all."""
         for a in self.adapters:

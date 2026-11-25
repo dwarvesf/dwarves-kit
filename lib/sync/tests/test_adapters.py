@@ -210,6 +210,21 @@ def test_a_declared_hook_that_cannot_load_is_a_failure(tmp_path, monkeypatch):
     assert str(err.value.code).startswith("hook guard from b failed: ")
 
 
+def test_providers_survive_a_bad_provider(tmp_path, monkeypatch):
+    make(tmp_path, "a", "hook\tbrief_decisions\n",
+         py="from __future__ import annotations\n\n\ndef brief_decisions(h, c, f):\n    return [((6, 0), 'a')]\n")
+    make(tmp_path, "b", "hook\tbrief_decisions\n", py="def brief_decisions(:\n")
+    make(tmp_path, "c", "hook\tbrief_decisions\n", py="X = 1\n")
+    make(tmp_path, "d", "const\tmirror-label\tD\n", py=None)
+    use(monkeypatch, tmp_path)
+    got = adapters.load().providers("brief_decisions")
+    assert [g[0] for g in got] == ["a", "b", "c"]
+    assert got[0][1](None, None, None) == [((6, 0), "a")] and got[0][2] is None
+    assert got[1][1] is None and isinstance(got[1][2], SyntaxError)
+    assert got[2][1] is None and isinstance(got[2][2], AttributeError)
+    assert adapters.load().providers("guard") == []
+
+
 def test_constants_come_from_the_first_adapter_in_name_order(tmp_path, monkeypatch):
     make(tmp_path, "b", "const\tmirror-label\tSecond\n", py=None)
     make(tmp_path, "a", "const\tmirror-label\tFirst\n", py=None)

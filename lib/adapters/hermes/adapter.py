@@ -20,3 +20,16 @@ def build(app, opts, ctx):
                         assignee=opts.get("hermes_assignee"),
                         workspace=opts.get("hermes_workspace"),
                         body_expander=ctx.hooks.get("body_expander"))
+
+
+def brief_decisions(health, cluster, first_cluster):
+    """What this adapter adds to the daily brief: one decision per linked profile whose kit skills are out of
+    date. The sweep records the comparison each tick (`hermes_links`); a health state with no record compares
+    now. Returns [(sort key, text)]; the brief wraps each text in its own item."""
+    links = health.get("hermes_links")
+    if links is None:
+        import sweep_modules
+        links = sweep_modules.load("board-hermes").check_links()
+    return [((6, 0), f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`")
+            for lk in links
+            if lk.get("stale") and (lk.get("cluster") or first_cluster) == cluster]
