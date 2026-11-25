@@ -42,8 +42,7 @@ CREATE_ONLY_APPS = {"notion-taskboard"}
 # apps that only READ a foreign board and intake into the hub
 PULL_ONLY_APPS = {"notion-taskboard-pull"}
 LEGACY_APPS = {"notion", "notion-taskboard", "notion-taskboard-pull",
-               "github", "hermes", "multica"}
-from sources.github import GitHubSource  # noqa: E402
+               "hermes", "multica"}
 from sources.hermes import HermesSource  # noqa: E402
 from sources.multica import MulticaSource  # noqa: E402
 from sources.notion import NotionSource  # noqa: E402
@@ -382,12 +381,6 @@ def build_source(name: str, args, reg=None, state_path=None):
         return NotionTaskBoardPullSource(
             db=args.notion_taskboard_pull_db, props=props,
             done_option=args.notion_taskboard_pull_done_option or "Done")
-    if name == "github":
-        # repo empty is fine: gh resolves origin from the backlog's own repo
-        # (KIT_PROJECT_ROOT), never the process cwd, which under launchd is
-        # nowhere near the checkout.
-        return GitHubSource(args.github_repo or "",
-                            cwd=os.environ.get("KIT_PROJECT_ROOT"))
     if name == "hermes":
         if not args.hermes_home:
             sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
@@ -438,9 +431,6 @@ def main(argv=None):
                     help="Notion page id to create the board under (bootstrap)")
     ap.add_argument("--notion-title",
                     help="title of the Notion board created at bootstrap (default Backlog)")
-    ap.add_argument("--github-repo",
-                    help="owner/repo for the github app (default: the cwd's "
-                         "origin remote, as gh resolves it)")
     ap.add_argument("--hermes-target",
                     help="ssh host, or `local`, or `sudo:<user>` for an "
                          "instance owned by another uid on this host")

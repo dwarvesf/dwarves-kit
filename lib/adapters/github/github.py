@@ -13,7 +13,7 @@ Capability envelope (GitHub has open/closed and nothing finer):
     comment saying which, so the distinction survives in the thread
   - reverse: a closed issue reads back as shipped (finer states cannot be
     inferred from closed alone)
-  - unlike Hermes this spoke CAN reopen: a board row moving back to an active
+  - unlike a spoke with no reopen verb, this one CAN reopen: a board row moving back to an active
     state reopens its closed issue (git wins, visibly)
   - sync_fields=False: title/body freeze at create. Teammates retitling an
     issue must not stale-echo the board; the row is the record.
@@ -66,7 +66,7 @@ class GitHubSource:
             # merge (measured live: a re-sync flipped a dropped row to shipped
             # because this claimed to know more than GitHub does). The `done`
             # flag is the whole truth a binary spoke has; the engine derives
-            # the keyword against its snapshot, same as the Reminders spoke.
+            # the keyword against its snapshot, same as any spoke with a binary status.
             items.append({"rid": str(t["number"]),
                           "title": t.get("title") or "",
                           "done": closed,

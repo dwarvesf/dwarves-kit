@@ -1,12 +1,8 @@
 """GitHub adapter tests against a fake gh transport (no network)."""
 
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from sources.github import GitHubSource  # noqa: E402
+from github import GitHubSource  # noqa: E402
 from sync_core import Plan  # noqa: E402
 
 

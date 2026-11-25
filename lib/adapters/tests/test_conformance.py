@@ -229,3 +229,15 @@ def test_a_run_naming_another_app_copies_no_legacy_state(tmp_path, monkeypatch, 
                        "--apps", "fake-two", "--dry-run"])
     assert "migrated" not in capsys.readouterr().out
     assert not list(root.glob("*/reminders.state.json"))
+
+
+def test_github_takes_its_repo_from_the_flag_and_its_cwd_from_the_project_root(monkeypatch, tmp_path):
+    import backlog_sync
+    monkeypatch.setenv("KIT_PROJECT_ROOT", "/some/repo")
+    args = SimpleNamespace(github_repo="owner/name")
+    src = backlog_sync.build_source("github", args)
+    assert (src.repo, src.cwd) == ("owner/name", "/some/repo")
+    src = backlog_sync.build_source("github", SimpleNamespace(github_repo=None))
+    assert (src.repo, src.cwd) == ("", "/some/repo")
+    monkeypatch.delenv("KIT_PROJECT_ROOT")
+    assert backlog_sync.build_source("github", args).cwd is None
