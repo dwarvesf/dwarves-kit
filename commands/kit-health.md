@@ -128,6 +128,17 @@ else
   echo "  [skip] $KIT_ROOT not found"
 fi
 # --- end check 12 ---
+
+# 13. ui-verify pin age (INFO only, never a verdict input). The kit maintainers own the
+# pin (lib/ui-verify/README.md); the runner's doctor prints `pin age` and a `state:` line
+# that says to bump the pin past 120 days. Runs only when the install root exists.
+UI_ROOT="$(bash "$KIT_ROOT/lib/config/data-path.sh" path cache ui-verify 2>/dev/null)"
+if [ -n "$UI_ROOT" ] && [ -d "$UI_ROOT" ] && command -v node >/dev/null 2>&1; then
+  node "$KIT_ROOT/lib/ui-verify/run.mjs" --doctor 2>&1 | grep -E '^(pin age|state):' | sed 's/^/  ui-verify /'
+else
+  echo "  [skip] ui-verify install root not found (or no node)"
+fi
+# --- end check 13 ---
 ```
 
 ### Step 2: Present health report
@@ -153,6 +164,7 @@ Kit Health Report (date)
 [PASS/FAIL] No broken symlinks under the kit root
 [INFO]      Hook log activity
 [INFO]      Source citations: N
+[INFO]      ui-verify pin age and state
 [PASS/WARN] TODOs in hooks: N
 ================================
 Score: X/Y checks passed
@@ -184,7 +196,7 @@ Borrowed in spirit from superpowers' AGENTS.md "What We Will Not Accept". The ki
 2. **Hooks over 500ms.** Profile with `time` before merging. A slow hook degrades every session. (PHILOSOPHY.md `Maximum 500ms per hook execution`)
 3. **No source citation.** Every component must trace to a proven implementation. Net-new patterns without lineage get rejected and routed to "test as a standalone experiment first" (PHILOSOPHY.md `Synthesize, don't originate`)
 4. **Single-purpose features serving fewer than 2 lifecycle phases.** Belongs as a standalone script, not a kit feature. (PHILOSOPHY.md feature rejection criterion 2)
-   - *Exception (recorded):* `/kit:visual-team` and `/kit:ui-design` are downstream-facing (they serve UI-bearing consumer projects, not the kit's own phases) per `PHILOSOPHY.md` "Downstream-facing lanes". Do NOT flag them under this criterion. `kit:ui-acceptance-verifier` is a downstream-facing lens on the same footing: its named consumer is the Dwarves app repos that ship a preview per pull request (see its spec under `docs/specs/`), so do not flag it either. Any other single-purpose feature without a named downstream consumer still gets rejected here.
+   - *Exception (recorded):* `/kit:visual-team` and `/kit:ui-design` are downstream-facing (they serve UI-bearing consumer projects, not the kit's own phases) per `PHILOSOPHY.md` "Downstream-facing lanes". Do NOT flag them under this criterion. `kit:ui-acceptance-verifier` is a downstream-facing lens on the same footing: its named consumer is the Dwarves app repos that ship a preview per pull request (see its spec under `docs/specs/`), so do not flag it either; no consumer repo has run it yet (its spec says so), so a recorded consumer run is the evidence still owed. Any other single-purpose feature without a named downstream consumer still gets rejected here.
 5. **Duplicates an external tool.** If chub, GSD, gstack, Trail of Bits, or a Claude Code plugin already does it, depend on it. Do not rebuild. (PHILOSOPHY.md `External tools are dependencies, not features`)
    - *Exception (recorded):* **bounded cross-goal fan-out** (`/kit:dispatch`: one lead session fans out N disjoint VALIDATED specs into isolated worktree workers behind a disjointness gate, lead-owned convergence) is in-scope per the parallel-execution-boundary decision. Do NOT flag it as "duplicates GSD v2" or "competes with agent runtimes." Only a DAG / wave scheduler / crash-recovery durability runtime is the REJECT here; the kit deliberately stops at flat fan-out + a pairwise gate + a wait-queue and hands real ordering chains to GSD v2.
    - *Exception (recorded):* **the cross-session running-goal registry** (`lib/goal/goal-registry.sh`: one operator's N concurrent same-machine sessions over disjoint goals, coordinated by a passive per-goal file registry under `.git` that records, compares, and monitors) is in-scope per the cross-session registry decision. Do NOT flag it as "duplicates Nimbalyst" or "competes with agent runtimes." It is a passive ledger, not a runtime; the REJECT here is a coordinating daemon / lock server / scheduler. Coordination across machines, by 3+ live human operators, or with goal-ordering chains stays L5 (Nimbalyst / GSD v2).

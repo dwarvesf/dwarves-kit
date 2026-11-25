@@ -2,14 +2,42 @@
 
 A runner that opens a pull request's preview in a pinned headless Chromium, runs a lead-written scenario file against it, and judges every row itself. The `kit:ui-acceptance-verifier` agent calls it and reports the result in the battery grammar. The runner works without the agent: `node lib/ui-verify/run.mjs scenario --scenario <file> --out <dir>`.
 
-The runner refuses to run before it starts a browser when anything about the scenario file, the output directory or the hosts looks unsafe (exit 3). It never installs anything, never logs in, and writes only under `--out`.
+The runner refuses to run before it starts a browser when anything about the scenario file, the output directory or the hosts looks unsafe (exit 3). It never installs anything, never logs in, and writes only under `--out` (it creates that directory when it does not exist).
+
+## First slice: scenario layer only
+
+This slice runs a lead-written scenario against a preview and nothing more. These layers are not built: token conformance, layout invariants, an accessibility scan, pixel baselines, a vision pass, preview discovery from the pull request, a login or storage state, and a `--ui-only` flag. They are named follow-up slices in the spec under `docs/specs/`, and none starts before one consumer pull request has run this slice.
+
+A page that needs a sign-in cannot be verified here. Write a `skip` entry for that criterion. Its row is NO-CHECK, and the agent maps any NO-CHECK to `FAIL:escalate`, so the merged verdict is never SHIP-clean for it.
+
+PASS proves what the page showed the runner. A hostile page can detect an automated browser and show it something else (cloaking), and the runner cannot see that.
+
+The whole surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME`, the stdout row grammar and the `result.json` fields can change. Evolution rule: a new layer bumps `schema`, and the runner refuses a `schema` it does not know (exit 3).
+
+## Prerequisites
+
+- Node 22 or newer. An older node makes the runner exit 4, and the doctor prints the node version it found.
+- Playwright and one Chromium build in the install root (next section).
+- A preview URL for the head commit under test. The lead reads it from the pull request (the preview comment or the deployments list) and writes it into `target.url`. The runner does not look for it.
+
+## Where the runner lives
+
+The agent needs the absolute path of the kit's own runner. Never use a path inside the target repo.
+
+| Install | Runner path |
+|---|---|
+| Claude Code plugin | `~/.claude/plugins/cache/dwarves-marketplace/kit/<version>/lib/ui-verify/run.mjs` (find it with `ls -d ~/.claude/plugins/cache/dwarves-marketplace/kit/*/lib/ui-verify/run.mjs`) |
+| `install.sh` | `~/.claude/dwarves-kit/lib/ui-verify/run.mjs` |
+| kit checkout | `lib/ui-verify/run.mjs` in the checkout (kit maintainers) |
+
+Where to run it: a scenario run refuses (exit 3) when the runner's own real path sits inside the git work tree of the current directory. A plugin or `install.sh` copy sits outside any work tree, so it runs from anywhere. The kit checkout is a work tree that holds its own runner, so run a checkout copy from another directory. `--doctor` skips that check and runs from any directory.
 
 ## Install (an operator step)
 
-The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. Run the doctor from the kit checkout: it prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready.
+The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. The doctor prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready.
 
 ```bash
-node lib/ui-verify/run.mjs --doctor
+node <runner path> --doctor
 ```
 
 The install command it prints copies `package.json` and `package-lock.json` into the install root, runs `npm ci --ignore-scripts` there, then runs the local `playwright install chromium` with `PLAYWRIGHT_BROWSERS_PATH` set to `<install root>/browsers`. Expect about 23 MB of npm packages and about 586 MB of browsers, and about 3 minutes the first time.
@@ -21,15 +49,15 @@ The install command it prints copies `package.json` and `package-lock.json` into
 | 21 | the installed Playwright version differs from the pin |
 | 22 | the browser is missing |
 
-`--doctor` only reads the install. It skips the own-path check and every scenario guard, so run it from the kit checkout. A scenario run is the opposite: the runner refuses when its own real path sits inside the git work tree of the current directory, which includes the kit checkout, so run scenarios from another directory.
+`--doctor` only reads the install. It skips the own-path check and every scenario guard.
 
 ## Run
 
 ```bash
-node <kit>/lib/ui-verify/run.mjs scenario --scenario <file> --out <dir> [--step-timeout-ms N] [--scenario-timeout-ms N] [--run-budget-ms N]
+node <runner path> scenario --scenario <file> --out <dir> [--step-timeout-ms N] [--scenario-timeout-ms N] [--run-budget-ms N]
 ```
 
-The three timeout flags can only lower the defaults (step 10 s, scenario 30 s, run 300 s). There is no flag for the URL, hosts, loopback, install root, viewports or the sandbox: every trust input rides in the scenario file. Both the scenario file and `--out` must sit outside any git work tree, and `--out` must not exist or must be empty.
+Each timeout flag takes a positive whole number at or below its default (step 10 s, scenario 30 s, run 300 s); a larger value is refused, never clamped. There is no flag for the URL, hosts, loopback, install root, viewports or the sandbox: every trust input rides in the scenario file. Both the scenario file and `--out` must sit outside any git work tree, and `--out` must not exist or must be empty.
 
 | Exit | Meaning |
 |---|---|
@@ -52,9 +80,25 @@ observed <id> [neg]: <sanitized text>
 
 In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO-CHECK` row always carries a reason and never counts as `PASS`. The top-level `verdict` is `PASS` only when there is at least one row and every row is `PASS`. `observed` is page text with control, format and separator characters turned into spaces, a backtick turned into an apostrophe, a pipe turned into a slash, and a cut at 200 characters. `blocked_requests` lists the hosts the runner refused to reach, so a lead who forgot an API host can see why a page looks empty. `browser.pids` and `browser.leftover_pids` record the browser processes found by the run id the runner puts on the browser command line.
 
+## The scenario hash
+
+The lead computes the hash when it writes the scenario file and puts it in the brief. The agent compares it with the one the runner prints.
+
+```bash
+shasum -a 256 <scenario file> | cut -c1-16
+```
+
+The result is the first 16 hex characters of the file's SHA-256 (`sha256sum` gives the same on a host without `shasum`). The first stdout line shows the same 16 after `scenario-sha256`, and `result.json` holds all 64.
+
+## Preview identity
+
+The runner can tell which build a preview serves only if the app says so. The app sends its build id in a response header on the document at `target.url` (name the header in `identity.header`) or in a `<meta name>` tag (name it in `identity.meta`). The value must be the commit SHA, 7 to 40 hex characters (the runner trims it and ignores case). The runner compares it with `head_sha`: `matched` when `head_sha` starts with it, `mismatch` when it does not (every row is then NO-CHECK `preview is not the head`).
+
+Anything else is `unverified`: no `identity` key, no such header or meta, or a value that is not 7 to 40 hex characters (a UUID, a semver). The rows still run, and a stale preview can pass. The stdout line and the agent's report print `unverified` so a reader sees the gap, and nothing else flags it. A plain Cloudflare preview exposes no build id, so expect `unverified` there until the app adds a header or meta tag.
+
 ## Keeping the pin fresh
 
-Playwright is pinned exactly in `package.json` (with a `pinnedOn` date) and `package-lock.json`. Bump the pin at least every 120 days and on any Playwright security release: edit both files, rerun `tests/test-ui-acceptance-verifier.sh` with `UI_VERIFY_REQUIRE=1`, and re-record the live dispatch in `docs/verification/ui-acceptance-verifier.md` in the same pull request. Make the lockfile with `npm install --package-lock-only --ignore-scripts` in a scratch copy of `package.json`, never inside the kit checkout.
+The kit maintainers own the pin. Playwright is pinned exactly in `package.json` (with a `pinnedOn` date) and `package-lock.json`. Bump the pin at least every 120 days and on any Playwright security release. The age check is the doctor's `pin age` and `state:` lines (`state:` says to bump the pin once it is older than 120 days), and `commands/kit-health.md` runs the doctor when the install root exists. To bump: edit both files, rerun `tests/test-ui-acceptance-verifier.sh` with `UI_VERIFY_REQUIRE=1`, and re-record the live dispatch in `docs/verification/ui-acceptance-verifier.md` in the same pull request. Make the lockfile with `npm install --package-lock-only --ignore-scripts` in a scratch copy of `package.json`, never inside the kit checkout.
 
 ## Removing it (the orphan list)
 
@@ -114,7 +158,7 @@ Fields:
 - `target.head_sha` is the 40 lowercase hex commit under test.
 - `ready.text` is 1 to 100 characters that only the real app renders, never a login wall.
 - `viewports` is optional: up to 4 integers from 200 to 3000, default `[390, 768, 1280]`. The height is 900 for every width.
-- `identity` is optional and holds exactly one of `header` (a response header name) or `meta` (a `<meta name>`). A value that looks like a build id (7 to 40 lowercase hex) is compared with `head_sha`.
+- `identity` is optional and holds exactly one of `header` (a response header name) or `meta` (a `<meta name>`). A value that looks like a build id (7 to 40 hex characters, any case) is compared with `head_sha`; see Preview identity above.
 - `scenarios` holds at most 12 entries. `id` is `AC-<digits>`, `kind` is `criterion` or `negative`, and the pair is unique. An entry has `steps` (1 to 20) or `skip` (a reason), never both.
 - A scenario with steps must hold at least one `expect_text`, `expect_no_text` or `expect_url` step. Without one it is not run and its row is NO-CHECK `scenario asserts nothing`; the other entries still run.
 
@@ -143,7 +187,7 @@ The twelve roles: `button`, `link`, `textbox`, `checkbox`, `radio`, `combobox`, 
 
 Refusals (exit 3, one line on stderr, nothing written to `--out`):
 
-- a usage error, an unknown argument, or a timeout flag that is not a positive whole number below its default
+- a usage error, an unknown argument, or a timeout flag that is not a positive whole number at or below its default
 - a `--scenario` path that cannot be read or is not valid JSON, or that sits inside a git work tree
 - `--out` inside a git work tree, or `--out` that exists and is not empty
 - the runner's own real path sitting inside the git work tree of the current directory
