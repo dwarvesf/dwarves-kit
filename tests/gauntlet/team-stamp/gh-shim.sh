@@ -37,19 +37,49 @@ rollup() {
     owners=FAILURE; shape=FAILURE
     (cd "$REPO" && bash scripts/check-owners.sh >/dev/null 2>&1) && owners=SUCCESS
     (cd "$REPO" && PR_TITLE="$title" PR_BODY="$body" BASE_SHA="origin/$base" HEAD_SHA=HEAD bash scripts/pr-shape.sh >/dev/null 2>&1) && shape=SUCCESS
-    printf '[{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"%s","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"%s","workflowName":"CI"}]' "$owners" "$shape"
+    printf '[{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"%s","workflowName":"CI","startedAt":"2030-01-01T00:00:00Z","detailsUrl":"https://example.invalid/actions/runs/4242/job/1"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"%s","workflowName":"CI","startedAt":"2030-01-01T00:00:00Z","detailsUrl":"https://example.invalid/actions/runs/4242/job/2"}]' "$owners" "$shape"
 }
 view_json() {
     local base head files
     base="$(base_branch)"
     head="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)"
     files="$(git -C "$REPO" diff --name-only "origin/$base...HEAD" 2>/dev/null | jq -R '{path: .}' | jq -sc .)"
-    jq -c --argjson roll "$(rollup)" --arg head "$head" --argjson files "${files:-[]}" \
+    jq -c --argjson roll "$(rollup)" --arg head "$head" --arg base "$base" --argjson files "${files:-[]}" \
         --arg branch "$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null)" '
         {number: .number, title: .title, body: .body, state: (if .merged then "MERGED" else "OPEN" end),
-         isDraft: .draft, mergeable: "MERGEABLE", author: {login: "probe"},
+         isDraft: .draft, mergeable: "MERGEABLE", author: {login: "probe"}, baseRefName: $base,
          statusCheckRollup: $roll, files: $files, reviews: [], headRefOid: $head, headRefName: $branch}' "$STATE"
 }
+
+# gh api: the four reads scripts/pr-merge.sh makes, answered from the scratch repo. The workflow run
+# list names one pull_request run of ci.yml for this PR (id 4242) at the repo's head.
+if [ "${1:-}" = api ]; then
+    record "$*"
+    shift
+    ep="" expr=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --jq) expr="${2:-}"; shift ;;
+        --paginate) ;;
+        -*) ;;
+        *) ep="$1" ;;
+        esac
+        shift
+    done
+    head="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)"
+    base="$(base_branch)"
+    case "$ep" in
+    */actions/runs\?*)
+        doc="$(jq -nc --arg h "$head" '{workflow_runs: [{id: 4242, event: "pull_request", path: ".github/workflows/ci.yml", head_sha: $h, pull_requests: [{number: 1}]}]}')" ;;
+    */issues/*/timeline*) doc="[]" ;;
+    */pulls/*/files*)
+        doc="$(git -C "$REPO" diff --name-only "origin/$base...HEAD" 2>/dev/null | jq -R '{filename: .}' | jq -sc .)" ;;
+    */pulls/*) doc="$(jq -nc --arg h "$head" '{head: {sha: $h}}')" ;;
+    *) echo "gh-shim: unsupported: gh api $ep" >&2; exit 1 ;;
+    esac
+    if [ -n "$expr" ]; then printf '%s\n' "$doc" | jq -r "$expr"; else printf '%s\n' "$doc"; fi
+    exit 0
+fi
 
 [ "${1:-}" = pr ] || { record "$*"; echo "gh-shim: only 'gh pr ...' is served here: gh $*" >&2; exit 1; }
 sub="${2:-}"; shift 2

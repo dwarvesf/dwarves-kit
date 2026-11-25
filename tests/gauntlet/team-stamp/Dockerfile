@@ -14,6 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   submission/   where the stand-in writes pr.json
 #   CARD.md       the card
 #   PROMPT.md     the probe framing
+# The probe and the checker run as the image's non-root user "node", which owns /work. A new named
+# volume mounted at /work takes its owner from this directory, so the probe can write to it; the
+# seed is copied in as that user without preserved ownership, so nothing keeps a host uid.
+RUN mkdir -p /work && chown node:node /work
+USER node
 WORKDIR /work
 RUN git config --global user.email probe@example.invalid \
  && git config --global user.name "Gauntlet Probe" \

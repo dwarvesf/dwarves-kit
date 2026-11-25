@@ -207,6 +207,10 @@ check "the checker container has no network and mounts the probe volume read-onl
 check "the probe container mounts only the named volume (no host path)" bash -c "blk=\$(grep -B1 -A6 -- '-e ANTHROPIC_API_KEY' '$HERE/run.sh'); printf '%s' \"\$blk\" | grep -q -- '\$VOL:/work' && ! printf '%s' \"\$blk\" | grep -Eq ':/(seed|out|checker|pristine)' && grep -q 'docker volume create' '$HERE/run.sh'"
 check "the header says plainly the container path was not executed on the build host" bash -c "grep -q 'NOT EXECUTED ON THE BUILD HOST' '$HERE/run.sh'"
 check "the scrub scans without -I" bash -c "! grep -q 'grep -rlIF' '$HERE/run.sh' '$HERE/copy-out.sh'"
+check "the key goes in by name: no -e ANTHROPIC_API_KEY=value anywhere" bash -c "grep -Eq -- '-e ANTHROPIC_API_KEY \\\\\$' '$HERE/run.sh' && ! grep -Eq -- 'ANTHROPIC_API_KEY=[\"\$]' '$HERE/run.sh'"
+check "the echoed verdict is cut to capital letters before it is printed or compared" bash -c "grep -Fq 'verdict=\"\${verdict//[^A-Z]/}\"' '$HERE/run.sh'"
+check "the image runs as a non-root user that owns /work, and the seed copy keeps no ownership" bash -c "grep -Eq '^USER node' '$HERE/Dockerfile' && grep -Fq 'chown node:node /work' '$HERE/Dockerfile' && grep -Fq 'cp -R /seed/. /work/' '$HERE/run.sh' && ! grep -Eq 'cp -a' '$HERE/run.sh'"
+check "the run record line says the scrub matches the exact key and the key is rotated" bash -c "grep -Fq 'exact key only' '$HERE/run.sh' && grep -Fq 'exact key only' '$HERE/README.md'"
 
 echo "== T1.6 every generated test runs with the kit absent from PATH and HOME"
 kf="$(bash tests/test-stamp-kitfree.sh all 2>&1)"; krc=$?

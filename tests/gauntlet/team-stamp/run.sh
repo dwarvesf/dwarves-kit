@@ -22,7 +22,8 @@
 #   5. copies the six named result files out of the output directory (copy-out.sh), scrubs the key
 #      from the copies without -I, and removes the volume.
 # A hostile probe repository can at worst forge its own verdict inside the checker container, which
-# the run record states as a limit. Exit 69 when no container runtime answers, 64 when the key or the
+# the run record states as a limit. The key goes into the probe container by name (-e NAME), never as
+# a value on a command line. Exit 69 when no container runtime answers, 64 when the key or the
 # record dir is missing, 70 when the key scrub fails.
 set -euo pipefail
 
@@ -96,13 +97,17 @@ trap cleanup EXIT
 
 docker build -q -t "$IMAGE" -f "$HERE/Dockerfile" "$HERE" >/dev/null
 docker volume create "$VOL" >/dev/null
-# seed the volume from the host-written seed (read-only mount)
-docker run --rm -v "$VOL:/work" -v "$SEED:/seed:ro" "$IMAGE" bash -c 'cp -a /seed/. /work/'
+# the container user is not the host user: make the host-written directories readable to it, and the
+# one empty output directory writable (host-made; only the checker writes there)
+chmod -R a+rX "$SEED" "$CHECKER" "$PRISTINE"
+chmod 777 "$OUT"
+# seed the volume from the host-written seed (read-only mount); cp -R, not -a: no preserved ownership
+docker run --rm -v "$VOL:/work" -v "$SEED:/seed:ro" "$IMAGE" bash -c 'cp -R /seed/. /work/'
 
 # the probe: the volume and the one key
 rc=0
 docker run --rm \
-  -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+  -e ANTHROPIC_API_KEY \
   -e GH_SHIM_DIR=/work/submission -e GH_SHIM_REPO=/work/repo \
   -e PATH=/work/bin:/usr/local/bin:/usr/bin:/bin \
   -v "$VOL:/work" -w /work/repo \
@@ -128,7 +133,9 @@ if ! scrub_dir "$RUN_OUT" "$ANTHROPIC_API_KEY"; then
   for n in $RESULT_NAMES; do rm -f -- "${RUN_OUT:?}/$n"; done
   exit 70
 fi
+# the verdict file is a probe-influenced value: keep only capital letters before it is echoed or compared
 verdict="$(head -c 16 "$RUN_OUT/verdict.txt" 2>/dev/null | head -n 1 || true)"
+verdict="${verdict//[^A-Z]/}"
 echo "verdict: ${verdict:-none} (the container's own word; a hostile repository can forge it, read the checker output)"
-echo "run record persisted to $RUN_OUT; rotate or revoke the probe key now"
+echo "run record persisted to $RUN_OUT; the scrub matches the exact key only (not a slice or an encoding of it), so rotate or revoke the probe key now"
 [ "$verdict" = PASS ] && [ "$rc" -eq 0 ] && [ "$crc" -eq 0 ]
