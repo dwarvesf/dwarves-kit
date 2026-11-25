@@ -182,7 +182,7 @@ Re-run the step 0 check first. Then, in this order: remove the session's own wor
 
 ### Step 6: activity line
 
-Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. When the current directory is a git worktree of the repo that holds the configured file, the same repo-relative file inside that worktree is written instead, so the line is committable on the session's branch; the main checkout's copy is left alone. With no `wrap.activity_log` key in the kit-root `kit.toml`, it prints the line and says where it did not land; that is a clean result, not a failure. When the written file lands in a checkout sitting on the repo's default branch, the verb says so on stderr: leave the line uncommitted for the next feature PR, per step 2.
+Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. When the current directory is a git worktree of the repo that holds the configured file, the same repo-relative file inside that worktree is written instead, so the line is committable on the session's branch; the main checkout's copy is left alone. With no `wrap.activity_log` key in the kit-root `kit.toml`, it prints the line and says where it did not land; that is a clean result, not a failure. From a git repo other than the log's (a foreign repo's worktree), the line still lands in the one log, and stderr says so: `wrap log: wrote <abs path> (repo <log repo>), outside the current repo <repo>`; it is not in the current repo, so do not look for it there or commit it there. When the written file lands in a checkout sitting on the repo's default branch, the verb says so on stderr: leave the line uncommitted for the next feature PR, per step 2.
 
 ### Step 7: understand
 
