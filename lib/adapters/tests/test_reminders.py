@@ -1,12 +1,8 @@
 """Reminders adapter tests against a fake osascript transport."""
 
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from sources.reminders import RemindersSource, title_with_tags  # noqa: E402
+from reminders import RemindersSource, title_with_tags  # noqa: E402
 from sync_core import Plan, Row  # noqa: E402
 
 
@@ -98,7 +94,7 @@ import subprocess  # noqa: E402
 
 import pytest  # noqa: E402
 
-from sources import reminders  # noqa: E402
+import reminders  # noqa: E402
 
 
 class FakeRun:
@@ -189,7 +185,7 @@ def test_item_tag_is_not_doubled_by_the_body_suffix():
 def test_apply_script_writes_by_id_never_by_position():
     # A completed flip reorders the list, so a position read before the write
     # loop hits the wrong reminder. Every write must resolve the item by id.
-    from sources import reminders
+    import reminders
     assert "byId(s.rid).completed" in reminders.JXA_APPLY
     assert "byId(r.rid).name" in reminders.JXA_APPLY
     assert "byId(b.rid).body" in reminders.JXA_APPLY

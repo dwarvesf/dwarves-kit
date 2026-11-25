@@ -924,7 +924,7 @@ cmd_sync() {
   fi
   args+=(--apps "$v")
   local app fk
-  for app in reminders notion hermes multica github; do
+  for app in notion hermes multica github; do
     for fk in only_tags skip_tags intake; do
       v="$(kit_config_get "sync.${app}_${fk}" "")"
       [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
@@ -933,7 +933,6 @@ cmd_sync() {
   v="$(kit_config_get sync.scope_exit_cap "")"; [ -n "$v" ] && args+=(--scope-exit-cap "$v")
   # only for a repo whose archive is not BACKLOG-archive.md beside the board
   v="$(kit_config_get sync.archive_file "")"; [ -n "$v" ] && args+=(--archive-file "$v")
-  v="$(kit_config_get sync.reminders_list "")";  [ -n "$v" ] && args+=(--list "$v")
   v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
   v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
   v="$(kit_config_get sync.notion_title "")";    [ -n "$v" ] && args+=(--notion-title "$v")

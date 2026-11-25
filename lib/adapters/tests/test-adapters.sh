@@ -226,10 +226,13 @@ eq "the default is lib/adapters of the running kit (python)" "$(py_run - dir)" "
 mkdir -p "$W/decoyrepo/lib/adapters/decoy"
 printf 'app\tdecoy-app\ttwo-way\n' > "$W/decoyrepo/lib/adapters/decoy/adapter.tsv"
 printf 'from __future__ import annotations\nopen(%s, "w").write("ran")\n\n\ndef build(app, opts, ctx):\n    return None\n' "'$W/decoy.marker'" > "$W/decoyrepo/lib/adapters/decoy/adapter.py"
+# the kit's own adapters are in the default directory, so the decoy test compares with a run from a neutral cwd
+base_py="$(cd "$W" && env -u KIT_ADAPTERS_DIR "$PY" -I "$W/pydump.py" "$KIT/lib/sync" rows app)"
+base_sh="$(cd "$W" && env -u KIT_ADAPTERS_DIR bash -c '. "$0"; adapters_rows app' "$SH")"
 dec="$(cd "$W/decoyrepo" && KIT_PROJECT_ROOT="$W/decoyrepo" DWARVES_KIT="$W/decoyrepo" env -u KIT_ADAPTERS_DIR "$PY" -I "$W/pydump.py" "$KIT/lib/sync" rows app)"
-eq "python never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" ""
+eq "python never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" "$base_py"
 dec="$(cd "$W/decoyrepo" && KIT_PROJECT_ROOT="$W/decoyrepo" DWARVES_KIT="$W/decoyrepo" env -u KIT_ADAPTERS_DIR bash -c '. "$0"; adapters_rows app' "$SH")"
-eq "bash never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" ""
+eq "bash never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" "$base_sh"
 [ ! -e "$W/decoy.marker" ] && ok "the decoy module never ran" || bad "the decoy adapter module ran"
 # no kit.toml key selects the directory: plant the plausible ones in the project, operator and kit-root files
 mkdir -p "$W/cfg/op" "$W/cfg/root"
@@ -237,8 +240,8 @@ for f in "$W/decoyrepo/.kit.toml" "$W/cfg/op/kit.toml" "$W/cfg/root/kit.toml"; d
   printf '[adapters]\ndirs = "%s/lib/adapters"\ndir = "%s/lib/adapters"\n[sync]\nadapters_dir = "%s/lib/adapters"\n' "$W/decoyrepo" "$W/decoyrepo" "$W/decoyrepo" > "$f"
 done
 cfgenv=(KIT_PROJECT_ROOT="$W/decoyrepo" KIT_CONFIG_OPERATOR="$W/cfg/op" KIT_CONFIG_ROOT="$W/cfg/root")
-eq "no kit.toml key selects the directory (python)" "$(cd "$W/decoyrepo" && env -u KIT_ADAPTERS_DIR "${cfgenv[@]}" "$PY" -I "$W/pydump.py" "$KIT/lib/sync" rows app)" ""
-eq "no kit.toml key selects the directory (bash)" "$(cd "$W/decoyrepo" && env -u KIT_ADAPTERS_DIR "${cfgenv[@]}" bash -c '. "$0"; adapters_rows app' "$SH")" ""
+eq "no kit.toml key selects the directory (python)" "$(cd "$W/decoyrepo" && env -u KIT_ADAPTERS_DIR "${cfgenv[@]}" "$PY" -I "$W/pydump.py" "$KIT/lib/sync" rows app)" "$base_py"
+eq "no kit.toml key selects the directory (bash)" "$(cd "$W/decoyrepo" && env -u KIT_ADAPTERS_DIR "${cfgenv[@]}" bash -c '. "$0"; adapters_rows app' "$SH")" "$base_sh"
 [ ! -e "$W/decoy.marker" ] && ok "the decoy module still never ran" || bad "a kit.toml key made the loader run the decoy"
 # a missing directory is zero adapters and silent; an unreadable one is a load error
 eq "a missing directory loads zero adapters silently (bash)" "$(sh_run bash "$W/nosuchdir" adapters_rows app 2>&1; echo "rc=$?")" "rc=0"

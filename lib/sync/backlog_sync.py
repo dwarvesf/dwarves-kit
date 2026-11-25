@@ -41,7 +41,7 @@ from sync_core import (ID_TOKEN, apply_board, board_lock, build_state,  # noqa: 
 CREATE_ONLY_APPS = {"notion-taskboard"}
 # apps that only READ a foreign board and intake into the hub
 PULL_ONLY_APPS = {"notion-taskboard-pull"}
-LEGACY_APPS = {"reminders", "notion", "notion-taskboard", "notion-taskboard-pull",
+LEGACY_APPS = {"notion", "notion-taskboard", "notion-taskboard-pull",
                "github", "hermes", "multica"}
 from sources.github import GitHubSource  # noqa: E402
 from sources.hermes import HermesSource  # noqa: E402
@@ -51,10 +51,6 @@ from sources.notion_taskboard import (NotionTaskBoardSource,  # noqa: E402
                                       parse_map)
 from sources.notion_taskboard_pull import (  # noqa: E402
     NotionTaskBoardPullSource, expand_body)
-from sources.reminders import RemindersSource  # noqa: E402
-
-LEGACY_REMINDERS_STATE = (Path.home() / ".cache" / "backlog-reminders-sync"
-                          / "state.json")
 
 
 def atomic_write(path: Path, text: str, new_mode: int = 0o644) -> None:
@@ -356,8 +352,6 @@ def build_source(name: str, args, reg=None, state_path=None):
         if src is not None:
             _check_mode(name, src, reg.mode(name))
         return src
-    if name == "reminders":
-        return RemindersSource(args.list_name or "Backlog")
     if name == "notion":
         return NotionSource(db=args.notion_db, parent=args.notion_parent,
                             title=args.notion_title or "Backlog")
@@ -439,7 +433,6 @@ def main(argv=None):
     ap.add_argument("--state-root", type=Path,
                     default=Path(kit_data.path("state", "backlog-sync")))
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--list", dest="list_name", help="Reminders list name")
     ap.add_argument("--notion-db", help="bind an existing Notion database id")
     ap.add_argument("--notion-parent",
                     help="Notion page id to create the board under (bootstrap)")
@@ -580,12 +573,6 @@ def main(argv=None):
     strict_id = not (set(names) & (CREATE_ONLY_APPS | reg.create_only_apps()))
     if not warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id):
         sys.exit(1)
-
-    # one-time migration from the pre-kit single-source tool's state path
-    rem_state = state_dir / "reminders.state.json"
-    if not rem_state.exists() and LEGACY_REMINDERS_STATE.exists():
-        shutil.copy(LEGACY_REMINDERS_STATE, rem_state)
-        print(f"migrated legacy reminders state -> {rem_state}")
 
     ok = True
     for name in names:
