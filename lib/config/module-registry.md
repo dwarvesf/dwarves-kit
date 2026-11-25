@@ -41,7 +41,7 @@ toggleable modules, not to every `[modules]` line in `kit.toml`.
 | stats | Watch (Observe) | |
 | quiz_gate | Build (Execute) | |
 | weekend_batch | Reflect (Learn) | |
-| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. The `board mirror --engine sync` dry-run slice was removed (it had no caller); `lib/sync/cockpit.py` stays for the helpers `sources/hermes.py`, `sources/notion_taskboard_pull.py` and `lib/mega/runs-dashboard.py` import. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
+| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. The `board mirror --engine sync` dry-run slice was removed (it had no caller); `lib/sync/cockpit.py` stays for the helpers the adapters `lib/adapters/hermes/hermes.py` and `lib/adapters/notion/notion_taskboard_pull.py` and `lib/mega/runs-dashboard.py` import. Connectors are adapters (`lib/adapters/<name>/`, one manifest and one entry module each; SPEC-429): core `lib/board` and `lib/sync` name no app. The legacy `mirror`/`status`/`writeback` verbs + lib/adapters/hermes/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
 | proof_capture | Build (Execute) | visual proof capture: `lib/proof-capture/`, the `proof-capture` CLI (`run page`, `run tape`); hookless, standalone (the directory runs with no kit file). The `capture:` line in `proof-gate.sh contract` names it. |
 | money_gate | Check (Govern) | |
@@ -201,19 +201,20 @@ real reader consumes it today (all rows below are, except where noted).
 | BACKLOG_FILE | env-only | `$BACKLOG_DIR/../../_meta/BACKLOG.md` | [impl] | board | Override which `BACKLOG.md` the CLI reads/writes. |
 | BACKLOG_ID_RE | env-only | `[A-Z]+-[0-9]+` | [impl] | board | Regex for what counts as a backlog item ID. |
 | KIT_BOARDS_REGISTRY | env-only | `<repo-root>/_meta/boards.txt` | [impl] | board | Override the boards registry every reader uses: `board all|queue|mirror|status|writeback`, `board-mirror-cleanup.py`, `lib/mega/runs-dashboard.py`, `lib/reflect/propose.py` (its `LEARN_PROPOSE_COCKPIT` still wins). Beats the repo-root default, loses to `--registry`. |
-| DWARVES_BOARD_CONFIG | env-only | `config data path config board.json` (read only when the file exists) | [impl] | board | `lib/sync/sweep/board-health` and `board-hermes`: JSON file that supplies `board health run` and `board brief run` flags. `--config FILE` beats it; command-line flags come after and win. A bad file is a usage error. |
-| DWARVES_HERMES_LINKS | env-only | `config data path state hermes-links.json` | [impl] | board | `lib/sync/sweep/board-hermes`: path of the file `board hermes link` records each Hermes profile link in (profile, cluster rail, hub, boards, skills digest). |
+| DWARVES_BOARD_CONFIG | env-only | `config data path config board.json` (read only when the file exists) | [impl] | board | `lib/sync/sweep/board-health` and `lib/adapters/hermes/link.py`: JSON file that supplies `board health run` and `board brief run` flags. `--config FILE` beats it; command-line flags come after and win. A bad file is a usage error. |
+| DWARVES_HERMES_LINKS | env-only | `config data path state hermes-links.json` | [impl] | board | `lib/adapters/hermes/link.py`: path of the file `board hermes link` records each Hermes profile link in (profile, cluster rail, hub, boards, skills digest). |
 
 ### sync (two-way spoke mirror, `board sync` -> `lib/sync/backlog_sync.py`)
 
 All resolved in `board.sh cmd_sync` via `kit_config_get` at invocation and
 passed to the python engine as flags (the engine reads no TOML; ADR-0034
-single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
+single-reader fence). One env var, `KIT_ADAPTERS_DIR`; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push, not part of the two-way mesh. `notion-taskboard-pull` is the opposite posture, a read-only intake FROM a foreign board; it runs alone and the engine refuses an invocation that lists it beside any other app. |
 | - | sync.mode | `"manual"` | [impl] | sync | `manual` (default) or `cron`. Read by `lib/sync/deploy/macos/install` (kit ID-289): a repo must set `mode = "cron"` before that installer will render or load a per-repo scheduled-sync LaunchAgent; any other value is a clean refusal, not a silent fallthrough. Not read by `board.sh cmd_sync` itself -- manual `board sync` runs are unaffected by this key. ALSO re-read live by the installed `board-sync-cron` launcher on every scheduled run: flipping `mode` back to `"manual"` after install makes the next scheduled run skip cleanly (exit 0, logged) rather than silently keep syncing against a config that says it shouldn't. |
+| KIT_ADAPTERS_DIR | env-only | `lib/adapters/` of the running kit | [impl] | sync | `lib/sync/adapters.py` and `lib/sync/adapters.sh`: the one directory the adapter loader scans (an absolute path; empty or relative exits 1). It replaces the in-tree directory, it does not add to it, and no config key selects it. It has the trust of `PATH`: it picks code that runs with the caller's environment, so never point it at a path a project or another account can write. |
 | - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
 | - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |
@@ -574,7 +575,7 @@ above (`ship.confirm_bump`, `ship.confirm_commit`, `ship.create_changelog`,
 naming the accessor, so `bin/config get|list|explain` silently fenced nothing for them while
 their real consumers (`commands/ship.md`, `commands/debug.md`, `commands/review-team.md`)
 already read them root-only. `tests/test-config-registry.sh` AC10 asserts this table is
-EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (excluding
+EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (plus the `opt` rows of scope `root` and the `secret` rows of `lib/adapters/*/adapter.tsv`, which `board sync` reads root-only; excluding
 `lib/config/kit-config.sh`, the accessor's own definition + self-test, whose demo calls
 exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host`,
 `gauntlet.nope` -- that are not themselves root-only rows; `lib/decide/flick.sh` also reads `ledger.location` root-only, so it is listed), `commands/`,
@@ -651,7 +652,7 @@ allowlist, would close this), but are named here so they are not lost:
 `NC_SKIP_WAVE_TOKENS` (`lib/queue/orchestrate.sh`), `GOAL_SPECS_DIR`
 (`lib/goal/goal-drafts.sh`), `SPEC_RESERVE_FILE` / `SPEC_RESERVE_TTL` /
 `SPEC_RESERVE_MAX_TRIES` (`lib/spec/spec-next.sh`), `SIGNIFICANCE_WORTHINESS_MIN`
-(`lib/classify/significance-classify.sh`), `HERMES_BIN` (`lib/board/board-mirror.sh`),
+(`lib/classify/significance-classify.sh`), `HERMES_BIN` (`lib/adapters/hermes/board-mirror.sh`),
 `REPO_FILTER` (`lib/reflect/weekend-batch.sh`), `OFFLOAD_MAX_TOKENS`
 (`hooks/output-offload.sh`), `KIT_WEEKLY_JOBS` (`deploy/macos/kit-weekly`; its
 predecessor `INTEL_DIR` retired with the per-job session-intel launcher,

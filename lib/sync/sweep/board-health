@@ -7,7 +7,9 @@ through the same poster contract. One short line per item, in this order:
 
   extra    each stdout line of --line C=CMD (facts only the operator knows)
   hub      the one hub named by --hub C=NAME: `NAME: <active> active, <parked>
-           parked · Hermes mirror <n> open = hub`, where <n> counts the open
+           parked · <label> mirror <n> open = hub`, where <label> is the mirror
+           target's display word (the `mirror-label` constant of the adapter that
+           declares one, else `mirror target`) and <n> counts the open
            cards of the kanban board NAME whose body names `origin: NAME:`. A
            mismatch is a fault line instead. Active and parked rows are read
            from `git blame` on the origin copy of the board file.
@@ -52,7 +54,7 @@ Run flags:
   --stale-days N        staleness threshold (default 7)
   --sync-stale-hours N  a sweep record older than this is itself a problem (default 6)
   --kanban C=CMD        reader for cluster C: CMD is run as `CMD boards list --json`
-                        and `CMD --board SLUG list --json` (a `hermes kanban` wrapper)
+                        and `CMD --board SLUG list --json` (a kanban wrapper command)
   --line C=CMD          extra lines for cluster C: each stdout line of CMD is added;
                         a line that opens with the warning mark counts as a fault
   --hub C=NAME          the one hub that gets a line for cluster C (see above)
@@ -102,6 +104,24 @@ DEFAULT_DIGEST_STATE = os.path.join(_SYNC_STATE, "digest-state.json")
 
 def log(msg):
     print(f"health: {msg}", file=sys.stderr)
+
+
+_REGISTRY = None
+
+
+def registry():
+    """The adapter registry, read on first use: `record` runs once per repo per sweep tick and never needs it."""
+    global _REGISTRY
+    if _REGISTRY is None:
+        import adapters
+        _REGISTRY = adapters.load()
+    return _REGISTRY
+
+
+def mirror_label():
+    """The display word for the mirror target in digest lines: the `mirror-label` constant of the adapter that
+    declares one, else `mirror target`."""
+    return registry().const("mirror-label", "mirror target")
 
 
 def redact(text, cap=160):
@@ -415,9 +435,9 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
         if hub_name in kanban:
             mirrored = kanban[hub_name]["origins"].get(hub_name, 0)
             if mirrored == h["open"] + h["parked"]:
-                line += f" · Hermes mirror {mirrored} open = hub ✅"
+                line += f" · {mirror_label()} mirror {mirrored} open = hub ✅"
             else:
-                line, kind = "⚠️" + line[len("🗂️"):] + f" · Hermes mirror {mirrored} open ≠ hub", "fault"
+                line, kind = "⚠️" + line[len("🗂️"):] + f" · {mirror_label()} mirror {mirrored} open ≠ hub", "fault"
                 faults.append(line)
         fields.append({"name": kind, "value": line})
 
@@ -469,7 +489,7 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
     for sp in sorted(spokes):
         parts.append(f"{sp} " + ("✅" if all(spokes[sp]) else "❌"))
     if mirror:
-        parts.append("hermes mirror " + ("❌" if mirror_bad else ("⏸" if mirror.get("skipped") else "✅")))
+        parts.append(mirror_label().lower() + " mirror " + ("❌" if mirror_bad else ("⏸" if mirror.get("skipped") else "✅")))
     n_err = len(failed) + (1 if mirror_bad else 0)
     if recs:
         fields.append({"name": "sync", "value": "🔄 sync: " + (" · ".join(parts) + " · " if parts else "")
@@ -480,7 +500,7 @@ def build_payload(cluster, rail, args, registry_rows, health, digest, last_run, 
         first = (recs[n].get("errors") or ["no detail"])[-1]
         attention.append(f"❌ sync failed: {n} · {first}")
     if mirror_bad:
-        attention.append("❌ hermes mirror failed: " + ((mirror.get("errors") or ["no detail"])[-1]))
+        attention.append(f"❌ {mirror_label().lower()} mirror failed: " + ((mirror.get("errors") or ["no detail"])[-1]))
     if lagging:
         newest = max(recs[n]["ts"] for n in recs)
         attention.append(f"⚠️ sweep record is {int((now - newest) // 3600)}h old: the sweep may not be running")
@@ -538,6 +558,7 @@ def cmd_run(args):
         print("board health run: empty or missing --registry", file=sys.stderr)
         return 64
     prepare_run_args(args)
+    mirror_label()   # a bad manifest stops the run here, before anything posts
     quiet = set(args.quiet or [])
     write = not (args.dry_run or args.no_state)
     health = read_json(args.health_state_file, {})

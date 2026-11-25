@@ -96,7 +96,7 @@ apps="$(kit_config_get sync.apps "")"
 [ -n "$apps" ] || apps="$(kit_config_get sync.sources "")"
 if [ -z "$apps" ]; then
   echo "install: sync.mode=cron but no [sync] apps configured in $REPO/.kit.toml" >&2
-  printf '  add e.g.:\n  [sync]\n  apps = "reminders"\n' >&2
+  printf '  add e.g.:\n  [sync]\n  apps = "<app>"\n' >&2
   exit 2
 fi
 

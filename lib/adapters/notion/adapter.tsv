@@ -1,0 +1,19 @@
+app	notion	two-way
+app	notion-taskboard	create-only
+app	notion-taskboard-pull	pull-only
+opt	notion-db	notion_db	-	bind an existing Notion database id
+opt	notion-parent	notion_parent	-	Notion page id to create the board under (bootstrap)
+opt	notion-title	notion_title	-	title of the Notion board created at bootstrap (default Backlog)
+opt	notion-taskboard-db	notion_taskboard_db	-	target Notion database id for the one-way insert-only Task Board push
+opt	notion-taskboard-status-map	notion_taskboard_status_map	-	board-state->option map, e.g. 'queued=Backlog,executing=In progress'
+opt	notion-taskboard-status-default	notion_taskboard_status_default	-	Status option for board states not in the map
+opt	notion-taskboard-priority-map	notion_taskboard_priority_map	-	tag->Priority map, e.g. 'u-hi=P0,u-mid=P1,u-lo=P2'
+opt	notion-taskboard-weight-map	notion_taskboard_weight_map	-	tag->Weight map, e.g. 'f-hi=2,f-mid=5,f-lo=13'
+opt	notion-taskboard-owner	notion_taskboard_owner	-	Owner value (people-prop user id by default)
+opt	notion-taskboard-props	notion_taskboard_props	-	JSON overriding prop names {title,status,priority,weight,owner,notes}
+opt	notion-taskboard-types	notion_taskboard_types	-	JSON overriding prop types {status,priority,weight,owner}
+opt	notion-taskboard-pull-db	notion_taskboard_pull_db	-	source Notion database id for the read-only Task Board intake
+opt	notion-taskboard-pull-props	notion_taskboard_pull_props	-	JSON overriding prop names {title,status,notes,queue}
+opt	notion-taskboard-pull-done-option	notion_taskboard_pull_done_option	-	Status option treated as done, and thus never pulled (default: Done)
+hook	guard
+hook	body_expander

@@ -752,6 +752,47 @@ has "naming the file" "$(cat "$WORK/bad.err")" "cannot read config"
 python3 "$BRIEF" run --config 2>"$WORK/bad.err"; rc=$?
 [ "$rc" -ne 0 ]; eq "--config without a file is an error" "$?" "0"
 
+echo "case report-hooks (adapters' brief_decisions providers; the mirror word is an adapter constant):"
+mk_ok() {  # mk_ok <adapters dir>: a healthy provider that also names the mirror
+  mkdir -p "$1/ok"
+  printf 'const\tmirror-label\tFixture\nhook\tbrief_decisions\n' > "$1/ok/adapter.tsv"
+  printf 'from __future__ import annotations\n\n\ndef brief_decisions(health, cluster, first_cluster):\n    return [((6, 0), "fixture decision for %%s" %% cluster)]\n' > "$1/ok/adapter.py"
+}
+AD1="$WORK/ad-ok"; mk_ok "$AD1"
+fresh
+KIT_ADAPTERS_DIR="$AD1" run "$NOW" --cluster alpha; rc=$?
+eq "a healthy provider: the brief exits 0" "$rc" "0"
+has "its decision rides in Your call" "$(msg)" "fixture decision for alpha"
+has "the mirror word is the adapter's constant" "$(msg)" "the Fixture card is still open"
+AD2="$WORK/ad-bad"; mk_ok "$AD2"
+mkdir -p "$AD2/boom" "$AD2/broken" "$AD2/nofn" "$AD2/exiter"
+printf 'raise SystemExit("exits at import")\n' > "$AD2/exiter/adapter.py"
+for n in boom broken nofn exiter; do printf 'hook\tbrief_decisions\n' > "$AD2/$n/adapter.tsv"; done
+printf 'from __future__ import annotations\n\n\ndef brief_decisions(health, cluster, first_cluster):\n    raise RuntimeError("SENTINEL-4f2a-secret")\n' > "$AD2/boom/adapter.py"
+printf 'def brief_decisions(:\n' > "$AD2/broken/adapter.py"
+printf 'X = 1\n' > "$AD2/nofn/adapter.py"
+fresh
+KIT_ADAPTERS_DIR="$AD2" run "$NOW" --cluster alpha; rc=$?
+eq "providers that raise, fail to import or lack the function: the brief still exits 0" "$rc" "0"
+has "a raising provider adds one line with the adapter and the class" "$(last)" "report hook boom failed: RuntimeError"
+has "a provider that fails to import, the same" "$(last)" "report hook broken failed: SyntaxError"
+has "a provider without the function, the same" "$(last)" "report hook nofn failed: AttributeError"
+has "a provider that exits at import, the same" "$(last)" "report hook exiter failed: SystemExit"
+has "the healthy provider's decision still rides" "$(msg)" "fixture decision for alpha"
+lacks "the sentinel message is not in the brief" "$(last)" "SENTINEL-4f2a-secret"
+has "the sentinel message is on stderr" "$(cat "$WORK/run.err")" "SENTINEL-4f2a-secret"
+eq "the failures flag attention" "$(jq -r '.attention' <<<"$(last)")" "true"
+AD3="$WORK/ad-none"; mkdir -p "$AD3"
+fresh
+KIT_ADAPTERS_DIR="$AD3" run "$NOW" --cluster alpha; rc=$?
+eq "with no adapter the brief runs" "$rc" "0"
+has "the mirror word falls back to 'mirror target'" "$(msg)" "the mirror target card is still open"
+fresh
+run "$NOW" --cluster alpha
+has "with the real adapter the word is Hermes, as before" "$(msg)" "the Hermes card is still open"
+grep -qF 'def brief_decisions' "$HERE/../lib/adapters/hermes/adapter.py" && ok "the Hermes adapter provides the hook it declares" || bad "no brief_decisions in the Hermes adapter"
+case "$(grep -iE 'hermes|notion|reminders|multica' "$BRIEF" "$HEALTH")" in "") ok "board-brief and board-health name no app";; *) bad "app word left: $(grep -iE 'hermes|notion|reminders|multica' "$BRIEF" "$HEALTH" | head -3)";; esac
+
 echo "case verb:"
 out="$("$BOARD" brief run --help 2>&1)"
 has "board brief run --help" "$out" "--incidents"

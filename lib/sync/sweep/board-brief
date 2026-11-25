@@ -27,8 +27,9 @@ Message order, a blank line between blocks (the `▌` lines read like a neko rep
                         explicit `decisions`; hub/mirror drift; a board past its triage threshold
                         (tag `waiting Nd`, `N cards wait in <board> triage`, up to two quoted
                         titles of 40 chars with the `untrusted ` marker dropped, `**move each card
-                        to ready, blocked or done.**`); a linked Hermes profile whose kit skills
-                        are stale. Order: items with a `due` epoch or a ` by <Day D Mon>` date
+                        to ready, blocked or done.**`); what the adapters' report hooks add (a linked
+                        profile whose kit skills are stale, say). A hook that fails adds one
+                        warning line naming the adapter and the error class, never its message. Order: items with a `due` epoch or a ` by <Day D Mon>` date
                         first (nearest), incident rows ("Triage or map" before "Close"), hook
                         decisions, other 👉 items by `wait_days` descending, drift, triage by
                         longest wait, stale skills last. Three items show, the rest is one
@@ -132,7 +133,6 @@ sys.path.insert(0, str(HERE))
 import sweep_modules  # noqa: E402
 
 H = sweep_modules.load("board-health")
-HM = sweep_modules.load("board-hermes")
 DAY = H.DAY
 ORIGIN_ID_RE = re.compile(r"^origin:\s*([^\s:]+):(\S+)", re.M)
 TERMINAL_ROW = ("shipped", "dropped", "done", "closed")
@@ -433,6 +433,7 @@ def mirror_drift(reader, hub_name, hub_path):
         if m and m.group(1) == hub_name:
             status_of[m.group(2)] = c.get("status")
     out = []
+    label = H.mirror_label()
     for rid, card in sorted(status_of.items()):
         row = rows.get(rid)
         if not row or not row[0]:
@@ -441,9 +442,9 @@ def mirror_drift(reader, hub_name, hub_path):
         card_open = card not in ("done", "archived")
         board_done = board in TERMINAL_ROW
         if card_open and board_done:
-            what = f"board says {board}, the Hermes card is still open"
+            what = f"board says {board}, the {label} card is still open"
         elif not card_open and not board_done:
-            what = f"the Hermes card is done, the board says {board}"
+            what = f"the {label} card is done, the board says {board}"
         else:
             continue
         out.append({"id": rid, "board": board, "card": card, "what": what})
@@ -553,6 +554,25 @@ def board_lines_of(fields, kanban, listed):
     return out
 
 
+# --- report hooks -----------------------------------------------------------------
+
+def report_decisions(health, cluster, first_cluster):
+    """The decisions every adapter's `brief_decisions` hook adds, [(sort key, text)], and one fault line for
+    each provider that raised, failed to import or lacks the function. The line names the adapter and the
+    error class only; the message goes to stderr. This differs from the loader's rule for a page-body hook on
+    purpose: a missing stale-link line must not stop the daily brief."""
+    out, faults = [], []
+    for name, fn, err in H.registry().providers("brief_decisions"):
+        try:
+            if err is not None:
+                raise err
+            out.extend(fn(health, cluster, first_cluster))
+        except (Exception, SystemExit) as e:  # noqa: BLE001
+            log(f"report hook {name} failed: {type(e).__name__}: {e}")
+            faults.append(f"report hook {name} failed: {type(e).__name__}")
+    return out, faults
+
+
 # --- one cluster's brief -----------------------------------------------------------
 
 def compose(cluster, rail, args, rows, health, digest, bstate, now):
@@ -607,14 +627,10 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         if t:
             calls.append(((5, -int(t.group(3))), triage_item(t.group(1), int(t.group(2)), int(t.group(3)), kanban.get(t.group(1)))))
 
-    # a Hermes profile linked to this kit whose skills are out of date: the sweep records
-    # the comparison each tick, and a brief with no record compares now
-    links = health.get("hermes_links")
-    if links is None:
-        links = HM.check_links()
-    for lk in links:
-        if lk.get("stale") and (lk.get("cluster") or args.first_cluster) == cluster:
-            calls.append(((6, 0), make_item(text=f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`")))
+    # what the adapters' report hooks add; a hook that fails costs one warning line, never the brief
+    hook_calls, hook_faults = report_decisions(health, cluster, args.first_cluster)
+    for key, text in hook_calls:
+        calls.append((key, make_item(text=text)))
     items = [it for _, it in sorted(calls, key=lambda c: c[0])]
     decisions = [it["flat"] for it in items]
 
@@ -629,7 +645,7 @@ def compose(cluster, rail, args, rows, health, digest, bstate, now):
         return line
 
     attention = [linkify(f["value"]) for f in hp["fields"] if f["name"] == "attention"]
-    error_lines = [ln if ln.startswith(("⚠️", "⛔", "❌")) else f"⚠️ {ln}" for ln in attention + feed_faults]
+    error_lines = [ln if ln.startswith(("⚠️", "⛔", "❌")) else f"⚠️ {ln}" for ln in attention + feed_faults + hook_faults]
     errors = bool(error_lines)
 
     # Details day: Monday in Vietnam, or a preview
@@ -736,6 +752,7 @@ def cmd_run(args):
         print("board brief run: empty or missing --registry", file=sys.stderr)
         return 64
     H.prepare_run_args(args)
+    H.mirror_label()   # a bad manifest stops the run here, before anything posts
     args.incident_map = H.per_cluster_flags(args.incidents)
     args.faults_only = []
     write = not (args.dry_run or args.no_state)

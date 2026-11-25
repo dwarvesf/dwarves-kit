@@ -15,7 +15,7 @@
 # (bash-launcher-to-python, the exact delegation shape `lib/gate/proof-table-gen.sh` ->
 # `lib/gate/proof-table-gen.py` already established: bash 3.2 has no associative arrays, which
 # the phase/token/PR joins need). Same shape as `lib/board/board.sh` delegating to
-# `lib/board/board-mirror.sh` for its own heavier verbs. The single-verb orphans
+# `lib/adapters/hermes/board-mirror.sh` for its own heavier verbs. The single-verb orphans
 # (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh`) stay at root as documented "deliberate
 # orphans" pending their own ruling. `lib/precedent.sh` was promoted out of that set into
 # `lib/precedent/precedent.sh` (records + inventory surfaces, stable entry
@@ -123,7 +123,7 @@
 #
 # GH_BIN / GIT_BIN override the `gh`/`git` binaries (tests point them at PATH-injected stubs
 # that log argv and return canned JSON, per the suite's existing convention -- see
-# `lib/board/board-writeback.sh`'s `GH_BIN`). No real network call is ever made by the test
+# `lib/adapters/hermes/board-writeback.sh`'s `GH_BIN`). No real network call is ever made by the test
 # suite; every gh/git interaction here is a plain, stub-friendly subprocess call.
 
 set -uo pipefail

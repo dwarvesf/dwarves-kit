@@ -11,13 +11,14 @@ The cockpit board: a kanban over each repo's `_meta/BACKLOG.md`. The markdown fi
 - `board.sh queue`: emit the allow-listed overnight queue rows that `lib/queue/queue.sh` consumes.
 - `board.sh run <ID>`: scaffold a one-row mega-goal dir and print the `orchestrate.sh run` command (`board-run.sh`). It never launches a session.
 - `board.sh work`: read-only table of who is on what, joined from board, git, Orca and the run ledger (`work.sh`).
-- `board.sh mirror|status|writeback|mirror-cleanup`: the git to Hermes kanban bridge and its reverse leg (`board-mirror.sh`, `board-writeback.sh`, `board-mirror-cleanup.py`).
+- An adapter verb: a first word that no case in `board.sh` names is looked up in the adapter manifests (`lib/adapters/*/adapter.tsv`, `verb` rows), and the first adapter that declares it runs its script with the manifest args first, then the caller's (`lib/adapters/README.md`). The kanban bridge's verbs (`mirror`, `status`, `writeback`, `mirror-cleanup` and the link verb) come this way; their scripts and text live in that adapter's directory. A core verb is never looked up, so `next`, `get` and `set` pay nothing.
 - `board.sh state-check`: check the state values a repo stores in its OWN registry file (default `_meta/states.toml`) with `--all [--strict]`, `--staged` (a pre-commit hook blocks NEW drift only) or `--fix` (`state_check.py`). Exit 0 clean, 1 blocked, 2 internal error. See "State check" below.
-- `board.sh sweep|health|brief|hermes`: forwarders to the scripts in `lib/sync/sweep/`.
+- `board.sh sweep|health|brief`: forwarders to the scripts in `lib/sync/sweep/`.
 - `board.sh init|capture|sync|publish|promote`: scaffold board files, file one item, run the sync engine, commit and push the board file, review staged candidates.
 
 **Layout**
 - `parse-board.sh`: the one structured BACKLOG parser that `queue` and the mirror reuse.
+- `board-lib.sh`: the helpers `board.sh` and the verb scripts share (flag parsing, repo-root resolution, the mega rollup); sourced, never run.
 - `lib/board/bin/add-backlog`, `lib/board/bin/board-normalize`: Python helpers behind `promote` and `normalize`.
 
 **State check**
