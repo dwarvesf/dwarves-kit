@@ -37,9 +37,9 @@ STAMP_VERSION=1
 LOCK_REL=".claude/team-stamp.lock"
 BASE_KEYS="DEFAULT_BRANCH OWNER TAGS PRODUCT_PATHS DOOR_PATHS DOOR_APPROVER BOARD_FILE DECISION_TAG"
 DERIVED_KEYS="TAGS_ERE TAGS_COLON TAGS_AWK PRODUCT_ERE PRODUCT_ARRAY DOOR_ARRAY DOOR_CASE"
-KNOWN_KEYS="$BASE_KEYS $DERIVED_KEYS STAMP_VERSION KIT_MARKER"
+KNOWN_KEYS="$BASE_KEYS $DERIVED_KEYS STAMP_VERSION AGENTS_MARKER"
 # Text a generated file must not carry: a path under the kit, or an absolute home path.
-KIT_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
+LEAK_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
 
 STAGE=""
 trap '[ -z "$STAGE" ] || rm -rf "$STAGE"' EXIT
@@ -248,10 +248,10 @@ fi
   printf 'using: DECISION_TAG=%s (%s)\n' "$DECISION_TAG" "$(src_of DECISION_TAG "$F_DECISION_TAG")"
 } >&2
 
-KIT_MARKER=""
-if need_key KIT_MARKER; then
-  KIT_MARKER="$(head -n 1 "$SRC_ROOT/lib/adopt/AGENTS.pointer.md" 2>/dev/null | tr -d '\r')"
-  case "$KIT_MARKER" in "<!-- kit:agents-pointer"*) ;; *) refuse "line 1 of lib/adopt/AGENTS.pointer.md is not the kit marker" "restore lib/adopt/AGENTS.pointer.md";; esac
+AGENTS_MARKER=""
+if need_key AGENTS_MARKER; then
+  AGENTS_MARKER="$(head -n 1 "$SRC_ROOT/lib/adopt/AGENTS.pointer.md" 2>/dev/null | tr -d '\r')"
+  case "$AGENTS_MARKER" in "<!-- kit:agents-pointer"*) ;; *) refuse "line 1 of lib/adopt/AGENTS.pointer.md is not the kit marker" "restore lib/adopt/AGENTS.pointer.md";; esac
 fi
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/stamp.XXXXXX")" || exit 1
@@ -299,8 +299,8 @@ stage_row() { # stage_row i: leave the new content of row i in $STAGE/r<i>
   if grep -Eq '\{\{[A-Za-z_][A-Za-z0-9_]*\}\}' "$out"; then
     refuse "${TGT[i]} still holds an unresolved {{KEY}} after the render" "use only these keys: $KNOWN_KEYS"
   fi
-  if grep -Eq "$KIT_PATTERN" "$out" || { [ -n "${HOME:-}" ] && [ "${#HOME}" -gt 1 ] && grep -qF "$HOME" "$out"; }; then
-    refuse "${TGT[i]} would carry a path under the kit or an absolute home path: $(grep -En "$KIT_PATTERN" "$out" | head -n 1 | cut -c1-80)" "remove that text from the template; generated files must run with no kit"
+  if grep -Eq "$LEAK_PATTERN" "$out" || { [ -n "${HOME:-}" ] && [ "${#HOME}" -gt 1 ] && grep -qF "$HOME" "$out"; }; then
+    refuse "${TGT[i]} would carry a path under the kit or an absolute home path: $(grep -En "$LEAK_PATTERN" "$out" | head -n 1 | cut -c1-80)" "remove that text from the template; generated files must run with no kit"
   fi
 }
 

@@ -15,7 +15,7 @@ expect() { # expect <label> <command...>
 }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/test-stamp-merge.XXXXXX")" || exit 1
-KIT_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
+LEAK_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
 newrepo() { local d; d="$(mktemp -d "$WORK/r.XXXXXX")" && git -C "$d" init -q 2>/dev/null && echo "$d"; }
 have_shellcheck() { command -v shellcheck >/dev/null 2>&1; }
 
@@ -60,7 +60,7 @@ done
 
 # 3. every generated file: kit-free, no dash characters, no python3, no bare hex digest, shellcheck clean
 for f in scripts/pr-merge.sh scripts/test-pr-merge.sh scripts/negctl.sh scripts/test-negctl.sh; do
-  expect "$f names no kit path" bash -c "! grep -Eq '$KIT_PATTERN' '$A/$f'"
+  expect "$f names no kit path" bash -c "! grep -Eq '$LEAK_PATTERN' '$A/$f'"
   expect "$f has no em or en dash" bash -c "! LC_ALL=C grep -q -e '$(printf '\342\200\224')' -e '$(printf '\342\200\223')' '$A/$f'"
   expect "$f does not call python3" bash -c "! grep -q 'python3' '$A/$f'"
   expect "$f holds no bare 40 or 64 digit hex run" bash -c "! grep -Eq '[0-9a-fA-F]{40}' '$A/$f'"

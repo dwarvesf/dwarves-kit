@@ -54,7 +54,7 @@ A `hook` script runs with the target repo as its working directory and gets `$1`
 | `DOOR_ARRAY` | derived, a bash array body, **empty when no door path is set** (a script must guard an empty array under `set -u` on bash 3.2) | `"docs/legal/*" "protocol/*"` |
 | `DOOR_CASE` | derived, a `case` pattern; a never-matching word when empty | `docs/legal/*|protocol/*` |
 | `STAMP_VERSION` | the engine | `1` |
-| `KIT_MARKER` | line 1 of `lib/adopt/AGENTS.pointer.md`, refused unless it starts `<!-- kit:agents-pointer` | the adopt marker |
+| `AGENTS_MARKER` | line 1 of `lib/adopt/AGENTS.pointer.md`, refused unless it starts `<!-- kit:agents-pointer` | the adopt marker |
 
 The engine refuses any flag value that holds a newline, a carriage return or a tab before it reads anything else, then matches the whole value against a narrow character set (no space, no shell quote, no `{{`). A path-like value (`--board-file`, `--product-paths`, `--door-paths`) may not start with `/` or hold a `..` component. Every run prints the values in use and whether each came from a flag, the lock or a default (`using: KEY=value (source)` on stderr), so a value taken silently from a planted lock is seen. Values are remembered in the lock, so a re-run with no flags renders the same bytes.
 

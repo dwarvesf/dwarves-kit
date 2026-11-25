@@ -16,7 +16,7 @@ no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 expect() { local label="$1"; shift; if "$@"; then ok "$label"; else no "$label"; fi; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/test-stamp-rules.XXXXXX")" || exit 1
-KIT_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
+LEAK_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
 KIT_URL='https://github.com/dwarvesf/dwarves-kit'
 LIMIT='A person who merges from the GitHub site passes everything, on a plan without branch protection.'
 TRUST='Claude Code uses a hook from `.claude/settings.json` even in a folder not yet trusted'
@@ -121,7 +121,7 @@ expect "the proof guide says the README is never a proof" grep -qF 'never a proo
 expect ".kit.toml sets proof_of_done = true" grep -qx 'proof_of_done = true' "$K"
 expect ".kit.toml sets lane_gates = false" grep -qx 'lane_gates = false' "$K"
 expect ".kit.toml has a [gate] table" grep -qx '\[gate\]' "$K"
-expect ".kit.toml comments name no kit path" bash -c "! grep -Eq '$KIT_PATTERN|~/|/lib/' '$K'"
+expect ".kit.toml comments name no kit path" bash -c "! grep -Eq '$LEAK_PATTERN|~/|/lib/' '$K'"
 expect ".kit.toml keeps no other gate key on" bash -c "[ \$(grep -Ec '^[a-z_]+ = ' '$K') -eq 2 ]"
 
 # 7b. the review rules for the harness's own files, the workflow limit and the runner advice
@@ -155,7 +155,7 @@ done
 for f in "$A" "$T" "$P" "$K"; do
   b="${f#"$R2"/}"
   expect "$b has no em or en dash" bash -c "! grep -qF -e '$EM' -e '$EN' '$f'"
-  expect "$b names no kit path or home path" bash -c "! grep -En '$KIT_PATTERN' '$f' | grep -v '^1:<!-- kit:agents-pointer' | grep -q ."
+  expect "$b names no kit path or home path" bash -c "! grep -En '$LEAK_PATTERN' '$f' | grep -v '^1:<!-- kit:agents-pointer' | grep -q ."
   expect "$b has no bare 40 or 64 digit hex string" bash -c "! grep -Eq '(^|[^0-9a-fA-F])([0-9a-fA-F]{40}|[0-9a-fA-F]{64})([^0-9a-fA-F]|$)' '$f'"
 done
 for t in AGENTS.md.tpl docs/TEAM-WORKFLOW.md.tpl docs/verification/README.md.tpl .kit.toml; do

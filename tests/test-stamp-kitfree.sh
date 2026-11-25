@@ -18,7 +18,7 @@ PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
-KIT_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
+LEAK_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
 
 ONLY=(); unset STAMP_TEMPLATES
 case "$GROUP" in
@@ -47,8 +47,8 @@ files="$(awk '$1=="file"{print $2}' "$LOCK")"
 bad=0; count=0
 for f in $files; do
   count=$((count + 1))
-  if grep -Eq "$KIT_PATTERN" "$REPO/$f" || grep -qF "$HOME" "$REPO/$f"; then
-    bad=1; echo "    kit path in $f: $(grep -En "$KIT_PATTERN" "$REPO/$f" | head -n 1 | cut -c1-100)"
+  if grep -Eq "$LEAK_PATTERN" "$REPO/$f" || grep -qF "$HOME" "$REPO/$f"; then
+    bad=1; echo "    kit path in $f: $(grep -En "$LEAK_PATTERN" "$REPO/$f" | head -n 1 | cut -c1-100)"
   fi
 done
 [ "$count" -gt 0 ] && [ "$bad" -eq 0 ] && ok "no generated file ($count) names a kit path or the home path" || no "kit path found in a generated file"

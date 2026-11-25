@@ -9,7 +9,7 @@ no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 expect() { local label="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$label"; else no "$label"; fi; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/test-stamp-changelog.XXXXXX")" || exit 1
-KIT_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
+LEAK_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
 EM="$(printf '\342\200\224')"; EN="$(printf '\342\200\223')"
 TPL=templates/team-stamp
 SEED="$TPL/files/CHANGELOG.md.tpl"
@@ -88,7 +88,7 @@ expect "the untagged refusal names the line and the tags" bash -c "grep -q 'Unta
 
 # 6. text of the templates
 for f in "$SEED" "$SCR" "$TST"; do
-  expect "$f: no kit path and no home path" bash -c "! grep -Eq '$KIT_PATTERN' '$f'"
+  expect "$f: no kit path and no home path" bash -c "! grep -Eq '$LEAK_PATTERN' '$f'"
   expect "$f: no em or en dash" bash -c "! grep -q -e '$EM' -e '$EN' '$f'"
   expect "$f: no bare 40 or 64 hex run" bash -c "! grep -Eq '[0-9a-f]{40}' '$f'"
 done

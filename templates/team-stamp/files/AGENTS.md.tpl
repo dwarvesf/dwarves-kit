@@ -1,4 +1,4 @@
-{{KIT_MARKER}}
+{{AGENTS_MARKER}}
 # Agent rules
 
 This file is the repo's instruction file for every coding agent and every teammate. Everything you need is in this file and the files it names. No plugin or extra tool is required: a shell with `git` and `gh`, plus the toolchains your own code needs, is enough.
