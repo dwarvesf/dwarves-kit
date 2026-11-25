@@ -1,0 +1,5 @@
+# changelog group: the seeded CHANGELOG.md, the release notes script and its test
+# columns, tab separated: action, source, target, mode, keys
+seed	files/CHANGELOG.md.tpl	CHANGELOG.md	0644	TAGS_COLON
+copy	files/scripts/release-notes.sh.tpl	scripts/release-notes.sh	0755	TAGS,TAGS_ERE
+copy	files/scripts/test-release-notes.sh.tpl	scripts/test-release-notes.sh	0755	TAGS
