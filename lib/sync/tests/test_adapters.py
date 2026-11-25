@@ -248,6 +248,31 @@ def test_a_sibling_module_that_shadows_a_loaded_module_is_refused(tmp_path, monk
         adapters.load().build("x", {}, SimpleNamespace())
 
 
+DECOY_AWARE = "from __future__ import annotations\n\nimport zz_helper\n\n\ndef build(app, opts, ctx):\n    return zz_helper.VALUE\n"
+
+
+@pytest.mark.parametrize("decoy_first", [False, True])
+def test_the_adapters_own_sibling_wins_over_a_same_named_package_on_the_path(tmp_path, monkeypatch, decoy_first):
+    decoy = tmp_path / "site"
+    decoy.mkdir()
+    (decoy / "zz_helper.py").write_text("VALUE = 'decoy'\n")
+    if decoy_first:
+        monkeypatch.syspath_prepend(str(decoy))
+    else:
+        sys.path.append(str(decoy))
+    make(tmp_path / "adapters", "a", "app\tx\ttwo-way\n", py=DECOY_AWARE, extra={"zz_helper.py": "VALUE = 'own'\n"})
+    use(monkeypatch, tmp_path / "adapters")
+    assert adapters.load().build("x", {}, SimpleNamespace()) == "own"
+
+
+def test_a_sibling_stem_that_resolves_to_a_core_module_is_refused(tmp_path, monkeypatch):
+    monkeypatch.delitem(sys.modules, "sweep_modules", raising=False)
+    make(tmp_path, "a", "app\tx\ttwo-way\n", extra={"sweep_modules.py": "VALUE = 1\n"})
+    use(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit, match="adapters: a: module name sweep_modules already provided by"):
+        adapters.load().build("x", {}, SimpleNamespace())
+
+
 def test_the_loader_skips_tests_and_hidden_directories(tmp_path, monkeypatch):
     make(tmp_path, "real", "app\tx\ttwo-way\n")
     (tmp_path / "tests").mkdir()

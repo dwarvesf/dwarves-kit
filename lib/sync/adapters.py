@@ -14,6 +14,7 @@ The bash twin is lib/sync/adapters.sh. Both read the same grammar and fail with 
 """
 from __future__ import annotations
 
+import importlib.machinery
 import importlib.util
 import os
 import re
@@ -298,19 +299,27 @@ class Registry:
             return mod
         entry = adapter.path / "adapter.py"
         sync = str(HERE)
-        for p in (str(HERE.parent / "config"), str(HERE / "sweep"), sync):
+        core = [str(HERE.parent / "config"), str(HERE / "sweep"), sync]
+        for p in core:
             while p in sys.path:
                 sys.path.remove(p)
             sys.path.insert(0, p)
-        if str(adapter.path) not in sys.path:
-            sys.path.append(str(adapter.path))
+        # Right after the core entries, never at the end: the adapter's own siblings (imported by bare
+        # name) must win over any installed package of the same name.
+        here_dir = str(adapter.path)
+        while here_dir in sys.path:
+            sys.path.remove(here_dir)
+        sys.path.insert(len(core), here_dir)
         here = adapter.path.resolve()
         for f in sorted(adapter.path.glob("*.py")):
             if f.stem == "adapter":
                 continue
             held = sys.modules.get(f.stem)
             origin = getattr(held, "__file__", None)
-            if held is not None and origin and not Path(origin).resolve().is_relative_to(here):
+            if held is None:
+                found = importlib.machinery.PathFinder.find_spec(f.stem, sys.path)
+                origin = getattr(found, "origin", None)
+            if origin and not Path(origin).resolve().is_relative_to(here):
                 raise SystemExit("adapters: %s: module name %s already provided by %s" % (adapter.name, f.stem, origin))
         modname = "kit_adapter_" + adapter.name
         spec = importlib.util.spec_from_file_location(modname, str(entry))
