@@ -133,6 +133,37 @@ Each control was run, shown red, and restored. The ones from the build phases co
 | Bridge: plain `pwd` instead of `pwd -P` | the extension-directory case fails |
 | Core purity scanner: a planted file naming an app, and a file named `notion_named.sh` | both reported (`PASS negative control: a file named notion_named.sh is reported`) |
 
+## Test plan coverage
+The matrix has no numeric `#` column, so `Row` is the ordinal, top to bottom: rows 1 to 13 are the baseline suites in the spec's order, rows 14 to 25 are T0 to T11.
+
+| Row | Run / skip reason |
+|---|---|
+| 1 | sync python: `bash tests/test-sync.sh`, 418 passed (baseline 326) |
+| 2 | sync dispatch: `bash tests/test-sync-dispatch.sh`, 20/20 (baseline 10) |
+| 3 | board states: `bash tests/test-board-states.sh`, all pass |
+| 4 | hermes link: `bash tests/test-board-hermes.sh`, 79 passed |
+| 5 | mirror: `bash tests/test-board-mirror.sh`, 116 of 116 |
+| 6 | writeback: `bash tests/test-board-writeback.sh`, 74 passed, 1 skip |
+| 7 | mirror cleanup: `bash tests/test-board-mirror-cleanup.sh`, 31 of 31 |
+| 8 | mirror expire: `bash tests/test-board-mirror-expire.sh`, 31 of 31 |
+| 9 | sweep: `bash tests/test-board-sweep.sh`, PASS=113 (baseline 55) |
+| 10 | sweep mirror: `bash tests/test-board-sweep-mirror.sh`, PASS=66 (baseline 43) |
+| 11 | sweep expire: `bash tests/test-board-sweep-expire.sh`, 20 of 20 (baseline 14) |
+| 12 | health: `bash tests/test-board-health.sh`, 102 passed (baseline 97) |
+| 13 | brief: `bash tests/test-board-brief.sh`, 260 passed (baseline 243) |
+| 14 | T0 characterization: `bash tests/test-sync-characterize.sh`, 13 passed; the `--hermes-home` mutation control is in the build notes |
+| 15 | T1 core purity: `bash tests/test-core-purity.sh`, 12 passed, with the planted-file control |
+| 16 | T2 no adapter configured: cases in `lib/adapters/tests/test-adapters.sh` (218 passed) and the sweep suites |
+| 17 | T3 frozen surface: `lib/adapters/tests/test-adapters.sh`, the frozen-list equality cases and their controls |
+| 18 | T4 loader and reader: `lib/sync/tests/test_adapters.py` (inside the 418) and `test-adapters.sh`, including the review fix 2 parity case |
+| 19 | T5 engine over a fixture adapter: `lib/sync/tests/test_core.py` (inside the 418) |
+| 20 | T6 body-expander relay: `lib/adapters/tests/test_body_expander.py` (inside the 418), controls in the table above |
+| 21 | T7 inbox heading: `test_core.py` and `test_conformance.py` (inside the 418), control in the table above |
+| 22 | T8 legacy Reminders state copy: `test_conformance.py`, control in the table above |
+| 23 | T9 sweep legs: the three sweep suites, controls in the table above |
+| 24 | T10 Multica token: `bash tests/test-sync-dispatch.sh`, control in the table above |
+| 25 | T11 floor: `lib/adapters/tests/test-adapters.sh` floor cases; the system Python 3.9 import and the `/bin/bash` shim cases ran inside that suite |
+
 ## Review
 One independent Opus review of the whole diff for behaviour preservation and security: no Critical, one Important and five Minor findings. All six were fixed in the finishing step, one commit each or grouped by file.
 
