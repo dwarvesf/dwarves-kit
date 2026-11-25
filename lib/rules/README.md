@@ -24,4 +24,4 @@ Every gate, ledger, queue and hook in the kit is a small state machine: a run's 
 
 **Adding a rule**: write it from the code, state the promised laws, keep the bug as a variant, write the bridge, add it to the area's `RULES`, and run the area's prover until every law is proven and every bridge agrees. If a promised law is refuted and the bridge reproduces it on the real bash, that is a bug: fix the bash, keep the old behavior as a variant, and add a regression test to the suite that covers the script.
 
-**Spec and docs**: `docs/specs/SPEC-430-gdp-wired-rules.md`, `docs/verification/gdp-wired-proof.md`.
+**Spec and docs**: `docs/specs/SPEC-431-gdp-wired-rules.md`, `docs/verification/gdp-wired-proof.md`.

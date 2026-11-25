@@ -5,7 +5,7 @@ Status: VALIDATED
 Lane: full (the build edits gates and hooks that block pushes and destructive commands: `hooks/safety-gate.sh`, `hooks/ship-gate.sh`, `lib/gate/lane-data.sh`, `lib/gate/dispatch-gate.sh`, the queue and the merge path)
 Depth: blind-spot (failure: a fix to a blocking gate lets through something it used to refuse, or refuses a push it used to allow, on a path no example test covers)
 Type: spec-feature
-File: `docs/specs/SPEC-430-gdp-wired-rules.md`
+File: `docs/specs/SPEC-431-gdp-wired-rules.md`
 References: `lib/rules/README.md`, `lib/rules/*/FINDINGS.md`, `docs/reference/hard-rules.tsv`, `docs/guides/gates-and-proof.md`, `docs/guides/autonomy.md`, `commands/execute.md` ("Routing"), ADR-0019 and ADR-0030 (disjointness), ADR-0022 (single writer), gdp-wired 0.59.0.
 
 ## Problem

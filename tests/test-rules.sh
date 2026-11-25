@@ -23,7 +23,7 @@ else no "lib/rules/prove.ts"; echo "$out" | sed 's/^/    /'; fi
 
 echo "== bin/verify-loop"
 VL="$ROOT/bin/verify-loop"
-export VERIFY_LOOP_DIR; VERIFY_LOOP_DIR="$(mktemp -d)"; trap 'rm -rf "$VERIFY_LOOP_DIR"' EXIT
+export VERIFY_LOOP_DIR; VERIFY_LOOP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit-vl.XXXXXX")" || exit 1; trap 'rm -rf "$VERIFY_LOOP_DIR"' EXIT
 step() { bash "$VL" event "$1" "$2" 2>&1; }
 expect() { case "$2" in *"$3"*) ok "$1" ;; *) no "$1: got '$2'" ;; esac; }
 

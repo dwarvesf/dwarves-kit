@@ -38,7 +38,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch. test-affected.timeouts is data, not an executable: the one per-suite
 # timeout table that bin/test-affected and tests/run-all.sh both read.
-# +verify-loop (SPEC-430): a standalone executable, not a forwarder. It steps the proven retry-loop rule
+# +verify-loop (SPEC-431): a standalone executable, not a forwarder. It steps the proven retry-loop rule
 # (lib/rules/verify-loop.ts) for /kit:execute; its DISPATCH block is below, the rule's laws in tests/test-rules.sh.
 EXPECTED="activate audit board classify config flick gate goal intake learn lint mega plugin-check precedent proof-asset proof-capture prose-rag queue reflect release session skill-improve skill-review spec stats test-affected test-affected.timeouts verify-loop worktree-provision wrap"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
