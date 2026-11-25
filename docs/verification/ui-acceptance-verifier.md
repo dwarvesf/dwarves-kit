@@ -310,6 +310,16 @@ Two things the guards do not cover, measured in the real browser by case `observ
 - Fix round F2 controls were each seen red by hand, and the notes recorded no per-mutation table for them.
 - No dispatch needed a rerun, so there is no rerun to disclose.
 
+## Test plan coverage
+
+| Test plan rows | Where each ran |
+|---|---|
+| Every row marked `mechanical`, except row 47 | The suite case the row names in the spec's Test plan table. Every case ran in the green run (0 skipped). |
+| 44, 45, 46 (`behavioral`) | The three live dispatches (a), (b) and (c) above. |
+| 47 | The suite case `live-record`, which reads this file. |
+
+No row is skipped. Rows that state a hand mutation as their control ran that mutation once on a copy of the runner outside any git work tree; the red lines are in the negative controls table.
+
 ## Outcome
 
 The verdict lines in the live dispatch section are the agent's own output under test; two of them are FAIL by design (the planted bug and the uncovered criterion). The outcome of this proof is the suite run on the final tree, after the last fix pass and the merge with master:
