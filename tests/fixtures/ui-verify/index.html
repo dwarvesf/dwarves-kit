@@ -11,16 +11,25 @@
   <label>Display name <input type="text" id="name"></label>
   <button type="button" id="save">Save</button>
   <p role="status" id="result"></p>
+  <p id="layout"></p>
 </main>
 <script>
   var params = new URLSearchParams(location.search);
   var result = document.getElementById('result');
+  document.getElementById('layout').textContent = window.innerWidth < 500 ? 'narrow layout' : 'wide layout';
+  if (params.get('twin') === '1') {
+    var twin = document.createElement('button');
+    twin.type = 'button';
+    twin.textContent = 'Save';
+    document.querySelector('main').appendChild(twin);
+  }
   if (params.get('link') === 'expired') {
     result.textContent = 'This link has expired';
     document.getElementById('save').disabled = true;
   }
   document.getElementById('save').addEventListener('click', function () {
-    result.textContent = params.get('bug') === '1' ? 'Error 500' : 'Saved';
+    var typed = document.getElementById('name').value;
+    result.textContent = params.get('bug') === '1' ? 'Error 500' : (typed ? 'Saved ' + typed : 'Saved');
   });
 </script>
 </body>

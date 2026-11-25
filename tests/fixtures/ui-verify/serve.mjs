@@ -6,6 +6,7 @@
 // /meta.html carries a build id with a pipe and a backtick; /nobody.html removes its own body; /many.html requests 61 distinct hosts off the list;
 // /leave.html links to the second listener as localhost; /redirect answers 302 to the second listener as
 // localhost, /redirect-port answers 302 to it by the allowed name on its other port, /redirect-ok answers 302 to /.
+// /flaky?key=K answers "Error 500" on its first hit for that key and "Saved" on every later one.
 // Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -19,6 +20,7 @@ const args = process.argv.slice(2);
 const buildSha = args[0] === '--build-sha' ? args[1] : '';
 
 const counts = { hits: 0, upgrades: 0 };
+const flakyHits = new Map();
 let port2 = 0;
 
 function send(res, status, type, body) {
@@ -35,6 +37,13 @@ function readPage(name) {
 const main = http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://fixture').pathname;
   if (pathname === '/hang') return;
+  if (pathname === '/flaky') {
+    const key = new URL(req.url, 'http://fixture').searchParams.get('key') ?? '';
+    const hits = flakyHits.get(key) ?? 0;
+    flakyHits.set(key, hits + 1);
+    send(res, 200, 'text/html; charset=utf-8', `<!doctype html><title>Flaky</title><main><p>${hits === 0 ? 'Error 500' : 'Saved'}</p></main>`);
+    return;
+  }
   if (pathname === '/redirect' || pathname === '/redirect-ok' || pathname === '/redirect-port') {
     const target = { '/redirect': `http://localhost:${port2}/pixel`, '/redirect-ok': '/', '/redirect-port': `http://127.0.0.1:${port2}/pixel` }[pathname];
     res.writeHead(302, { location: target, 'cache-control': 'no-store' });
