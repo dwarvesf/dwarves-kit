@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# test-orchestrate-tiered.sh -- the wave join of a tiered mega-goal (docs/specs/SPEC-421-tiered-verification.md
-# rules 3 and 4): cases C6 to C9 of the spec's test plan, plus the mega-merge --expect-head refusal (C7).
+# test-orchestrate-tiered.sh -- the wave join of a tiered mega-goal: one run of the affected selection on the
+# merged tree (docs/specs/SPEC-421-tiered-verification.md rules 3 and 4, base tree run removed): cases C6 to C9 of the spec's test plan, plus the mega-merge --expect-head refusal (C7).
 # Offline: a throwaway repo from tests/lib/node-fixture.sh, a gh stub and a merge-hook recorder.
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,9 +48,9 @@ mk_case() {
 # ---- C6 join-once-merged-tree
 mk_case semantic tiered; D=$CASE_DIR
 converge "$D" SG-01 SG-02; rc=$?
-if [ "$rc" = 1 ] && [ "$(runs)" = 2 ] && [ "$(hooklines)" = 0 ]; then pass "C6: the semantic-conflict pair is red on the merged tree, two suite runs, nothing merged"
+if [ "$rc" = 1 ] && [ "$(runs)" = 1 ] && [ "$(hooklines)" = 0 ]; then pass "C6: the semantic-conflict pair is red on the merged tree, one run, nothing merged"
 else fail "C6: rc=$rc runs=$(runs) hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"; fi
-if [ "$(grep '^suite' "$STUB_LOG" | sed -n 1p | grep -c 'cwd=.*/base$')" = 1 ] && [ "$(grep '^suite' "$STUB_LOG" | sed -n 2p | grep -c 'cwd=.*/merged$')" = 1 ]; then pass "C6: the first run is the base tree, the second the merged tree"
+if [ "$(grep '^suite' "$STUB_LOG" | grep -c 'cwd=.*/merged$')" = 1 ] && ! grep -q 'cwd=.*/base$' "$STUB_LOG"; then pass "C6: the only run is the merged tree; no base tree run"
 else fail "C6: run order: $(cat "$STUB_LOG")"; fi
 grep -q 'new failure: a and b conflict' "$D/out.txt" && pass "C6: the new failure is named" || fail "C6: no named failure: $(cat "$D/out.txt")"
 [ "$(events "$D")" = "wave:blocked " ] && pass "C6: one blocked event for the wave, no merged event" || fail "C6: events '$(events "$D")'"
@@ -60,18 +60,20 @@ nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
 nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
 converge "$D" SG-01 SG-02; rc=$?
 h1=$(cat "$D/heads/11"); h2=$(cat "$D/heads/12")
-if [ "$rc" = 0 ] && [ "$(runs)" = 2 ] && grep -qx "11 node-c full --expect-head $h1" "$HOOK_LOG" && grep -qx "12 node-d full --expect-head $h2" "$HOOK_LOG"; then pass "C6: a clean wave runs the suite twice and merges each pinned head"
+if [ "$rc" = 0 ] && [ "$(runs)" = 1 ] && grep -qx "11 node-c full --expect-head $h1" "$HOOK_LOG" && grep -qx "12 node-d full --expect-head $h2" "$HOOK_LOG"; then pass "C6: a clean wave runs the join once and merges each pinned head"
 else fail "C6 green: rc=$rc runs=$(runs) hook: $(cat "$HOOK_LOG")"; fi
 [ "$(events "$D")" = "SG-01:merged SG-02:merged " ] && pass "C6: both sub-goals recorded merged" || fail "C6 green events '$(events "$D")'"
+bsha=$(git -C "$D/work" rev-parse origin/main)
+grep -qx "joinbase=$bsha" "$STUB_LOG" && pass "C6: join_cmd gets KIT_JOIN_BASE = the base commit, so it selects the tests the union of heads touches" || fail "C6 joinbase: want $bsha, log: $(grep joinbase "$STUB_LOG")"
 
 mk_case baseline tiered; D=$CASE_DIR
 nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
 nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
 STUB_FAIL="Skim settings panel wrong" converge "$D" SG-01 SG-02; rc=$?
-[ "$rc" = 0 ] && [ "$(hooklines)" = 2 ] && pass "C6: a failure the base run also has does not stop the wave" || fail "C6 baseline: rc=$rc hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"
+[ "$rc" = 0 ] && [ "$(hooklines)" = 2 ] && pass "C6: a failure the known-failures list names does not stop the wave" || fail "C6 baseline: rc=$rc hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"
 : > "$STUB_LOG"; : > "$HOOK_LOG"
 STUB_CRASH=1 converge "$D" SG-01 SG-02; rc=$?
-[ "$rc" = 0 ] && [ "$(hooklines)" = 0 ] && fail "C6 crash control: a crash merged" || pass "C6: a crash on both trees is not read as a known baseline (nothing merged)"
+[ "$rc" = 0 ] && [ "$(hooklines)" = 0 ] && fail "C6 crash control: a crash merged" || pass "C6: a crash is not read as a known failure (nothing merged)"
 
 # ---- C7 join-head-moved-refused
 mk_case moved tiered; D=$CASE_DIR
@@ -91,8 +93,8 @@ EOF
 old12=$(cat "$D/heads/12")
 converge "$D" SG-01 SG-02; rc=$?
 new12=$(cat "$D/heads/12")
-if [ "$rc" = 0 ] && [ "$(runs)" = 4 ] && grep -qx "12 node-d full --expect-head $old12" "$HOOK_LOG" && grep -qx "12 node-d full --expect-head $new12" "$HOOK_LOG" && [ "$old12" != "$new12" ]; then
-  pass "C7: a head that moved after the join is refused, the join reruns (4 suite runs) and only the rejoined head merges"
+if [ "$rc" = 0 ] && [ "$(runs)" = 2 ] && grep -qx "12 node-d full --expect-head $old12" "$HOOK_LOG" && grep -qx "12 node-d full --expect-head $new12" "$HOOK_LOG" && [ "$old12" != "$new12" ]; then
+  pass "C7: a head that moved after the join is refused, the join reruns (2 runs) and only the rejoined head merges"
 else fail "C7 moved: rc=$rc runs=$(runs) hook: $(cat "$HOOK_LOG") out: $(tr '\n' ' ' < "$D/out.txt")"; fi
 [ "$(events "$D")" = "SG-01:merged SG-02:blocked SG-02:merged " ] && pass "C7: SG-02 is blocked once, then merged on the rejoined head" || fail "C7 events '$(events "$D")'"
 
@@ -111,7 +113,7 @@ if [ "\$pr" = 12 ]; then if [ "\$(cat "\$NF_HEADS/12")" = "\$(cat "$D/heads/12.a
 exit 0
 EOF
 converge "$D" SG-01 SG-02; rc=$?
-if [ "$rc" = 1 ] && [ "$(runs)" = 4 ] && ! grep -q 'SG-02:merged' <<<"$(events "$D")"; then pass "C7: a head that keeps moving stops the wave after one rerun, SG-02 never merged"
+if [ "$rc" = 1 ] && [ "$(runs)" = 2 ] && ! grep -q 'SG-02:merged' <<<"$(events "$D")"; then pass "C7: a head that keeps moving stops the wave after one rerun, SG-02 never merged"
 else fail "C7 moving: rc=$rc runs=$(runs) events '$(events "$D")'"; fi
 
 # A hook that ignores --expect-head and merges whatever it finds: the head is read back and the wave stops.
@@ -135,15 +137,8 @@ mk_case scrub tiered; D=$CASE_DIR
 nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
 nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
 KIT_LEDGER_DIR="$TMP/ledger" DWARVES_KIT_LOG_DIR="$TMP/logs" converge "$D" SG-01 SG-02; rc=$?
-if [ "$rc" = 0 ] && [ "$(grep -c '^env cfg= op= proj= ledger= logdir=$' "$STUB_LOG")" = 2 ]; then pass "C6: join_cmd runs with KIT_CONFIG_*, KIT_PROJECT_ROOT, KIT_LEDGER_DIR and DWARVES_KIT_LOG_DIR scrubbed (both runs)"
+if [ "$rc" = 0 ] && [ "$(grep -c '^env cfg= op= proj= ledger= logdir=$' "$STUB_LOG")" = 1 ]; then pass "C6: join_cmd runs with KIT_CONFIG_*, KIT_PROJECT_ROOT, KIT_LEDGER_DIR and DWARVES_KIT_LOG_DIR scrubbed"
 else fail "C6 scrub: rc=$rc env lines: $(grep '^env' "$STUB_LOG" | tr '\n' '|')"; fi
-
-# A merged run with a lower executed count than the base run is not proven, even when every failure is known.
-mk_case lowcount tiered; D=$CASE_DIR
-nf_node "$D" feat/node-c c.txt three; nf_node "$D" feat/node-d d.txt four
-nf_mega "$D" SG-01:feat/node-c:11 SG-02:feat/node-d:12; nf_heads "$D" 11:feat/node-c 12:feat/node-d
-STUB_FAIL="Skim settings panel wrong" STUB_COUNT=10 STUB_COUNT_MERGED=8 converge "$D" SG-01 SG-02; rc=$?
-[ "$rc" = 1 ] && [ "$(hooklines)" = 0 ] && pass "C6: a merged run with fewer executed checks than the base run is red" || fail "C6 lowcount: rc=$rc hook=$(hooklines) out: $(tr '\n' ' ' < "$D/out.txt")"
 
 # An interrupt mid-join: the throwaway worktrees go, the wave is marked failed, nothing merges.
 mk_case interrupt tiered; D=$CASE_DIR

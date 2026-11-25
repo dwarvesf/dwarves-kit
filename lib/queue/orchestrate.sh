@@ -2346,9 +2346,11 @@ _sg_pr() {  # roadmap id
 }
 
 # ---- Tiered verification join ([mega] verify = "tiered"; docs/WORKFLOW.md "Tiered verification") ----
-# Inside a tiered mega-goal every node verifies on the `affected` selection only. The full suite runs once
-# per wave, here, on the MERGED tree, against a baseline this join measures itself. Config is read from the
-# base ref (`kit_config_get_at`), never from a node's branch or the working tree.
+# Every node verifies on the affected selection only. The join runs once per wave, here, on the MERGED tree:
+# `[test] join_cmd` is the affected selection of the union of the heads, with KIT_JOIN_BASE set to the base
+# commit to diff against (in this repo `bin/test-affected --base "$KIT_JOIN_BASE"`). A red run is judged
+# against the lead's committed known-failures list. Config is read from the base ref (`kit_config_get_at`),
+# never from a node's branch or the working tree.
 
 # The ref a wave merges into: origin's default branch, else the run worktree's branch.
 _verify_base() {  # repo
@@ -2362,10 +2364,10 @@ _verify_tiered() {  # repo base
   [ "$(kit_config_get_at "$1" "$2" mega.verify off)" = tiered ]
 }
 
-# _wave_join <megadir> <repo> <base> <id>... : the join. Pins each PR head (gh), runs the join command
-# (`[test] join_cmd` at the base) on the base tree in a throwaway worktree, merges the pinned heads in a
-# second throwaway worktree, runs it there, and compares the two runs. Returns 0 when the merged run is
-# green or fails only on what the base run already failed; 1 otherwise (nothing may merge). On 0 the
+# _wave_join <megadir> <repo> <base> <id>... : the join. Pins each PR head (gh), merges the pinned heads
+# into the base in a throwaway worktree and runs the join command (`[test] join_cmd` at the base) there.
+# Returns 0 when the merged run is green or fails only on what the known-failures list at the base names;
+# 1 otherwise (nothing may merge). On 0 the
 # pinned heads are in _JOIN_HEADS, one per id in order.
 _JOIN_HEADS=()
 _JOIN_REFS=()
@@ -2447,15 +2449,16 @@ _wave_join_interrupted() {  # exit-code
   exit "$1"
 }
 
-# _join_run <dir> <cmd> <log>: the join command in <dir> with the config and ledger overrides of this
-# shell scrubbed (a PR head's test code must not see which config or ledger the conductor reads). It runs
-# in the background and is waited on, so a signal reaches the trap at once.
+# _join_run <dir> <cmd> <log> <base-sha>: the join command in <dir> with the config and ledger overrides of
+# this shell scrubbed (a PR head's test code must not see which config or ledger the conductor reads) and
+# KIT_JOIN_BASE set to <base-sha>, the commit the affected selection diffs against. It runs in the
+# background and is waited on, so a signal reaches the trap at once.
 _join_run() {
-  local dir="$1" cmd="$2" log="$3" v unset_args=() rc=0
+  local dir="$1" cmd="$2" log="$3" jbase="$4" v unset_args=() rc=0
   for v in $(env | sed -n 's/^\(KIT_CONFIG_[A-Za-z0-9_]*\)=.*/\1/p') KIT_PROJECT_ROOT KIT_LEDGER_DIR DWARVES_KIT_LOG_DIR DWARVES_KIT; do
     unset_args+=(-u "$v")
   done
-  ( cd "$dir" && exec env "${unset_args[@]}" bash -c "$cmd" ) >| "$log" 2>&1 &
+  ( cd "$dir" && exec env "${unset_args[@]}" KIT_JOIN_BASE="$jbase" bash -c "$cmd" ) >| "$log" 2>&1 &
   _JOIN_PID=$!
   wait "$_JOIN_PID" || rc=$?
   _JOIN_PID=""
@@ -2463,13 +2466,9 @@ _join_run() {
 }
 
 _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HEADS)
-  local megadir="$1" repo="$2" base="$3" bsha="$4" tmp="$5" cmd="$6" kf="$7" sha brc mrc cls pc
-  git -C "$repo" worktree add --detach -q "$tmp/base" "$bsha" >/dev/null 2>&1 \
-    && git -C "$repo" worktree add --detach -q "$tmp/merged" "$bsha" >/dev/null 2>&1 \
-    || { echo "[orchestrate] [join] cannot create the join worktrees; nothing merges." >&2; return 1; }
-  # The base run first: its failure set is the join's own baseline (never a ledger line).
-  _say "[orchestrate] [join] full suite on the base tree ($base) ..."
-  brc=0; _join_run "$tmp/base" "$cmd" "$tmp/base.log" || brc=$?
+  local megadir="$1" repo="$2" base="$3" bsha="$4" tmp="$5" cmd="$6" kf="$7" sha mrc cls
+  git -C "$repo" worktree add --detach -q "$tmp/merged" "$bsha" >/dev/null 2>&1 \
+    || { echo "[orchestrate] [join] cannot create the join worktree; nothing merges." >&2; return 1; }
   for sha in "${_JOIN_HEADS[@]}"; do
     if ! git -C "$tmp/merged" -c user.name=kit-join -c user.email=kit-join@localhost merge --no-ff --no-edit -q "$sha" >/dev/null 2>&1; then
       _emit_event "$megadir" wave blocked "converge: join cannot merge head ${sha:0:12} into the base"
@@ -2477,24 +2476,22 @@ _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HE
       return 1
     fi
   done
-  _say "[orchestrate] [join] full suite on the merged tree (${#_JOIN_HEADS[@]} head(s)) ..."
-  mrc=0; _join_run "$tmp/merged" "$cmd" "$tmp/merged.log" || mrc=$?
+  _say "[orchestrate] [join] affected tests on the merged tree (${#_JOIN_HEADS[@]} head(s), base ${bsha:0:12}) ..."
+  mrc=0; _join_run "$tmp/merged" "$cmd" "$tmp/merged.log" "$bsha" || mrc=$?
   if [ "$mrc" = 0 ]; then
     _say "[orchestrate] [join] green."
     return 0
   fi
-  bash "$kf" names "$tmp/base.log" "$repo" "$base" >| "$tmp/base.set" 2>/dev/null
-  pc=$(bash "$kf" count "$tmp/base.log" "$repo" "$base" 2>/dev/null)
-  cls=$(bash "$kf" classify "$tmp/merged.log" "$repo" "$base" --exit "$mrc" --known-from "$tmp/base.set" --base-count "$pc" 2>"$tmp/cls.err")
+  cls=$(bash "$kf" classify "$tmp/merged.log" "$repo" "$base" --exit "$mrc" 2>"$tmp/cls.err")
   if [ "$cls" = known ]; then
-    _say "[orchestrate] [join] merged tree fails only what the base tree already failed (base exit $brc); green."
+    _say "[orchestrate] [join] merged tree fails only what the known-failures list names; green."
     return 0
   fi
   _emit_event "$megadir" wave blocked "converge: join red on the merged tree (exit $mrc)"
   {
-    echo "[orchestrate] [join] RED: the merged wave fails where the base tree did not (merged exit $mrc, base exit $brc); nothing merges. The lead routes it."
+    echo "[orchestrate] [join] RED: the merged wave fails on the affected tests (exit $mrc); nothing merges. The lead routes it."
     sed 's/^/    /' "$tmp/cls.err"
-    bash "$kf" names "$tmp/merged.log" "$repo" "$base" 2>/dev/null | grep -vxFf "$tmp/base.set" | sed 's/^/    new failure: /'
+    bash "$kf" names "$tmp/merged.log" "$repo" "$base" 2>/dev/null | grep -vxFf <(bash "$kf" read "$repo" "$base" 2>/dev/null) | sed 's/^/    new failure: /'
   } >&2
   return 1
 }
@@ -2504,7 +2501,8 @@ _wave_join_run() {  # megadir repo base bsha tmp cmd kf   (heads are in _JOIN_HE
 # no base run to diff against. A tiered serial run joins once per DAG level instead, at the top of every
 # cycle, before the next sub-goal dispatches: a level is joined when every sub-goal at that level or a
 # lower one is checked and it has no green record. The join runs `[test] join_cmd` on the base tree as it
-# is now (the level's merges are in it), in a throwaway worktree, judged against the lead's committed
+# is now (the level's merges are in it), in a throwaway worktree, with KIT_JOIN_BASE set to the base sha
+# pinned before the first dispatch (so it runs the affected selection of every merged head), judged against the lead's committed
 # known-failures list through the same `known-failures.sh classify` the wave join uses. Every config key
 # is read at the base sha pinned before the first dispatch, so no worker's merge can change the bar.
 # A green join leaves `.orchestrate/join-level-<n>.ok` (holding its executed count); a red one halts the
@@ -2602,8 +2600,8 @@ _serial_join_run() {  # megadir repo cfg level bsha tmp cmd kf
   local megadir="$1" repo="$2" cfg="$3" lvl="$4" bsha="$5" tmp="$6" cmd="$7" kf="$8" rc=0 cls cnt prev
   git -C "$repo" worktree add --detach -q "$tmp/base" "$bsha" >/dev/null 2>&1 \
     || { echo "[orchestrate] [join] cannot create the join worktree; the next level does not start." >&2; return 1; }
-  _say "[orchestrate] [join] level $lvl complete; full suite on the base tree (${bsha:0:12}) ..."
-  _join_run "$tmp/base" "$cmd" "$tmp/level.log" || rc=$?
+  _say "[orchestrate] [join] level $lvl complete; affected tests on the base tree (${bsha:0:12}, since ${cfg:0:12}) ..."
+  _join_run "$tmp/base" "$cmd" "$tmp/level.log" "$cfg" || rc=$?
   cnt=$(bash "$kf" count "$tmp/level.log" "$repo" "$cfg" 2>/dev/null)
   if [ "$rc" = 0 ]; then
     _serial_join_green "$megadir" "$lvl" "$cnt"
@@ -2620,7 +2618,7 @@ _serial_join_run() {  # megadir repo cfg level bsha tmp cmd kf
   fi
   _emit_event "$megadir" - blocked "level $lvl join red on the base tree (exit $rc)"
   {
-    echo "[orchestrate] [join] RED: the full suite fails after level $lvl (exit $rc); the next level does not start. The lead routes it."
+    echo "[orchestrate] [join] RED: the affected tests fail after level $lvl (exit $rc); the next level does not start. The lead routes it."
     sed 's/^/    /' "$tmp/cls.err"
     bash "$kf" names "$tmp/level.log" "$repo" "$cfg" 2>/dev/null | grep -vxFf <(bash "$kf" read "$repo" "$cfg" 2>/dev/null) | sed 's/^/    new failure: /'
   } >&2
@@ -2715,7 +2713,7 @@ _wave_converge() {  # megadir [id...] [--peers id...]
   #    (the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
   #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
   #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
-  #    [mega] verify = "tiered": the join runs first (full suite on the merged tree), and the hook
+  #    [mega] verify = "tiered": the join runs first (affected tests on the merged tree), and the hook
   #    gets each joined head as `--expect-head <sha>`. A head that moved since (hook exit 75) reruns
   #    the join for the sub-goals not yet merged, once; a second refusal stops the wave.
   local lockdir="$megadir/.orchestrate/flip.lock"
