@@ -42,8 +42,10 @@ unpinned_suites() {
   for helper in "$libdir"/*.sh; do
     [ -f "$helper" ] || continue
     name="$(basename "$helper")"; name="${name//./\\.}"
-    code_of "$helper" | grep -qE "$PIN_RE" && pin_helpers="${pin_helpers:+$pin_helpers|}$name"
-    code_of "$helper" | grep -qE "$REACH_RE" && reach_helpers="${reach_helpers:+$reach_helpers|}$name"
+    # a here-string, not a pipe: grep -q exits on the first hit, and under pipefail the
+    # writer's SIGPIPE (141) would drop a large helper at random
+    grep -qE "$PIN_RE" <<<"$(code_of "$helper")" && pin_helpers="${pin_helpers:+$pin_helpers|}$name"
+    grep -qE "$REACH_RE" <<<"$(code_of "$helper")" && reach_helpers="${reach_helpers:+$reach_helpers|}$name"
   done
   for f in "$@"; do
     [ -f "$f" ] || continue

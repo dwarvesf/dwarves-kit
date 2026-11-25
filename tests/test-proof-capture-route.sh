@@ -74,7 +74,7 @@ contract_in() { KIT_PROJECT_ROOT="$VP" bash "$1/lib/gate/proof-gate.sh" contract
 
 # ---- R1: the module runs alone -------------------------------------------------------------------
 echo "=== R1: the module directory, copied out of any repo, passes its own suite under env -i ==="
-T="$(mktemp -d "${TMPDIR:-/tmp}/dk-pc-alone.XXXXXX")"
+T="$(mktemp -d "${TMPDIR:-/tmp}/dk-pc-alone.XXXXXX")" || exit 1
 cp -R "$KIT/lib/proof-capture" "$T/pc"
 OUT="$(cd "$T" && env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin /bin/bash "$T/pc/tests/test-proof-capture.sh" 2>&1)"; rc=$?
 RECAP="$(printf '%s\n' "$OUT" | tail -n 1)"

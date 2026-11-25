@@ -12,7 +12,7 @@ EXAMPLES="$HERE/../examples"
 
 BASE_TMP=${TMPDIR:-/tmp}
 BASE_TMP=${BASE_TMP%/}
-SUITE_TMP=$(mktemp -d "$BASE_TMP/pcsuite.XXXXXX") || { echo "cannot make a temp dir" >&2; exit 1; }
+SUITE_TMP=$(mktemp -d "$BASE_TMP/pcsuite.XXXXXX") || exit 1
 TOOL_TMP="$SUITE_TMP/tmp"
 mkdir "$TOOL_TMP"
 export TMPDIR="$TOOL_TMP"
@@ -101,7 +101,7 @@ reset_env() {
   export PROOF_CAPTURE_BROWSER_CANDIDATES="$SUITE_TMP/no-such-a:$SUITE_TMP/no-such-b"
 }
 
-new_dir() { local d; d=$(mktemp -d "$SUITE_TMP/d.XXXXXX"); echo "$d"; }
+new_dir() { local d; d=$(mktemp -d "$SUITE_TMP/d.XXXXXX") || return 1; echo "$d"; }
 
 MSG_NOBROWSER='proof-capture: no Chromium-family browser found; install Chrome, Chromium or Edge, or set PROOF_CAPTURE_BROWSER=<path>'
 
