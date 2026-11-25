@@ -29,3 +29,7 @@ Spec: `docs/specs/SPEC-424-lane-gate-diff-size.md`. Only deltas from the spec.
 - `_WF_BASECHECK` tracks the indent of the last `name:` line it read (`pend`); the next non-blank, non-comment line deeper than that keeps the floor. A glob that still holds `}}` or `${{` keeps the floor.
 - `_floor_tools_ok` lists git awk sed tr grep wc head cut cmp mktemp cp mv rm cat sort paste basename env, read from the floor path's functions (floor, the _floor_* helpers, Rule A, the exemption and extras readers, the config readers). `dirname` is left out on purpose: the script runs it while loading, before the verb starts.
 - Row `job-name-continues-with-expression` is not red on the previous build: its new job key still collided with the base name; the first two continuation rows carry the red-before. The mutation case still turns the whole case red.
+
+## Review round 3 delta
+- `_floor_wf_read` runs a byte rule before the classifier: `sed` strips one CR at each line end, `tr` deletes every allowed byte (0x20 to 0x7E and LF), and any leftover byte keeps the floor. Each step goes through a temp file and its exit status is tested; no pipe. An empty file still passes, as before.
+- A CR at the very end of a file with no final LF is read as a line-end CR and allowed; nothing can follow it.
