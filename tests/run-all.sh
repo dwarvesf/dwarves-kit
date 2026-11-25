@@ -13,6 +13,8 @@
 # because results are collated in glob order after the run, not as each suite finishes.
 #
 # Usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>] | --failed] [--time]
+#        Any other mode or flag is refused (exit 64, one usage line on stderr) before the host lock
+#        is taken and before any suite starts. -h and --help print this header and exit 0.
 #        Bare (no argument) is --changed: only the suites the diff against <base> touches
 #        (default base: the merge-base with origin/master), plus the always-on lints. The
 #        local check. --all is the full glob, what CI and the nightly job run; it refuses
@@ -52,6 +54,27 @@ cd "$KIT_DIR" || exit 1
 # History verbs read a log and run no suite: no refusal, no lock.
 if [ "${1:-}" = "--times" ]; then
   shift; exec bash "$KIT_DIR/tests/lib/suite-times.sh" "${@:-p95}"
+fi
+
+# An unknown mode or flag used to fall through to the full glob, so `--help` started the 25 minute
+# run under the host lock. Refuse it (exit 64) before the lock and before any suite. --time is
+# order-free, so it is dropped first; --times is handled above, and --run-one is the xargs worker
+# this script starts on itself.
+_m=()
+for _a in "$@"; do [ "$_a" = "--time" ] || _m+=("$_a"); done
+case "${_m[0]:-}" in
+  -h|--help) sed -n '2,/^set -uo/p' "$0" | sed '$d;s/^# \{0,1\}//'; exit 0 ;;
+  --run-one) ;;
+  ""|--all|--failed) _ok=$(( ${#_m[@]} <= 1 )) ;;
+  --changed) _ok=$(( ${#_m[@]} <= 2 )) ;;
+  --only) _ok=$(( ${#_m[@]} == 2 )) ;;
+  *) _ok=0 ;;
+esac
+# A flag where a base or a pattern belongs (`--changed --bogus`, `--only --bogus`) is a typo too.
+case "${_m[0]:-}:${_m[1]:-x}" in --changed:-*|--only:-*) _ok=0 ;; esac
+if [ "${_ok:-1}" -ne 1 ]; then
+  echo "run-all: unknown or misplaced argument; usage: bash tests/run-all.sh [--all | --only <pattern> | --changed [<base>] | --failed] [--time] | --times <verb> | --help" >&2
+  exit 64
 fi
 
 # --all is the ~25 minute full glob, and it holds the per-host test lock below for all of it,

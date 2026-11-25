@@ -132,6 +132,34 @@ chk "log from a worktree leaves the main checkout's copy untouched" \
 chk "log from outside the repo prepends to the configured file itself" \
   "$([ "$(head -1 "$LOGREPO/_meta/LOG.md")" = "$(date +%F) · wrap: from outside" ]; echo $?)"
 
+# One log serves every repo the operator wraps, so a call from another repo's checkout still
+# lands in it. That write must not pass for one in the caller's own repo: the stderr line names
+# the file and says it is outside the current repo. A call from the log's own repo (its main
+# checkout, a subdirectory, a worktree) or from outside any git repo prints nothing new.
+LOGREPO_REAL="$(cd "$LOGREPO" && pwd -P)"
+OTHER="$LOGHOME/otherrepo"
+git init -q "$OTHER" && git -C "$OTHER" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$OTHER" worktree add -q -b side "$LOGHOME/otherrepo-wt"
+LOG_BEFORE="$(cat "$LOGREPO/_meta/LOG.md")"
+out="$(cd "$LOGHOME/otherrepo-wt" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from a foreign worktree" 2>&1 >/dev/null)"; rc=$?
+chk "log from a foreign repo's worktree exits 0" "$rc"
+chk_has "log from a foreign repo names the file it wrote and the repo it is outside of" "$out" \
+  "wrap log: wrote ${LOGREPO_REAL}/_meta/LOG.md (repo logrepo), outside the current repo otherrepo"
+chk "log from a foreign repo still lands in the one log" \
+  "$([ "$(head -1 "$LOGREPO/_meta/LOG.md")" = "$(date +%F) · wrap: from a foreign worktree" ] && [ "$(sed -n 2p "$LOGREPO/_meta/LOG.md")" = "$(printf '%s\n' "$LOG_BEFORE" | head -1)" ]; echo $?)"
+chk "log from a foreign repo writes nothing into the foreign repo" \
+  "$([ -z "$(git -C "$OTHER" status --porcelain)" ] && [ -z "$(git -C "$LOGHOME/otherrepo-wt" status --porcelain)" ]; echo $?)"
+out="$(cd "$OTHER" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from a foreign main checkout" 2>&1 >/dev/null)"
+chk_has "log from a foreign repo's main checkout says it too" "$out" "outside the current repo otherrepo"
+mkdir -p "$LOGREPO/_meta/deep"
+out="$(cd "$LOGREPO/_meta/deep" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from a subdirectory" 2>&1)"; rc=$?
+chk "log from a subdirectory of the log's repo exits 0" "$rc"
+chk_no "log from a subdirectory of the log's repo prints no outside-the-repo line" "$out" "outside the current repo"
+out="$(cd "$LOGHOME/logrepo-wt" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: same-repo worktree" 2>&1)"
+chk_no "log from a worktree of the log's repo prints no outside-the-repo line" "$out" "outside the current repo"
+out="$(cd "$LOGHOME" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from outside again" 2>&1)"
+chk_no "log from outside any git repo prints no outside-the-repo line" "$out" "outside the current repo"
+
 # ===========================================================================
 echo "=== log/stage: the default-branch warning, written but not to be committed here ==="
 # ===========================================================================

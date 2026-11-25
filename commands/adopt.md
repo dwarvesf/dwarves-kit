@@ -24,7 +24,7 @@ or `--single-source` (see below).
 
 ## What adoption installs
 
-- `AGENTS.md` -- a small pointer (about 1KB: four rules plus where the full contract lives), not a
+- `AGENTS.md` -- a small pointer (about 1KB: four default rules that yield to the repo's own rules, plus where the full contract lives), not a
   copy of the 18KB contract. A repo's own `AGENTS.md` is never overwritten; an unmodified old kit
   copy is replaced only by `--refresh --swap-agents`, and an edited file gets a drift line.
 - a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md). Skipped when the repo sets `[adopt] agents_only = true` (see `## adopt.agents_only` below).
