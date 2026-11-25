@@ -16,6 +16,7 @@
 # Run: bash tests/test-right-arm-parity.sh   (exit 0 = all AC green)
 
 set -uo pipefail
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FIX="$KIT_DIR/tests/fixtures/right-arm-parity"
 ARCH="$KIT_DIR/docs/reference/architecture.md"
