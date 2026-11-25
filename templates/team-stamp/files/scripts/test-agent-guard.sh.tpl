@@ -91,6 +91,8 @@ case_fix "PR url" "$FEAT" "gh pr merge https://github.com/owner/repo/pull/31 --s
 case_fix "number after cd and &&" "$FEAT" "cd x && gh pr merge 5" "$PRFIX 5"
 case_fix "inside bash -c" "$FEAT" "bash -c \"gh pr merge 5\"" "$PRFIX 5"
 case_fix "after an env assignment" "$FEAT" "GH_TOKEN=x gh pr merge 5" "$PRFIX 5"
+case_fix "a backslash before the command word (\\gh)" "$FEAT" "\\gh pr merge 5" "$PRFIX 5"
+case_run "\\git push origin {{DEFAULT_BRANCH}}" block "$FEAT" "\\git push origin {{DEFAULT_BRANCH}}"
 case_fix "no number: the current branch's PR" "$FEAT" "gh pr merge --auto" "$PRFIX \"\$(gh pr view --json number --jq .number)\""
 case_fix "a branch word instead of a number" "$FEAT" "gh pr merge feat/y --squash" "$PRFIX \"\$(gh pr view feat/y --json number --jq .number)\""
 case_fix "an odd word is not pasted into the fix" "$FEAT" "gh pr merge 'a;b' " "$PRFIX \"\$(gh pr view --json number --jq .number)\""

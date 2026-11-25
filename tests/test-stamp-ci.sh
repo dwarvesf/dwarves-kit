@@ -126,7 +126,7 @@ expect "scripts/check.sh is executable" test -x "$A/scripts/check.sh"
 expect "scripts/test-check.sh is executable" test -x "$A/scripts/test-check.sh"
 expect "no {{KEY}} is left in a generated file" bash -c "! grep -rE '\{\{[A-Za-z_]+\}\}' '$A/scripts/check.sh' '$A/scripts/test-check.sh' '$A/.github/workflows/ci.yml'"
 bash lib/stamp.sh --only ci,pr-shape,owners "$A" >"$WORK/stamp-a2.out" 2>&1
-expect "the second run prints only unchanged lines" bash -c '! grep -v "^unchanged: " "$1" | grep -q .' _ "$WORK/stamp-a2.out"
+expect "the second run prints only unchanged lines" bash -c '! grep -Ev "^(unchanged|using): " "$1" | grep -q .' _ "$WORK/stamp-a2.out"
 expect "--check is clean" bash lib/stamp.sh --only ci,pr-shape,owners --check "$A"
 B="$(newrepo)"
 bash lib/stamp.sh --only ci --default-branch main "$B" >/dev/null 2>&1

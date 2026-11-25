@@ -28,7 +28,7 @@ refuse() { # refuse <rule> <fix>: the two-line refusal on stderr
 }
 # Repo text and gh output are attacker-chosen. clean() makes text printable on one line (every
 # character outside a small set becomes ?); safe() says a value may sit inside a pasted command.
-clean() { local s="${1:0:200}"; printf '%s' "${s//[!A-Za-z0-9._\/@ :,=#()+-]/?}"; }
+clean() { local s="${1:0:80}"; printf '%s' "${s//[!A-Za-z0-9._\/@ ,=#()+-]/?}"; }
 safe() { [[ "$1" =~ ^[A-Za-z0-9._/@][A-Za-z0-9._/@-]*$ ]]; }
 first_line() { clean "$(printf '%s\n' "$1" | head -n 1)"; }
 
@@ -164,7 +164,7 @@ while IFS=$'\t' read -r kind id login title goal check; do
     issue_title="$id: $title"
     if [ "$apply" -eq 0 ]; then
         created=$((created + 1))
-        echo "would create: $(clean "$issue_title") (assignee $login, label ready)"
+        echo "would create: $(clean "$id"): $(clean "$title") (assignee $login, label ready)"
         continue
     fi
     body="### Goal
@@ -180,7 +180,7 @@ $check
 Board row $id in $board"
     if url="$(gh issue create --title "$issue_title" --body "$body" --label ready --assignee "$login" </dev/null 2>&1)"; then
         created=$((created + 1))
-        echo "created: $(clean "$issue_title") $(clean "$url")"
+        echo "created: $(clean "$id"): $(clean "$title") $(clean "$url")"
     else
         failed=$((failed + 1))
         refuse "gh issue create failed for $id: $(first_line "$url")" "gh auth status"

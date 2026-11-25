@@ -66,7 +66,7 @@ usage() {
 # Text from gh (check names, file paths, logins, error lines) is chosen by whoever wrote the PR.
 # clean <text>: every character outside A-Za-z0-9._/@- , comma and space becomes ?, a newline
 # included, so that text cannot forge a second line or carry an escape sequence.
-clean() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
+clean() { printf '%s' "${1:0:80}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
 # is_safe <text>: succeeds only for a non-empty value of A-Za-z0-9._/@- that does not start with -.
 # Only such a value is ever put into a "Fix:" command; the PR number is checked to be digits.
 is_safe() {

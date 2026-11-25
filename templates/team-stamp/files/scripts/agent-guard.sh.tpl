@@ -19,6 +19,7 @@
 # What this guard does not catch. It is text matching on the command line, not a
 # shell parser, so CI (the PR shape check) and scripts/pr-merge.sh are the layers
 # that bind. Known misses:
+#   - a command word split by a backslash in its middle (`g\h`); a backslash before the word (`\gh`) is read
 #   - a command built from variables, functions, aliases or command substitution
 #     (`$(gh pr merge 5)`, `$g push origin {{DEFAULT_BRANCH}}`); only the shape
 #     `$g pr merge` is read
@@ -382,7 +383,8 @@ check_segment() { # check_segment <one part>
     local -a c=()
     for ((i = 0; i < n; i++)); do
         word="${w[$i]//\"/}"
-        c+=("${word//\'/}")
+        word="${word//\'/}"
+        c+=("${word//\\/}") # a backslash before a word (\gh) is the same word to the shell
     done
 
     # Skip shell keywords, VAR=value words and command wrappers (with their own

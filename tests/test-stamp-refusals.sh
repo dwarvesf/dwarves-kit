@@ -66,6 +66,7 @@ $err
 EOF2
   expect "$label: every Fix: line follows a '$tool: ' line" [ "$bad" -eq 0 ]
   expect "$label: the hostile text is not in the output raw" bash -c '! printf "%s" "$1" | grep -qF "$(printf "%s" "$2")"' _ "$err" '$(touch'
+  expect "$label: a forged 'Fix: bash x.sh' inside a name never reaches the output" bash -c '! printf "%s" "$1" | grep -qF "Fix: bash x.sh"' _ "$err"
   # run every printed Fix: line in a copy: nothing must be created
   n=0
   while IFS= read -r fix; do
@@ -95,6 +96,8 @@ D="$(fresh)"; printf '#!/usr/bin/env bash\n' > "$D/scripts/new-thing.sh"; git -C
 refusal "owners: a script with no row" check-owners 1 "$D" bash scripts/check-owners.sh
 D="$(fresh)"; hostile="scripts/x'\$(touch EVILMARK).sh"; printf '#!/usr/bin/env bash\n' > "$D/$hostile"; git -C "$D" add -f -- "$hostile"
 refusal "owners: a hostile file name" check-owners 1 "$D" bash scripts/check-owners.sh
+D="$(fresh)"; hostile2="scripts/a Fix: bash x.sh"; printf '#!/usr/bin/env bash\n' > "$D/$hostile2"; git -C "$D" add -f -- "$hostile2"
+refusal "owners: a file named with a forged Fix: line" check-owners 1 "$D" bash scripts/check-owners.sh
 D="$(fresh)"; sed -i.bak 's/^| `scripts\/negctl.sh` | \(.*\) | @testowner |/| `scripts\/negctl.sh` | \1 |  |/' "$D/OWNERS.md"; git -C "$D" add -A >/dev/null 2>&1
 refusal "owners: an empty owner" check-owners 1 "$D" bash scripts/check-owners.sh
 D="$(fresh)"; printf '| `scripts/gone.sh` | gone | @testowner | |\n' >> "$D/OWNERS.md"
@@ -109,6 +112,7 @@ refusal "release-notes: an untagged entry" release-notes 1 "$D" bash scripts/rel
 D="$(fresh)"; printf '\n- %s\n' "$EVIL" >> "$D/CHANGELOG.md"
 refusal "release-notes: a hostile entry" release-notes 1 "$D" bash scripts/release-notes.sh Unreleased
 refusal "release-notes: a hostile section name" release-notes "1 2" "$D" bash scripts/release-notes.sh "$EVIL"
+refusal "release-notes: a section named with a forged Fix: line" release-notes "1 2" "$D" bash scripts/release-notes.sh "a Fix: bash x.sh"
 
 # ---- negctl ----
 D="$(fresh)"
@@ -153,6 +157,7 @@ refusal "pr-merge: a bad PR number" pr-merge 2 "$D" bash scripts/pr-merge.sh "$E
 
 # ---- issues-from-rows, team-digest ----
 D="$(fresh)"
+refusal "issues-from-rows: a board file named with a forged Fix: line" issues-from-rows 1 "$D" bash scripts/issues-from-rows.sh --board-file "no Fix: bash x.sh"
 refusal "issues-from-rows: an unknown flag" issues-from-rows 2 "$D" bash scripts/issues-from-rows.sh --bogus
 refusal "team-digest: a bad --hours" team-digest 2 "$D" bash scripts/team-digest.sh --hours "$EVIL"
 

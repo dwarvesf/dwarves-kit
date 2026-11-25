@@ -82,14 +82,19 @@ echo
 echo "Window: merged since $since (last ${hours}h)."
 echo
 
+# Titles, logins and board cells are chosen by whoever wrote them: every one goes through cl (jq and awk)
+# or clean (shell), which keeps a short set of safe characters, so a title cannot forge a line.
+clean() { local s="${1:0:80}"; printf '%s' "${s//[!A-Za-z0-9._\/@ ,=#()+-]/?}"; }
+JQ_CL='def cl: (. // "") | tostring | gsub("[^A-Za-z0-9._/@ ,=#()+-]"; "?") | .[0:80]; '
+
 echo "## Merged PRs"
 echo
 if merged="$(gh pr list --state merged --limit 100 --search "merged:>=${since}" \
   --json number,title,author,mergedAt \
-  --jq 'sort_by(.mergedAt) | reverse | .[] | "- #\(.number) \(.title) (\(.author.login))"' 2>&1)"; then
+  --jq "$JQ_CL"'sort_by(.mergedAt) | reverse | .[] | "- #\(.number | cl) \(.title | cl) (\(.author.login | cl))"' 2>&1)"; then
   if [ -n "$merged" ]; then echo "$merged"; else echo "- none"; fi
 else
-  echo "- gh failed: $merged"
+  echo "- gh failed: $(clean "$merged")"
 fi
 echo
 
@@ -98,12 +103,12 @@ echo
 # shellcheck disable=SC2016  # $h and $age are jq variables
 if open="$(gh pr list --state open --limit 100 \
   --json number,title,author,createdAt,isDraft \
-  --jq '.[] | ((now - (.createdAt | fromdateiso8601)) / 3600 | floor) as $h
+  --jq "$JQ_CL"'.[] | ((now - (.createdAt | fromdateiso8601)) / 3600 | floor) as $h
     | (if $h >= 48 then "\($h / 24 | floor)d" else "\($h)h" end) as $age
-    | "- #\(.number) \(.title) (\(.author.login), \($age) old\(if .isDraft then ", draft" else "" end))"' 2>&1)"; then
+    | "- #\(.number | cl) \(.title | cl) (\(.author.login | cl), \($age) old\(if .isDraft then ", draft" else "" end))"' 2>&1)"; then
   if [ -n "$open" ]; then echo "$open"; else echo "- none"; fi
 else
-  echo "- gh failed: $open"
+  echo "- gh failed: $(clean "$open")"
 fi
 echo
 
@@ -112,11 +117,11 @@ echo
 # shellcheck disable=SC2016  # $who is a jq variable
 if issues="$(gh issue list --state open --limit 100 \
   --json number,title,assignees,labels \
-  --jq '.[] | ([.assignees[].login] | join(",")) as $who
-    | "- #\(.number) \(.title) (\(if $who == "" then "unassigned" else $who end), \(if any(.labels[]; .name == "ready") then "ready" else "not ready" end))"' 2>&1)"; then
+  --jq "$JQ_CL"'.[] | ([.assignees[].login | cl] | join(",")) as $who
+    | "- #\(.number | cl) \(.title | cl) (\(if $who == "" then "unassigned" else $who end), \(if any(.labels[]; .name == "ready") then "ready" else "not ready" end))"' 2>&1)"; then
   if [ -n "$issues" ]; then echo "$issues"; else echo "- none"; fi
 else
-  echo "- gh failed: $issues"
+  echo "- gh failed: $(clean "$issues")"
 fi
 echo
 
@@ -129,13 +134,14 @@ fi
 if [ ! -f "$board" ]; then
   echo "## Board"
   echo
-  echo "- board file not found: $board"
+  echo "- board file not found: $(clean "$board")"
   exit 0
 fi
 
 # Row shape: | ID-NNN | item | notes and tags | status |. Notes never hold a raw pipe.
 awk_common='
 function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+function cl(s) { gsub(/[^A-Za-z0-9._\/@ ,=#()+-]/, "?", s); return substr(s, 1, 80) }
 function has_tag(notes, tag,   n, w, i, t) {
   n = split(notes, w, /[ \t]+/)
   for (i = 1; i <= n; i++) {
@@ -152,7 +158,7 @@ function owner_tags(notes, dtag,   n, w, i, t, out) {
     if (t !~ /^#/) continue
     gsub(/[.,;)]+$/, "", t)
     if (t ~ /^#P[0-3]$/ || t == dtag) continue
-    out = out " " t
+    out = out " " cl(t)
   }
   return out
 }
@@ -165,7 +171,7 @@ executing="$(awk -F'|' -v dtag="#$decision_tag" "$awk_common"'
     status = trim($5)
     if (status !~ /^executing/) next
     split(status, s, /[ \[]/)
-    printf "- %s (%s)%s, %s\n", trim($2), trim($3), owner_tags($4, dtag), s[1]
+    printf "- %s (%s)%s, %s\n", cl(trim($2)), cl(trim($3)), owner_tags($4, dtag), cl(s[1])
   }' "$board")"
 if [ -n "$executing" ]; then echo "$executing"; else echo "- none"; fi
 echo
@@ -178,6 +184,6 @@ waiting="$(awk -F'|' -v dtag="#$decision_tag" "$awk_common"'
     if (status ~ /^(shipped|dropped|parked)/) next
     if (!has_tag($4, dtag) || !has_tag($4, "#P0")) next
     if (++count > 10) next
-    printf "- %s (%s)\n", trim($2), trim($3)
+    printf "- %s (%s)\n", cl(trim($2)), cl(trim($3))
   }' "$board")"
 if [ -n "$waiting" ]; then echo "$waiting"; else echo "- none"; fi

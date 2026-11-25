@@ -17,7 +17,7 @@ OWNERS=OWNERS.md
 refusals=""
 # Repo text (a file name, a table cell) is attacker-chosen. clean() makes it printable on one line
 # (every character outside a small set becomes ?); safe() says it may sit inside a pasted command.
-clean() { local s="${1:0:200}"; printf '%s' "${s//[!A-Za-z0-9._\/@ :,=#()+-]/?}"; }
+clean() { local s="${1:0:80}"; printf '%s' "${s//[!A-Za-z0-9._\/@ ,=#()+-]/?}"; }
 safe() { [[ "$1" =~ ^[A-Za-z0-9._/@][A-Za-z0-9._/@-]*$ ]]; }
 refuse() { # refuse <rule> <fix>: queue one two-line refusal
     refusals="${refusals}check-owners: $1

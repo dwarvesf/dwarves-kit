@@ -54,7 +54,7 @@ PRODUCT_ERE='{{PRODUCT_ERE}}'
 BOARD_FILE='{{BOARD_FILE}}'
 DEFAULT_BRANCH='{{DEFAULT_BRANCH}}'
 
-clean() { printf '%s' "${1:0:100}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ -' '?'; }
+clean() { printf '%s' "${1:0:80}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ -' '?'; }
 safe_re='^[A-Za-z0-9._/@-]+$'
 safe_arg() { case "$1" in -* | "") return 1 ;; esac; [[ "$1" =~ $safe_re ]]; }
 

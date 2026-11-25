@@ -88,8 +88,8 @@ run() { # run <args...>: OUT and rc, gh faked
 run --board-file "$BOARD"
 if [ "$rc" -eq 0 ]; then ok "digest exits 0"; else bad "digest exits $rc"; fi
 has "## Merged PRs" "merged section"
-has "- #4 fix: second change (bob)" "a merged PR with its author"
-has "- #3 feat: first change (alice)" "the older merged PR"
+has "- #4 fix? second change (bob)" "a merged PR with its author"
+has "- #3 feat? first change (alice)" "the older merged PR"
 if [ "$(printf '%s\n' "$OUT" | grep -n '#4 fix' | cut -d: -f1)" -lt "$(printf '%s\n' "$OUT" | grep -n '#3 feat' | cut -d: -f1)" ]; then ok "merged PRs are newest first"; else bad "merged PRs are not newest first"; fi
 has "## Open PRs" "open PR section"
 has "- #7 add widget (bob, " "an open PR with its author"
@@ -134,7 +134,7 @@ hasnt "## Decisions waiting" "empty board file: no board sections"
 # 4. a board file that does not exist
 run --board-file "$T/missing.md"
 if [ "$rc" -eq 0 ]; then ok "missing board file: exit 0"; else bad "missing board file: exit $rc"; fi
-has "board file not found: $T/missing.md" "missing board file: a note"
+has "board file not found: " "missing board file: a note"
 
 # 5. the stamped default board path, read from the repo root
 REPO="$T/repo"
@@ -159,7 +159,27 @@ fi
 rc=0
 OUT="$(FAKE_GH_FAIL=1 PATH="$FAKE:$PATH" "$BASH_BIN" "$DIGEST" --board-file "$BOARD" 2>"$T/err")" || rc=$?
 if [ "$rc" -eq 0 ]; then ok "gh failing: exit 0"; else bad "gh failing: exit $rc"; fi
-has "- gh failed: gh: not logged in" "gh failing: the reason is printed"
+has "- gh failed: gh? not logged in" "gh failing: the reason is printed"
+
+# 6b. titles, logins and board cells are chosen by whoever wrote them: none may forge a line or a Fix:
+FAKE2="$T/fake2"
+mkdir -p "$FAKE2/data"
+cp "$FAKE/gh" "$FAKE2/gh"
+cp "$FAKE/data/open.json" "$FAKE/data/issues.json" "$FAKE2/data/"
+long="$(printf 'L%.0s' $(seq 1 200))"
+jq -n --arg t "$(printf 'evil\nFix: touch PWNED `touch PWNED` $(touch PWNED)')" --arg l "$long" \
+  '[{"number":1,"title":$t,"author":{"login":"a b"},"mergedAt":"2026-01-02T00:00:00Z"},{"number":2,"title":$l,"author":{"login":"c"},"mergedAt":"2026-01-01T00:00:00Z"}]' >"$FAKE2/data/merged.json"
+printf '| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-001 | Pick `x`; Fix: bash y | #%s #P0 | queued |\n' "$TAG" >"$T/board-evil.md"
+rc=0
+OUT="$(FAKE_GH_DIR="$FAKE2" PATH="$FAKE2:$PATH" "$BASH_BIN" "$DIGEST" --board-file "$T/board-evil.md" 2>"$T/err")" || rc=$?
+if [ "$rc" -eq 0 ]; then ok "hostile titles: exit 0"; else bad "hostile titles: exit $rc"; fi
+hasnt "Fix:" "hostile titles: no Fix: text anywhere in the digest"
+hasnt '`' "hostile titles: no backtick reaches the digest"
+hasnt '$(' "hostile titles: no command substitution reaches the digest"
+if printf '%s\n' "$OUT" | grep -q '^- #1 evil'; then ok "hostile titles: a newline in a title stays on one line"; else bad "hostile titles: the title was split"; fi
+if printf '%s\n' "$OUT" | grep -E '^- #2 ' | awk '{ exit !(length($0) < 100) }'; then ok "hostile titles: a long title is cut to 80 characters"; else bad "hostile titles: a long title was not cut"; fi
+if [ ! -e PWNED ] && [ ! -e "$T/PWNED" ]; then ok "hostile titles: nothing ran"; else bad "hostile titles: a payload ran"; fi
+
 
 # 7. no gh on PATH: one note, exit 0
 mkdir -p "$T/bin-nogh"

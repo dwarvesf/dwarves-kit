@@ -220,6 +220,15 @@ expect "hostile output before the change: exit 1" [ "$rc" -eq 1 ]
 expect "hostile output before the change: exactly one Fix: line starts a line" bash -c '[ "$(grep -c "^Fix: " "$0")" -eq 1 ]' "$T/hostilepre.err"
 expect "hostile output before the change: two-line refusal" two_line_refusal hostilepre
 
+# a mutate command that commits moves HEAD: refused, and the fix names the old head
+mkrepo moved
+head_old="$(git -C "$R" rev-parse HEAD)"
+run_ng moved "bash test.sh" "printf 'bad\n' > a.txt; git commit -qam moved"
+expect "moved head: exit 1" [ "$rc" -eq 1 ]
+expect "moved head: names the moved HEAD" err_has moved "moved HEAD"
+expect "moved head: two-line refusal" two_line_refusal moved
+expect "moved head: the Fix line names the old head" err_has moved "Fix: git reset --soft $head_old"
+
 # a mutation that creates new untracked files
 mkrepo created
 run_ng created "bash test.sh" "printf 'bad\n' > a.txt; echo x > new.tmp; mkdir -p sub; echo y > sub/new2.tmp"

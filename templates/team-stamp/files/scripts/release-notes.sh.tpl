@@ -15,7 +15,7 @@ TAGS_ERE='{{TAGS_ERE}}'
 
 # Repo text and arguments are attacker-chosen. clean() makes text printable on one line (every
 # character outside a small set becomes ?); safe() says a value may sit inside a pasted command.
-clean() { local s="${1:0:200}"; printf '%s' "${s//[!A-Za-z0-9._\/@ :,=#()+-]/?}"; }
+clean() { local s="${1:0:80}"; printf '%s' "${s//[!A-Za-z0-9._\/@ ,=#()+-]/?}"; }
 safe() { [[ "$1" =~ ^[A-Za-z0-9._/@][A-Za-z0-9._/@-]*$ ]]; }
 refuse() { # refuse <rule> <fix>: the two-line refusal on stderr
     printf 'release-notes: %s\nFix: %s\n' "$1" "$2" >&2

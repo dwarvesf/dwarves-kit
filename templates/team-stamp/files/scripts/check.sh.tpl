@@ -41,7 +41,7 @@ DEFAULT_BRANCH='{{DEFAULT_BRANCH}}'
 self='^\.github/workflows/ci\.yml$'
 product_re='{{PRODUCT_ERE}}'
 
-clean() { printf '%s' "${1:0:100}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ -' '?'; }
+clean() { printf '%s' "${1:0:80}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ -' '?'; }
 # show: the same filter for a test's own output, which keeps : , = ( ) # + % and brackets so a summary line reads
 # normally; a $, a quote and a backtick still become ?, and a line is always printed behind "  | ".
 show() { printf '%s' "${1:0:200}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ :,=#()+%[]-' '?'; }

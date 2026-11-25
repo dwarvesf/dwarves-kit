@@ -54,7 +54,7 @@ refuse() {
 }
 
 # clean <text>: every character outside A-Za-z0-9._/@- , comma and space becomes ?.
-clean() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
+clean() { printf '%s' "${1:0:80}" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
 # plain <file>: the file with control characters (an escape, a carriage return) removed.
 plain() { LC_ALL=C sed "s/[$(printf '\001-\010\013-\037\177')]//g" <"$1"; }
 
@@ -221,6 +221,7 @@ if [ -n "$(tracked_changes)" ]; then
     refuse 1 "the test changed tracked files by itself, so a mutation cannot be told apart; restored" "git status --short"
 fi
 
+head_before="$(git rev-parse HEAD 2>/dev/null || true)"
 untracked_files >"$work/before"
 mutating=1
 mutate_rc=0
@@ -232,6 +233,11 @@ if [ "$mutate_rc" -ne 0 ]; then
     plain "$work/mutate-out" >"$work/mutate-plain"
     tail -n 15 "$work/mutate-plain" | sed 's/^/    /' >&2
     refuse 1 "the mutate command failed with exit $mutate_rc; restored" "$mutate_cmd"
+fi
+if [ "$(git rev-parse HEAD 2>/dev/null || true)" != "$head_before" ]; then
+    moved_fix="git reflog -5"
+    case "$head_before" in *[!0-9a-f]* | "") ;; *) moved_fix="git reset --soft $head_before" ;; esac
+    refuse 1 "the mutate command moved HEAD (it committed or switched branch), and a restore cannot undo that" "$moved_fix"
 fi
 changed="$(tracked_changes)"
 if [ -z "$changed" ]; then
