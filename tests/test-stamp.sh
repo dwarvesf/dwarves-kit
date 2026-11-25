@@ -51,7 +51,7 @@ expect "the lock records values and one hash per file" bash -c "grep -q '^value 
 before="$(tree_sum "$R")"
 run "$R"
 expect "second run (no flags) exits 0" [ "$RC" -eq 0 ]
-expect "second run prints only unchanged" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -vc '^unchanged: ') -eq 0 ]" _ "$OUT"
+expect "second run prints only unchanged" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -Evc '^(unchanged|using): ') -eq 0 ]" _ "$OUT"
 expect "second run changes no byte" [ "$before" = "$(tree_sum "$R")" ]
 
 # 2b. seed-once and hook rows are repo-owned after the first write
@@ -241,7 +241,7 @@ expect "tags become an ERE" grep -qxF 'tags ere: app|lib|dev' "$R10/docs/second.
 expect "product paths become a regex" grep -q '^product: \^(src/|lib/)$' "$R10/docs/second.txt"
 expect "door paths become case alternatives" grep -q '^door: docs/legal/\*|protocol/\*$' "$R10/docs/second.txt"
 run "$R10"
-expect "a no-flag re-run reuses the lock's values" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -vc '^unchanged: ') -eq 0 ]" _ "$OUT"
+expect "a no-flag re-run reuses the lock's values" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -Evc '^(unchanged|using): ') -eq 0 ]" _ "$OUT"
 R11="$(newrepo)"
 run "$R11" --default-branch main
 expect "a missing owner refuses with the Fix line" line_after "stamp: no owner" "Fix: bash lib/stamp.sh --owner"
@@ -305,7 +305,53 @@ expect "the scan catches a bare hex (self-test)" catch_hex "$WORK/bare.txt"
 expect "the scan allows a marked digest (self-test)" none_hex "$WORK/marked.txt"
 # an older lock with bare hex still reads: rewrite R15's lock the old way and expect a clean run
 sed -E 's/ sha256:([0-9a-f]{64})$/ \1/' "$R15/.claude/team-stamp.lock" > "$WORK/old.lock"; cp "$WORK/old.lock" "$R15/.claude/team-stamp.lock"
-run "$R15"; expect "a lock with bare hex still reads as unedited" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -vc '^unchanged: ') -eq 0 ]" _ "$OUT"
+run "$R15"; expect "a lock with bare hex still reads as unedited" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -Evc '^(unchanged|using): ') -eq 0 ]" _ "$OUT"
+
+# 17d. values: control characters, dot-dot paths, and the values-in-use report
+for flagname in default-branch owner tags product-paths door-paths door-approver board-file decision-tag; do
+  for bad in "$(printf 'a\nb')" "$(printf 'a\rb')" "$(printf 'a\tb')"; do
+    RX="$(newrepo)"; OUT="$($STAMP --default-branch main --owner alice "--$flagname" "$bad" "$RX" 2>&1)"; RC=$?
+    refused_ctl=1; [ "$RC" -eq 1 ] && printf '%s\n' "$OUT" | grep -q "^stamp: the value of --$flagname holds a newline, a carriage return or a tab" && refused_ctl=0
+    [ "$refused_ctl" -eq 0 ] || echo "    $flagname: rc=$RC"
+    expect "a $flagname value with a newline, CR or tab is refused first" [ "$refused_ctl" -eq 0 ]
+  done
+done
+RX="$(newrepo)"; OUT="$($STAMP --default-branch main --owner alice --product-paths "$(printf 'src/\nx"; touch PWNED; "')" "$RX" 2>&1)"; RC=$?
+expect "a product path with a newline and a quote is refused, nothing written" bash -c "[ $RC -eq 1 ] && [ ! -e '$RX/.claude' ] && [ ! -e '$RX/PWNED' ]"
+RX="$(newrepo)"
+for badv in "--board-file ../../x" "--board-file /etc/x" "--product-paths ../src/" "--product-paths /abs/" "--door-paths a/../b" "--door-paths /x"; do
+  # shellcheck disable=SC2086
+  OUT="$($STAMP --default-branch main --owner alice $badv "$RX" 2>&1)"; RC=$?
+  expect "$badv is refused ($RC)" bash -c "[ $RC -eq 1 ] && printf '%s\n' \"\$1\" | tail -n 2 | sed -n 2p | grep -q '^Fix: '" _ "$OUT"
+done
+RX="$(newrepo)"; run "$RX" --default-branch main --owner alice --board-file docs/BOARD.md --door-approver carol
+expect "every run prints the values in use" has "using: OWNER=alice (flag)"
+expect "a default value says it is a default" has "using: DECISION_TAG=decision (default)"
+run "$RX"
+expect "a no-flag re-run says the values came from the lock" has "using: BOARD_FILE=docs/BOARD.md (lock)"
+# a planted lock: its values are used, seen, and checked
+sed -i.bak 's|^value BOARD_FILE .*|value BOARD_FILE ../../x|' "$RX/.claude/team-stamp.lock" && rm -f "$RX/.claude/team-stamp.lock.bak"
+run "$RX"
+expect "a planted lock with a dot-dot board file is refused" bash -c "[ $RC -eq 1 ]" 
+expect "and the refusal names the value" has "--board-file starts with / or has a .. component"
+sed -i.bak 's|^value BOARD_FILE .*|value BOARD_FILE docs/BOARD.md|; s|^value DOOR_APPROVER .*|value DOOR_APPROVER mallory|' "$RX/.claude/team-stamp.lock" && rm -f "$RX/.claude/team-stamp.lock.bak"
+run "$RX"
+expect "a planted approver is used but shown, with its source" has "using: DOOR_APPROVER=mallory (lock)"
+
+# 17e. take: the backup never goes through a symlink
+TPLB="$(fixture_copy)"; RB="$(newrepo)"
+STAMP_TEMPLATES="$TPLB" run "$RB" $FLAGS
+printf 'Newer line\n' >> "$TPLB/files/second.txt"
+printf 'plain old backup\n' > "$RB/docs/second.txt.orig"
+OUTSIDE_B="$WORK/outside-backup-target"
+ln -s "$OUTSIDE_B" "$RB/docs/second.txt.orig.1"
+STAMP_TEMPLATES="$TPLB" run "$RB" --take docs/second.txt
+expect "take with a dangling symlink at .orig.1 exits 0" [ "$RC" -eq 0 ]
+expect "nothing was written through the dangling link" [ ! -e "$OUTSIDE_B" ]
+expect "the link itself is untouched" [ -L "$RB/docs/second.txt.orig.1" ]
+expect "the backup went to the next free name" [ -f "$RB/docs/second.txt.orig.2" ]
+expect "and holds the old text" bash -c "grep -q '^door:' '$RB/docs/second.txt.orig.2' && ! grep -q 'Newer line' '$RB/docs/second.txt.orig.2'"
+expect "the plain .orig was not overwritten" bash -c "[ \"\$(cat '$RB/docs/second.txt.orig')\" = 'plain old backup' ]"
 
 # 18. an empty manifest dir
 TPL8="$WORK/empty-tpl"; mkdir -p "$TPL8/manifest.d"

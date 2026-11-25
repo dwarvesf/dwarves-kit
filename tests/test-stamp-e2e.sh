@@ -32,7 +32,7 @@ expect "a full stamp with only --owner exits 0 (the branch comes from origin/HEA
 created="$(printf '%s\n' "$out" | grep -c '^created: ')"
 expect "every manifest row is written (created + merged = rows)" bash -c "[ $((created + $(printf '%s\n' "$out" | grep -c '^merged: '))) -eq $(wc -l < "$WORK/manifest.txt" | tr -d ' ') ]"
 out2="$(bash lib/stamp.sh "$D" 2>&1)"
-expect "a second run prints only unchanged" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -vc '^unchanged: ') -eq 0 ]" _ "$out2"
+expect "a second run prints only unchanged" bash -c "[ \$(printf '%s\n' \"\$1\" | grep -Evc '^(unchanged|using): ') -eq 0 ]" _ "$out2"
 bash lib/stamp.sh --check "$D" >/dev/null 2>&1; expect "--check exits 0 right after" [ "$?" -eq 0 ]
 expect "the default branch reached the guard" grep -q 'default_branch="main"' "$D/scripts/agent-guard.sh"
 

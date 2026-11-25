@@ -33,7 +33,7 @@ done
 expect "the stamp writes exactly two files" bash -c '[ "$(grep -c "^created: " "$1")" -eq 2 ]' _ "$WORK/stamp-a.out"
 expect "no {{KEY}} is left in a generated file" bash -c "! grep -rE '\{\{[A-Za-z_]+\}\}' '$A/scripts'"
 bash lib/stamp.sh --only pr-shape "$A" >"$WORK/stamp-a2.out" 2>&1
-expect "the second run prints only unchanged lines" bash -c '[ "$(grep -vc "^unchanged: " "$1")" -eq 0 ] && [ "$(grep -c "^unchanged: " "$1")" -eq 2 ]' _ "$WORK/stamp-a2.out"
+expect "the second run prints only unchanged lines" bash -c '[ "$(grep -Evc "^(unchanged|using): " "$1")" -eq 0 ] && [ "$(grep -c "^unchanged: " "$1")" -eq 2 ]' _ "$WORK/stamp-a2.out"
 expect "--check is clean" bash lib/stamp.sh --only pr-shape --check "$A"
 
 # 2. stamped values; nothing typed in the script

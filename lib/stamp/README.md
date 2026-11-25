@@ -56,7 +56,7 @@ A `hook` script runs with the target repo as its working directory and gets `$1`
 | `STAMP_VERSION` | the engine | `1` |
 | `KIT_MARKER` | line 1 of `lib/adopt/AGENTS.pointer.md`, refused unless it starts `<!-- kit:agents-pointer` | the adopt marker |
 
-A value never contains a newline, `{{`, a space or a shell quote; the engine validates every flag. Values are remembered in the lock, so a re-run with no flags renders the same bytes.
+The engine refuses any flag value that holds a newline, a carriage return or a tab before it reads anything else, then matches the whole value against a narrow character set (no space, no shell quote, no `{{`). A path-like value (`--board-file`, `--product-paths`, `--door-paths`) may not start with `/` or hold a `..` component. Every run prints the values in use and whether each came from a flag, the lock or a default (`using: KEY=value (source)` on stderr), so a value taken silently from a planted lock is seen. Values are remembered in the lock, so a re-run with no flags renders the same bytes.
 
 ### What the engine checks on every rendered file
 
