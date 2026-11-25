@@ -114,7 +114,12 @@ case "$sub" in
           key="GH_STUB_MERGED_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
           eval "val=\"\${$key:-}\""
           [ -n "$val" ] || val="[]"
-          printf '%s\n' "$val"
+          # Real gh sends every field the caller asks for, headRefName and isCrossRepository included,
+          # and the merged check keeps a row that lacks either out. A fixture row that omits them is
+          # completed here the way gh would: the head asked about, and not a fork.
+          printf '%s' "$val" | jq -c --arg h "$head" \
+            'if type == "array" then map(. + {headRefName: (.headRefName // $h), isCrossRepository: (.isCrossRepository // false)}) else . end' 2>/dev/null \
+            || printf '%s\n' "$val"
         else
           # --author sends real gh to the GraphQL search index, which lags a PR opened
           # seconds ago; the plain list reads the repository itself and never lags.
@@ -130,8 +135,10 @@ case "$sub" in
             val="${GH_STUB_OPEN_PRS:-[]}"
           fi
           # Real gh always answers with an author; default the fixtures that omit one.
+          # headRefName and baseRefName are completed the way gh sends them when asked for: the origin
+          # sweep skips a list holding a row that names no branch, since such a row protects nothing.
           printf '%s\n' "$val" | jq -c --arg me "${GH_STUB_LOGIN:-me}" \
-            '[.[] | if .author then . else . + {author: {login: $me}} end]'
+            '[.[] | (if .author then . else . + {author: {login: $me}} end) | . + {baseRefName: (.baseRefName // "main")}]'
         fi
         exit 0 ;;
       view)

@@ -30,6 +30,7 @@ chk_no()  { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3" && echo 1 || echo 0)
 # --------------------------------------------------------------------------- gh shim
 # Answers only what wt.sh and the origin sweep ask. Everything it reads sits in $SHIM:
 #   mode             ok (default) | fail (exit 1, no output) | garbage (not JSON) | empty (exit 0, no output)
+#   mode-<state>     the same, for one kind of list only (mode-merged, mode-open); wins over mode
 #   merged-<head>    JSON for `pr list --head <head> --state merged` (head with / as _)
 #   state-<head>     what `pr list --state all --head <head> --jq` prints; default MERGED when merged-<head> has rows
 #   merged-all       JSON for the repo-wide `pr list --state merged --limit N`
@@ -56,7 +57,7 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
-mode="$(cat "$S/mode" 2>/dev/null || echo ok)"
+mode="$(cat "$S/mode-$state" 2>/dev/null || cat "$S/mode" 2>/dev/null || echo ok)"
 case "$mode" in
   fail) exit 1 ;;
   garbage) echo 'not json'; exit 0 ;;
@@ -165,6 +166,32 @@ wt_case w8; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master true)]"
 out="$(wt_close)"; rc=$?
 chk "wt close: a fork's merged PR refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
 
+# Two PRs from one head. gh lists the newest first, so the first PR's state alone says nothing about the others.
+wt_case w9; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"
+shim_set open '[{"number":2,"headRefName":"feat/x","baseRefName":"master"}]'
+out="$(wt_close)"; rc=$?
+chk "wt close: a merged PR plus an OPEN PR from the same head refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+chk "wt close: the open PR's branch stays on origin" "$(wt_origin_has w9; echo $?)"
+
+# Merged PR at A, then a newer CLOSED PR from the same head: origin moved on to Y after the merge.
+wt_case w10; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"
+git -C "$WT_CLONE" checkout -q -b newer feat/x; echo more > "$WT_CLONE/y"; git -C "$WT_CLONE" add y
+git -C "$WT_CLONE" commit -qm "feat: pushed after the merge"; Y="$(git -C "$WT_CLONE" rev-parse HEAD)"
+git -C "$WT_CLONE" push -q origin "newer:refs/heads/feat/x"; git -C "$WT_CLONE" checkout -q master; git -C "$WT_CLONE" branch -q -D newer
+out="$(wt_close)"; rc=$?
+chk "wt close: origin's branch keeps the newer tip (the remote delete is leased to the judged tip)" "$([ "$(git -C "$TMPD/bare-w10" rev-parse refs/heads/feat/x 2>/dev/null)" = "$Y" ]; echo $?)"
+
+# Only the merged list fails: the open list and everything else answer.
+wt_case w11; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"; shim_set mode-merged fail
+out="$(wt_close)"; rc=$?
+chk "wt close: a failing merged-PR list alone refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+wt_case w12; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"; shim_set mode-open fail
+out="$(wt_close)"; rc=$?
+chk "wt close: a failing open-PR list alone refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+wt_case w13; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"; shim_set open 'not json'
+out="$(wt_close)"; rc=$?
+chk "wt close: an unparseable open-PR list refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+
 # ===========================================================================
 echo "=== wrap apply origin sweep: deletes only a merged PR's exact tip (the refusals it has today) ==="
 # ===========================================================================
@@ -194,6 +221,7 @@ sweep_rows() { # sweep_rows <name> -- the merged list for every class
 sweep_run() { # sweep_run <name> <APPLY> [own-branches-newline]
   local c="$TMPD/clone-$1"
   bash -c '
+    set -o pipefail
     export KIT_CONFIG_ROOT="$1"
     source "$1/lib/config/kit-config.sh"; source "$1/lib/wrap/wrap-common.sh"; source "$1/lib/wrap/wrap-apply.sh"
     APPLY="$3"; OWN_SET="${4:-}"; OWN_BRANCHES="${4:-}"; FAILURES=0
@@ -239,6 +267,40 @@ git -C "$s5" remote set-url origin "$TMPD/bare-s5"
 out="$(sweep_run s5 1)"
 chk_has "sweep: a non-GitHub origin skips the sweep" "$out" "origin is not a GitHub remote"
 chk "sweep: a non-GitHub origin deletes nothing" "$(alive s5 gone; echo $?)"
+
+# Only one of the two lists fails: each skips the sweep on its own.
+s6="$(sweep_repo s6)"; sweep_rows s6; shim_set mode-merged fail
+out="$(sweep_run s6 1)"
+chk_has "sweep: a failing merged list alone skips the sweep" "$out" "SKIP origin sweep"
+chk "sweep: a failing merged list alone deletes nothing" "$(alive s6 gone; echo $?)"
+s7="$(sweep_repo s7)"; sweep_rows s7; shim_set mode-open fail
+out="$(sweep_run s7 1)"
+chk_has "sweep: a failing open list alone skips the sweep" "$out" "SKIP origin sweep"
+chk "sweep: a failing open list alone deletes nothing" "$(alive s7 gone; echo $?)"
+
+# A PR row that names no branch cannot protect one, so an open list with a nameless row skips the sweep.
+s8="$(sweep_repo s8)"; sweep_rows s8
+shim_set open '[{"number":20,"headRefName":"openhead"},{"number":21,"headRefName":"child","baseRefName":"openbase"}]'
+out="$(sweep_run s8 1)"
+chk "sweep: an open PR with no base field keeps every branch" "$(alive s8 gone; echo $?)"
+
+# A protect list over 64 KiB: the open PR with openbase as its base is the first row, followed by padding.
+s9="$(sweep_repo s9)"; sweep_rows s9
+jq -nc '[{number:1,headRefName:"child",baseRefName:"openbase"}] + [range(0;900) | {number:(.+2), headRefName:("pad-" + (.|tostring) + "-" + ("x" * 90)), baseRefName:("pad-base-" + (.|tostring) + "-" + ("y" * 90))}]' > "$SHIM/open"
+chk "sweep: the protect list is over 64 KiB" "$([ "$(wc -c < "$SHIM/open")" -gt 131072 ]; echo $?)"
+out="$(sweep_run s9 1)"
+chk "sweep: a base branch with a protect list over 64 KiB is kept" "$(alive s9 openbase; echo $?)"
+chk "sweep: the same run still deletes the exact-tip branch" "$(! alive s9 gone; echo $?)"
+
+# A merged row whose isCrossRepository is null or absent is not a same-repo PR.
+s10="$(sweep_repo s10)"; sweep_rows s10
+jq -c '[.[] | select(.headRefName == "gone") | del(.isCrossRepository)]' "$SHIM/merged-all" > "$SHIM/merged-all.tmp"; mv "$SHIM/merged-all.tmp" "$SHIM/merged-all"
+out="$(sweep_run s10 1)"
+chk "sweep: a merged row with no isCrossRepository keeps the branch" "$(alive s10 gone; echo $?)"
+s11="$(sweep_repo s11)"; sweep_rows s11
+jq -c '[.[] | select(.headRefName == "gone") | .isCrossRepository = null]' "$SHIM/merged-all" > "$SHIM/merged-all.tmp"; mv "$SHIM/merged-all.tmp" "$SHIM/merged-all"
+out="$(sweep_run s11 1)"
+chk "sweep: a merged row with a null isCrossRepository keeps the branch" "$(alive s11 gone; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-branch-merged-callers: $PASS passed, $FAIL FAILED"; exit 1; fi
