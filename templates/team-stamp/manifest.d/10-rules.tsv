@@ -1,0 +1,5 @@
+# rules docs group. Columns, tab separated: action, source, target, mode, keys
+copy	files/AGENTS.md.tpl	AGENTS.md	0644	AGENTS_MARKER,DEFAULT_BRANCH,PRODUCT_PATHS,TAGS_COLON,DOOR_PATHS,DOOR_APPROVER
+copy	files/docs/TEAM-WORKFLOW.md.tpl	docs/TEAM-WORKFLOW.md	0644	DOOR_PATHS,DOOR_APPROVER,TAGS,PRODUCT_PATHS
+copy	files/docs/verification/README.md.tpl	docs/verification/README.md	0644	-
+copy	files/.kit.toml	.kit.toml	0644	-

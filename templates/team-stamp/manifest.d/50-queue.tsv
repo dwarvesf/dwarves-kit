@@ -1,0 +1,6 @@
+# queue group: the task form, the PR template, and the board-to-issues script with its test
+# columns, tab separated: action, source, target, mode, keys
+copy	files/.github/ISSUE_TEMPLATE/task.yml	.github/ISSUE_TEMPLATE/task.yml	0644	-
+copy	files/.github/pull_request_template.md	.github/pull_request_template.md	0644	-
+copy	files/scripts/issues-from-rows.sh.tpl	scripts/issues-from-rows.sh	0755	BOARD_FILE,DECISION_TAG
+copy	files/scripts/test-issues-from-rows.sh.tpl	scripts/test-issues-from-rows.sh	0755	BOARD_FILE,DECISION_TAG

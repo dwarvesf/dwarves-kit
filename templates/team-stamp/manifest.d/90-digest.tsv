@@ -1,0 +1,4 @@
+# playbook and digest group. Columns: action, source, target, mode, keys
+copy	files/.claude/skills/ship-pr/SKILL.md.tpl	.claude/skills/ship-pr/SKILL.md	0644	DEFAULT_BRANCH
+copy	files/scripts/team-digest.sh.tpl	scripts/team-digest.sh	0755	BOARD_FILE,DECISION_TAG
+copy	files/scripts/test-team-digest.sh.tpl	scripts/test-team-digest.sh	0755	BOARD_FILE,DECISION_TAG

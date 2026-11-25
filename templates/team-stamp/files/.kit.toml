@@ -1,0 +1,9 @@
+# .kit.toml: gate settings for tools that read this file. Nothing in this repo needs them.
+# Only the keys set here matter; every other key follows the tool's own default.
+
+[gate]
+# On: a change to a behavior path needs a proof file (docs/verification/README.md says how).
+proof_of_done = true
+# Off on purpose: this team merges reversible work without an approver, and the full lane would ask
+# for many recorded phases on every CI or config edit. The proof gate stays on and is the check that binds.
+lane_gates = false

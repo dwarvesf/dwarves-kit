@@ -1,0 +1,8 @@
+product: {{PRODUCT_ERE}}
+product array: ({{PRODUCT_ARRAY}})
+door: {{DOOR_CASE}}
+door array: ({{DOOR_ARRAY}})
+tags ere: {{TAGS_ERE}}
+tags colon: {{TAGS_COLON}}
+tags awk: {{TAGS_AWK}}
+decision tag: #{{DECISION_TAG}}

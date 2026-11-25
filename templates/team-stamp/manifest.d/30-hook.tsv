@@ -1,0 +1,4 @@
+# hook group (guard, its test, the settings entries). Columns: action, source, target, mode, keys
+copy	files/scripts/agent-guard.sh.tpl	scripts/agent-guard.sh	0755	DEFAULT_BRANCH
+copy	files/scripts/test-agent-guard.sh.tpl	scripts/test-agent-guard.sh	0755	DEFAULT_BRANCH
+jsonmerge	files/.claude/settings.json	.claude/settings.json	0644	-

@@ -1,0 +1,31 @@
+name: Task
+description: One unit of work for one agent run.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An issue is one unit of work for one agent run. Add the `ready` label once Goal and Done when are filled. The form writes the sections as `### Goal`, `### Done when`, `### Scope` and `### Notes`.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences. What is true when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: done_when
+    attributes:
+      label: Done when
+      description: One check a machine or a person can run.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Paths in, paths out, links.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Optional. Context, options, a blocker.

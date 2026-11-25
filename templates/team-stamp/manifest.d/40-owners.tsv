@@ -1,0 +1,5 @@
+# owners group: the owners check, its test, and the OWNERS.md seed built from the merged manifest
+# columns, tab separated: action, source, target, mode, keys
+copy	files/scripts/check-owners.sh	scripts/check-owners.sh	0755	-
+copy	files/scripts/test-check-owners.sh	scripts/test-check-owners.sh	0755	-
+hook	lib/stamp/owners-seed.sh	OWNERS.md	0644	OWNER

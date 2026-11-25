@@ -1,0 +1,9 @@
+# lessons group. Columns, tab separated: action, source, target, mode, keys
+copy	files/scripts/agent-lessons.sh	scripts/agent-lessons.sh	0755	-
+copy	files/scripts/test-agent-lessons.sh	scripts/test-agent-lessons.sh	0755	-
+seed	files/.claude/memory/MEMORY.md	.claude/memory/MEMORY.md	0644	-
+seed	files/.claude/memory/ci-runner-has-no-procps.md	.claude/memory/ci-runner-has-no-procps.md	0644	-
+seed	files/.claude/memory/ci-sets-ci-true.md	.claude/memory/ci-sets-ci-true.md	0644	-
+seed	files/.claude/memory/queued-run-missing-from-lists.md	.claude/memory/queued-run-missing-from-lists.md	0644	-
+seed	files/.claude/memory/guards-match-command-text.md	.claude/memory/guards-match-command-text.md	0644	-
+seed	files/.claude/memory/stale-checks-after-a-rule-change.md	.claude/memory/stale-checks-after-a-rule-change.md	0644	-

@@ -1,0 +1,3 @@
+# pr-shape group: the PR shape check and its test. Columns, tab separated: action, source, target, mode, keys
+copy	files/scripts/pr-shape.sh.tpl	scripts/pr-shape.sh	0755	DEFAULT_BRANCH,BOARD_FILE,TAGS_ERE,TAGS_COLON,PRODUCT_ERE
+copy	files/scripts/test-pr-shape.sh.tpl	scripts/test-pr-shape.sh	0755	DEFAULT_BRANCH,BOARD_FILE,TAGS,PRODUCT_PATHS
