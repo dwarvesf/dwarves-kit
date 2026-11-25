@@ -11,7 +11,7 @@
 # .gitignore ("*") keeps the cache untracked in any repo, kit or not.
 #
 # The committed manifest never records upload state: put writes each entry's final
-# url, sha256, bytes, and status = "r2" or "local" (the DESTINATION, not progress).
+# url, sha256 (as sha256:<hex>, see digest.sh), bytes, and status = "r2" or "local" (the DESTINATION, not progress).
 # Upload progress lives only in the gitignored queue .kit/proof-assets/<slug>/.pending
 # (one file name per line): a failed or impossible put appends its file name there,
 # flush uploads each queued file, drops the line on success, and exits 1 while any
@@ -48,6 +48,7 @@
 set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$KIT_DIR/lib/config/kit-config.sh"
+source "$KIT_DIR/lib/proof/digest.sh"
 
 usage() {
   echo "usage: proof-asset put <slug> <file> [--name N]" >&2
@@ -294,7 +295,7 @@ cmd_put() {
     if [ -n "$why" ]; then queued=1; _queue_add "$cache_dir" "$fname"; fi
   fi
 
-  _manifest_put "$manifest" "$slug" "$rand" "$name" "$fname" "$status" "$url" "$sha" "$bytes"
+  _manifest_put "$manifest" "$slug" "$rand" "$name" "$fname" "$status" "$url" "$(proof_digest_fmt "$sha")" "$bytes"
   [ "$queued" -eq 1 ] \
     && printf 'queued: %s/%s (%s); run bin/proof-asset flush\n' "$slug" "$name" "$why" >&2
   if [ "$status" = local ]; then
