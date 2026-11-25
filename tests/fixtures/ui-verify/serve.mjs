@@ -1,8 +1,11 @@
 // Fixture server for the ui-verify suite. Prints "port <n>" for the main listener and "port2 <n>" for
 // a second listener the suite reaches as localhost, which counts plain hits and WebSocket upgrades.
 //   node serve.mjs [--build-sha <value>]
-// Main listener: /, /index.html, /hostile.html, /offsite.html, /wall.html; /hang never answers;
-// /redirect answers 302 to the second listener as localhost, /redirect-ok answers 302 to /.
+// Main listener: /, /index.html, /hostile.html, /offsite.html, /otherport.html (reaches the second listener by the
+// allowed host name on its other port), /wall.html; /hang never answers;
+// /many.html requests 61 distinct hosts off the list;
+// /leave.html links to the second listener as localhost; /redirect answers 302 to the second listener as
+// localhost, /redirect-port answers 302 to it by the allowed name on its other port, /redirect-ok answers 302 to /.
 // Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -11,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html' };
+const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html' };
 const args = process.argv.slice(2);
 const buildSha = args[0] === '--build-sha' ? args[1] : '';
 
@@ -32,8 +35,8 @@ function readPage(name) {
 const main = http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://fixture').pathname;
   if (pathname === '/hang') return;
-  if (pathname === '/redirect' || pathname === '/redirect-ok') {
-    const target = pathname === '/redirect' ? `http://localhost:${port2}/pixel` : '/';
+  if (pathname === '/redirect' || pathname === '/redirect-ok' || pathname === '/redirect-port') {
+    const target = { '/redirect': `http://localhost:${port2}/pixel`, '/redirect-ok': '/', '/redirect-port': `http://127.0.0.1:${port2}/pixel` }[pathname];
     res.writeHead(302, { location: target, 'cache-control': 'no-store' });
     res.end();
     return;

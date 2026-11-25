@@ -471,12 +471,12 @@ case_fixture_serves() {
   echo "--- fixture-serves"
   need_node fixture-serves || return 0
   local page code count file
-  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/wall.html; do
+  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/otherport.html tests/fixtures/ui-verify/many.html tests/fixtures/ui-verify/wall.html; do
     [ -s "$KIT_DIR/$file" ]; check "fixture file exists: $file" $?
   done
   if ! start_fixture; then no "the fixture server printed a port line and a port2 line"; stop_fixture; return 0; fi
   case "$FIX_PORT$FIX_PORT2" in *[!0-9]*|"") no "port and port2 are numbers ($FIX_PORT, $FIX_PORT2)" ;; *) ok "the server prints a port line and a port2 line" ;; esac
-  for page in index.html hostile.html offsite.html wall.html; do
+  for page in index.html hostile.html offsite.html otherport.html many.html wall.html; do
     code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/$page"); [ "$code" = 200 ]; check "$page answers 200 (got $code)" $?
   done
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/"); [ "$code" = 200 ]; check "/ answers 200" $?
@@ -504,7 +504,7 @@ case_fixture_serves() {
   stop_fixture
 
   local copy="$T/fixcopy"
-  mkdir -p "$copy"; cp "$FIXDIR/serve.mjs" "$FIXDIR/index.html" "$FIXDIR/hostile.html" "$FIXDIR/offsite.html" "$copy/"
+  mkdir -p "$copy"; cp "$FIXDIR/serve.mjs" "$FIXDIR/index.html" "$FIXDIR/hostile.html" "$FIXDIR/offsite.html" "$FIXDIR/otherport.html" "$FIXDIR/many.html" "$copy/"
   FIX_SRC="$copy"
   if start_fixture; then
     code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/wall.html"); [ "$code" = 404 ]; check "control: a fixture copy without wall.html answers 404 for it (got $code)" $?
@@ -677,6 +677,20 @@ case_offsite_request_aborted() {
   [ "$(jget "$out/result.json" 'j.blocked_requests.filter(b=>b.host==="localhost").reduce((n,b)=>n+b.count,0)>=2')" = true ]; check "blocked_requests names localhost for both the HTTP request and the WebSocket" $?
   [ "$(jget "$out/result.json" 'j.browser.args.indexOf("--host-resolver-rules=MAP 127.0.0.1 127.0.0.1, MAP * ~NOTFOUND")>=0')" = true ]; check "the launch pins the allowed host to its checked address and sends every other name to ~NOTFOUND (--host-resolver-rules in the recorded args)" $?
 
+  page_scenario "$f" /otherport.html "Other port page" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/otherport.html"},{do:"expect_text",text:"other port done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page that probes another port of the allowed name settled and its row is PASS (exit $RC)" $?
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
+  [ "$count" = '{"hits":0,"upgrades":0}' ]; check "the listener on another port of the SAME allowed name saw no GET, no JSON POST and no WebSocket ($count)" $?
+  [ "$(jget "$out/result.json" "j.blocked_requests.some(b=>b.host==='127.0.0.1:$FIX_PORT2'&&b.count>=3)")" = true ]; check "blocked_requests names the allowed host with the refused port for the three probes" $?
+
+  [ "$(jget "$out/result.json" 'j.blocked_requests_truncated')" = false ]; check "a short blocked list reports blocked_requests_truncated false" $?
+  page_scenario "$f" /many.html "Many hosts page" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/many.html"},{do:"expect_text",text:"many done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page that requests 61 distinct hosts off the list settled (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.blocked_requests.length+"|"+j.blocked_requests_truncated')" = "50|true" ]; check "blocked_requests holds at most 50 entries and blocked_requests_truncated is true" $?
+  [ "$(jget "$out/result.json" 'j.blocked_requests.every(b=>b.host.length<=100)&&j.blocked_requests.some(b=>b.host.length===100&&b.host.startsWith("aaaa"))')" = true ]; check "a 152 character host is cut to 100 characters" $?
+
   local redirect_js='s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/redirect"},{do:"expect_text",text:"counted"}]},{id:"AC-2",kind:"criterion",steps:[{do:"goto",path:"/redirect-ok"},{do:"expect_text",text:"Kit fixture app"}]}]'
   page_scenario "$f" / "Kit fixture app" "$redirect_js"
   out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 5000
@@ -688,13 +702,25 @@ case_offsite_request_aborted() {
   [ "$(jget "$out/result.json" 'j.blocked_requests.some(b=>b.host==="localhost"&&b.count>=1)')" = true ]; check "blocked_requests names localhost for the redirect hop" $?
   page_scenario "$f" /offsite.html "Offsite page" 's.target.allow_hosts.push("localhost");s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/offsite.html"},{do:"expect_text",text:"offsite done"}]}]'
   out=$(next_out); run_runner "$CWD" "$f" "$out"
-  [ "$RC" = 0 ]; check "control: with localhost allowed the same page still settles (exit $RC)" $?
+  [ "$RC" = 0 ]; check "with localhost allowed on a non-default port the same page still settles (exit $RC)" $?
   count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
-  [ "$(printf '%s' "$count" | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(String(c.hits>=1&&c.upgrades>=1))')" = true ]; check "control: with localhost allowed the listener is reached both ways ($count)" $?
-  [ "$(jget "$out/result.json" 'j.browser.args.indexOf("--host-resolver-rules=MAP 127.0.0.1 127.0.0.1, MAP localhost 127.0.0.1, MAP * ~NOTFOUND")>=0')" = true ]; check "control: with localhost allowed the launch maps it to its checked address too" $?
+  [ "$count" = '{"hits":0,"upgrades":0}' ]; check "an allowed name other than the target host may use only the scheme default port: the listener on its own port is still not reached ($count)" $?
+  [ "$(jget "$out/result.json" 'j.browser.args.indexOf("--host-resolver-rules=MAP 127.0.0.1 127.0.0.1, MAP localhost 127.0.0.1, MAP * ~NOTFOUND")>=0')" = true ]; check "with localhost allowed the launch maps it to its checked address too" $?
   page_scenario "$f" /offsite.html "Offsite page" "s.target.allow_hosts.push('localhost');$redirect_js"
   out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 5000
-  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "control: with localhost allowed the same 302 is followed and the listener answers 'counted' (exit $RC)" $?
+  { [ "$RC" = 2 ] && [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason')" = "NO-CHECK|redirected off an allowed host" ]; }; check "with localhost allowed the 302 hop is followed by the browser but the page URL is off the allowed set: NO-CHECK (exit $RC)" $?
+  bscenario "$f" "/" "s.target.url='http://127.0.0.1:$FIX_PORT2/';s.ready.text='counted';s.scenarios=[{id:'AC-1',kind:'criterion',steps:[{do:'goto',path:'/'},{do:'expect_text',text:'counted'}]}]"
+  out=$(next_out); run_runner "$CWD" "$f" "$out"
+  count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
+  { [ "$RC" = 0 ] && [ "$(printf '%s' "$count" | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(String(c.hits>=1))')" = true ]; }; check "control: when the second listener is the target URL its port is the allowed port and it answers 'counted' ($count, exit $RC)" $?
+
+  local leave_js='s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/leave.html"},{do:"click",role:"link",name:"Leave"},{do:"expect_text",text:"never shown"}]},{id:"AC-2",kind:"criterion",steps:[{do:"goto",path:"/redirect-port"},{do:"expect_text",text:"counted"}]},{id:"AC-3",kind:"criterion",steps:[{do:"goto",path:"/leave.html"},{do:"expect_text",text:"never shown"}]}]'
+  page_scenario "$f" / "Kit fixture app" "$leave_js"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 2000
+  [ "$RC" = 1 ]; check "a click that leaves the allowed hosts, a redirect to another port of the allowed name and a plain miss exit 1 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason+"|"+j.rows[0].observed')" = "NO-CHECK|redirected off an allowed host|" ]; check "a failing step after a click that left the allowed hosts is NO-CHECK 'redirected off an allowed host', never FAIL" $?
+  [ "$(jget "$out/result.json" 'j.rows[1].status+"|"+j.rows[1].reason')" = "NO-CHECK|redirected off an allowed host" ]; check "a 302 to another port of the allowed name is NO-CHECK even though the page there says 'counted'" $?
+  [ "$(jget "$out/result.json" 'j.rows[2].status')" = FAIL ]; check "control: the same missing text on a page that never left is a plain FAIL" $?
   end_browser
 }
 
