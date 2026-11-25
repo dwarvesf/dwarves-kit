@@ -1,12 +1,12 @@
 """The shared `ntn` runner: which calls retry, and which must not."""
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sources import ntn, notion, notion_taskboard, notion_taskboard_pull  # noqa: E402
+import notion  # noqa: E402
+import notion_taskboard  # noqa: E402
+import notion_taskboard_pull  # noqa: E402
+import ntn  # noqa: E402
 
 BARE = "error: Failed to execute public API request"
 BAD_GATEWAY = "error: Public API request failed: 502 Bad Gateway <html></html>"

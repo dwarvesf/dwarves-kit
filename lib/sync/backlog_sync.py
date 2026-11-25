@@ -39,17 +39,11 @@ from sync_core import (ID_TOKEN, INBOX_HEADING, apply_board,  # noqa: E402
 # first; a name in neither the registry nor these sets is unknown). The create-only and pull-only
 # sets are the legacy half of the modes; the registry adds the manifest half.
 # apps that push one-way and read boards with any repo prefix (not just ID-)
-CREATE_ONLY_APPS = {"notion-taskboard"}
+CREATE_ONLY_APPS = set()
 # apps that only READ a foreign board and intake into the hub
-PULL_ONLY_APPS = {"notion-taskboard-pull"}
-LEGACY_APPS = {"notion", "notion-taskboard", "notion-taskboard-pull",
-               "hermes"}
+PULL_ONLY_APPS = set()
+LEGACY_APPS = {"hermes"}
 from sources.hermes import HermesSource  # noqa: E402
-from sources.notion import NotionSource  # noqa: E402
-from sources.notion_taskboard import (NotionTaskBoardSource,  # noqa: E402
-                                      parse_map)
-from sources.notion_taskboard_pull import (  # noqa: E402
-    NotionTaskBoardPullSource, expand_body)
 
 
 def atomic_write(path: Path, text: str, new_mode: int = 0o644) -> None:
@@ -179,7 +173,7 @@ def sync_pull_only(src, backlog: Path, dry_run: bool,
 
 def check_pull_isolation(names: list, args,
                          filters: dict | None = None, reg=None) -> None:
-    """Three refusals that keep a read-only intake read-only.
+    """Two refusals that keep a read-only intake read-only (an adapter's `guard` hook adds its own).
 
     FILTER: this app takes none. The source board's own `Agent Queue` checkbox
     is the gate, and the pull path never consults `filt`, so accepting
@@ -192,27 +186,7 @@ def check_pull_isolation(names: list, args,
     let a relay key on an id the publish step may still discard, which
     duplicates the relayed task on the next run. The runner sequences
     intake, publish, relay as separate invocations instead.
-
-    TARGET: no other app may point at the pull source's own database. The pull
-    adapter cannot write, but `notion` is two-way and hub-wins; aimed at the
-    same board it would PATCH the very human-owned pages this app exists to
-    leave alone, and trash them on a scope exit. The guard is on the engine
-    because the adapter cannot see its siblings.
     """
-    # The TARGET check runs whenever a pull database is configured, even on a
-    # run that lists no pull app: `--apps notion` alone against that database
-    # is exactly the write this guard exists to stop. Ids are compared with
-    # dashes stripped, since Notion accepts both forms for the same database.
-    target = (args.notion_taskboard_pull_db or "").replace("-", "")
-    if target:
-        clash = [k for k, v in
-                 (("notion_db", args.notion_db),
-                  ("notion_taskboard_db", args.notion_taskboard_db))
-                 if v and v.replace("-", "") == target]
-        if clash:
-            sys.exit(f"{', '.join(clash)} points at the same database as "
-                     "notion_taskboard_pull_db. That board is read-only by "
-                     "contract; never aim a write-capable app at it.")
     reg = reg if reg is not None else adapters.load()
     pull_apps = PULL_ONLY_APPS | reg.pull_only_apps()
     filtered = sorted(set(filters or {}) & pull_apps)
@@ -355,36 +329,6 @@ def build_source(name: str, args, reg=None, state_path=None):
         if src is not None:
             _check_mode(name, src, reg.mode(name))
         return src
-    if name == "notion":
-        return NotionSource(db=args.notion_db, parent=args.notion_parent,
-                            title=args.notion_title or "Backlog")
-    if name == "notion-taskboard":
-        if not args.notion_taskboard_db:
-            sys.exit("notion-taskboard: set notion_taskboard_db in [sync] "
-                     "(.kit.toml) or pass --notion-taskboard-db")
-        status_map = parse_map(args.notion_taskboard_status_map)
-        if not status_map and not args.notion_taskboard_status_default:
-            sys.exit("notion-taskboard: set notion_taskboard_status_map "
-                     "(and/or notion_taskboard_status_default) in [sync]")
-        props = json.loads(args.notion_taskboard_props) \
-            if args.notion_taskboard_props else None
-        types = json.loads(args.notion_taskboard_types) \
-            if args.notion_taskboard_types else None
-        return NotionTaskBoardSource(
-            db=args.notion_taskboard_db, status_map=status_map,
-            status_default=args.notion_taskboard_status_default,
-            priority_map=parse_map(args.notion_taskboard_priority_map),
-            weight_map=parse_map(args.notion_taskboard_weight_map),
-            owner=args.notion_taskboard_owner, props=props, types=types)
-    if name == "notion-taskboard-pull":
-        if not args.notion_taskboard_pull_db:
-            sys.exit("notion-taskboard-pull: set notion_taskboard_pull_db in "
-                     "[sync] (.kit.toml) or pass --notion-taskboard-pull-db")
-        props = json.loads(args.notion_taskboard_pull_props) \
-            if args.notion_taskboard_pull_props else None
-        return NotionTaskBoardPullSource(
-            db=args.notion_taskboard_pull_db, props=props,
-            done_option=args.notion_taskboard_pull_done_option or "Done")
     if name == "hermes":
         if not args.hermes_home:
             sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
@@ -398,7 +342,7 @@ def build_source(name: str, args, reg=None, state_path=None):
                             args.hermes_home, board=args.hermes_board,
                             assignee=args.hermes_assignee,
                             workspace=args.hermes_workspace,
-                            body_expander=expand_body)
+                            body_expander=reg.hook("body_expander"))
     sys.exit(f"no adapter provides {name} (searched: {reg.dir})")
 
 
@@ -420,11 +364,6 @@ def main(argv=None):
     ap.add_argument("--state-root", type=Path,
                     default=Path(kit_data.path("state", "backlog-sync")))
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--notion-db", help="bind an existing Notion database id")
-    ap.add_argument("--notion-parent",
-                    help="Notion page id to create the board under (bootstrap)")
-    ap.add_argument("--notion-title",
-                    help="title of the Notion board created at bootstrap (default Backlog)")
     ap.add_argument("--hermes-target",
                     help="ssh host, or `local`, or `sudo:<user>` for an "
                          "instance owned by another uid on this host")
@@ -437,35 +376,6 @@ def main(argv=None):
     ap.add_argument("--hermes-workspace",
                     help="workspace for every relayed task, e.g. "
                          "'dir:/path/outbox/{id}'; `{id}` is the board id")
-    ap.add_argument("--notion-taskboard-db",
-                    help="target Notion database id for the one-way "
-                         "insert-only Task Board push")
-    ap.add_argument("--notion-taskboard-status-map",
-                    help="board-state->option map, e.g. "
-                         "'queued=Backlog,executing=In progress'")
-    ap.add_argument("--notion-taskboard-status-default",
-                    help="Status option for board states not in the map")
-    ap.add_argument("--notion-taskboard-priority-map",
-                    help="tag->Priority map, e.g. 'u-hi=P0,u-mid=P1,u-lo=P2'")
-    ap.add_argument("--notion-taskboard-weight-map",
-                    help="tag->Weight map, e.g. 'f-hi=2,f-mid=5,f-lo=13'")
-    ap.add_argument("--notion-taskboard-owner",
-                    help="Owner value (people-prop user id by default)")
-    ap.add_argument("--notion-taskboard-props",
-                    help="JSON overriding prop names "
-                         "{title,status,priority,weight,owner,notes}")
-    ap.add_argument("--notion-taskboard-types",
-                    help="JSON overriding prop types "
-                         "{status,priority,weight,owner}")
-    ap.add_argument("--notion-taskboard-pull-db",
-                    help="source Notion database id for the read-only "
-                         "Task Board intake")
-    ap.add_argument("--notion-taskboard-pull-props",
-                    help="JSON overriding prop names "
-                         "{title,status,notes,queue}")
-    ap.add_argument("--notion-taskboard-pull-done-option",
-                    help="Status option treated as done, and thus never "
-                         "pulled (default: Done)")
     ap.add_argument("--filter", action="append", default=[],
                     help="app:key=value (key: only_tags|skip_tags|intake|"
                          "intake_skip_re); "
@@ -559,13 +469,6 @@ def main(argv=None):
     ok = True
     for name in names:
         state_path = state_dir / f"{name}.state.json"
-        if name == "notion":
-            has_binding = (state_path.exists() and
-                           json.loads(state_path.read_text()).get("binding"))
-            if not (has_binding or args.notion_db or args.notion_parent):
-                print("notion: skipped (no binding; set notion_db/notion_parent"
-                      " in [sync] (.kit.toml) or pass --notion-db)")
-                continue
         src = build_source(name, args, reg, state_path)
         if src is None:
             continue

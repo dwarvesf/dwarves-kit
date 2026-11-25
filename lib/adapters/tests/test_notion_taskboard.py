@@ -2,16 +2,13 @@
 no live writes). SPEC-003 test plan."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from sources.notion_taskboard import (NotionTaskBoardSource, _rich,  # noqa: E402
-                                      parse_map)
-from sources.notion_taskboard_pull import MARKER_PREFIX  # noqa: E402
+import notion_taskboard  # noqa: E402
+from notion_taskboard import (NotionTaskBoardSource, _rich,  # noqa: E402
+                              parse_map)
+from notion_taskboard_pull import MARKER_PREFIX  # noqa: E402
 from sync_core import Plan, Row, plan_create_only  # noqa: E402
 
 PULL_MARKER_RE = NotionTaskBoardSource.bound_marker_re
@@ -378,7 +375,7 @@ def test_cli_end_to_end_pushes_through_main(tmp_path, monkeypatch):
     board.write_text(BOARD)
     fake = FakeNtn()
     monkeypatch.setattr(
-        backlog_sync, "NotionTaskBoardSource",
+        notion_taskboard, "NotionTaskBoardSource",
         functools.partial(NotionTaskBoardSource, runner=fake,
                           binding=binding()))
     backlog_sync.main([

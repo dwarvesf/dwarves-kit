@@ -28,7 +28,7 @@ spoke creates the task from the row, and splices it into the row's fence.
 import re
 import secrets
 
-from sources.ntn import run_ntn  # noqa: E402
+from ntn import run_ntn  # noqa: E402
 from cockpit import redact_secrets
 
 # Sentinel wording copied from the cron being absorbed, so a worker LLM that
@@ -74,7 +74,7 @@ _DEFANG_TAG = re.compile(r"#(?=[A-Za-z0-9])")
 # token into a task note should not mint permanent history.
 
 
-_run_ntn = run_ntn  # the shared retrying runner, see sources/ntn.py
+_run_ntn = run_ntn  # the shared retrying runner, see ntn.py
 
 
 def _plain(rich: list) -> str:

@@ -114,6 +114,9 @@ def test_read_reaches_the_runner_and_nothing_else(app, tmp_path, monkeypatch):
     src.runner = fake
     try:
         src.read()
+        if not fake.calls and getattr(src, "create_only", False):
+            # a write-only sink reads nothing; its preflight is the first call that reaches the transport
+            src.preflight(SimpleNamespace(src_create=[]))
     except (Exception, SystemExit):
         pass  # the fake's reply is not a real payload; reaching it is the point
     assert fake.calls, f"{app}: read() never called the runner"

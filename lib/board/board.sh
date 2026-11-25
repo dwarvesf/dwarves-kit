@@ -924,7 +924,7 @@ cmd_sync() {
   fi
   args+=(--apps "$v")
   local app fk
-  for app in notion hermes; do
+  for app in hermes; do
     for fk in only_tags skip_tags intake; do
       v="$(kit_config_get "sync.${app}_${fk}" "")"
       [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
@@ -933,42 +933,6 @@ cmd_sync() {
   v="$(kit_config_get sync.scope_exit_cap "")"; [ -n "$v" ] && args+=(--scope-exit-cap "$v")
   # only for a repo whose archive is not BACKLOG-archive.md beside the board
   v="$(kit_config_get sync.archive_file "")"; [ -n "$v" ] && args+=(--archive-file "$v")
-  v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
-  v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
-  v="$(kit_config_get sync.notion_title "")";    [ -n "$v" ] && args+=(--notion-title "$v")
-  # notion-taskboard: one-way, insert-only push to a foreign team board
-  #. Down-filter only (a write-only sink has no intake path); the
-  # keys are TOML-friendly underscores but the engine's --filter app token
-  # keeps the hyphenated adapter name.
-  for fk in only_tags skip_tags; do
-    v="$(kit_config_get "sync.notion_taskboard_${fk}" "")"
-    [ -n "$v" ] && args+=(--filter "notion-taskboard:${fk}=${v}")
-  done
-  v="$(kit_config_get sync.notion_taskboard_db "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-db "$v")
-  v="$(kit_config_get sync.notion_taskboard_status_map "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-status-map "$v")
-  v="$(kit_config_get sync.notion_taskboard_status_default "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-status-default "$v")
-  v="$(kit_config_get sync.notion_taskboard_priority_map "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-priority-map "$v")
-  v="$(kit_config_get sync.notion_taskboard_weight_map "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-weight-map "$v")
-  v="$(kit_config_get sync.notion_taskboard_owner "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-owner "$v")
-  v="$(kit_config_get sync.notion_taskboard_props "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-props "$v")
-  v="$(kit_config_get sync.notion_taskboard_types "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
-  # notion-taskboard-pull: read-only intake FROM the same foreign team board
-  #. No filter keys: the source board's own Agent Queue checkbox is
-  # the gate, and a second gate has no user.
-  v="$(kit_config_get sync.notion_taskboard_pull_db "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-pull-db "$v")
-  v="$(kit_config_get sync.notion_taskboard_pull_props "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-pull-props "$v")
-  v="$(kit_config_get sync.notion_taskboard_pull_done_option "")"
-  [ -n "$v" ] && args+=(--notion-taskboard-pull-done-option "$v")
   v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
   v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
   v="$(kit_config_get sync.hermes_board "")";    [ -n "$v" ] && args+=(--hermes-board "$v")

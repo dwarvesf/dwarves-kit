@@ -4,19 +4,19 @@ no live writes). SPEC-004 test plan."""
 import ast
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+import adapters  # noqa: E402
 import backlog_sync  # noqa: E402
-from sources.hermes import HermesSource  # noqa: E402
-from sources.notion_taskboard_pull import (  # noqa: E402
+from notion_taskboard_pull import (  # noqa: E402
     INTAKE_TAG, MARKER_PREFIX, MAX_BLOCK_CALLS, MAX_QUERY_PAGES, NOTES_CAP,
     PAGE_BODY_CAP, PAGE_BODY_UNAVAILABLE, SENTINEL, TITLE_CAP,
     NotionTaskBoardPullSource, _run_ntn, expand_body, fence, neutralize)
+from sources.hermes import HermesSource  # noqa: E402
 from sync_core import (INTAKE_CAP, Plan, detect_prefix,  # noqa: E402
                        extract_tags, in_scope, next_id, parse_board,
                        plan_pull_only, split_row)
@@ -169,7 +169,7 @@ def test_source_has_no_write_method():
 def test_module_code_contains_no_write_call():
     """Scans the adapter's CODE, docstrings stripped: prose about not writing
     must not be what makes this pass."""
-    src = (Path(__file__).resolve().parents[1] / "sources"
+    src = (Path(__file__).resolve().parents[1] / "notion"
            / "notion_taskboard_pull.py").read_text()
     tree = ast.parse(src)
     for node in ast.walk(tree):
@@ -483,46 +483,66 @@ def args_for(**kw):
     return type("A", (), base)
 
 
-def test_pull_app_refuses_to_share_an_invocation():
-    with pytest.raises(SystemExit, match="runs alone"):
-        backlog_sync.check_pull_isolation(
-            ["notion-taskboard-pull", "hermes"], args_for())
-
-
-def test_pull_app_alone_is_fine():
-    backlog_sync.check_pull_isolation(["notion-taskboard-pull"], args_for())
-    backlog_sync.check_pull_isolation(["hermes", "notion"], args_for())
+def run_guards(names, **kw):
+    """The guards of the adapters that provide a named app, as the engine runs them."""
+    a = args_for(**kw)
+    opts = {k: getattr(a, k, None) for k in ("notion_db", "notion_taskboard_db",
+                                             "notion_taskboard_pull_db")}
+    for guard in adapters.load().hooks("guard", only=names):
+        guard(names, opts)
 
 
 def test_write_capable_app_may_not_target_the_pull_database():
     with pytest.raises(SystemExit, match="same database"):
-        backlog_sync.check_pull_isolation(["notion-taskboard-pull"],
-                                          args_for(notion_db="db1"))
+        run_guards(["notion-taskboard-pull"], notion_db="db1")
 
 
 def test_target_guard_fires_even_with_no_pull_app_in_the_run():
     with pytest.raises(SystemExit, match="same database"):
-        backlog_sync.check_pull_isolation(["notion"],
-                                          args_for(notion_db="db1"))
+        run_guards(["notion"], notion_db="db1")
 
 
 def test_target_guard_ignores_dash_formatting():
     with pytest.raises(SystemExit, match="same database"):
-        backlog_sync.check_pull_isolation(
-            ["notion"], args_for(notion_taskboard_pull_db=PID_A,
-                                 notion_taskboard_db=HEX_A))
+        run_guards(["notion"], notion_taskboard_pull_db=PID_A,
+                   notion_taskboard_db=HEX_A)
 
 
-def test_pull_app_takes_no_filter():
-    with pytest.raises(SystemExit, match="no --filter"):
-        backlog_sync.check_pull_isolation(
-            ["notion-taskboard-pull"], args_for(),
-            {"notion-taskboard-pull": {"intake": "none"}})
+def test_a_run_naming_no_notion_app_is_not_checked_by_the_guard(tmp_path, monkeypatch, capsys):
+    """The stated delta: the same clashing config proceeds when no Notion app is named."""
+    ext = tmp_path / "ext"
+    ext.mkdir()
+    (ext / "notion").symlink_to(Path(__file__).resolve().parents[1] / "notion")
+    probe = ext / "probe"
+    probe.mkdir()
+    (probe / "adapter.tsv").write_text("app\tprobe-two\ttwo-way\n")
+    (probe / "adapter.py").write_text(
+        "from __future__ import annotations\n\nfrom types import SimpleNamespace\n\n\n"
+        "def build(app, opts, ctx):\n"
+        "    return SimpleNamespace(name=app, sync_fields=True, create_only=False, pull_only=False,\n"
+        "                           read=lambda: [], apply=lambda *a, **k: {})\n")
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD.replace("DF-", "ID-"))
+    def refuse(*_a, **_k):
+        raise AssertionError("real transport")
 
-
-def test_filters_for_other_apps_are_untouched():
-    backlog_sync.check_pull_isolation(["notion-taskboard-pull"], args_for(),
-                                      {"hermes": {"intake": "none"}})
+    monkeypatch.setattr(subprocess, "run", refuse)
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(ext))
+    monkeypatch.setattr(backlog_sync.kit_data, "path", lambda *a: str(tmp_path / "default-state"))
+    clash = ["--notion-db", "db1", "--notion-taskboard-pull-db", "db1", "--backlog", str(board),
+             "--state-root", str(tmp_path / "state"), "--dry-run"]
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    try:
+        backlog_sync.main(["--apps", "probe-two", *clash])
+        assert "dry-run probe-two" in capsys.readouterr().out
+        with pytest.raises(SystemExit, match="same database"):
+            backlog_sync.main(["--apps", "notion", *clash])
+    finally:
+        sys.path[:] = before_path
+        for name in set(sys.modules) - before_mods:
+            if name.startswith("kit_adapter_"):
+                del sys.modules[name]
 
 
 @pytest.mark.parametrize("shape", [

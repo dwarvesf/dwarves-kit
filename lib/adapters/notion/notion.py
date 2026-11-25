@@ -12,7 +12,7 @@ Complete-group reads as `shipped`; writes pick the exact option when it
 exists, else the group default. The binding persists in the snapshot file.
 """
 
-from sources.ntn import run_ntn  # noqa: E402
+from ntn import run_ntn  # noqa: E402
 from sync_core import (ACTIVE_STATUSES, BOARD_STATES, extract_tags,
                        strip_tags, title_for)
 
@@ -22,7 +22,7 @@ STATE_COLORS = {"queued": "gray", "claimed": "yellow", "speccing": "orange",
 RICH_LIMIT = 2000  # Notion rich_text element content cap, in UTF-16 code units
 
 
-_run_ntn = run_ntn  # the shared retrying runner, see sources/ntn.py
+_run_ntn = run_ntn  # the shared retrying runner, see ntn.py
 
 
 def _rich(text: str) -> list:

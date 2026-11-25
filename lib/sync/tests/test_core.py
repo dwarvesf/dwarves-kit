@@ -1528,6 +1528,31 @@ def test_pull_only_fixture_app_takes_no_filter(fake_adapters, tmp_path):
     _run_engine(tmp_path, "--filter", "fake-two:only_tags=x", apps="fake-pull")
 
 
+def _isolation(names, filters=None):
+    import backlog_sync
+    backlog_sync.check_pull_isolation(names, SimpleNamespace(), filters,
+                                      backlog_sync.adapters.load())
+
+
+def test_pull_app_refuses_to_share_an_invocation(fake_adapters):
+    with pytest.raises(SystemExit, match="runs alone"):
+        _isolation(["fake-pull", "fake-two"])
+
+
+def test_pull_app_alone_is_fine(fake_adapters):
+    _isolation(["fake-pull"])
+    _isolation(["fake-two", "fake-create"])
+
+
+def test_pull_app_takes_no_filter(fake_adapters):
+    with pytest.raises(SystemExit, match="no --filter"):
+        _isolation(["fake-pull"], {"fake-pull": {"intake": "none"}})
+
+
+def test_filters_for_other_apps_are_untouched(fake_adapters):
+    _isolation(["fake-pull"], {"fake-two": {"intake": "none"}})
+
+
 def test_a_manifest_mode_must_match_the_source_object(tmp_path, monkeypatch):
     import backlog_sync
     d = tmp_path / "adapters" / "bad"

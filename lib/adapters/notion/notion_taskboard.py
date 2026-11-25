@@ -16,13 +16,13 @@ auto-created select option. `read()` returns [] (the sink is write-only).
 
 import re
 
-from sources.ntn import run_ntn  # noqa: E402
+from ntn import run_ntn  # noqa: E402
 from sync_core import extract_tags, strip_tags
 
 RICH_LIMIT = 2000  # Notion rich_text element content cap, in UTF-16 code units
 
 
-_run_ntn = run_ntn  # the shared retrying runner, see sources/ntn.py
+_run_ntn = run_ntn  # the shared retrying runner, see ntn.py
 
 
 def _rich(text: str) -> list:
@@ -72,7 +72,7 @@ class NotionTaskBoardSource:
     create_only = True   # engine runs plan_create_only + the write-only path
     sync_fields = False
     # A row whose notes carry this marker was written by the pull adapter
-    # (sources/notion_taskboard_pull.py MARKER_PREFIX; `_NEUTRALIZE` there
+    # (notion_taskboard_pull.py MARKER_PREFIX; `_NEUTRALIZE` there
     # defangs the same pattern before untrusted text reaches the board), never
     # by a Task Board editor, so the push leg binds it instead of creating a
     # duplicate page.

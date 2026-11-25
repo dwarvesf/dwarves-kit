@@ -1,14 +1,10 @@
 """Notion adapter tests against a fake ntn transport (no network)."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from sources.notion import NotionSource, _rich  # noqa: E402
+from notion import NotionSource, _rich  # noqa: E402
 from sync_core import Plan, Row  # noqa: E402
 
 
@@ -212,3 +208,31 @@ def test_unbound_without_flags_exits_with_guidance():
     src = NotionSource(runner=FakeNtn())
     with pytest.raises(SystemExit, match="notion-db"):
         src.ensure_binding()
+
+
+# --- the adapter builds the app, or skips it when nothing binds it ----------
+
+
+def _build_notion(opts, state_path):
+    import adapters
+    from types import SimpleNamespace
+    return adapters.load().build(
+        "notion", opts, SimpleNamespace(state_path=state_path, project_root=None))
+
+
+def test_build_skips_notion_with_no_binding(tmp_path, capsys):
+    assert _build_notion({}, tmp_path / "notion.state.json") is None
+    assert _build_notion({}, None) is None
+    assert capsys.readouterr().out.count(
+        "notion: skipped (no binding; set notion_db/notion_parent"
+        " in [sync] (.kit.toml) or pass --notion-db)") == 2
+
+
+def test_build_binds_notion_from_a_flag_or_a_saved_binding(tmp_path):
+    src = _build_notion({"notion_db": "db1", "notion_title": ""}, None)
+    assert (src.db, src.parent, src.board_title) == ("db1", None, "Backlog")
+    src = _build_notion({"notion_parent": "pg1", "notion_title": "Mine"}, None)
+    assert (src.db, src.parent, src.board_title) == (None, "pg1", "Mine")
+    state = tmp_path / "notion.state.json"
+    state.write_text(json.dumps({"binding": {"db_id": "db9"}}))
+    assert _build_notion({}, state) is not None
