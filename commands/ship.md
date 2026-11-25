@@ -41,7 +41,7 @@ Run the narrowest tests that cover the change (in the kit repo `bin/test-affecte
 - Python: `pytest <files>`
 - Rust: `cargo test <filter>`
 
-Never the whole suite: it runs only in the release and nightly path (`.github/workflows/test.yml` on dispatch or tag, and the operator's nightly job).
+Run the whole suite (`npm test`, `go test ./...`, `pytest`, `cargo test`, `bash tests/run-all.sh`) only when the operator passed `--full`; a config default is not a request. Otherwise the whole suite runs only in the release and nightly path (`.github/workflows/test.yml` on dispatch or tag, and the operator's nightly job).
 In a tiered mega-goal node (`[mega] verify = "tiered"` at the base), a red run that `bash lib/gate/known-failures.sh classify <log> <root> <base> --exit <n> [--prev-count <n>]` prints `known` for does not stop the ship: every failure is on the lead's known-failures list at the base and the executed count did not drop. Name the known failures in the summary.
 If tests fail: STOP. Show the failures. Ask if the user wants to fix them first.
 If no test runner found: WARN but continue.
