@@ -412,6 +412,116 @@ out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_ope
   "$WRAP" merge --apply --with-ci --pr 97 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --with-ci red: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_no "merge --with-ci red: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+echo "--- merge --with-ci: a PR whose checks are pending when the sweep reads it is waited for"
+# The eligibility gate calls pending checks WAIT and skipped the PR, so `--with-ci` exited
+# `nothing eligible to merge` (a PR on a repo with a ci label or none, a head seconds old, a
+# rebase just pushed). Under `--with-ci` a pending check, with none failing, now holds for the
+# runs, then re-reads and re-gates the same head. Reads of --pr N: 1 draft check, 2 the gate's
+# first read (pending), then the wait's own reads, then the settled re-read.
+PD_PEND_RUN='[{"name":"test","status":"IN_PROGRESS","conclusion":""}]'
+PD_RED='[{"name":"test","status":"COMPLETED","conclusion":"FAILURE","completedAt":"2026-01-01T00:00:00Z"}]'
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 110)" \
+  GH_STUB_PR_110="$(zc_json 110 UNSTABLE "$PD_PEND_RUN")" \
+  GH_STUB_PR_110_4="{\"number\":110,\"statusCheckRollup\":$PD_PEND_RUN}" \
+  GH_STUB_PR_110_5="{\"number\":110,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_110_6="$(zc_json 110 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --with-ci --pr 110 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci pending --pr: exits 0" "$rc"
+chk_has "merge --with-ci pending --pr: the first gate still reports the pending verdict" "$out" "SKIP #110 zero checks: checks are pending or failing"
+chk_has "merge --with-ci pending --pr: says it is waiting for the checks" "$out" "waiting for the pending checks on #110"
+chk_has "merge --with-ci pending --pr: merged once the checks read green" "$out" "merged #110 ("
+chk "merge --with-ci pending --pr: the pending run was read past before the merge" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-110" 2>/dev/null || echo 0)" -ge 6 ]; echo $?)"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=40 GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 111)" \
+  GH_STUB_PR_111="$(zc_json 111 UNSTABLE "$PD_PEND_RUN")" \
+  "$WRAP" merge --apply --with-ci --pr 111 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci still pending: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "merge --with-ci still pending: says it ran out, with the seconds waited" "$out" \
+  "FAILED merge #111: checks still pending after 40s; left open"
+chk_no "merge --with-ci still pending: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 112)" \
+  GH_STUB_PR_112="$(zc_json 112 UNSTABLE "$PD_PEND_RUN")" \
+  GH_STUB_PR_112_4="{\"number\":112,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_112_5="$(zc_json 112 CLEAN "$ZC_GREEN" | sed "s/$PR50_OID/ffffffffffffffffffffffffffffffffffffffff/")" \
+  "$WRAP" merge --apply --with-ci --pr 112 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci pending, head moves during the wait: exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "merge --with-ci pending, head moves during the wait: keeps the head-moved refusal" "$out" "FAILED merge #112: head moved to"
+chk_no "merge --with-ci pending, head moves during the wait: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 113)" \
+  GH_STUB_PR_113="$(zc_json 113 UNSTABLE "$PD_PEND_RUN")" \
+  GH_STUB_PR_113_3="{\"number\":113,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_113_4="$(zc_json 113 CLEAN "$PD_RED")" \
+  "$WRAP" merge --apply --with-ci --pr 113 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci pending, then red once the wait ends: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_no "merge --with-ci pending, then red once the wait ends: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 114)" \
+  GH_STUB_PR_114="$(zc_json 114 UNSTABLE "$PD_RED")" \
+  "$WRAP" merge --apply --with-ci --pr 114 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci failing check: exits 4 at once" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_has "merge --with-ci failing check: skips" "$out" "SKIP #114 zero checks: checks are pending or failing"
+chk_no "merge --with-ci failing check: does not announce a wait" "$out" "waiting for the pending checks"
+chk "merge --with-ci failing check: no read past the draft check and the gate's own" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-114" 2>/dev/null || echo 0)" -le 2 ]; echo $?)"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+PD_MIXED='[{"name":"test","status":"IN_PROGRESS","conclusion":""},{"name":"lint","status":"COMPLETED","conclusion":"FAILURE","completedAt":"2026-01-01T00:00:00Z"}]'
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 115)" \
+  GH_STUB_PR_115="$(zc_json 115 UNSTABLE "$PD_MIXED")" \
+  "$WRAP" merge --apply --with-ci --pr 115 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci one failing, one pending: exits 4 at once" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_no "merge --with-ci one failing, one pending: does not wait" "$out" "waiting for the pending checks"
+chk "merge --with-ci one failing, one pending: no read past the gate's own" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-115" 2>/dev/null || echo 0)" -le 2 ]; echo $?)"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 116)" \
+  GH_STUB_PR_116="$(zc_json 116 UNSTABLE "$PD_PEND_RUN")" \
+  "$WRAP" merge --apply --pr 116 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge without --with-ci, pending: exits 4 as before" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_has "merge without --with-ci, pending: skips as before" "$out" "SKIP #116 zero checks: checks are pending or failing"
+chk "merge without --with-ci, pending: no wait" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-116" 2>/dev/null || echo 0)" -le 2 ]; echo $?)"
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 117)" \
+  GH_STUB_PR_117="$(zc_json 117 UNSTABLE "$PD_PEND_RUN")" \
+  "$WRAP" merge --with-ci --pr 117 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci dry run, pending: exits 0" "$rc"
+chk_has "merge --with-ci dry run, pending: names the wait --apply would make" "$out" \
+  "note: #117 has pending checks; --apply would wait for them"
+chk "merge --with-ci dry run, pending: no wait" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-117" 2>/dev/null || echo 0)" -le 2 ]; echo $?)"
+
+echo "--- merge --with-ci, bare form: a pending PR is waited for when nothing else is eligible"
+# Reads of the bare form: 1 the gate's read (pending), then the wait's reads, then the settled one.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 118)" \
+  GH_STUB_PR_118="$(zc_json 118 UNSTABLE "$PD_PEND_RUN")" \
+  GH_STUB_PR_118_3="{\"number\":118,\"statusCheckRollup\":$PD_PEND_RUN}" \
+  GH_STUB_PR_118_4="{\"number\":118,\"statusCheckRollup\":$ZC_GREEN}" \
+  GH_STUB_PR_118_5="$(zc_json 118 CLEAN "$ZC_GREEN")" \
+  "$WRAP" merge --apply --with-ci "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci bare, pending: exits 0" "$rc"
+chk_has "merge --with-ci bare, pending: lists it eligible after the wait" "$out" "eligible #118 zero checks [feat/ci-gate]"
+chk_has "merge --with-ci bare, pending: merged once the checks read green" "$out" "merged #118 ("
+
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=40 GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 119)" \
+  GH_STUB_PR_119="$(zc_json 119 UNSTABLE "$PD_PEND_RUN")" \
+  "$WRAP" merge --apply --with-ci "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci bare, still pending: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "merge --with-ci bare, still pending: says it ran out, with the seconds waited" "$out" \
+  "FAILED merge #119: checks still pending after 40s; left open"
 mv "$TMPD/clone-scan-main/.github" "$TMPD/pw-wf-discard"
 
 echo "--- zero-check --pr: a head that already reports checks never probes the labels"
