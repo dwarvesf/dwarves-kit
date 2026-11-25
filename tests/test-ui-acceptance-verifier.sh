@@ -103,11 +103,12 @@ run_runner() {
 bare_runner() { ( cd "$CWD" && UI_VERIFY_HOME="$RUN_HOME" "${TIMEOUT[@]}" node "${RUN_RUNNER:-$RUNNER}" "$@" ) >"$T/stdout" 2>"$T/stderr"; RC=$?; }
 # runner_variant <name> <search> <replace>: a copy of the runner with one literal edit, next to a copy of
 # package.json and outside any git work tree. Prints its path. It fails when the search text is absent, so a
-# control that no longer matches the code cannot pass.
+# control that no longer matches the code cannot pass. VARIANT_SRC names the file to copy (default: the runner),
+# so one variant can carry two edits.
 runner_variant() {
   local dir="$T/variant-$1"
   mkdir -p "$dir"; cp "$PACKAGE_JSON" "$dir/package.json"
-  node -e 'const fs=require("fs");const c=fs.readFileSync(process.argv[1],"utf8");if(!c.includes(process.argv[3]))process.exit(1);fs.writeFileSync(process.argv[2],c.replace(process.argv[3],()=>process.argv[4]))' "$RUNNER" "$dir/run.mjs" "$2" "$3" || return 1
+  node -e 'const fs=require("fs");const c=fs.readFileSync(process.argv[1],"utf8");if(!c.includes(process.argv[3]))process.exit(1);fs.writeFileSync(process.argv[2],c.replace(process.argv[3],()=>process.argv[4]))' "${VARIANT_SRC:-$RUNNER}" "$dir/run.mjs" "$2" "$3" || return 1
   printf '%s' "$dir/run.mjs"
 }
 out_empty() { [ ! -e "$1" ] || [ -z "$(ls -A "$1")" ]; }
@@ -464,7 +465,8 @@ case_guard_refusals() {
 fake_install() {
   mkdir -p "$1/node_modules/playwright"; chmod 755 "$1"
   printf '{"name":"playwright","version":"%s"}\n' "$2" > "$1/node_modules/playwright/package.json"
-  if [ "${3:-}" = with-browser ]; then mkdir -p "$1/browsers/chromium-1"; fi
+  chmod -R go-w "$1/node_modules"
+  if [ "${3:-}" = with-browser ]; then mkdir -p "$1/browsers/chromium-1"; chmod -R go-w "$1/browsers"; fi
 }
 # doctor <home> [runner] [package.json dir used by the runner copy]: sets RC and the doctor text in DOC.
 doctor() {
@@ -482,11 +484,21 @@ untrusted_case() {
     */dr-world) fake_install "$home" "$pin" with-browser; chmod 777 "$home" ;;
     */dr-parent/root) fake_install "$home" "$pin" with-browser; chmod 775 "$(dirname "$home")" ;;
     */dr-pw) fake_install "$home" "$pin" with-browser; chmod 775 "$home/node_modules/playwright" ;;
+    */dr-nm) fake_install "$home" "$pin" with-browser; chmod 775 "$home/node_modules" ;;
+    */dr-deepfile) fake_install "$home" "$pin" with-browser; mkdir -p "$home/node_modules/playwright-core/lib"; printf 'x\n' > "$home/node_modules/playwright-core/lib/deep.js"; chmod 664 "$home/node_modules/playwright-core/lib/deep.js" ;;
+    */dr-link) fake_install "$home" "$pin" with-browser; mkdir -p "$T/dr-outside"; ln -s "$T/dr-outside" "$home/node_modules/escape" ;;
+    */dr-fifo) fake_install "$home" "$pin" with-browser; mkfifo "$home/node_modules/pipe" ;;
+    */dr-unreadable) fake_install "$home" "$pin" with-browser; mkdir -p "$home/node_modules/sub"; chmod 000 "$home/node_modules/sub" ;;
+    */dr-browsers) fake_install "$home" "$pin" with-browser; printf 'x\n' > "$home/browsers/chromium-1/chrome"; chmod 664 "$home/browsers/chromium-1/chrome" ;;
+    */dr-weird) fake_install "$home" "$pin" with-browser; printf 'x\n' > "$home/node_modules/a\`b|c"; chmod 664 "$home/node_modules/a\`b|c" ;;
+    */dr-dangling) fake_install "$home" "$pin" with-browser; ln -s "$home/node_modules/not-there" "$home/node_modules/dangling" ;;
+    */dr-elsewhere) fake_install "$home" "$pin" with-browser; mkdir -p "$home/elsewhere"; printf 'x\n' > "$home/elsewhere/code.js"; ln -s "$home/elsewhere/code.js" "$home/node_modules/aside.js" ;;
+    */dr-core) fake_install "$home" "$pin" with-browser; mkdir -p "$home/node_modules/playwright-core"; chmod 775 "$home/node_modules/playwright-core" ;;
   esac
   doctor "$home"
   { [ "$RC" = 20 ] && printf '%s\n' "$DOC" | grep -qF "NOT READY: $want"; }; check "doctor: $label is not used, state 'NOT READY: $want' (exit $RC)" $?
   RUN_HOME="$home"; out=$(next_out); run_runner "$CWD" "$BASE" "$out"
-  { [ "$RC" = 2 ] && [ "$(rows_all "$out/result.json" "r.status==='NO-CHECK'&&r.reason==='$want'")" = true ]; }; check "run: $label is NO-CHECK '$want' (exit $RC)" $?
+  { [ "$RC" = 2 ] && [ "$(rows_all "$out/result.json" "r.status==='NO-CHECK'&&r.reason===\"$want\"")" = true ]; }; check "run: $label is NO-CHECK '$want' (exit $RC)" $?
   RUN_HOME="$T/home-empty"
 }
 
@@ -557,6 +569,25 @@ case_doctor_and_skip() {
   untrusted_case "a world-writable install root" "$T/dr-world" 'writable by group or others' "$pin"
   untrusted_case "an install root whose parent directory is group-writable and not sticky" "$T/dr-parent/root" 'a parent directory is writable by group or others and is not sticky' "$pin"
   untrusted_case "an install root whose node_modules/playwright is group-writable" "$T/dr-pw" 'node_modules/playwright is writable by group or others' "$pin"
+  untrusted_case "an install root whose node_modules is group-writable" "$T/dr-nm" 'node_modules is writable by group or others' "$pin"
+  untrusted_case "an install root whose node_modules/playwright-core is group-writable" "$T/dr-core" 'node_modules/playwright-core is writable by group or others' "$pin"
+  untrusted_case "an install root with one group-writable file deep inside node_modules/playwright-core/lib" "$T/dr-deepfile" 'node_modules/playwright-core/lib/deep.js is writable by group or others' "$pin"
+  untrusted_case "an install root with a link inside node_modules that points outside the root" "$T/dr-link" 'node_modules/escape is a link that leaves node_modules and browsers' "$pin"
+  untrusted_case "an install root with a dangling link inside node_modules" "$T/dr-dangling" 'node_modules/dangling is a link that cannot be resolved' "$pin"
+  untrusted_case "an install root with a link inside node_modules to a file under the root but outside node_modules" "$T/dr-elsewhere" 'node_modules/aside.js is a link that leaves node_modules and browsers' "$pin"
+  untrusted_case "an install root with a FIFO inside node_modules" "$T/dr-fifo" 'node_modules/pipe is not a file, a directory or a link' "$pin"
+  if [ "$(id -u)" != 0 ]; then
+    untrusted_case "an install root with a directory inside node_modules that the user cannot read" "$T/dr-unreadable" 'node_modules/sub cannot be read' "$pin"
+    chmod 755 "$T/dr-unreadable/node_modules/sub"
+  else skip "doctor-and-skip: running as root, a mode 000 directory is still readable"; fi
+  untrusted_case "an install root with a group-writable file inside browsers" "$T/dr-browsers" 'browsers/chromium-1/chrome is writable by group or others' "$pin"
+  untrusted_case "an install root with a group-writable file whose name holds a backtick and a pipe" "$T/dr-weird" "node_modules/a'b/c is writable by group or others" "$pin"
+  doctor "$T/dr-weird"
+  [ "$(printf '%s\n' "$DOC" | awk '/^state:/{print}' | tr -d '`|' | wc -c)" = "$(printf '%s\n' "$DOC" | awk '/^state:/{print}' | wc -c)" ]; check "the doctor state line for that file name holds no backtick and no pipe" $?
+  home="$T/dr-linkok"; fake_install "$home" "$pin" with-browser; ln -s playwright "$home/node_modules/inside"
+  doctor "$home"
+  [ "$RC" = 0 ]; check "control: a link inside node_modules that resolves inside node_modules does not refuse the install root (exit $RC)" $?
+  import_time_check "$pin"
   home="$T/dr-sticky/root"; fake_install "$home" "$pin" with-browser; chmod 1777 "$(dirname "$home")"
   doctor "$home"
   [ "$RC" = 0 ]; check "control: a sticky world-writable parent directory (like /tmp) does not refuse the install root (exit $RC)" $?
@@ -572,6 +603,23 @@ case_doctor_and_skip() {
   case "$(printf '%s\n' "$DOC" | awk '/^state:/{print}')" in *"NOT READY: "*) ok "the doctor state line carries the reason the browser cases print after SKIP" ;; *) no "doctor state line lacks a reason" ;; esac
 
   doctor_nonode_run
+}
+
+# import_time_check <pin>: the trust check also runs right before the import. With the early check cut out of a runner
+# copy, a group-writable playwright-core is still refused; with both cut out, the run gets as far as the import.
+import_time_check() {
+  local home="$T/dr-late" early late out want="install root not trusted: node_modules/playwright-core is writable by group or others"
+  fake_install "$home" "$1" with-browser; mkdir -p "$home/node_modules/playwright-core"; chmod 775 "$home/node_modules/playwright-core"
+  RUN_HOME="$home"
+  if early=$(runner_variant noearly 'const detail = untrustedReason(root);' "const detail = '';"); then
+    out=$(next_out); RUN_RUNNER="$early" run_runner "$CWD" "$BASE" "$out"
+    { [ "$RC" = 2 ] && [ "$(rows_all "$out/result.json" "r.status==='NO-CHECK'&&r.reason==='$want'")" = true ]; }; check "run: with the early check cut out, the check before the import still refuses a group-writable playwright-core (exit $RC)" $?
+    if late=$(VARIANT_SRC="$early" runner_variant noimport 'if (untrusted) throw new InstallNotTrusted(untrusted);' ''); then
+      out=$(next_out); RUN_RUNNER="$late" run_runner "$CWD" "$BASE" "$out"
+      [ "$(rows_all "$out/result.json" "r.reason==='$want'")" = false ]; check "control: with both checks cut out the same install is not refused by the trust check (exit $RC)" $?
+    else no "control: the check before the import is no longer in the runner"; fi
+  else no "control: the early trust check is no longer in the runner"; fi
+  RUN_RUNNER=""; RUN_HOME="$T/home-empty"
 }
 
 # doctor_nonode_run: the suite run again with a PATH that holds the common tools but no node.
@@ -1040,30 +1088,71 @@ case_offsite_request_aborted() {
   [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+j.rows[0].reason+"|"+j.rows[0].observed')" = "NO-CHECK|redirected off an allowed host|" ]; check "a failing step after a click that left the allowed hosts is NO-CHECK 'redirected off an allowed host', never FAIL" $?
   [ "$(jget "$out/result.json" 'j.rows[1].status+"|"+j.rows[1].reason')" = "NO-CHECK|redirected off an allowed host" ]; check "a 302 to another port of the allowed name is NO-CHECK even though the page there says 'counted'" $?
   [ "$(jget "$out/result.json" 'j.rows[2].status')" = FAIL ]; check "control: the same missing text on a page that never left is a plain FAIL" $?
+  [ "$(jget "$out/result.json" "j.blocked_requests.some(b=>b.host==='127.0.0.1:$FIX_PORT2'&&b.count>=1)")" = true ]; check "blocked_requests names the allowed host with the other port for the top-level redirect hop" $?
   end_browser
 }
 
-# Two things the guards are known not to cover, recorded as they happen in the real browser. A NOTE line is an
-# observation, never a pass or a fail: the checks only prove each page settled, so a Playwright upgrade that
-# closes either gap shows up as a changed NOTE and a README edit, not as a red suite.
+# Two things the guards do not stop, recorded as they happen in the real browser.
 #   worker WebSocket: a dedicated worker opens a WebSocket to another port of the allowed host. The WebSocket route
-#     is an init script in the page, which a worker never runs, so the guard is not expected to see this socket.
-#   307 hop: the allowed target answers a POST with 307 to another port of the allowed host. The route handler
-#     is not called for a redirect hop, so the method and the body are expected to arrive.
+#     is an init script in the page, which a worker never runs, so the guard is not expected to see this socket. A
+#     NOTE line is an observation, never a pass or a fail: a Playwright upgrade that closes the gap shows up as a
+#     changed NOTE and a README edit, not as a red suite.
+#   307 hop: the allowed target answers a POST with 307 to another port of the allowed host. The route handler is
+#     not called for a redirect hop, so the method and the body arrive. The context-level request listener sees the
+#     hop: the row is NO-CHECK, the hop target is counted, and the run cannot be PASS. The hop request itself is
+#     still sent once. A hop that arrives after the last step is held too: the end of the scenario waits for the
+#     requests the context already knows about, then checks again.
+#   SharedWorker hop: a shared worker POSTs to a path answering 307 to the other port. Recorded as a NOTE.
+# hop_detected <result.json> <port>: row 1 is NO-CHECK 'redirected off an allowed host', blocked_requests holds the
+# hop target as host:port, and the verdict is not PASS.
+hop_detected() {
+  jget "$1" "j.rows[0].status==='NO-CHECK'&&j.rows[0].reason==='redirected off an allowed host'&&j.blocked_requests.some(b=>b.host==='127.0.0.1:$2'&&b.count>=1)&&j.verdict!=='PASS'"
+}
+
 case_observed_residuals() {
   echo "--- observed-residuals"
   begin_browser observed-residuals || return 0
-  local f="$T/obs.json" out count seen
+  local f="$T/obs.json" out count seen before variant
+  local hop_js='s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/post-hop.html"},{do:"expect_text",text:"hop done"}]},{id:"AC-2",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"expect_text",text:"Kit fixture app"}]}]'
   page_scenario "$f" /worker.html "worker done" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/worker.html"},{do:"expect_text",text:"worker done"}]}]'
   out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
   { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page whose worker opens a WebSocket to another port of the allowed host settled and its row is PASS (exit $RC)" $?
   count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count")
   printf '  NOTE  worker WebSocket to the other port: listener answered %s; blocked_requests %s\n' "$count" "$(jget "$out/result.json" 'JSON.stringify(j.blocked_requests)')"
-  page_scenario "$f" /post-hop.html "hop done" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/post-hop.html"},{do:"expect_text",text:"hop done"}]}]'
+
+  page_scenario "$f" / "Kit fixture app" "$hop_js"
   out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
-  { [ "$RC" = 0 ] && [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; }; check "the page that POSTs a JSON body to a path answering 307 to another port of the allowed host settled and its row is PASS (exit $RC)" $?
+  [ "$RC" = 2 ]; check "a page that POSTs to a path answering 307 to another port of the allowed host exits 2 (exit $RC)" $?
+  [ "$(hop_detected "$out/result.json" "$FIX_PORT2")" = true ]; check "its row is NO-CHECK 'redirected off an allowed host', blocked_requests holds 127.0.0.1:<port> and the verdict is not PASS" $?
+  [ "$(jget "$out/result.json" 'j.rows[1].status')" = PASS ]; check "control: the next scenario, in its own context, is still PASS (the hop is held to the scenario that saw it)" $?
   count=$(curl -s "http://127.0.0.1:$FIX_PORT2/count"); seen=$(curl -s "http://127.0.0.1:$FIX_PORT2/seen")
   printf '  NOTE  307 hop to the other port: listener answered %s and saw %s; blocked_requests %s\n' "$count" "$seen" "$(jget "$out/result.json" 'JSON.stringify(j.blocked_requests)')"
+  if variant=$(runner_variant nohop 'request.redirectedFrom() !== null && !isAllowedUrl(guard, request.url())' 'false'); then
+    out=$(next_out); RUN_RUNNER="$variant" run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+    { [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ] && [ "$(hop_detected "$out/result.json" "$FIX_PORT2")" = false ]; }; check "control: a runner copy without the hop listener reports the hop row as PASS (exit $RC)" $?
+    RUN_RUNNER=""
+  else no "control: the hop listener is no longer in the runner"; fi
+
+  page_scenario "$f" / "Kit fixture app" "$hop_js"
+  mutate "$f" "$f" 's.scenarios.push({id:"AC-3",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"expect_text",text:"never on this page"}]})'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+  { [ "$RC" = 1 ] && [ "$(jget "$out/result.json" 'j.verdict')" = FAIL ] && [ "$(hop_detected "$out/result.json" "$FIX_PORT2")" = true ]; }; check "with a FAIL row beside the hop row the exit is 1 and the verdict FAIL, the hop row staying NO-CHECK (exit $RC)" $?
+
+  local late_js='s.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/late-hop.html"},{do:"expect_text",text:"late page"},{do:"screenshot",name:"late"}]}]'
+  page_scenario "$f" / "Kit fixture app" "$late_js"
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+  { [ "$RC" = 2 ] && [ "$(hop_detected "$out/result.json" "$FIX_PORT2")" = true ]; }; check "a hop that arrives after the last asserting step (steps expect_text, screenshot; the 307 answer is delayed 800 ms) still ends the row NO-CHECK 'redirected off an allowed host' (exit $RC)" $?
+  if variant=$(runner_variant nofinal $'    if (hasEscaped(opened, guard)) return escapedRow();\n    return { status: \'PASS\'' "    return { status: 'PASS'"); then
+    out=$(next_out); RUN_RUNNER="$variant" run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+    [ "$(jget "$out/result.json" 'j.rows[0].status')" = PASS ]; check "control: a runner copy without the final check ends the same scenario PASS (exit $RC)" $?
+    RUN_RUNNER=""
+  else no "control: the final check is no longer in the runner"; fi
+
+  before=$(curl -s "http://127.0.0.1:$FIX_PORT2/seen")
+  page_scenario "$f" / "Kit fixture app" 's.scenarios=[{id:"AC-1",kind:"criterion",steps:[{do:"goto",path:"/shared-worker.html"},{do:"expect_text",text:"shared worker done"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms "$STEP_MS"
+  seen=$(curl -s "http://127.0.0.1:$FIX_PORT2/seen")
+  printf '  NOTE  SharedWorker POST to a 307 to the other port: row %s, exit %s, listener requests before %s and after %s; blocked_requests %s\n' "$(jget "$out/result.json" 'j.rows[0].status')" "$RC" "$before" "$seen" "$(jget "$out/result.json" 'JSON.stringify(j.blocked_requests)')"
   end_browser
 }
 

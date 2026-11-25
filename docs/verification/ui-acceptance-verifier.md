@@ -291,10 +291,10 @@ To redo one live dispatch:
 
 ## Observations
 
-Two things the guards do not cover, measured in the real browser by case `observed-residuals` (Playwright 1.65.1, headless Chromium on macOS). The case asserts only that each page settled; the counts print as NOTE lines.
+Two things the guards do not stop, measured in the real browser by case `observed-residuals` (Playwright 1.65.1, headless Chromium on macOS). The worker case asserts only that the page settled; the counts print as NOTE lines. The 307 hop was first recorded here as unseen and is now detected: see `docs/verification/ui-verify-hop-detect.md`.
 
 - Worker WebSocket: a dedicated worker, started by `worker.html`, opened a WebSocket to the other port of the allowed host. The second listener counted 2 upgrades for the run's 2 page loads (the preflight and the scenario step), `blocked_requests` was empty, so the WebSocket guard did not see it. Playwright adds its WebSocket route to each page as an init script, which a worker does not run, and offers no context-level hook for workers, so it is not closed. It is a residual in the README, the spec and the agent notes.
-- 307 hop: `post-hop.html` POSTed `{"hop":1}` to `/redirect-307` on the allowed target, which answered 307 to the other port of the same allowed host. The second listener counted 2 hits for the 2 page loads, each a POST with the body `{"hop":1}` (0 GET), and `blocked_requests` was empty, so the route handler did not see the hop. A 307 or 308 keeps the method and the body.
+- 307 hop: `post-hop.html` POSTed `{"hop":1}` to `/redirect-307` on the allowed target, which answered 307 to the other port of the same allowed host. The route handler did not see the hop, and the second listener received a POST with the body `{"hop":1}`; a 307 or 308 keeps the method and the body. At first nothing was recorded for it. A later change added a context-level `request` listener: the row is now NO-CHECK `redirected off an allowed host` and `blocked_requests` holds the hop target, so the run cannot be PASS. The hop request itself is still sent once (detection, not prevention).
 
 ## Limits
 
