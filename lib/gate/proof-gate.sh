@@ -162,8 +162,20 @@ _proof_visual_artifact() {
   esac
 }
 
+# The command that makes the artifact, for the rows that have a producer. Both guards are file tests (an existence
+# check, never a read of module code): a shim whose module directory was deleted must not advertise a dead command.
+# The command carries the literal $DWARVES_KIT/bin/ prefix so it resolves from a consumer repo. It does not depend on
+# [modules] proof_capture: the kit ships both files whatever the toggle says.
+_proof_visual_capture() {
+  [ -x "$LIB_ROOT/../bin/proof-capture" ] && [ -x "$LIB_ROOT/proof-capture/bin/proof-capture" ] || return 0
+  case "$1" in
+    "ui page") echo '$DWARVES_KIT/bin/proof-capture run page <page.html|url> <out.png> --width 1280 (then --width 400 for the narrow shot)' ;;
+    "tui")     echo '$DWARVES_KIT/bin/proof-capture run tape <demo.tape> <out.gif>' ;;
+  esac
+}
+
 proof_contract() {
-  local desc class type artifact skill
+  local desc class type artifact skill vrow vcap
   desc="$*"
   [ -n "$desc" ] || { echo "usage: proof-gate.sh contract \"<task description>\"" >&2; return 64; }
   class="$(proof_class "$desc")"
@@ -177,7 +189,10 @@ proof_contract() {
   echo "owner: $skill"
   echo "rigor: $(proof_requirement "$desc")"
   if [ "$(_proof_visual_enabled)" = "true" ]; then
-    echo "visual: $(_proof_visual_artifact "$(_proof_visual_row "$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')")")"
+    vrow="$(_proof_visual_row "$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')")"
+    echo "visual: $(_proof_visual_artifact "$vrow")"
+    vcap="$(_proof_visual_capture "$vrow")"
+    [ -z "$vcap" ] || echo "capture: $vcap"
   fi
   echo "hint: run 'proof-gate.sh skeleton <slug>' for a fillable verification file"
 }
