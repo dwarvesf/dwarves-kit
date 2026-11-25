@@ -34,6 +34,9 @@ mkroot() { # mkroot <name> <files...>
 FULL="$(mkroot full spec-find.sh spec-active.sh spec-status.sh states.tsv)"
 PART="$(mkroot partial spec-find.sh)"
 NONE="$(mkroot none)"
+# spec-active.sh that sources fine but whose spec_active answers nothing, with spec_for_slug defined
+EMPTY="$(mkroot empty spec-find.sh)"
+printf '. "${BASH_SOURCE[0]%%/*}/spec-find.sh"\nspec_active() { :; }\n' > "$EMPTY/lib/spec/spec-active.sh"
 
 # repos
 mkrepo() { # mkrepo <dir> -- a root spec for slug foo and a co-located one for slug delta
@@ -53,6 +56,11 @@ eq "root spec"                  "$(pick "$FULL" "$R" foo)"   "$R/docs/specs/SPEC
 eq "co-located spec"            "$(pick "$FULL" "$R" delta)" "$R/tools/x/docs/specs/SPEC-005-delta.md"
 eq "no spec for the slug"       "$(pick "$FULL" "$R" nope)"  ""
 eq "a root path holding a TAB survives the pick" "$(pick "$FULL" "$RT" foo)" "$RT/docs/specs/SPEC-001-foo.md"
+
+echo "=== spec_active answers nothing where spec_for_slug would find the spec ==="
+eq "the pick is never emptier than master's" "$(pick "$EMPTY" "$R" foo)" "$R/docs/specs/SPEC-001-foo.md"
+eq "the co-located spec too"                 "$(pick "$EMPTY" "$R" delta)" "$R/tools/x/docs/specs/SPEC-005-delta.md"
+eq "still empty when neither finds one"      "$(pick "$EMPTY" "$R" nope)" ""
 
 echo "=== a partial install: spec-find.sh without spec-active.sh ==="
 eq "root spec"                  "$(pick "$PART" "$R" foo)"   "$R/docs/specs/SPEC-001-foo.md"

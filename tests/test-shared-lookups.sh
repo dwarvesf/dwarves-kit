@@ -118,7 +118,7 @@ merged-ok lib/wrap/wrap-land.sh 2
 merged-ok lib/wrap/wrap-merge.sh 6
 merged-ok lib/wrap/wrap-rebase.sh 1
 merged-ok lib/wrap/wrap-scan.sh 2
-spec-active-ok hooks/ship-gate.sh 2
+spec-active-ok hooks/ship-gate.sh 3
 spec-active-ok lib/gate/gate-ledger.sh 3
 spec-active-ok lib/gate/proof-ledger.sh 3
 spec-active-ok lib/goal/mega-merge.sh 1

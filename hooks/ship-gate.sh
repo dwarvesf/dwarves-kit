@@ -700,6 +700,10 @@ SACTIVE="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-active.s
 SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
 if [ -r "$SACTIVE" ] && source "$SACTIVE" 2>/dev/null; then
   SPEC=$(spec_active --slug "$SLUG" "$ROOT" 2>/dev/null | awk 'index($0, "name\t") == 1 { print substr($0, 6); exit }')
+  # an answer emptier than master's is never taken: spec_for_slug, when defined, is the same pick as before
+  if [ -z "$SPEC" ] && type spec_for_slug >/dev/null 2>&1; then
+    SPEC=$(spec_for_slug "$ROOT" "$SLUG") # spec-active-ok: spec_active answered nothing, the enforcement name pick as on master
+  fi
 elif [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
   SPEC=$(spec_for_slug "$ROOT" "$SLUG") # spec-active-ok: spec-find.sh without spec-active.sh, the enforcement name pick as before
 else
