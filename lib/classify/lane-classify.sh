@@ -710,11 +710,16 @@ function stepkey(t,   v) {
   if (t == "with:") { once(sk, "with"); wopen = 1; split("", wk); return }
   if (t == "run: |") { once(sk, "run"); inblk = 1; blkn = 0; return }
   if (t ~ /^run: /) { v = substr(t, 6); if (v !~ /^[A-Za-z0-9._\/-][A-Za-z0-9 ._\/=+,@"'$()&|;<>*-]*$/) bad("run value"); once(sk, "run"); return }
-  if (t ~ /^uses: actions\/(checkout|setup-[A-Za-z0-9_-]+)@[0-9a-f]+$/) { v = t; sub(/^.*@/, "", v); if (length(v) != 40) bad("action pin"); once(sk, "uses"); return }   # chk:F4
+  if (t ~ /^uses: /) {
+    if (t !~ /^uses: actions\/(checkout|setup-[A-Za-z0-9_-]+)@[0-9a-f]+$/) bad("action outside the allow list")   # chk:PIN
+    v = t; sub(/^.*@/, "", v)
+    if (length(v) != 40) bad("action pin")   # chk:F4 PIN
+    once(sk, "uses"); return
+  }
   if (t ~ /^name: /) { v = substr(t, 7); if (!okname(v)) bad("step name"); once(sk, "name"); return }
   if (t ~ /^shell: (bash|sh)$/) { once(sk, "shell"); return }
   if (t ~ /^working-directory: [A-Za-z0-9][A-Za-z0-9 ._\/-]*$/) { once(sk, "working-directory"); return }
-  bad("step key outside the grammar")   # chk:PIN
+  bad("step key outside the grammar")
 }
 function top(t,   v) {
   sec = ""
@@ -793,8 +798,7 @@ function jobl(ind, t,   v) {
   if (ind % 2) bad("odd indent")
   if (ind == 0) { top(t); next }
   if (sec == "on") { onl(ind, t); next }
-  if (sec == "perm") { if (ind == 2 && t == "contents: read" && !permc) { permc = 1; next }
-    bad("permissions entry outside the grammar") }   # chk:PERM
+  if (sec == "perm") { if (ind == 2 && t == "contents: read" && !permc) permc = 1; else bad("permissions entry outside the grammar"); next }   # chk:PERM
   if (sec == "jobs") { jobl(ind, t); next }
   bad("indented line outside a section")
 }
@@ -803,7 +807,7 @@ END {
   if (inblk && blkn == 0) bad("empty block scalar")
   jobend()
   if (!seen["name"] || !seen["on"] || !seen["jobs"] || !seen["permissions"] || !(permok || permc)) bad("a required section is missing")   # chk:F2 PERM EMPTY
-  if (nev < 1 || nj < 1) bad("no event or no job")
+  if (nev < 1 || nj < 1) bad("no event or no job")   # chk:EMPTY
   for (n in names) print n
 }
 AWK
@@ -903,7 +907,7 @@ _floor_wf_read() {
     _floor_git "$root" show "$rev:$f" > "$img" 2>/dev/null || return 1
     bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
     case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
-    [ "$bytes" -le 200000 ] || return 1
+    [ "$bytes" -le 200000 ] || return 1   # chk:R5
     LC_ALL=C awk "$_WF_BASECHECK" "$img" >> "$out" 2>/dev/null || return 1   # chk:F3 F4
   done < "$list"
   return 0
@@ -935,7 +939,7 @@ _floor_workflow_additive() {
   [ -s "$img" ] || return 1   # chk:F5 EMPTY
   bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
   case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
-  [ "$bytes" -le 20000 ] || return 1   # chk:F5
+  [ "$bytes" -le 20000 ] || return 1   # chk:F5 R5
   LC_ALL=C tr -d '\0' < "$img" | cmp -s - "$img" || return 1   # chk:F5
   if ! LC_ALL=C awk "$_WF_GRAMMAR" "$img" > "$tmp/wf.names" 2>/dev/null; then return 1; fi   # chk:G
   def="$(_deesc_default_branch "$root")"
