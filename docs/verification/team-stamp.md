@@ -4,12 +4,12 @@
 |---|---|---|---|
 | 1 | A full stamp of an empty git repo writes every manifest row and the lock; a second run prints only `unchanged`; `--check` exits 0; the owners check passes on the tracked stamp | pass | Step 1 |
 | 3 | `tests/test-stamp-e2e.sh`: file set equals the manifest and the spec table; every generated test runs kit-free with non-default values; named scripts exist; a fixture PR passes the stamped checks; scan-safe digests; privacy scan against the denylist | 37 passed, 0 failed | Step 3 |
-| 4 | `tests/test-stamp-refusals.sh`: every refusal of every generated script is a rule line then a `Fix:` line; hostile input never reaches the output raw; every printed `Fix:` line runs through `bash -c` and creates nothing | 172 passed, 0 failed | Step 4 |
+| 4 | `tests/test-stamp-refusals.sh`: every refusal of every generated script is a rule line then a `Fix:` line; hostile input never reaches the output raw; every printed `Fix:` line runs through `bash -c` and creates nothing | 224 passed, 0 failed | Step 4 |
 | 5 | `tests/test-stamp-adopt-interplay.sh`: both orders of the adopt interplay table | 30 passed, 0 failed | Step 5 |
-| 6 | Three negative controls: the guard allows a bare merge, the render skips the kit-path scan, `write_if_absent` overwrites | each goes red, restores green | Negative control |
-| Engine | `tests/test-stamp.sh`, `tests/test-stamp-kitfree.sh all` | 115 and 13 passed, 0 failed | Step 3 |
+| 6 | Eight negative controls, and five more for the second review (door case, approval at head, approval after a base change, runs of this PR only, exact owners): the guard allows a bare merge, the render skips the kit-path scan, `write_if_absent` overwrites | each goes red, restores green | Negative control |
+| Engine | `tests/test-stamp.sh`, `tests/test-stamp-kitfree.sh all` | 164 and 13 passed, 0 failed | Step 3 |
 
-Not shown: the clean-room agent run (TASK-G11, Tier 2). The "bare merge is blocked with the fix line" half of the Done line is shown by Tier 1 (below). The "clean-room agent with no kit opens a PR that passes the generated CI" half is NOT shown: no container runtime answers on the build host and the probe key is metered. To run it when a runtime is up:
+Not shown: the clean-room probe run (TASK-G11, Tier 2) and the container path of the gauntlet runner (`docker build`, the probe container, the checker container). The build host has no container runtime, so `run.sh`, the `Dockerfile` and the checker's container mounts are code that has never executed; Tier 1 covers the same checker script and `copy-out.sh` on the host. The clean-room agent run (TASK-G11, Tier 2). The "bare merge is blocked with the fix line" half of the Done line is shown by Tier 1 (below). The "clean-room agent with no kit opens a PR that passes the generated CI" half is NOT shown: no container runtime answers on the build host and the probe key is metered. To run it when a runtime is up:
 
 ```bash
 ANTHROPIC_API_KEY=<capped probe key> RUN_OUT=docs/verification/gauntlet/<date>-custom-team-stamp-scratch/round-N bash tests/gauntlet/team-stamp/run.sh
@@ -61,7 +61,7 @@ ok - pr-shape: a hostile title with a forged Fix line: every Fix: line follows a
 ok - pr-merge: a door path with no second person: the last two stderr lines are 'pr-merge: <rule>' then 'Fix: ...'
 ok - negctl: a tracked file with uncommitted changes: the last two stderr lines are 'negctl: <rule>' then 'Fix: ...'
 ok - no hostile payload ran anywhere: no marker file exists
-172 passed, 0 failed
+224 passed, 0 failed
 Exit: 0
 
 ## Step 5: the adopt interplay
@@ -163,12 +163,12 @@ PASS  the scrub scans without -I
 == T1.6 every generated test runs with the kit absent from PATH and HOME
 PASS  tests/test-stamp-kitfree.sh all: 13 passed, 0 failed
 
-tier1: 0 failed, 47 passed
+tier1: 0 failed, 51 passed
 Exit: 0
 
 ## Negative control
 
-NEGATIVE CONTROL: eight controls, each run with lib/gate/negctl.sh after a commit and restored by git checkout. Each mutation turns its suite red; the restore turns it green again.
+NEGATIVE CONTROL: eight controls (control 5 retired in round two), each run with lib/gate/negctl.sh after a commit and restored by git checkout. Each mutation turns its suite red; the restore turns it green again.
 
 | # | Mutation | Command | Green before | Under the mutation | Green after |
 |---|---|---|---|---|---|
@@ -176,7 +176,7 @@ NEGATIVE CONTROL: eight controls, each run with lib/gate/negctl.sh after a commi
 | 2 | the render skips the kit-path scan | bash tests/test-stamp.sh | 158 passed, 0 failed | 154 passed, 4 failed | 158 passed, 0 failed |
 | 3 | write_if_absent overwrites an edited file | bash tests/test-stamp.sh | 158 passed, 0 failed | 148 passed, 10 failed | 158 passed, 0 failed |
 | 4 | an approval no longer has to be at the judged head | bash tests/test-stamp-merge.sh | 80 passed, 0 failed | 78 passed, 2 failed | 80 passed, 0 failed |
-| 5 | the tests job loses its fork guard | bash tests/test-stamp-ci.sh | 173 passed, 0 failed | 172 passed, 1 failed | 173 passed, 0 failed |
+| 5 | (retired in round two) the tests job loses its fork guard: the job no longer exists; the fork guard of `changes` and `pr-shape` stays pinned by the CI suite | bash tests/test-stamp-ci.sh | 173 passed, 0 failed | n/a | n/a |
 | 6 | the take backup skips a dangling symlink no more | bash tests/test-stamp.sh | 158 passed, 0 failed | 155 passed, 3 failed | 158 passed, 0 failed |
 | 7 | the owners check keeps the colon in a rule line | bash tests/test-stamp-refusals.sh | 224 passed, 0 failed | 223 passed, 1 failed | 224 passed, 0 failed |
 | 8 | the planted hostile repository config, run by a plain git call (the live control in Tier 1) | bash tests/gauntlet/team-stamp/tier1.sh | markers created by a plain git call | no marker through the checker | n/a |
@@ -188,6 +188,140 @@ Output:
   80 passed, 0 failed   (after the restore)
 Exit: 1
 Verdict: RED, as expected
+
+### Round two controls (security review, second pass)
+
+Five controls, each run with lib/gate/negctl.sh on a committed tree and restored by git checkout: green, mutate, red, restore, green. The test command stamps the group from the worktree into a temp repo and runs the generated test there, under the host test lock.
+
+Control 9: A door matches in any casing: the path is no longer lowered before the match
+
+```
+Command: stamp the merge group, run the generated scripts/test-pr-merge.sh
+Exit: 0 (green before mutation)
+Output:
+  PASS  a non-number is refused: two-line form
+  PASS  no number is refused: exit 2
+  PASS  no number is refused: two-line form
+  PASS  --timeout without --wait is refused: exit 2
+  PASS  --timeout without --wait: two-line form
+  PASS  --timeout with a non-number is refused: exit 2
+  PASS  an unknown option is refused: exit 2
+  PASS  an unknown option: two-line form
+  PASS  usage errors call gh never
+  failures: 0
+
+Mutation: sed -i.bak 's|lp="$(lower "$1")"|lp="$1"|' templates/team-stamp/files/scripts/pr-merge.sh.tpl && rm -f templates/team-stamp/files/scripts/pr-merge.sh.tpl.bak
+Changed: templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 1 (under mutation, RED expected)
+Output:
+  PASS  a non-number is refused: two-line form
+  PASS  no number is refused: exit 2
+  PASS  no number is refused: two-line form
+  PASS  --timeout without --wait is refused: exit 2
+  PASS  --timeout without --wait: two-line form
+  PASS  --timeout with a non-number is refused: exit 2
+  PASS  an unknown option is refused: exit 2
+  PASS  an unknown option: two-line form
+  PASS  usage errors call gh never
+  failures: 19
+
+Restore: git checkout HEAD -- templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Control 10: An approval must be on the judged head
+
+```
+Command: stamp the merge group, run the generated scripts/test-pr-merge.sh (failures only)
+Exit: 0 (green before mutation)
+Output:
+  test dir: <tmp>/pr-merge-test.5VarLS
+  failures: 0
+
+Mutation: sed -i.bak 's|and .commit.oid == ($head)|and true|' templates/team-stamp/files/scripts/pr-merge.sh.tpl && rm -f templates/team-stamp/files/scripts/pr-merge.sh.tpl.bak
+Changed: templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 1 (under mutation, RED expected)
+Output:
+  test dir: <tmp>/pr-merge-test.oWjC2O
+  FAIL  an approval that is stale does not count: refused
+  FAIL  an approval that is stale: no merge call
+  FAIL  approval rule: stale-head: refused, exit 1
+  FAIL  approval rule: stale-head: no merge call
+  failures: 4
+
+Restore: git checkout HEAD -- templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Control 11: An approval older than the last base change does not count
+
+```
+Command: stamp the merge group, run the generated scripts/test-pr-merge.sh (failures only)
+Exit: 0 (green before mutation)
+Output:
+  test dir: <tmp>/pr-merge-test.VjPsH2
+  failures: 0
+
+Mutation: sed -i.bak 's|and ((.submittedAt // "") > basechg)|and true|' templates/team-stamp/files/scripts/pr-merge.sh.tpl && rm -f templates/team-stamp/files/scripts/pr-merge.sh.tpl.bak
+Changed: templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 1 (under mutation, RED expected)
+Output:
+  test dir: <tmp>/pr-merge-test.DvTvjx
+  FAIL  an approval submitted before the last base change does not count: refused
+  failures: 1
+
+Restore: git checkout HEAD -- templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Control 12: Only this pull request's runs count (a run that names another pull request on the same head is dropped no more)
+
+```
+Command: stamp the merge group, run the generated scripts/test-pr-merge.sh (failures only)
+Exit: 0 (green before mutation)
+Output:
+  test dir: <tmp>/pr-merge-test.MJEj4S
+  failures: 0
+
+Mutation: sed -i.bak 's|select(((.pull_requests // \[\]) \| length) == 1 and .pull_requests\[0\].number == $number)|select(true)|' templates/team-stamp/files/scripts/pr-merge.sh.tpl && rm -f templates/team-stamp/files/scripts/pr-merge.sh.tpl.bak
+Changed: templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 1 (under mutation, RED expected)
+Output:
+  test dir: <tmp>/pr-merge-test.YsG1dK
+  FAIL  a run that also lists another pull request on the same head does not count: refused
+  FAIL  a run shared with another pull request: no merge call
+  failures: 2
+
+Restore: git checkout HEAD -- templates/team-stamp/files/scripts/pr-merge.sh.tpl
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
+Control 13: Ownership is an exact match (the row compare ignores case)
+
+```
+Command: stamp the owners group, run the generated scripts/test-check-owners.sh (failures only)
+Exit: 0 (green before mutation)
+Output:
+  test dir: <tmp>/check-owners-test.52XFPz
+  failures: 0
+
+Mutation: sed -i.bak 's|grep -Fxq -- "$file"|grep -Fxiq -- "$file"|' templates/team-stamp/files/scripts/check-owners.sh && rm -f templates/team-stamp/files/scripts/check-owners.sh.bak
+Changed: templates/team-stamp/files/scripts/check-owners.sh
+Exit: 1 (under mutation, RED expected)
+Output:
+  test dir: <tmp>/check-owners-test.SAel1S
+  FAIL  a row for scripts/deploy.sh does not own scripts/Deploy.sh: names the tracked path
+  failures: 1
+
+Restore: git checkout HEAD -- templates/team-stamp/files/scripts/check-owners.sh
+Exit: 0 (green after restore)
+Verdict: PASS
+```
+
 
 ## Test plan coverage
 
