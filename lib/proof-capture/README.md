@@ -72,7 +72,7 @@ The artifact is the whole API. A consumer reads the file; it never reads the scr
 
 | Verb | Needs | Notes |
 |---|---|---|
-| `run page` | a Chromium-family browser | runs headless on a throwaway profile that the tool creates and deletes. It never attaches to a running browser. |
+| `run page` | a Chromium-family browser | runs headless on a throwaway profile that the tool creates and deletes, with a mock keychain and a basic password store so it never touches your real keychain. It never attaches to a running browser. |
 | `run tape` | `vhs` | brings `ttyd` and `ffmpeg`. vhs may look for or fetch a browser of its own, and `ttyd` runs a local terminal server while it runs. That is vhs's own behavior, not controlled here. |
 
 ## Process safety
@@ -106,4 +106,4 @@ The real-browser case (11) is opt-in: `PROOF_CAPTURE_REAL=1 bash tests/test-proo
 
 ## Tested versions
 
-Not recorded yet. The build's hand run fills this in with the browser and vhs versions it used. Nothing is claimed for Chrome, Chromium or any Linux browser until a run says so.
+Run by hand once on macOS (arm64) with bash 3.2: Microsoft Edge 157.0.4341.60 for `run page` (the real-browser case 11 and one capture of `examples/hello.html` at 800 by 500) and vhs 0.12.1 (with ttyd and ffmpeg from Homebrew) for `run tape` (one run of `examples/hello.tape`). The browser flags include `--use-mock-keychain --password-store=basic`, so the browser does not read or write the real keychain; the capture still wrote a valid image with them. Nothing is claimed for Chrome, Chromium or any Linux browser: none of them ran. Rerun the real-browser case (`PROOF_CAPTURE_REAL=1`) before you change a browser flag and after a major version bump of the browser a proof names.

@@ -74,3 +74,10 @@ Deltas from the spec, each with a suite case and a control run on a scratch copy
 - Finding 11: a bare `PROOF_CAPTURE_BROWSER` or `PROOF_CAPTURE_VHS` name is looked up on `PATH` and the found file runs. Case 7. Control (old file test restored): `PROOF_CAPTURE_BROWSER as a bare name: exit 69, wanted 0`.
 - Finding 12: `--use-mock-keychain --password-store=basic` added (case 3 asserts both; control: flags removed: `argv lacks --use-mock-keychain`). `--disable-background-networking` and `--disable-component-update` considered and not added: with one real run and one retry a failure could not be pinned on a flag. The real-browser outcome is under the fixture notes below.
 - The suite takes about 65 s on a host at load 40.
+
+## Fixture and real runs (T12, T13)
+
+- Real browser: Microsoft Edge 157.0.4341.60. The capture and the opt-in case 11 each ran once, in the foreground, through the tool, with the keychain flags on; both wrote a valid image, so `--use-mock-keychain --password-store=basic` stay. The browser went through a wrapper that records its pid and `exec`s the app, passed as the only entry of `PROOF_CAPTURE_BROWSER_CANDIDATES` (the spec bars `PROOF_CAPTURE_BROWSER` for the fixture, and the tool exposes no pid). Built-in discovery itself was not run, and the proof says so.
+- Not run, on purpose: the `timer.html` capture with `--wait 3000 --width 400` (T12 step 3) and the `Sleep 90s` tape deadline check (T13 step 6). The lead's brief allows one real capture, one opt-in case and one tape run. `examples/timer.html` was not created, because an example nobody ran is unverified. The proof cites the spec's Grounding 7 as earlier evidence, not as this build's run.
+- The tape run left a 51 byte `.ses` file under the temp directory. It is vhs's own shell, not the tool's work directory (which was removed).
+- `tests/test-adopt.sh` ends `PASS=77 FAIL=1`: "known list complete against git log (1 missing)". The missing hash is a merge commit that came in with master (`lib/adopt/known-hashes.sh` regenerates the list; `lib/adopt*` is off limits here). Not caused by this change.
