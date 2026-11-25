@@ -114,7 +114,7 @@
 # canned JSON; NO real Hermes calls happen in the automated suite, per the sub-goal contract).
 set -euo pipefail
 
-BM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # physical: the adapter directory may be a symlink
 KIT_LIB="$(cd "$BM_DIR/../.." && pwd)"  # lib/, two levels up; derived from this file, never read from the environment
 PARSE_BOARD_SH="$KIT_LIB/board/parse-board.sh"
 NATIVE_MAP="$BM_DIR/native-map.tsv"

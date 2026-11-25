@@ -10,7 +10,7 @@
 # inherited value redirects nothing and a direct call works.
 set -euo pipefail
 
-BRIDGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BRIDGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # physical: the adapter directory may be a symlink
 KIT_LIB="$(cd "$BRIDGE_DIR/../.." && pwd)"  # lib/, two levels up; script-local, never read from the environment
 export KIT_LIB
 BOARD_MIRROR_SH="$BRIDGE_DIR/board-mirror.sh"

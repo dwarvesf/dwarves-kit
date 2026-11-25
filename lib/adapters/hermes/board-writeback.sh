@@ -114,7 +114,7 @@
 # board-mirror.sh) overrides the `hermes` binary the same way.
 set -euo pipefail
 
-BW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"  # physical: the adapter directory may be a symlink
 KIT_LIB="$(cd "$BW_DIR/../.." && pwd)"  # lib/, two levels up; derived from this file, never read from the environment
 BOARD_MIRROR_SH="$BW_DIR/board-mirror.sh"
 BACKLOG_SH="$KIT_LIB/board/backlog.sh"
