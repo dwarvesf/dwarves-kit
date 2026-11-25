@@ -32,7 +32,7 @@ where a field is optional by meaning). The rows:
 | Row | Fields after the kind | Meaning |
 |---|---|---|
 | `app` | `<app> <mode>` | an app name and its mode: `two-way`, `create-only` or `pull-only`. The name keys `<app>.state.json`, the filter keys and the config keys; it never changes. |
-| `opt` | `<flag> <key> <scope> <help...>` | engine flag `--<flag>`, filled from `[sync] <key>`, handed to `build` as `opts[<key>]`. `scope` is `-` or `root` (`root`: the operator and kit-root files only, never a project `.kit.toml`). `help` is the argparse help text; the loader doubles any `%`. |
+| `opt` | `<flag> <key> <scope> <help...>` | engine flag `--<flag>`, filled from `[sync] <key>`, handed to `build` as `opts[<key>]`. `scope` is `-` or `root` (`root`: the operator and kit-root files only, never a project `.kit.toml`). `help` is the argparse help text; the loader doubles any `%`; a help of `-` means the flag has no help text. |
 | `secret` | `<ENV> <key>` | before the engine starts, `board sync` resolves the 1Password ref in `[sync] <key>` into env var `<ENV>` (operator and kit-root files only). The secret reaches the engine through the environment, never argv. |
 | `verb` | `<verb> <script> [<arg>...]` | `board <verb> ARGS` runs the script with the manifest args first, then `ARGS`. A `.py` script runs under `python3`, anything else under `bash`. |
 | `sweep-opt` | `<flag> <ENV> <help...>` | `board sweep --<flag> VALUE` is accepted, exported to the legs as `<ENV>`, and listed in `board sweep --help`. |

@@ -68,6 +68,13 @@ def test_help_text_doubles_percent_and_keeps_spaces(tmp_path, monkeypatch):
     assert adapters.load().opts[0].help == "100%% of a field with spaces"
 
 
+def test_a_help_of_dash_means_the_flag_has_no_help_text(tmp_path, monkeypatch):
+    make(tmp_path, "a", "opt\tflag-a\tkey_a\t-\t-\nopt\tflag-b\tkey_b\t-\t- not alone\n", py=None)
+    use(monkeypatch, tmp_path)
+    opts = adapters.load().opts
+    assert opts[0].help is None and opts[1].help == "- not alone"
+
+
 def test_unknown_kind_warns_and_the_rest_loads(tmp_path, monkeypatch):
     make(tmp_path, "a", "mystery\tx\napp\tx\ttwo-way\n")
     use(monkeypatch, tmp_path)

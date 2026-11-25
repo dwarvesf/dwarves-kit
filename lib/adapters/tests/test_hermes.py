@@ -1,16 +1,12 @@
 """Hermes adapter tests against a fake ssh transport (no network)."""
 
 import json
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from cockpit import (UNTRUSTED_PREFIX, UNTRUSTED_TITLE_TAG,  # noqa: E402
                      mark_untrusted_body, mark_untrusted_title)
-from sources.hermes import HermesSource, _target_cmd  # noqa: E402
+from hermes import HermesSource, _target_cmd  # noqa: E402
 from sync_core import Plan, parse_board, plan_sync  # noqa: E402
 
 # HermesSource has no default target/home (both would name one operator machine);
@@ -246,3 +242,24 @@ def test_unconfigured_create_is_unchanged():
         Plan(src_create=[("ID-10", "ID-10 · a", "", "queued")]), {}, {})
     script = fake.scripts[0]
     assert "--assignee" not in script and "--workspace" not in script
+
+
+def test_build_source_hands_every_hermes_flag_to_the_source():
+    from types import SimpleNamespace
+
+    import backlog_sync
+    args = SimpleNamespace(hermes_target="box", hermes_home="/srv/h", hermes_board="crew",
+                           hermes_assignee="bot", hermes_workspace="dir:/w/{id}")
+    src = backlog_sync.build_source("hermes", args)
+    assert (src.target, src.home, src.board, src.assignee, src.workspace) == (
+        "box", "/srv/h", "crew", "bot", "dir:/w/{id}")
+
+
+def test_build_source_names_the_missing_hermes_key():
+    from types import SimpleNamespace
+
+    import backlog_sync
+    with pytest.raises(SystemExit, match="hermes_home"):
+        backlog_sync.build_source("hermes", SimpleNamespace(hermes_target="box"))
+    with pytest.raises(SystemExit, match="hermes_target"):
+        backlog_sync.build_source("hermes", SimpleNamespace(hermes_home="/srv/h"))

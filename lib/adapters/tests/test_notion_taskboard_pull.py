@@ -16,8 +16,7 @@ from notion_taskboard_pull import (  # noqa: E402
     INTAKE_TAG, MARKER_PREFIX, MAX_BLOCK_CALLS, MAX_QUERY_PAGES, NOTES_CAP,
     PAGE_BODY_CAP, PAGE_BODY_UNAVAILABLE, SENTINEL, TITLE_CAP,
     NotionTaskBoardPullSource, _run_ntn, expand_body, fence, neutralize)
-from sources.hermes import HermesSource  # noqa: E402
-from sync_core import (INTAKE_CAP, Plan, detect_prefix,  # noqa: E402
+from sync_core import (INTAKE_CAP, detect_prefix,  # noqa: E402
                        extract_tags, in_scope, next_id, parse_board,
                        plan_pull_only, split_row)
 
@@ -738,40 +737,6 @@ def test_intake_never_reads_blocks_and_the_row_stays_one_line(tmp_path):
     assert not any("/blocks/" in a[1] for a, _ in fake.calls if len(a) > 1)
     lines = [l for l in b.read_text().splitlines() if HEX_A in l]
     assert len(lines) == 1 and split_row(lines[0]) is not None
-
-
-def test_hermes_create_carries_the_page_body_and_the_row_does_not(tmp_path):
-    notes = intake_notes(tmp_path)
-    blocks = FakeBlocks({HEX_A: [[blk("paragraph", "Steps: open the vault.")]]})
-    ssh = []
-    src = HermesSource("box", "/srv/h",
-                       runner=lambda s: ssh.append(s) or "@@CREATED DF-1 t1\n",
-                       body_expander=lambda body: expand_body(body, blocks))
-    src.apply(Plan(src_create=[("DF-1", "DF-1 · t", notes, "queued")]), {}, {})
-    assert "Page body:\nSteps: open the vault." in ssh[0]
-    assert "Steps: open the vault." not in notes
-
-
-def test_hermes_create_survives_a_failed_page_fetch(tmp_path):
-    notes = intake_notes(tmp_path)
-    ssh = []
-    src = HermesSource(
-        "box", "/srv/h",
-        runner=lambda s: ssh.append(s) or "@@CREATED DF-1 t1\n",
-        body_expander=lambda body: expand_body(
-            body, FakeBlocks(fail=SystemExit("ntn: 500"))))
-    created = src.apply(
-        Plan(src_create=[("DF-1", "DF-1 · t", notes, "queued")]), {}, {})
-    assert created == {"DF-1": "t1"}
-    assert PAGE_BODY_UNAVAILABLE in ssh[0]
-
-
-def test_build_source_wires_the_expander_into_hermes():
-    args = type("A", (), dict(
-        hermes_home="/srv/h", hermes_target="box", hermes_board=None,
-        hermes_assignee=None, hermes_workspace=None))
-    assert backlog_sync.build_source("hermes", args).body_expander \
-        is expand_body
 
 
 def test_a_read_call_never_inherits_stdin(monkeypatch):

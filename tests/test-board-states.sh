@@ -49,8 +49,8 @@ got="$(bash -c 'source "$1" >/dev/null 2>&1; printf %s "$LEGAL_STATES"' _ "$KIT_
 py="$(cd "$KIT_DIR/lib/sync" && python3 -c '
 import importlib.util
 from importlib.machinery import SourceFileLoader
-import sys; sys.path.insert(0, "../adapters/github")
-import sync_core as s, github as g, sources.hermes as h
+import sys; sys.path[:0] = ["../adapters/github", "../adapters/hermes"]
+import sync_core as s, github as g, hermes as h
 # board-health has no .py suffix, so the loader is named by hand; load_module() is gone in Python 3.15.
 _spec = importlib.util.spec_from_loader("bh", SourceFileLoader("bh", "sweep/board-health"))
 bh = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(bh)

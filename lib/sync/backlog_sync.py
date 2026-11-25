@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Two-way sync between a kit kanban BACKLOG.md (hub) and its spokes: Apple
-Reminders, a Notion board, the Hermes kanban.
+"""Two-way sync between a kit kanban BACKLOG.md (hub) and its spokes. Each spoke
+is an adapter under lib/adapters/<name>/, picked by name in `[sync] apps`.
 
 Front door: `board sync` (bin/board), which any adopted repo's `_meta/board`
 shim already forwards to with the right --backlog-file. Spokes plug in per
@@ -34,16 +34,6 @@ from sync_core import (ID_TOKEN, INBOX_HEADING, apply_board,  # noqa: E402
                        board_lock, build_state, describe, detect_prefix,
                        parse_board,
                        plan_create_only, plan_pull_only, plan_sync)
-
-# Apps the engine still builds itself, until each one's adapter takes it over (the registry is asked
-# first; a name in neither the registry nor these sets is unknown). The create-only and pull-only
-# sets are the legacy half of the modes; the registry adds the manifest half.
-# apps that push one-way and read boards with any repo prefix (not just ID-)
-CREATE_ONLY_APPS = set()
-# apps that only READ a foreign board and intake into the hub
-PULL_ONLY_APPS = set()
-LEGACY_APPS = {"hermes"}
-from sources.hermes import HermesSource  # noqa: E402
 
 
 def atomic_write(path: Path, text: str, new_mode: int = 0o644) -> None:
@@ -177,8 +167,8 @@ def check_pull_isolation(names: list, args,
 
     FILTER: this app takes none. The source board's own `Agent Queue` checkbox
     is the gate, and the pull path never consults `filt`, so accepting
-    `--filter notion-taskboard-pull:intake=none` would hand an operator a
-    guard that silently does nothing.
+    `--filter <pull app>:intake=none` would hand an operator a guard that
+    silently does nothing.
 
     ISOLATION: a pull app runs alone. Intake mints a board id, and a downstream
     spoke keys its own idempotency on that id, so an intake row must be
@@ -188,7 +178,7 @@ def check_pull_isolation(names: list, args,
     intake, publish, relay as separate invocations instead.
     """
     reg = reg if reg is not None else adapters.load()
-    pull_apps = PULL_ONLY_APPS | reg.pull_only_apps()
+    pull_apps = reg.pull_only_apps()
     filtered = sorted(set(filters or {}) & pull_apps)
     if filtered:
         sys.exit(f"{filtered[0]}: this app takes no --filter; the source "
@@ -318,8 +308,7 @@ def _check_mode(name: str, src, mode: str) -> None:
 
 def build_source(name: str, args, reg=None, state_path=None):
     """The one seam that turns an app name into a source object: the registry
-    answers first; a name it does not provide falls back to the legacy chain
-    below, which empties as each adapter takes its app over."""
+    answers; a name no adapter provides ends the run."""
     reg = reg if reg is not None else adapters.load()
     if name in reg.apps:
         opts = {o.key: getattr(args, o.key, None) for o in reg.opts}
@@ -329,20 +318,6 @@ def build_source(name: str, args, reg=None, state_path=None):
         if src is not None:
             _check_mode(name, src, reg.mode(name))
         return src
-    if name == "hermes":
-        if not args.hermes_home:
-            sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
-                     "--hermes-home (the HERMES_HOME to sync against)")
-        # Both keys name one operator's own instance, so neither carries a default:
-        # guessing a target would point the sync at someone else's machine.
-        if not args.hermes_target:
-            sys.exit("hermes: set hermes_target in [sync] (.kit.toml) or pass "
-                     "--hermes-target (an ssh host, 'local', or 'sudo:<user>')")
-        return HermesSource(args.hermes_target,
-                            args.hermes_home, board=args.hermes_board,
-                            assignee=args.hermes_assignee,
-                            workspace=args.hermes_workspace,
-                            body_expander=reg.hook("body_expander"))
     sys.exit(f"no adapter provides {name} (searched: {reg.dir})")
 
 
@@ -364,18 +339,6 @@ def main(argv=None):
     ap.add_argument("--state-root", type=Path,
                     default=Path(kit_data.path("state", "backlog-sync")))
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--hermes-target",
-                    help="ssh host, or `local`, or `sudo:<user>` for an "
-                         "instance owned by another uid on this host")
-    ap.add_argument("--hermes-home")
-    ap.add_argument("--hermes-board",
-                    help="kanban board slug (default: the instance's own "
-                         "current board)")
-    ap.add_argument("--hermes-assignee",
-                    help="profile name to assign every relayed task to")
-    ap.add_argument("--hermes-workspace",
-                    help="workspace for every relayed task, e.g. "
-                         "'dir:/path/outbox/{id}'; `{id}` is the board id")
     ap.add_argument("--filter", action="append", default=[],
                     help="app:key=value (key: only_tags|skip_tags|intake|"
                          "intake_skip_re); "
@@ -424,7 +387,7 @@ def main(argv=None):
     for guard in reg.hooks("guard", only=names):
         guard(names, opts)
     check_pull_isolation(names, args, filters, reg)
-    unknown = [n for n in names if n not in reg.apps and n not in LEGACY_APPS]
+    unknown = [n for n in names if n not in reg.apps]
     if unknown:
         sys.exit(f"no adapter provides {unknown[0]} (searched: {reg.dir})")
 
@@ -432,7 +395,7 @@ def main(argv=None):
         sys.exit(f"no backlog at {args.backlog}; pass --backlog or run via "
                  "`board sync` from an adopted repo")
 
-    # worktree fence: spokes (a Reminders list, a Notion db) are shared per
+    # worktree fence: spokes (a remote list, a remote database) are shared per
     # BOARD, not per checkout. A sync run from a git worktree pairs the
     # spoke's items against that branch's divergent row set and poisons the
     # shared state for every other checkout (a 180-row cross-board fossil
@@ -461,7 +424,7 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         sys.exit("another backlog-sync run holds the lock; try again")
-    strict_id = not (set(names) & (CREATE_ONLY_APPS | reg.create_only_apps()))
+    strict_id = not (set(names) & reg.create_only_apps())
     if not warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id):
         sys.exit(1)
 

@@ -253,8 +253,10 @@ class Registry:
         for a in adapters:
             for r in a.of("app"):
                 self.apps[r.fields[0]] = (a.name, r.fields[1])
+        # a help text of `-` is the placeholder for a flag that has none
         self.opts = [SimpleNamespace(adapter=a.name, flag=r.fields[0], key=r.fields[1], scope=r.fields[2],
-                                     help=" ".join(r.fields[3:]).replace("%", "%%"))
+                                     help=(None if r.fields[3:] == ["-"]
+                                           else " ".join(r.fields[3:]).replace("%", "%%")))
                      for a in adapters for r in a.of("opt")]
 
     def mode(self, app: str) -> str:

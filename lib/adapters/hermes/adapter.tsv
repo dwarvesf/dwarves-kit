@@ -1,0 +1,6 @@
+app	hermes	two-way
+opt	hermes-target	hermes_target	-	ssh host, or `local`, or `sudo:<user>` for an instance owned by another uid on this host
+opt	hermes-home	hermes_home	-	-
+opt	hermes-board	hermes_board	-	kanban board slug (default: the instance's own current board)
+opt	hermes-assignee	hermes_assignee	-	profile name to assign every relayed task to
+opt	hermes-workspace	hermes_workspace	-	workspace for every relayed task, e.g. 'dir:/path/outbox/{id}'; `{id}` is the board id

@@ -923,21 +923,10 @@ cmd_sync() {
     exit 2
   fi
   args+=(--apps "$v")
-  local app fk
-  for app in hermes; do
-    for fk in only_tags skip_tags intake; do
-      v="$(kit_config_get "sync.${app}_${fk}" "")"
-      [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
-    done
-  done
+  local fk
   v="$(kit_config_get sync.scope_exit_cap "")"; [ -n "$v" ] && args+=(--scope-exit-cap "$v")
   # only for a repo whose archive is not BACKLOG-archive.md beside the board
   v="$(kit_config_get sync.archive_file "")"; [ -n "$v" ] && args+=(--archive-file "$v")
-  v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
-  v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
-  v="$(kit_config_get sync.hermes_board "")";    [ -n "$v" ] && args+=(--hermes-board "$v")
-  v="$(kit_config_get sync.hermes_assignee "")"; [ -n "$v" ] && args+=(--hermes-assignee "$v")
-  v="$(kit_config_get sync.hermes_workspace "")"; [ -n "$v" ] && args+=(--hermes-workspace "$v")
   # The adapter manifests (lib/adapters/*/adapter.tsv) declare the rest: per-app filter keys, one engine
   # flag per `opt` row, one env secret per `secret` row. A manifest error is global and loud. An `opt`
   # row of scope root and every `secret` row read the operator and kit-root files only, because a
