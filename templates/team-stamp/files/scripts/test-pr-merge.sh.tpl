@@ -76,10 +76,17 @@ elif [ "$1" = "api" ]; then
     if [ -n "${FAKE_API_FAIL:-}" ]; then case "$ep" in *"$FAKE_API_FAIL"*) echo "gh: HTTP 500" >&2; exit 1 ;; esac; fi
     src="$(pick 1)"
     case "$ep" in
+    repos/*/commits/*/pulls*) jq '(.apiCommitPrs // [{number: 7}])' "$src" | jq -r "$expr" ;;
     repos/*/pulls/*/files*) jq '[.files[] | {filename: .path, previous_filename: (.previous // null)}]' "$src" | jq -r "$expr" ;;
-    repos/*/actions/runs*) jq '{workflow_runs: (.apiRuns // [{id: 101, event: "pull_request", path: ".github/workflows/ci.yml", pull_requests: [{number: 7}]}])}' "$src" | jq -r "$expr" ;;
+    repos/*/actions/runs*) jq '{workflow_runs: (.apiRuns // [{id: 101, event: "pull_request", path: ".github/workflows/ci.yml", created_at: "2026-01-02T00:00:00Z", pull_requests: [{number: 7}]}])}' "$src" | jq -r "$expr" ;;
     repos/*/issues/*/timeline*) jq '(.apiTimeline // [])' "$src" | jq -r "$expr" ;;
-    repos/*/pulls/*) jq '{head: {sha: .headRefOid}}' "$src" | jq -r "$expr" ;;
+    repos/*/pulls/*)
+        n=$(grep -c '/pulls/[0-9]* --jq' "$T/calls")
+        if [ "$n" -ge 2 ] && [ -f "$T/head2" ]; then
+            jq -n --arg h "$(cat "$T/head2")" '{head: {sha: $h}}' | jq -r "$expr"
+        else
+            jq '{head: {sha: .headRefOid}}' "$src" | jq -r "$expr"
+        fi ;;
     *) echo "fake gh: unexpected api call: $ep" >&2; exit 1 ;;
     esac
 elif [ "$1 $2" = "pr merge" ]; then
@@ -118,20 +125,21 @@ REV_REVOKED='{"author":{"login":"reviewer"},"authorAssociation":"MEMBER","commit
 HEAD_SHA="head-judged"
 OTHER_HEAD="head-pushed-later"
 
-DEFAULT_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","pull_requests":[{"number":7}]}]'
+DEFAULT_COMMIT_PRS='[{"number":7}]'
+DEFAULT_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","created_at":"2026-01-02T00:00:00Z","pull_requests":[{"number":7}]}]'
 
 # mkcase_at <file> <isDraft> <mergeable> <checks> <files> <reviews>
 mkcase_at() {
     local file="$1"
     shift
-    printf '{"isDraft":%s,"mergeable":"%s","author":{"login":"%s"},"statusCheckRollup":[%s],"files":[%s],"reviews":[%s],"headRefOid":"%s","headRefName":"%s","baseRefName":"%s","apiRuns":%s,"apiTimeline":%s}\n' \
+    printf '{"isDraft":%s,"mergeable":"%s","author":{"login":"%s"},"statusCheckRollup":[%s],"files":[%s],"reviews":[%s],"headRefOid":"%s","headRefName":"%s","baseRefName":"%s","apiRuns":%s,"apiTimeline":%s,"apiCommitPrs":%s}\n' \
         "$1" "$2" "${CASE_AUTHOR:-author}" "$3" "$4" "$5" "${CASE_HEAD-$HEAD_SHA}" "${CASE_BRANCH:-feature/x}" "${CASE_BASE:-$DEFAULT_BRANCH}" \
-        "${CASE_RUNS:-$DEFAULT_RUNS}" "${CASE_TIMELINE:-[]}" >"$file"
+        "${CASE_RUNS:-$DEFAULT_RUNS}" "${CASE_TIMELINE:-[]}" "${CASE_COMMIT_PRS:-$DEFAULT_COMMIT_PRS}" >"$file"
 }
 # mkcase <isDraft> <mergeable> <checks> <files> <reviews>: what every pr view serves;
 # it also drops the sequence of the case before. Call mkseq after it.
 mkcase() {
-    rm -f "$T"/seq-*.json "$T/live-head"
+    rm -f "$T"/seq-*.json "$T/live-head" "$T/head2"
     mkcase_at "$T/case.json" "$@"
 }
 # mkseq <N> <isDraft> <mergeable> <checks> <files> <reviews>: what the Nth pr view serves
@@ -403,7 +411,7 @@ mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$(rev_with reviewer '"COLLABORATO
 run appr-collab 7
 expect "an approval from a collaborator on the judged head merges" merged
 # Runs: a run that lists two pull requests (a second PR shares the head) does not count.
-CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","pull_requests":[{"number":7},{"number":8}]}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","created_at":"2026-01-02T00:00:00Z","pull_requests":[{"number":7},{"number":8}]}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run sharedhead 7
 expect "a run that also lists another pull request on the same head does not count: refused" [ "$rc" -eq 1 ]
 expect "a run shared with another pull request: no merge call" not_merged
@@ -669,7 +677,7 @@ expect "no Fix: line of this script tells anyone to check out a pull request" ba
 
 # --- case, instruction files, renames, base, runs of another PR, base changes, failed reads ---
 SUT="$T/v-nodoor/scripts/pr-merge.sh"
-for dp in ".CLAUDE/settings.json" "SCRIPTS/x.sh" "Owners.md" "Docs/Team-Workflow.md" ".GitHub/actions/a/action.yml" "CLAUDE.md" "tools/deep/CLAUDE.md" "pkg/AGENTS.md" ".mcp.json" ".github/actions/setup/action.yml"; do
+for dp in ".CLAUDE/settings.json" "SCRIPTS/x.sh" "Owners.md" "Docs/Team-Workflow.md" ".GitHub/actions/a/action.yml" "CLAUDE.md" "tools/deep/CLAUDE.md" "pkg/AGENTS.md" ".mcp.json" ".github/actions/setup/action.yml" "pkg/.claude/settings.json" "sub/dir/.mcp.json" "CLAUDE.local.md" "app/CLAUDE.local.md" "GEMINI.md" "x/Gemini.md" ".cursor/rules/a.mdc" "app/.cursor/rules/a.mdc" ".vscode/tasks.json" "app/.VSCode/tasks.json"; do
     tag="${dp//[^A-Za-z0-9]/_}"
     mkcase false MERGEABLE "$CHK_OK" "{\"path\":\"$dp\"}" "$REV_NONE"
     run "door2-$tag" 7
@@ -697,10 +705,10 @@ CHK_OTHERFAIL="$CHK_OK"',{"__typename":"CheckRun","name":"build","status":"COMPL
 mkcase false MERGEABLE "$CHK_OTHERFAIL" "$FILE_PLAIN" "$REV_NONE"
 run otherprfail 7
 expect "a failed run of another PR does not block this PR" merged
-CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/other.yml","pull_requests":[{"number":7}]}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/other.yml","created_at":"2026-01-02T00:00:00Z","pull_requests":[{"number":7}]}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run otherworkflow 7
 expect "a run of another workflow file does not count: refused" [ "$rc" -eq 1 ]
-CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-03T00:00:00Z"},{"event":"labeled","created_at":"2026-01-09T00:00:00Z"}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_OTHER"
+CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","created_at":"2026-01-05T00:00:00Z","pull_requests":[{"number":7}]}]' CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-03T00:00:00Z"},{"event":"labeled","created_at":"2026-01-09T00:00:00Z"}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_OTHER"
 SUT="$T/v-door/scripts/pr-merge.sh"
 run basechg 7
 expect "an approval submitted before the last base change does not count: refused" [ "$rc" -eq 1 ]
@@ -708,7 +716,7 @@ CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-01T00:00:00Z"}
 run basechgold 7
 expect "an approval submitted after the last base change counts: merges" merged
 SUT="$T/v-nodoor/scripts/pr-merge.sh"
-for part in "actions/runs" "/files" "/timeline" "pulls/7"; do
+for part in "actions/runs" "/files" "/timeline" "pulls/7" "commits/"; do
     mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
     : >"$T/calls"; rc=0
     (cd "$T" && FAKE_API_FAIL="$part" bash "$SUT" 7) >"$T/out-apifail" 2>"$T/err-apifail" || rc=$?
@@ -716,6 +724,81 @@ for part in "actions/runs" "/files" "/timeline" "pulls/7"; do
     expect "a failed read of $part: no merge call" not_merged
     expect "a failed read of $part: two-line form" two_line_form apifail
 done
+# --- bytes outside printable ASCII are a door; the head is read again; runs and commits of other PRs ---
+# The path functions, taken from the script text and tested with byte strings, so these rows do not depend on
+# what the file system does with the names.
+LONGS="$(printf '\305\277')"   # U+017F
+KELVIN="$(printf '\342\204\252')" # U+212A
+ACUTE="$(printf '\303\251')"
+(
+    LC_ALL=C
+    export LC_ALL
+    BASE_DOORS=()
+    DOORS=()
+    eval "$(sed -n '/^BASE_DOORS=/p' "$SCRIPT")"
+    eval "$(sed -n '/^lower() /p' "$SCRIPT")"
+    eval "$(sed -n '/^odd_path() {/,/^}/p' "$SCRIPT")"
+    eval "$(sed -n '/^oddseen=0/p' "$SCRIPT")"
+    eval "$(sed -n '/^match_doors() {/,/^}/p' "$SCRIPT")"
+    f=0
+    chk() { if "$@"; then echo "PASS  path function: $*" | cut -c1-90; else echo "FAIL  path function: $*"; f=$((f + 1)); fi; }
+    chk odd_path "${LONGS}cripts/a.sh"
+    chk odd_path ".${KELVIN}it.toml"
+    chk odd_path "docs/caf$ACUTE.md"
+    chk odd_path "$(printf 'a\001b')"
+    chk odd_path "$(printf 'a\177b')"
+    chk ! odd_path "scripts/a b.sh"
+    chk ! odd_path "docs/plain~name.md"
+    chk match_doors "${LONGS}cripts/a.sh"
+    chk match_doors ".${KELVIN}it.toml"
+    chk match_doors "docs/caf$ACUTE.md"
+    chk match_doors ".CLAUDE/settings.json"
+    chk match_doors "x/y/CLAUDE.local.md"
+    chk ! match_doors "docs/readme.md"
+    exit "$f"
+) >"$T/out-pathfn" 2>&1
+rc=$?
+cat "$T/out-pathfn"
+expect "the path functions: every byte-string row holds" [ "$rc" -eq 0 ]
+SUT="$T/v-nodoor/scripts/pr-merge.sh"
+for odd in "${LONGS}cripts/a.sh" ".${KELVIN}it.toml" "docs/caf$ACUTE.md" "$(printf 'docs/a\001b.md')"; do
+    tag="odd-$(printf '%s' "$odd" | od -An -tx1 | tr -d ' \n' | cut -c1-12)"
+    if ! printf '%s' "$odd" | jq -Rs . >/dev/null 2>&1; then echo "NOTE  $tag: jq refuses the name, case skipped"; continue; fi
+    mkcase false MERGEABLE "$CHK_OK" "{\"path\":$(printf '%s' "$odd" | jq -Rs .)}" "$REV_NONE"
+    run "$tag" 7
+    expect "a changed path with a byte outside printable ASCII is a door ($tag): refused with no approval" [ "$rc" -eq 1 ]
+    expect "a non-ASCII door ($tag): the fix says to ask a second person and names the collision" grep -q 'Fix: ask a second person to approve PR 7 (a file name with a byte outside printable ASCII' "$T/err-$tag"
+    expect "a non-ASCII door ($tag): two-line form" two_line_form "$tag"
+    expect "a non-ASCII door ($tag): no merge call" not_merged
+    mkcase false MERGEABLE "$CHK_OK" "{\"path\":$(printf '%s' "$odd" | jq -Rs .)}" "$REV_OTHER"
+    run "$tag-ok" 7
+    expect "a non-ASCII door ($tag) with a second person's approval: merges" merged
+done
+mkcase false MERGEABLE "$CHK_OK" "{\"path\":\"docs/old.md\",\"previous\":$(printf '%s' "${LONGS}cripts/a.sh" | jq -Rs .)}" "$REV_NONE"
+run oddprev 7
+expect "a previous name with a non-ASCII byte is a door too: refused" [ "$rc" -eq 1 ]
+# the head is read again after the files: a head that moved in between refuses
+mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+printf '%s' "head-moved-meanwhile" >"$T/head2"
+run headmoved 7
+expect "a head that moved between the first read and the files read: refused" [ "$rc" -eq 1 ]
+expect "a head that moved: says so" text_has headmoved "the head moved"
+expect "a head that moved: no merge call" not_merged
+rm -f "$T/head2"
+# the head commit belongs to another pull request
+CASE_COMMIT_PRS='[{"number":7},{"number":9}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run commitprs 7
+expect "the head commit also belongs to another pull request (any state): refused" [ "$rc" -eq 1 ]
+expect "another pull request on the head commit: names it" text_has commitprs "belongs to another pull request (9)"
+expect "another pull request on the head commit: no merge call" not_merged
+# a run created before the last base change does not count; one created after it does
+CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-03T00:00:00Z"}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run oldrun 7
+expect "a run created before the last base change does not count: refused" [ "$rc" -eq 1 ]
+expect "a run created before the last base change: the checks have not passed" text_has oldrun "has not passed"
+CASE_RUNS='[{"id":101,"event":"pull_request","path":".github/workflows/ci.yml","created_at":"2026-01-04T00:00:00Z","pull_requests":[{"number":7}]}]' CASE_TIMELINE='[{"event":"base_ref_changed","created_at":"2026-01-03T00:00:00Z"}]' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run newrun 7
+expect "a run created after the last base change counts: merges" merged
 SUT="$SCRIPT"
 
 # Usage errors are two-line refusals too.

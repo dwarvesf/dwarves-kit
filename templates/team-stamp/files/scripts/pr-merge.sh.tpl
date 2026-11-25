@@ -15,15 +15,20 @@
 # What binds the workflow file. GitHub runs a pull request's own copy of the workflow, so a PR can
 # edit it. This script therefore requires BOTH checks `changes` and `pr-shape`, each from the
 # workflow named CI, on the head it judged, and treats the harness's own files as doors: .github/,
-# scripts/, .claude/, OWNERS.md, AGENTS.md and CLAUDE.md at any depth, .mcp.json,
-# docs/TEAM-WORKFLOW.md and .kit.toml. Paths are matched in lower case, so `.CLAUDE/x` is a door
-# too. A repo's --door-paths ADD to that list. The first pull request that introduces the stamp
+# scripts/, OWNERS.md, docs/TEAM-WORKFLOW.md and .kit.toml at the root; .claude/, .cursor/,
+# .vscode/, .mcp.json, AGENTS.md, CLAUDE.md, CLAUDE.local.md and GEMINI.md at any depth. Paths are
+# matched in lower case, so `.CLAUDE/x` is a door too. A path (current or previous name) with ANY byte
+# outside printable ASCII is a door as well: a case-insensitive disk can fold a non-ASCII spelling
+# (U+017F, U+212A, others) onto a guarded name, and no list of code points is complete. A repo's
+# --door-paths ADD to that list. The first pull request that introduces the stamp
 # touches every door: merge it by hand, after a second person has read it.
 #
 # Which runs count. The check rollup of a head lists runs of every pull request on that head, so a
 # check counts only when its run id is a pull_request run of THIS pull request on the stamped
 # workflow file (read from the actions runs API). The pull request's base must be the default
-# branch. GitHub lists on a run every open pull request that shares its head, so a run counts only
+# branch, and a run counts only when it was created after the last base change of the pull request (a
+# re-run keeps its creation time and the base it first ran against). The guard also refuses when the
+# head commit belongs to any other pull request in any state. GitHub lists on a run every open pull request that shares its head, so a run counts only
 # when this pull request is the only one listed: a second pull request on the same head, with a base
 # whose checks pass anything, cannot lend its runs. The changed files come from the REST files list, paginated, with each previous name
 # (a rename out of a door is a door change); more than 3000 files, or any failed read, refuses.
@@ -59,12 +64,14 @@
 # Needs gh and git. Exit 0 merged (or dry-run clean), 1 refused or timed out, 2 bad usage.
 # Every refusal prints two lines on stderr: the rule, then a "Fix:" line.
 set -euo pipefail
+# Byte-wise matching: a path is judged by its bytes, never by a locale.
+export LC_ALL=C
 
 # Doors match any casing; ownership (scripts/check-owners.sh) matches the exact path.
 # Door paths (case globs, written in lower case: a path is lowered before it is matched; * crosses a
 # slash; an extra pattern from --door-paths is lowered too). BASE_DOORS are the harness's own files and are always
 # doors. DOORS holds the paths this repo added with --door-paths; it may be empty.
-BASE_DOORS=(".github/*" "scripts/*" ".claude/*" "owners.md" "agents.md" "*/agents.md" "claude.md" "*/claude.md" ".mcp.json" "docs/team-workflow.md" ".kit.toml")
+BASE_DOORS=(".github/*" "scripts/*" ".claude/*" "*/.claude/*" ".mcp.json" "*/.mcp.json" "owners.md" "agents.md" "*/agents.md" "claude.md" "*/claude.md" "claude.local.md" "*/claude.local.md" "gemini.md" "*/gemini.md" ".cursor/*" "*/.cursor/*" ".vscode/*" "*/.vscode/*" "docs/team-workflow.md" ".kit.toml")
 DOORS=({{DOOR_ARRAY}})
 # The login that must approve a door change. Empty means any person other than the author.
 APPROVER="{{DOOR_APPROVER}}"
@@ -189,15 +196,32 @@ JQ="def wf: \"$CI_WORKFLOW\"; $JQ"
 
 draft="" mergeable="" base="" failing="" pending="" ambiguous="" changes_passed=0 shape_passed=0 approvals="" author="" head=""
 doors="" nfiles=0
-readfail=""
+readfail="" otherprs=""
 tab=$'\t'
 
 lower() { printf '%s' "$1" | tr 'A-Z' 'a-z'; }
 
-# lowercase, for door matching: both the path and the pattern
-# match_doors <path>: succeeds when the lowered path matches a lowered door pattern
+# A path with a byte outside 0x20 to 0x7E is a door, whatever it looks like. A case-insensitive disk can
+# fold a non-ASCII spelling (U+017F to s, U+212A to k, and others) onto a guarded path, and no list of
+# code points is complete. This byte rule is the layer that does not depend on such a list.
+# odd_path <path>: succeeds when the path holds a byte outside 0x20 to 0x7E (the locale is C, so a
+# multibyte character counts as bytes).
+odd_path() {
+    case "$1" in
+    *[![:print:]]*) return 0 ;;
+    esac
+    return 1
+}
+
+# match_doors <path>: succeeds when the path is a door: a byte outside printable ASCII, or the lowered
+# path matches a lowered door pattern. oddseen is set when the byte rule fired.
+oddseen=0
 match_doors() {
     local lp pattern
+    if odd_path "$1"; then
+        oddseen=1
+        return 0
+    fi
     lp="$(lower "$1")"
     for pattern in "${BASE_DOORS[@]}" ${DOORS[@]+"${DOORS[@]}"}; do
         pattern="$(lower "$pattern")"
@@ -212,25 +236,14 @@ match_doors() {
 # Read the PR and fill the variables above. Every read must succeed and parse, or the load fails and
 # the PR is refused: a read that fails is never treated as "nothing found".
 load() {
-    local out line path head1 runs_out run_ids base_changes basechg files_out prefix
+    local out line path head1 head2 runs_out run_ids base_changes basechg files_out prefix prs_out
     readfail=""
+    oddseen=0
+    otherprs=""
     if ! head1="$(gh api "repos/{owner}/{repo}/pulls/$number" --jq '.head.sha' 2>/dev/null)" || ! is_safe "$head1"; then
         printf 'pr-merge: gh could not read PR #%s (is gh installed and logged in?)\nFix: gh auth status\n' "$number" >&2
         return 1
     fi
-    # the pull_request runs of THIS pull request on the stamped workflow file, for this head
-    if ! runs_out="$(gh api --paginate "repos/{owner}/{repo}/actions/runs?head_sha=$head1&event=pull_request&per_page=100" \
-        --jq ".workflow_runs[] | select((.path // \"\") | endswith(\"/$CI_FILE\") or . == \"$CI_FILE\") | select(((.pull_requests // []) | length) == 1 and .pull_requests[0].number == $number) | .id" 2>/dev/null)"; then
-        readfail="the workflow runs of this pull request could not be read"
-    fi
-    run_ids=""
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        case "$line" in *[!0-9]*) readfail="the workflow runs of this pull request could not be parsed"; break ;; esac
-        run_ids="${run_ids:+$run_ids,}$line"
-    done <<EOF
-$runs_out
-EOF
     # the last time the base branch of this pull request changed
     basechg=""
     if ! base_changes="$(gh api --paginate "repos/{owner}/{repo}/issues/$number/timeline?per_page=100" \
@@ -247,10 +260,45 @@ EOF
 $base_changes
 EOF
     fi
+    # the pull_request runs of THIS pull request on the stamped workflow file, for this head, created after
+    # the last base change (a re-run keeps its creation time and its first base)
+    if ! runs_out="$(gh api --paginate "repos/{owner}/{repo}/actions/runs?head_sha=$head1&event=pull_request&per_page=100" \
+        --jq ".workflow_runs[] | select((.path // \"\") | endswith(\"/$CI_FILE\") or . == \"$CI_FILE\") | select(((.pull_requests // []) | length) == 1 and .pull_requests[0].number == $number) | select((.created_at // \"\") > \"$basechg\") | .id" 2>/dev/null)"; then
+        readfail="the workflow runs of this pull request could not be read"
+    fi
+    run_ids=""
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        case "$line" in *[!0-9]*) readfail="the workflow runs of this pull request could not be parsed"; break ;; esac
+        run_ids="${run_ids:+$run_ids,}$line"
+    done <<EOF
+$runs_out
+EOF
+    # every pull request this head commit belongs to, in any state: a second one makes the runs of this
+    # head ambiguous, because a run lists only OPEN pull requests
+    otherprs=""
+    if ! prs_out="$(gh api --paginate "repos/{owner}/{repo}/commits/$head1/pulls?per_page=100" --jq '.[] | .number' 2>/dev/null)"; then
+        readfail="${readfail:-the pull requests of the head commit could not be read}"
+    else
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            case "$line" in
+            *[!0-9]*) readfail="${readfail:-the pull requests of the head commit could not be parsed}" ;;
+            "$number") ;;
+            *) otherprs="${otherprs:+$otherprs,}$line" ;;
+            esac
+        done <<EOF
+$prs_out
+EOF
+    fi
     # the changed files, with the previous name of a rename: one name per line, controls replaced by ?
     if ! files_out="$(gh api --paginate "repos/{owner}/{repo}/pulls/$number/files?per_page=100" \
-        --jq '.[] | ("f " + ((.filename // "") | gsub("[\\x00-\\x1f\\x7f]"; "?"))), (if .previous_filename then "p " + (.previous_filename | gsub("[\\x00-\\x1f\\x7f]"; "?")) else empty end)' 2>/dev/null)"; then
+        --jq '.[] | ("f " + ((.filename // "") | gsub("[\\x00-\\x1f\\x7f]"; "\u00bf"))), (if .previous_filename then "p " + (.previous_filename | gsub("[\\x00-\\x1f\\x7f]"; "\u00bf")) else empty end)' 2>/dev/null)"; then
         readfail="${readfail:-the changed files of this pull request could not be read}"
+    fi
+    # the head again, after the files read: a head that moved in between makes the file list another head's
+    if ! head2="$(gh api "repos/{owner}/{repo}/pulls/$number" --jq '.head.sha' 2>/dev/null)" || [ "$head2" != "$head1" ]; then
+        readfail="${readfail:-the head moved while the changed files were read}"
     fi
     prefix="def wf: \"$CI_WORKFLOW\"; def runs: [${run_ids}]; def basechg: \"$basechg\"; "
     if ! out="$(gh pr view "$number" --json statusCheckRollup,isDraft,mergeable,baseRefName,author,reviews,headRefOid --jq "$prefix$JQ" 2>/dev/null)"; then
@@ -340,6 +388,7 @@ judge() {
 
     [ -z "$readfail" ] || refuse "$readfail, so the pull request cannot be judged" "gh auth status"
     [ "$base" = "$DEFAULT_BRANCH" ] || refuse "the base of this pull request is $(clean "$base"), not the default branch $DEFAULT_BRANCH" "gh pr edit $number --base $DEFAULT_BRANCH"
+    [ -z "$otherprs" ] || refuse "the head commit also belongs to another pull request ($(clean "$otherprs")), so the runs of this head cannot be told from that pull request's" "close the other pull request or push a new commit to this branch, then run $wait_fix"
     [ "$draft" != "true" ] || refuse "the PR is a draft" "gh pr ready $number"
     [ -z "$failing" ] || refuse "failing check: $(clean "$failing")" "gh pr checks $number"
     [ -z "$pending" ] || refuse "pending check: $(clean "$pending")" "$wait_fix"
@@ -361,6 +410,9 @@ judge() {
         reviewer_fix="ask a person other than the author to approve PR $number, then run $wait_fix"
         if [ -n "$APPROVER" ] && [ "$approver_lc" != "$author_lc" ] && is_safe "$APPROVER"; then
             reviewer_fix="gh pr edit $number --add-reviewer $APPROVER"
+        fi
+        if [ "$oddseen" -eq 1 ]; then
+            reviewer_fix="ask a second person to approve PR $number (a file name with a byte outside printable ASCII can collide with a guarded path on a case-insensitive disk), then run $wait_fix"
         fi
         if [ -z "$approvals" ]; then
             refuse "touches a door path ($(clean "$doors")) and has no approving review on this head from a second person (owner, member or collaborator, not a bot)" "$reviewer_fix"
