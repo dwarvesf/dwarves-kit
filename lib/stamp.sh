@@ -154,17 +154,6 @@ no_dots "$PRODUCT_PATHS" || refuse "--product-paths holds a path that starts wit
 no_dots "$DOOR_PATHS" || refuse "--door-paths holds a path that starts with / or has a .. component: $DOOR_PATHS" "pass repo-relative paths such as docs/legal/*"
 no_dots "$BOARD_FILE" || refuse "--board-file starts with / or has a .. component: $BOARD_FILE" "pass a path inside the repo, such as docs/BOARD.md"
 
-# every value in use, and where it came from, so a value taken silently from the lock is seen
-{
-  printf 'using: DEFAULT_BRANCH=%s (%s)\n' "${DEFAULT_BRANCH:-none}" "$([ -n "$F_DEFAULT_BRANCH" ] && echo flag || { [ -n "$(lock_value DEFAULT_BRANCH)" ] && echo lock || echo origin/HEAD; })"
-  printf 'using: OWNER=%s (%s)\n' "${OWNER:-none}" "$(src_of OWNER "$F_OWNER")"
-  printf 'using: TAGS=%s (%s)\n' "$TAGS" "$(src_of TAGS "$F_TAGS")"
-  printf 'using: PRODUCT_PATHS=%s (%s)\n' "$PRODUCT_PATHS" "$(src_of PRODUCT_PATHS "$F_PRODUCT_PATHS")"
-  printf 'using: DOOR_PATHS=%s (%s)\n' "${DOOR_PATHS:-none}" "$(src_of DOOR_PATHS "$F_DOOR_PATHS")"
-  printf 'using: DOOR_APPROVER=%s (%s)\n' "${DOOR_APPROVER:-none}" "$(src_of DOOR_APPROVER "$F_DOOR_APPROVER")"
-  printf 'using: BOARD_FILE=%s (%s)\n' "${BOARD_FILE:-none}" "$(src_of BOARD_FILE "$F_BOARD_FILE")"
-  printf 'using: DECISION_TAG=%s (%s)\n' "$DECISION_TAG" "$(src_of DECISION_TAG "$F_DECISION_TAG")"
-} >&2
 printf '%s' "$DECISION_TAG" | grep -Eq '^[a-z][a-z0-9-]*$' || refuse "bad --decision-tag '$DECISION_TAG'" "pass a lowercase word such as decision"
 
 quote_list() { # quote_list a,b -> "a" "b" (shell array body); empty in, empty out
@@ -247,6 +236,18 @@ fi
 if need_key OWNER && [ -z "$OWNER" ]; then
   refuse "no owner: OWNERS.md needs one login" "bash lib/stamp.sh --owner <github-login> $TARGET"
 fi
+# every value in use, and where it came from, so a value taken silently from the lock is seen
+{
+  printf 'using: DEFAULT_BRANCH=%s (%s)\n' "${DEFAULT_BRANCH:-none}" "$([ -n "$F_DEFAULT_BRANCH" ] && echo flag || { [ -n "$(lock_value DEFAULT_BRANCH)" ] && echo lock || echo origin/HEAD; })"
+  printf 'using: OWNER=%s (%s)\n' "${OWNER:-none}" "$(src_of OWNER "$F_OWNER")"
+  printf 'using: TAGS=%s (%s)\n' "$TAGS" "$(src_of TAGS "$F_TAGS")"
+  printf 'using: PRODUCT_PATHS=%s (%s)\n' "$PRODUCT_PATHS" "$(src_of PRODUCT_PATHS "$F_PRODUCT_PATHS")"
+  printf 'using: DOOR_PATHS=%s (%s)\n' "${DOOR_PATHS:-none}" "$(src_of DOOR_PATHS "$F_DOOR_PATHS")"
+  printf 'using: DOOR_APPROVER=%s (%s)\n' "${DOOR_APPROVER:-none}" "$(src_of DOOR_APPROVER "$F_DOOR_APPROVER")"
+  printf 'using: BOARD_FILE=%s (%s)\n' "${BOARD_FILE:-none}" "$(src_of BOARD_FILE "$F_BOARD_FILE")"
+  printf 'using: DECISION_TAG=%s (%s)\n' "$DECISION_TAG" "$(src_of DECISION_TAG "$F_DECISION_TAG")"
+} >&2
+
 KIT_MARKER=""
 if need_key KIT_MARKER; then
   KIT_MARKER="$(head -n 1 "$SRC_ROOT/lib/adopt/AGENTS.pointer.md" 2>/dev/null | tr -d '\r')"
