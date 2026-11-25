@@ -138,4 +138,11 @@ else
   fail "verify.md lost the proof.visual-gated capture step"
 fi
 
+echo "=== R10b: Step 7b names the producer ==="
+if grep -q 'proof-capture run page' "$VF" && grep -q 'proof-capture' "$VF" && grep -q 'bin/proof-asset put' "$VF"; then
+  pass "verify.md Step 7b names proof-capture run page and then proof-asset put"
+else
+  fail "verify.md Step 7b does not name proof-capture run page"
+fi
+
 [ "$fails" -eq 0 ] && { echo "ALL PASS ($total/$total)"; exit 0; } || { echo "$fails/$total FAILED"; exit 1; }

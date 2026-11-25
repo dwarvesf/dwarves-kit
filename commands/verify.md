@@ -125,6 +125,16 @@ By lane, once per verify run:
 - **full**: the set the task's `visual:` line names (`bash lib/gate/proof-gate.sh
   contract "<task>"` prints it under the same flag).
 
+Make the image with the module that ships for it: for a page,
+`$DWARVES_KIT/bin/proof-capture run page <page.html|url> <out.png> --width 1280`
+(then `--width 400` for the narrow shot); for a terminal session,
+`$DWARVES_KIT/bin/proof-capture run tape <demo.tape> <out.gif>`. The `capture:`
+line of `proof-gate.sh contract` prints the same command. It runs headless on a
+throwaway profile and writes one file. A tape runs its commands as
+you, so read it before you run it, and `ttyd` runs a local terminal server while it
+runs. A flow, a report or a generated file has no verb yet: capture it by hand.
+Then open the image and check it for paths, hostnames and tokens before `put`.
+
 Every image goes through `bin/proof-asset put <slug> <file>`: it converts and caps
 the image, caches it under `.kit/proof-assets/`, writes the
 `docs/verification/<slug>/assets.json` entry, and prints the `![name](url)` line

@@ -8,7 +8,7 @@
 #   R5  end to end in a temp repo with [proof] visual on: capture, proof-asset put, the gate accepts, and blocks
 #       once the image is gone
 #   R6  the `capture:` lines in the contract output run against stubs, also with [modules] proof_capture = false
-#   R7  commands/verify.md tells the reader to look at the image before put (added with the docs task)
+#   R7  commands/verify.md tells the reader to look at the image before put
 # No case starts a real browser or vhs or reaches the network: PROOF_CAPTURE_BROWSER, PROOF_CAPTURE_VHS and
 # PROOF_ASSET_CONVERT are stubs everywhere.
 # modules under test: lib/proof-capture bin/proof-capture lib/gate/proof-gate.sh lib/config/modules.tsv
@@ -216,5 +216,13 @@ for toggle in true false; do
   run_capture_line "$KIT" "redesign the settings page UI" "$toggle" page
   run_capture_line "$KIT" "record a vhs demo of the tui" "$toggle" tape
 done
+
+# ---- R7: the verify step tells the reader to look ---------------------------------------------------------
+echo "=== R7: commands/verify.md Step 7b tells the reader to look before put ==="
+if grep -qF 'open the image and check it for paths, hostnames and tokens before `put`' "$KIT/commands/verify.md"; then
+  pass "R7: Step 7b says to open the image and check it before put"
+else
+  fail "R7: Step 7b lost the line about opening the image before put"
+fi
 
 [ "$fails" -eq 0 ] && { echo "ALL PASS ($total/$total)"; exit 0; } || { echo "$fails/$total FAILED"; exit 1; }
