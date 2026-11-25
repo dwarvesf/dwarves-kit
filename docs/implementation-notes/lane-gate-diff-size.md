@@ -15,3 +15,12 @@ Spec: `docs/specs/SPEC-424-lane-gate-diff-size.md`. Only deltas from the spec.
 - A mixed-diff row for finding 9 uses a comment-only `.github/dependabot.yml` and a `.github/NOTES.md` next to the workflow: both are blanked before the loop, so Rule A reads the unblanked list (`paths.all`).
 - `ship-rules.sh`: comment-only lines are capped at 20 with an `L` count line; Rule A lines are never capped.
 - Test fixture note: git rewrote nothing else; the 50 drop and 8 second budget is shared by both drop rules.
+
+## Review round delta
+- `_WF_BASENAMES` is gone. `_WF_BASECHECK` classifies each base workflow file (exit 3 on an unclassifiable line, `workflow_run` anywhere) and prints name globs; `_WF_GLOBMATCH` matches the new names against them. Each file is classified as it is read, so there is no concatenated base file.
+- `floor` exports `GIT_NO_REPLACE_OBJECTS=1` and `_floor_git` passes `--no-replace-objects`; both, because lane-data reads config with its own git calls.
+- `_floor_tools_ok` runs at the verb entry only. A tool missing mid-scan is not covered.
+- The `uses:` check is one generic `uses:` branch (allow list, then the 40-hex pin) so the allow-list mutation can switch it off alone.
+- Mutation ids added: R1 to R7, PERM, PIN, EMPTY, MODE, EXTRA. R1, R4, R6 and R7 use a custom sed because their check is not a `bad(` or `return 1` line. The single-fault rows are matched by label (`WANT`).
+- Red-before for the new cases was taken from the libs of the previous commit: every new rule row failed there, the single-fault rows are red only under their mutation.
+- Not changed: the hook's own base follows `origin/main` (a local rewind of that ref still sizes, as before).
