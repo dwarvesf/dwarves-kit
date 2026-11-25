@@ -1,0 +1,5 @@
+app	multica	two-way
+opt	multica-url	multica_url	root	Multica server base URL
+opt	multica-workspace	multica_workspace	-	Multica workspace UUID
+opt	multica-project	multica_project	-	Multica project UUID
+secret	MULTICA_TOKEN	multica_token_ref

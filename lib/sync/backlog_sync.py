@@ -42,9 +42,8 @@ CREATE_ONLY_APPS = {"notion-taskboard"}
 # apps that only READ a foreign board and intake into the hub
 PULL_ONLY_APPS = {"notion-taskboard-pull"}
 LEGACY_APPS = {"notion", "notion-taskboard", "notion-taskboard-pull",
-               "hermes", "multica"}
+               "hermes"}
 from sources.hermes import HermesSource  # noqa: E402
-from sources.multica import MulticaSource  # noqa: E402
 from sources.notion import NotionSource  # noqa: E402
 from sources.notion_taskboard import (NotionTaskBoardSource,  # noqa: E402
                                       parse_map)
@@ -395,16 +394,6 @@ def build_source(name: str, args, reg=None, state_path=None):
                             assignee=args.hermes_assignee,
                             workspace=args.hermes_workspace,
                             body_expander=expand_body)
-    if name == "multica":
-        missing = [f for f, v in (("multica_url", args.multica_url),
-                                  ("multica_workspace", args.multica_workspace),
-                                  ("multica_project", args.multica_project))
-                   if not v]
-        if missing:
-            sys.exit(f"multica: set {', '.join(missing)} in [sync] "
-                     "(.kit.toml) or pass the matching --flags")
-        return MulticaSource(args.multica_url, args.multica_workspace,
-                             args.multica_project)
     sys.exit(f"no adapter provides {name} (searched: {reg.dir})")
 
 
@@ -472,9 +461,6 @@ def main(argv=None):
     ap.add_argument("--notion-taskboard-pull-done-option",
                     help="Status option treated as done, and thus never "
                          "pulled (default: Done)")
-    ap.add_argument("--multica-url", help="Multica server base URL")
-    ap.add_argument("--multica-workspace", help="Multica workspace UUID")
-    ap.add_argument("--multica-project", help="Multica project UUID")
     ap.add_argument("--filter", action="append", default=[],
                     help="app:key=value (key: only_tags|skip_tags|intake|"
                          "intake_skip_re); "

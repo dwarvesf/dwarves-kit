@@ -924,7 +924,7 @@ cmd_sync() {
   fi
   args+=(--apps "$v")
   local app fk
-  for app in notion hermes multica; do
+  for app in notion hermes; do
     for fk in only_tags skip_tags intake; do
       v="$(kit_config_get "sync.${app}_${fk}" "")"
       [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
@@ -974,25 +974,10 @@ cmd_sync() {
   v="$(kit_config_get sync.hermes_board "")";    [ -n "$v" ] && args+=(--hermes-board "$v")
   v="$(kit_config_get sync.hermes_assignee "")"; [ -n "$v" ] && args+=(--hermes-assignee "$v")
   v="$(kit_config_get sync.hermes_workspace "")"; [ -n "$v" ] && args+=(--hermes-workspace "$v")
-  # multica_url and multica_token_ref pick the host and the secret that host receives: operator
-  # and kit-root files only, because a project .kit.toml rides inside an untrusted PR.
-  v="$(kit_config_get_root sync.multica_url "")"; _sync_note_shadow sync.multica_url "$v"
-  [ -n "$v" ] && args+=(--multica-url "$v")
-  v="$(kit_config_get sync.multica_workspace "")"; [ -n "$v" ] && args+=(--multica-workspace "$v")
-  v="$(kit_config_get sync.multica_project "")";   [ -n "$v" ] && args+=(--multica-project "$v")
-  # token goes through the env, never argv (ps leaks argv); Keychain-cached
-  # 1P read per the runtime-secret rule, raw `op read` as the fallback.
-  v="$(kit_config_get_root sync.multica_token_ref "")"; _sync_note_shadow sync.multica_token_ref "$v"
-  if [ -n "$v" ] && [ -z "${MULTICA_TOKEN:-}" ]; then
-    if command -v secret-cache-read >/dev/null 2>&1; then
-      MULTICA_TOKEN="$(secret-cache-read --ttl 21600 MULTICA_TOKEN "$v")"
-    else
-      MULTICA_TOKEN="$(op read "$v")"
-    fi
-    export MULTICA_TOKEN
-  fi
   # The adapter manifests (lib/adapters/*/adapter.tsv) declare the rest: per-app filter keys, one engine
-  # flag per `opt` row, one env secret per `secret` row. A manifest error is global and loud.
+  # flag per `opt` row, one env secret per `secret` row. A manifest error is global and loud. An `opt`
+  # row of scope root and every `secret` row read the operator and kit-root files only, because a
+  # project .kit.toml rides inside an untrusted PR and these pick the host and the secret it receives.
   local rows rdir rflag rkey rscope rapp rmode renv rval fks
   rows="$(adapters_rows app)" || exit 1
   while IFS=$'\t' read -r rdir rapp rmode; do

@@ -17,6 +17,7 @@ cat > "$d/bin/python3" <<'STUB'
 #!/usr/bin/env bash
 printf 'ARGV:%s\n' "$*"
 printf 'FAKE_TOKEN:%s\n' "${FAKE_TOKEN:+set}"
+printf 'MULTICA_TOKEN:%s\n' "${MULTICA_TOKEN:+set}"
 STUB
 chmod +x "$d/bin/python3"
 export PATH="$d/bin:$PATH"
@@ -75,12 +76,16 @@ check "project .kit.toml cannot choose the secret ref (no lookup runs)" \
   '[ ! -s "$LOOKUP_LOG" ]' "$(cat "$LOOKUP_LOG")"
 check "the ignored project key is named on stderr" \
   '[[ "$out" == *"ignoring sync.multica_url from the project .kit.toml"* ]]' "$out"
+check "a project-only secret ref leaves MULTICA_TOKEN unset for the engine" \
+  'grep -q "^MULTICA_TOKEN:$" <<<"$out"' "$out"
 printf '[sync]\nmultica_url = "https://operator.example"\nmultica_token_ref = "op://operator/ref"\n' > "$d/opcfg/kit.toml"
 out="$(KIT_CONFIG_OPERATOR="$d/opcfg" MULTICA_TOKEN= bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoM/_meta/BACKLOG.md" 2>&1)"
 check "the operator kit.toml still supplies the multica url" \
   '[[ "$out" == *"--multica-url https://operator.example"* ]]' "$out"
 check "the operator kit.toml still supplies the secret ref" \
   'grep -q "op://operator/ref" "$LOOKUP_LOG"' "$(cat "$LOOKUP_LOG")"
+check "with the operator ref MULTICA_TOKEN reaches the engine by environment, never argv" \
+  'grep -q "^MULTICA_TOKEN:set$" <<<"$out" && ! grep "^ARGV" <<<"$out" | grep -q "stub-token"' "$out"
 
 # the adapter manifests declare the rest of the surface: the fixture adapter (no real app) has an
 # `opt` row of each scope, a `secret` row and three apps of the three modes

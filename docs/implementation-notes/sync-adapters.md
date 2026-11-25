@@ -135,3 +135,10 @@ Taken on this host after merging `origin/master` (a19ca13d), each suite alone, i
 - The golden never sees the `cwd` the adapter hands to `gh` (it replaces the runner), so a new case in `test_conformance.py` (`test_github_takes_its_repo_from_the_flag_and_its_cwd_from_the_project_root`) goes through `build_source` with `KIT_PROJECT_ROOT`. Negative control: `cwd=None` in `adapter.py` gives `FAILED ...test_github_takes_its_repo_from_the_flag_and_its_cwd_from_the_project_root` (383 passed, 1 failed); restored. The characterization suite stayed green under the same mutation, which is why the case exists.
 - `tests/test-board-states.sh` line 52 now puts `../adapters/github` on `sys.path` (the script runs from `lib/sync`) and imports `github as g`; the `sources.hermes` import there stays until the Hermes task.
 - `tests/test-sync.sh` reports 384 passed (380 plus 3 conformance cases for `github` plus the cwd case).
+
+## TASK-F (Multica adapter)
+
+- `cmd_sync` has no Multica line left: the url (root scope), workspace, project, the token block and the filter keys all come from `adapters/multica/adapter.tsv`. The shadow notes now print from the manifest loops, so they come after the legacy per-app lines instead of in the middle of them (stderr order only; the dispatch suite pins the text).
+- The `secret` loop reads `multica_token_ref` on every `board sync` that finds the adapter, named or not, as before. With no multica adapter installed it reads nothing.
+- Dispatch (T10): the stub `python3` also prints `MULTICA_TOKEN:<set or empty>`; two new cases (project-only ref leaves it unset; operator ref sets it and `stub-token` is absent from the printed argv). 20 of 20. Negative control: `args+=(--leak "$rval")` after the export in the secret loop gives `FAIL with the operator ref MULTICA_TOKEN reaches the engine by environment, never argv` and the fixture-secret case fails the same way; restored.
+- `tests/test-sync.sh` reports 387 passed (384 plus 3 conformance cases for `multica`, which set `MULTICA_TOKEN=fixture` inside the test only).

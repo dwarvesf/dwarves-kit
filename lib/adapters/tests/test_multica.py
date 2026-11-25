@@ -1,12 +1,7 @@
 """Multica adapter tests against a fake HTTP transport (no network)."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from sources.multica import (MulticaSource, split_marker,  # noqa: E402
-                             with_marker)
+from multica import (MulticaSource, split_marker,  # noqa: E402
+                     with_marker)
 from sync_core import Plan, Row  # noqa: E402
 
 WS = "ws-uuid"
