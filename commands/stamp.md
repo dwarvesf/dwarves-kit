@@ -50,7 +50,7 @@ A value is remembered in `.claude/team-stamp.lock`, so a re-run with no flags re
 
 ## What it writes
 
-The file list lives in `docs/specs/SPEC-425-team-stamp.md` ("Generated files"). In short:
+The file list lives in the team stamp spec under `docs/specs/` ("Generated files"). In short:
 
 - `AGENTS.md` (the kit marker on line 1, a closing optional-kit section naming only the public
   URL) and `docs/TEAM-WORKFLOW.md`, with a CI parity check between them.
@@ -82,4 +82,4 @@ are counted in a note and left in place.
   check until one exists.
 - Language test jobs, product playbooks and the list of irreversible paths are the repo's own.
 
-Detail: `lib/stamp/README.md` (how a template group plugs in), `docs/specs/SPEC-425-team-stamp.md`.
+Detail: `lib/stamp/README.md` (how a template group plugs in), and the team stamp spec under `docs/specs/`.
