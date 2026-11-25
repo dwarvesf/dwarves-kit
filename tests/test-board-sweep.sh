@@ -21,6 +21,9 @@
 #        in phase order (after-sync, the digests, last); a leg whose option is empty prints nothing;
 #        a leg that exits non-zero prints one line, records the mirror failure and never flips the rc;
 #        with no adapter and no leg flag the sweep runs its syncs and ends rc=0
+#   AC13 a missing leg script fails that leg and the sweep (rc 1) after the syncs ran; a crashing leg
+#        marks the mirror failed in the digest; INT and TERM during a leg stop it, wait for it and
+#        end the sweep with 130 or 143 and nothing after it; no leg sees the sweep token
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -271,14 +274,89 @@ grep -q "after leg ran" <<<"$out" && ok "the next leg still runs" || bad "the le
 [ "$(jq -r '.other // "none"' "$HS" 2>/dev/null)" = "none" ] && ok "only the leg named mirror is recorded" || bad "other leg recorded: $(cat "$HS")"
 grep -q "on-clean ran" "$WORK/calls.log" && ok "on-clean is gated on the syncs only, as before" || bad "on-clean held by a leg failure"
 
+echo "case leg-crash-digest (the digest marks the mirror failed after a crashing leg):"
+reset
+HS2="$WORK/crash2-health.json"; rm -f "$HS2"
+( export KIT_ADAPTERS_DIR="$CDIR"; run_sweep --health-state-file "$HS2" --health --health-force --poster "$WORK/poster" --cluster-map "team=crew,solo=pers" ) >/dev/null 2>&1
+grep -q 'mirror failed: leg mirror exited 7' "$WORK/posted.log" && ok "the health digest says the mirror failed, with the leg's rc" || bad "digest: $(cat "$WORK/posted.log")"
+
+echo "case leg-missing (a leg script that is gone: the syncs ran first, then the leg fails the sweep):"
+MDIR="$WORK/adapters-missing"; mkdir -p "$MDIR/ms/legs"
+printf 'leg\tafter-sync\tlegs/mirror.sh\nleg\tafter-sync\tlegs/kept.sh\nleg\tlast\tlegs/tail.sh\n' > "$MDIR/ms/adapter.tsv"
+printf 'echo "  kept leg ran"\n' > "$MDIR/ms/legs/kept.sh"; printf 'echo "  tail leg ran"\n' > "$MDIR/ms/legs/tail.sh"
+reset
+HS3="$WORK/missing-health.json"; rm -f "$HS3"
+out="$( ( export KIT_ADAPTERS_DIR="$MDIR"; run_sweep --health-state-file "$HS3" --on-clean "$WORK/hook-clean" ) 2>&1)"; rc=$?
+[ "$rc" -eq 1 ] && ok "the sweep ends rc 1" || bad "exit $rc: $out"
+grep -qxF "  leg mirror failed: $MDIR/ms/legs/mirror.sh not found" <<<"$out" && ok "the line names the leg and the script" || bad "no failed line: $out"
+l_sync="$(grep -n '  gamma rc=0' <<<"$out" | cut -d: -f1)"; l_fail="$(grep -n 'leg mirror failed' <<<"$out" | cut -d: -f1)"
+[ -n "$l_sync" ] && [ -n "$l_fail" ] && [ "$l_sync" -lt "$l_fail" ] && [ "$(grep -c '^board called.*sync' "$WORK/calls.log")" -eq 3 ] && ok "all three per-repo syncs ran before it" || bad "order: sync=$l_sync fail=$l_fail"
+[ "$(jq -r '.mirror.rc' "$HS3" 2>/dev/null)" = "1" ] && ok "the mirror failure is recorded (mirror.rc=1)" || bad "health state: $(cat "$HS3" 2>/dev/null)"
+grep -q "on-clean ran" "$WORK/calls.log" && bad "on-clean ran after a missing leg" || ok "on-clean is held"
+grep -q "kept leg ran" <<<"$out" && grep -q "tail leg ran" <<<"$out" && ok "the other legs still run" || bad "later legs skipped: $out"
+
+echo "case leg-env (no leg sees the sweep token, GH_TOKEN or GIT_ASKPASS):"
+TDIR="$WORK/adapters-tok"; mkdir -p "$TDIR/tk/legs"
+printf 'leg\tafter-sync\tlegs/envdump.sh\n' > "$TDIR/tk/adapter.tsv"
+printf 'env > "$ENV_DUMP"\n' > "$TDIR/tk/legs/envdump.sh"
+reset
+printf '  ✓ board     AB-1 -> shipped\n' > "$WORK/out/r-alpha.out"
+export ENV_DUMP="$WORK/env.dump"; : > "$ENV_DUMP"
+( export KIT_ADAPTERS_DIR="$TDIR"; BOARD_SWEEP_TOKEN="tok-123" run_sweep --sync-token-repo beta ) >/dev/null 2>&1
+grep -q '^SWEEP_NAME=' "$ENV_DUMP" && ok "the leg ran and dumped its environment" || bad "no env dump"
+grep -qE '^(GH_TOKEN|GITHUB_TOKEN|GIT_ASKPASS|BOARD_SWEEP_TOKEN|BOARD_SYNC_GIT_TOKEN)=' "$ENV_DUMP" && bad "a credential variable reached the leg" || ok "no GH_TOKEN, GIT_ASKPASS or sweep token variable"
+grep -q 'tok-123' "$ENV_DUMP" && bad "the token value reached the leg" || ok "the token value is nowhere in the leg's environment"
+grep -qF "env [r-beta/sync] GH_TOKEN=tok-123" "$WORK/calls.log" && ok "(control) the named sync still gets the token" || bad "control: $(grep 'r-beta/sync' "$WORK/calls.log")"
+
+echo "case leg-signal (INT and TERM during a leg: the leg gets TERM, the sweep waits, nothing runs after it):"
+SDIR="$WORK/adapters-sig"; mkdir -p "$SDIR/sg/legs"
+printf 'leg\tafter-sync\tlegs/a.sh\nleg\tafter-sync\tlegs/b.sh\nleg\tlast\tlegs/z.sh\n' > "$SDIR/sg/adapter.tsv"
+cat > "$SDIR/sg/legs/a.sh" <<'LEG'
+echo $$ > "$SIG_DIR/a.pid"
+trap 'echo "  leg a got TERM"; : > "$SIG_DIR/a.term"; exit 143' TERM
+: > "$SIG_DIR/a.up"
+i=0; while [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+echo "  leg a ran to the end"
+LEG
+printf ': > "$SIG_DIR/b.ran"\n' > "$SDIR/sg/legs/b.sh"; printf ': > "$SIG_DIR/z.ran"\n' > "$SDIR/sg/legs/z.sh"
+export SIG_DIR="$WORK/sig"
+sig_case() {  # <INT|TERM> <expected rc>
+  local sig="$1" want="$2" i=0 pid rc
+  rm -rf "$SIG_DIR"; mkdir -p "$SIG_DIR"; reset
+  printf '  + spoke     AB-7 · from alpha\n' > "$WORK/out/r-alpha.out"
+  set -m
+  env -u GH_TOKEN -u GITHUB_TOKEN -u GIT_ASKPASS -u BOARD_SYNC_GIT_TOKEN KIT_ADAPTERS_DIR="$SDIR" \
+    HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
+    "$SWEEP" --registry "$WORK/boards.txt" --board-cmd "$WORK/board" --state-file "$STATE" --poster "$WORK/poster" \
+    --cluster-map "team=crew,solo=pers" --health --health-force --health-state-file "$WORK/sig-health.json" \
+    --on-clean "$WORK/hook-clean" > "$WORK/sig.out" 2>&1 < /dev/null &
+  pid=$!
+  set +m
+  while [ ! -f "$SIG_DIR/a.up" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+  if [ ! -f "$SIG_DIR/a.up" ]; then bad "$sig: the leg never started"; kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return; fi
+  kill -"$sig" "$pid"
+  wait "$pid"; rc=$?
+  [ "$rc" -eq "$want" ] && ok "$sig: the sweep exits $want" || bad "$sig: exit $rc (want $want): $(cat "$WORK/sig.out")"
+  [ -f "$SIG_DIR/a.term" ] && grep -q "leg a got TERM" "$WORK/sig.out" && ok "$sig: the leg got TERM and its line reached the log" || bad "$sig: the leg never saw TERM: $(cat "$WORK/sig.out")"
+  kill -0 "$(cat "$SIG_DIR/a.pid")" 2>/dev/null && bad "$sig: the leg is still running" || ok "$sig: the leg has exited (the sweep waited for it)"
+  [ ! -e "$SIG_DIR/b.ran" ] && [ ! -e "$SIG_DIR/z.ran" ] && ok "$sig: no later leg ran" || bad "$sig: a later leg ran"
+  [ ! -s "$WORK/posted.log" ] && ok "$sig: no digest or health post" || bad "$sig: posted: $(cat "$WORK/posted.log")"
+  grep -q "on-clean ran" "$WORK/calls.log" && bad "$sig: on-clean ran" || ok "$sig: no on-clean hook"
+  grep -q "board-sweep: end" "$WORK/sig.out" && bad "$sig: the end line was printed" || ok "$sig: no end line"
+}
+sig_case TERM 143
+sig_case INT 130
+
 echo "case no-adapter (an empty adapter directory: the syncs run, no leg, rc 0; a leg flag is unknown):"
 EDIR="$WORK/adapters-empty"; mkdir -p "$EDIR"
 reset
 out="$( ( export KIT_ADAPTERS_DIR="$EDIR"; run_sweep ) 2>&1)"; rc=$?
 [ "$rc" -eq 0 ] && grep -q "board-sweep: end rc=0" <<<"$out" && ok "no adapter, no leg flag: the sweep ends rc=0" || bad "exit $rc: $out"
 [ "$(grep -c '^board called.*sync' "$WORK/calls.log")" -eq 3 ] && ok "the three syncs ran" || bad "syncs: $(grep -c 'sync' "$WORK/calls.log")"
+reset
 out="$( ( export KIT_ADAPTERS_DIR="$EDIR"; run_sweep --mirror-hermes-home /x ) 2>&1)"; rc=$?
-[ "$rc" -eq 64 ] && grep -q "unknown arg: --mirror-hermes-home" <<<"$out" && ok "a leg flag with no adapter is an unknown arg (64)" || bad "exit $rc: $out"
+[ "$rc" -eq 64 ] && grep -qxF "board sweep: unknown arg: --mirror-hermes-home (adapter dir: $EDIR)" <<<"$out" && ok "a leg flag with no adapter is an unknown arg (64) that names the adapter directory" || bad "exit $rc: $out"
+[ ! -s "$WORK/calls.log" ] && ok "and it ends before any sync" || bad "a sync ran: $(cat "$WORK/calls.log")"
 out="$( ( export KIT_ADAPTERS_DIR="$EDIR"; "$SWEEP" --help ) 2>&1)"
 grep -q "Usage: board sweep" <<<"$out" && ! grep -q "Adapter flags" <<<"$out" && ok "--help prints the usage and no adapter flag" || bad "help with no adapter: $out"
 grep -qiE 'hermes|notion|reminders|multica' "$SWEEP" && bad "board-sweep names an app" || ok "board-sweep names no app (code, comments, help)"

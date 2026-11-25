@@ -65,8 +65,11 @@
 # through a GIT_ASKPASS helper so it never rides argv). Arbitrary spoke plugins
 # never see it.
 #
-# Exit: 0 clean, 1 when any sync, publish, or preflight leg failed. The digest and
-# the adapter legs are observational: they log, they never flip the exit code.
+# Exit: 0 clean, 1 when any sync, publish, or preflight leg failed, or when a leg's script is
+# missing (a broken install, found when the leg runs, after the per-repo syncs). The digest and
+# the adapter legs are observational: they log, they never flip the exit code. INT or TERM during
+# a leg stops the leg, waits for it, and ends the sweep at once with 130 or 143: no later leg, no
+# digest post, no health leg, no on-clean hook.
 set -u
 
 # launchd hands a bare PATH (/usr/bin:/bin:...); board sync shells out to op,
@@ -173,7 +176,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --dry-run) DRY_RUN=1; shift;;
   -h|--help) usage; exit 0;;
   *) if sweepopt_set "$1" "${2:-}"; then shift; [ $# -eq 0 ] || shift
-     else echo "board sweep: unknown arg: $1" >&2; exit 64; fi;;
+     else echo "board sweep: unknown arg: $1 (adapter dir: $(adapters_dir 2>/dev/null))" >&2; exit 64; fi;;
 esac; done
 [ "$ADAPTER_ROWS_BAD" -eq 0 ] || exit 1
 
@@ -226,6 +229,20 @@ in_list() {  # <needle> <list-items...>
 # records the failure so the digest shows it instead of the last green mark.
 KIT_LIB="$(cd "$BIN/../.." && pwd)"
 
+LEG_PID=""
+
+# INT or TERM while a leg runs: the leg gets TERM (a background child of this shell ignores INT, and
+# cannot trap it), this waits until the leg has gone, and the sweep ends with nothing after it.
+leg_signal() {  # <exit code>
+  local code="$1"
+  trap '' INT TERM
+  if [ -n "$LEG_PID" ]; then
+    kill -TERM "$LEG_PID" 2>/dev/null
+    wait "$LEG_PID" 2>/dev/null
+  fi
+  exit "$code"
+}
+
 leg_fallback_record() {  # <leg name> <rc> <text>
   [ "$1" = "mirror" ] || return 0
   printf '%s\n' "$3" | python3 "$HEALTH_BIN" record --leg mirror --rc "$2" --health-state-file "$HEALTH_STATE" 2>&1 | sed 's/^/    /'
@@ -233,6 +250,14 @@ leg_fallback_record() {  # <leg name> <rc> <text>
 
 run_leg() {  # <name> <script>
   local name="$1" script="$2" lrc
+  if [ ! -f "$script" ]; then
+    echo "  leg $name failed: $script not found"
+    leg_fallback_record "$name" 1 "leg $name failed: $script not found"
+    rc_any=1
+    return
+  fi
+  trap 'leg_signal 130' INT
+  trap 'leg_signal 143' TERM
   (
     export SWEEP_NAME="$NAME" SWEEP_BOARDS="$BOARDS" SWEEP_REPO_ROOT="$REPO_ROOT" SWEEP_DRY_RUN="$DRY_RUN" \
       SWEEP_BOARD_CMD="$BOARD_CMD" SWEEP_HEALTH_BIN="$HEALTH_BIN" SWEEP_HEALTH_STATE="$HEALTH_STATE" KIT_LIB="$KIT_LIB"
@@ -243,7 +268,10 @@ run_leg() {  # <name> <script>
     done
     exec "$BASH" "$script"
   ) </dev/null &
-  wait "$!"; lrc=$?
+  LEG_PID=$!
+  wait "$LEG_PID"; lrc=$?
+  LEG_PID=""
+  trap - INT TERM
   if [ "$lrc" -ne 0 ]; then
     echo "  leg $name exited $lrc (non-fatal)"
     leg_fallback_record "$name" "$lrc" "leg $name exited $lrc"

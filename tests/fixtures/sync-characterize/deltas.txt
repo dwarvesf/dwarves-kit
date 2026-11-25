@@ -7,3 +7,5 @@
 4-sweep	sweep-help
 4-sweep	sweep-help
 4-sweep	sweep-help
+4-sweep	sweep-help
+7-help-errors	sweep-unknown-arg

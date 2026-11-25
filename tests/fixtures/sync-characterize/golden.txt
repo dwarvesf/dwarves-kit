@@ -449,8 +449,11 @@ per call to exactly two legs (the --sync-token-repo syncs, and every publish,
 through a GIT_ASKPASS helper so it never rides argv). Arbitrary spoke plugins
 never see it.
 
-Exit: 0 clean, 1 when any sync, publish, or preflight leg failed. The digest and
-the adapter legs are observational: they log, they never flip the exit code.
+Exit: 0 clean, 1 when any sync, publish, or preflight leg failed, or when a leg's script is
+missing (a broken install, found when the leg runs, after the per-repo syncs). The digest and
+the adapter legs are observational: they log, they never flip the exit code. INT or TERM during
+a leg stops the leg, waits for it, and ends the sweep at once with 130 or 143: no later leg, no
+digest post, no health leg, no on-clean hook.
 
 Adapter flags (lib/adapters/*/adapter.tsv):
   --mirror-hermes-home VALUE  turn the mirror leg on, against the Hermes kanban store at D
@@ -1070,5 +1073,5 @@ rc	2
 no adapter provides bogus (searched: <KIT>/lib/adapters)
 rc	1
 ### sweep with an unknown flag
-board sweep: unknown arg: --bogus-flag
+board sweep: unknown arg: --bogus-flag (adapter dir: <KIT>/lib/adapters)
 rc	64
