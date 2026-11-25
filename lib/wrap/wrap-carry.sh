@@ -299,7 +299,7 @@ _carry_stray_commits() {
   gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
   cd_="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   if [ -z "$gd" ] || [ "$gd" != "$cd_" ]; then echo "     SKIP stray commits: not the main checkout"; return 0; fi
-  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: counts the stray commits on the default branch; the move that follows is gated by the origin-holds-HEAD check
   if ! [ "$ahead" -gt 0 ] 2>/dev/null; then echo "     none"; return 0; fi
   if [ "$(kit_config_get_root wrap.carry_stray_lines true)" != "true" ]; then
     echo "     ${ahead} stray commits on ${def} stay local (wrap.carry_stray_lines=false)"; return 0
@@ -324,9 +324,9 @@ _carry_stray_commits() {
 
   # A carry PR that squash-merged put the commits' whole change on origin as one commit, and
   # the branch sweeps then deleted the carry branch. Pushing again would open a duplicate.
-  pid="$(git -C "$repo" diff "$fork" "$head" | git patch-id --stable | cut -d' ' -f1)" # merged-ok: did this stray commit land (patch equivalence), not is a branch merged; guards reset --keep of the local default branch
+  pid="$(git -C "$repo" diff "$fork" "$head" | git patch-id --stable | cut -d' ' -f1)" # merged-ok: asks whether these stray commits on the LOCAL default branch already landed on origin/<default> under other hashes (patch equivalence), not whether a branch is merged; it guards `reset --keep` of that local branch, so a wrong yes would drop commits that exist nowhere else; the commits stay reachable from the reflog until it expires, and the move is also gated by the origin-holds-HEAD check
   [ -n "$pid" ] && landed="$(git -C "$repo" log -p --no-merges "${fork}..origin/${def}" \
-    | git patch-id --stable | awk -v p="$pid" '$1 == p { print $2; exit }')" # merged-ok: same patch-id check as above
+    | git patch-id --stable | awk -v p="$pid" '$1 == p { print $2; exit }')" # merged-ok: the second half of the patch-id check above (same guard of `reset --keep`, same reflog recovery)
 
   if [ "$APPLY" != 1 ]; then
     if [ -n "$landed" ]; then

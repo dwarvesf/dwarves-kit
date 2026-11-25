@@ -249,7 +249,7 @@ cmd_rebase() {
   fi
   local old ahead max stops=0 gen="" log
   old="$(git -C "$wt" rev-parse HEAD)"
-  ahead="$(git -C "$wt" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+  ahead="$(git -C "$wt" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: ahead count that decides whether a rebase is needed, no delete rides on it
   case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
   # internal, a test seam: WRAP_REBASE_MAX_STOPS replaces the one-stop-per-commit bound
   max="${WRAP_REBASE_MAX_STOPS:-$(( ahead + 1 ))}"

@@ -1557,7 +1557,7 @@ _vr_open() {
   # lib/spec/spec-find.sh, the one pick both share (root docs/specs first, then a co-located
   # <ns>/docs/specs/SPEC-<digits>-<slug>.md, shallow first).
   local match
-  match="$(spec_for_slug "$top" "$slug")"
+  match="$(spec_for_slug "$top" "$slug")" # spec-active-ok: the enforcement name pick, the answer spec_active returns by default
   [ -n "$match" ]            || { echo "validate-round: no SPEC-*-$slug.md under '$top' (docs/specs or a co-located */docs/specs)" >&2; exit 1; }
   [ "$match" = "$spec_abs" ] || { echo "validate-round: spec '$spec_abs' is not the ship-gate pick '$match'" >&2; exit 1; }
   local blob head_sha por n ep token

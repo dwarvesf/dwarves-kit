@@ -298,7 +298,7 @@ _adopt_preflight() {
   # is never printed until the PR state is read.
   if [ "$wtp" = 1 ] && [ "$(git -C "$wt" branch --show-current 2>/dev/null)" = "$ADOPT_BRANCH" ] \
      && [ -n "$def" ] && _ref_exists "$repo" "refs/remotes/origin/$def"; then
-    ahead="$(git -C "$repo" rev-list --count "refs/remotes/origin/$def..refs/heads/$ADOPT_BRANCH" 2>/dev/null)"
+    ahead="$(git -C "$repo" rev-list --count "refs/remotes/origin/$def..refs/heads/$ADOPT_BRANCH" 2>/dev/null)" # merged-ok: ahead count before a land or an adoption resume, a precondition (is there anything to land), not a proof that work landed
   fi
   if [ -n "$ahead" ] && [ "$ahead" != "0" ]; then
     # The merged-PR read is branch_merged --numbers: the PRs merged into the default branch at this tip.

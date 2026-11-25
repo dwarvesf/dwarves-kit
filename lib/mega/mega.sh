@@ -220,7 +220,7 @@ _commit_count() {
     return
   fi
   if "$GIT_BIN" -C "$root" rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null 2>&1; then
-    "$GIT_BIN" -C "$root" rev-list --count "$base..origin/$branch" 2>/dev/null || true
+    "$GIT_BIN" -C "$root" rev-list --count "$base..origin/$branch" 2>/dev/null || true # merged-ok: commit count for the mega status report, deletes nothing
   fi
 }
 

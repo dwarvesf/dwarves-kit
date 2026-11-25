@@ -416,7 +416,7 @@ _negctl_required() {
     full) kit_config_tracked_clean "$root/.kit.toml" && mode=full ;;
   esac
   [ "$mode" = full ] || { echo yes; return 0; }
-  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")"
+  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")" # spec-active-ok: the enforcement name pick, the answer spec_active returns by default
   if [ -n "${spec:-}" ]; then
     lane="$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$spec" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//')"
     [ "$lane" = full ] && { echo yes; return 0; }

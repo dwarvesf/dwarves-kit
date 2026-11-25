@@ -20,8 +20,8 @@ _scan_repo() {
   echo "-- checkout on: ${cur:-<detached>}"
 
   local ahead behind
-  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
-  behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)"
+  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: ahead and behind counts for the scan report, which deletes nothing
+  behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)" # merged-ok: ahead and behind counts for the scan report, which deletes nothing
   case "$ahead" in ''|*[!0-9]*) ahead='?' ;; esac
   case "$behind" in ''|*[!0-9]*) behind='?' ;; esac
   echo "-- vs origin/${def}: ahead=${ahead} behind=${behind}"

@@ -600,7 +600,7 @@ _land_run() {
   # the branch resolves first as a short name, so the count and the proof could disagree.
   local fetch_failed=0
   git -C "$wt" fetch -q origin "$def" 2>/dev/null || fetch_failed=1
-  local ahead; ahead="$(git -C "$wt" rev-list --count "refs/remotes/origin/${def}..refs/heads/${branch}" 2>/dev/null)"
+  local ahead; ahead="$(git -C "$wt" rev-list --count "refs/remotes/origin/${def}..refs/heads/${branch}" 2>/dev/null)" # merged-ok: ahead count before a land or an adoption resume, a precondition (is there anything to land), not a proof that work landed
   case "$ahead" in ''|*[!0-9]*) ahead=0 ;; esac
   [ "$ahead" -gt 0 ] || {
     echo "wrap.sh land: ${branch} has no commits ahead of origin/${def}" >&2; return 1; }

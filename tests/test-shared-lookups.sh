@@ -21,77 +21,107 @@ chk() { if [ "$2" -eq 0 ] 2>/dev/null; then echo "  PASS $1"; PASS=$((PASS+1)); 
 eq() { if [ "$2" = "$3" ]; then chk "$1" 0; else echo "    want: $3"; echo "    got:  $2"; chk "$1" 1; fi; }
 
 # ---------------------------------------------------------------------------- the patterns
+# A statement that ends in a backslash is joined with the next line before it is matched, so a
+# pattern split across two lines is still seen, and a marker sits on the statement's last line.
+# Known limits (a form that cannot be matched without flagging honest code, so it is not matched):
+#   - `git merge-base --is-ancestor "$tip" "$some_ref"`: a variable second argument looks like the
+#     many honest ancestry checks (a merge commit on the default branch, a stack parent); only a
+#     literal `origin/` second argument is flagged.
+#   - `git branch -D` is how every deleter deletes; the merged answer that guards it is what the
+#     lint reads, not the delete.
+#   - a copy written in another language (python under lib/), or one built from a variable name.
+#
 # ACTIVE spec. A private way to enumerate or pick a spec:
 #   ls/find ... docs/specs      a directory listing or walk of the spec tree
 #   docs/specs/SPEC-*           a glob over spec files
 #   spec_files() / spec_for_slug()   a redefinition of the shared resolver (the stale-install stubs)
+#   spec_for_slug "             a direct call of the enforcement name pick instead of spec_active
 #   */docs/specs/SPEC           a walk for co-located specs
 # `ls`/`find` must be a word (not "ls-files", not "tools"); a find that only PRUNES docs/specs
 # (`-path ".../docs/specs"`) is not a lookup and is skipped in scan().
-PAT_ACTIVE='(^|[^[:alnum:]_-])(ls|find)[[:space:]][^#]*docs/specs|docs/specs/SPEC-\*|spec_files\(\)|spec_for_slug\(\)|\*/docs/specs/SPEC'
+PAT_ACTIVE='(^|[^[:alnum:]_-])(ls|find)[[:space:]][^#]*docs/specs|docs/specs/SPEC-\*|spec_files\(\)|spec_for_slug\(\)|spec_for_slug[[:space:]]+"|\*/docs/specs/SPEC'
 # MERGED check. A private meaning of "this branch has landed":
-#   --state merged / mergedAt   a read of the merged-PR list or its merge time
-#   git cherry / patch-id       patch equivalence against the default branch
-#   --state all ... --head      the first PR gh lists for a head, any state
-#   is-ancestor <x> origin/<d>  the merged direction (x reached the default branch); the up-to-date
-#                               direction `is-ancestor origin/<d> HEAD` starts with origin/ and is not a hit
-#   pr view ... state           a PR state read; a delete guarded on it would be a private merged check
-PAT_MERGED='--state merged|mergedAt|git[^|]* cherry |patch-id|--state all[^|]*--head|--head[^|]*--state all|is-ancestor "?[^o" ][^ ]* "?(refs/remotes/)?origin/|pr view[^#]*state'
+#   --state merged, mergedAt, merged_at   a read of the merged-PR list or its merge time
+#   --state "$x"                          a PR state chosen at run time (it can be "merged")
+#   branch --merged / --no-merged / -d    git's own merged test (-d refuses an unmerged branch)
+#   git cherry / patch-id                 patch equivalence against the default branch
+#   --state all ... --head                the first PR gh lists for a head, any state
+#   is-ancestor <x> origin/<d>            the merged direction (x reached the default branch); the
+#                                         up-to-date direction `is-ancestor origin/<d> HEAD` starts
+#                                         with origin/ and is not a hit
+#   rev-list --count ...origin/...        a commit count against the default branch (ahead is 0)
+#   git log a..b | wc                     the same count through log
+#   pr view|list ... --json/--jq ... state   a PR state read; a delete guarded on it would be a
+#                                         private merged check (gh pr list defaults to open PRs, so
+#                                         `--head X --json state` without `--state` is this form too)
+PAT_MERGED='--state merged|merged_?[Aa]t|--state[[:space:]]+"?[$]|branch[[:space:]]+(--no-merged|--merged|-d)([[:space:]]|$)|git[^|]* cherry |patch-id|--state all[^|]*--head|--head[^|]*--state all|is-ancestor "?[^o" ][^ ]* "?(refs/remotes/)?origin/|rev-list[^|]*--count[^|]*origin/|git[^|]* log [^|]*\.\.[^|]*\|[[:space:]]*wc|pr[[:space:]]+(view|list)[^#]*--(json|jq)[^#]*state'
 
-# scan <root> <ere> -- every code line under hooks/ lib/ bin/ of <root> that matches, as `file:line:text`.
-# Skipped: tests, docs and data files, the shared files, comment-only lines, a find that prunes docs/specs.
-scan() {
-  ( cd "$1" && grep -rnIE -e "$2" hooks lib bin 2>/dev/null ) | awk -F: '
-    $1 ~ /\/tests\// || $1 ~ /\.(md|html|tsv|json|py)$/ { next }
-    $1 == "lib/gate/branch-merged.sh" || $1 == "lib/spec/spec-find.sh" || $1 == "lib/spec/spec-active.sh" { next }
-    { rest = $0; sub(/^[^:]*:[0-9]+:/, "", rest)
-      if (rest ~ /^[ \t]*#/) next
-      if (rest ~ /-path "[^"]*docs\/specs"/) next
-      print }'
+# logical <root> <ere> <marker> <mode> -- walk hooks/ lib/ bin/ of <root>, join backslash-continued
+# lines, and print one line per statement as `file:startline:text`. mode `hit`: statements matching
+# the pattern; mode `dead`: statements that carry the marker but match no pattern.
+# Skipped: tests, docs and data files, the shared files, comment-only statements, a find that prunes docs/specs.
+logical() {
+  ( cd "$1" && find hooks lib bin -type f \
+      ! -path '*/tests/*' ! -name '*.md' ! -name '*.html' ! -name '*.tsv' ! -name '*.json' ! -name '*.py' \
+      ! -path lib/gate/branch-merged.sh ! -path lib/spec/spec-find.sh ! -path lib/spec/spec-active.sh \
+      -print0 2>/dev/null | LC_ALL=C sort -z | LC_ALL=C PAT="$2" MARK="$3" MODE="$4" xargs -0 awk '
+    function flush(   hit, has) {
+      if (cur == "") return
+      if (cur !~ /^[ \t]*#/ && cur !~ /-path "[^"]*docs\/specs"/) {
+        hit = (cur ~ ENVIRON["PAT"]); has = (index(cur, ENVIRON["MARK"]) > 0)
+        if (ENVIRON["MODE"] == "hit" && hit) print startfile ":" startline ":" cur
+        if (ENVIRON["MODE"] == "dead" && has && !hit) print startfile ":" startline ":" cur
+      }
+      cur = ""
+    }
+    FNR == 1 { flush() }
+    { line = $0
+      if (cur == "") { startline = FNR; startfile = FILENAME }
+      if (line ~ /\\[ \t]*$/) { sub(/\\[ \t]*$/, "", line); cur = cur line " "; next }
+      cur = cur line; flush() }
+    END { flush() }' 2>/dev/null )
 }
-# problems <root> -- unmarked hits, markers without a reason, markers on a line no pattern hits.
+scan() { logical "$1" "$2" "$3" hit; }
+# problems <root> -- unmarked hits, markers without a reason, markers on a statement no pattern hits.
 problems() {
-  local root="$1" line kind
+  local root="$1" line kind pat marker
   for kind in active merged; do
-    local pat marker
     if [ "$kind" = active ]; then pat="$PAT_ACTIVE"; marker='spec-active-ok:'; else pat="$PAT_MERGED"; marker='merged-ok:'; fi
-    scan "$root" "$pat" | while IFS= read -r line; do
+    scan "$root" "$pat" "$marker" | while IFS= read -r line; do
       case "$line" in
         *"$marker"*)
           # the reason is the text after the marker; it must hold a non-space character
-          case "${line#*"$marker"}" in *[![:space:]]*) ;; *) echo "NO-REASON $kind ${line%%:*}:$(printf '%s' "$line" | cut -d: -f2)" ;; esac ;;
-        *) echo "UNMARKED $kind ${line%%:*}:$(printf '%s' "$line" | cut -d: -f2)" ;;
+          case "${line#*"$marker"}" in *[![:space:]]*) ;; *) echo "NO-REASON $kind $(printf '%s' "$line" | cut -d: -f1,2)" ;; esac ;;
+        *) echo "UNMARKED $kind $(printf '%s' "$line" | cut -d: -f1,2)" ;;
       esac
     done
-  done
-  # a marker on a line that matches no pattern is a dead exemption
-  for kind in spec-active-ok merged-ok; do
-    ( cd "$root" && grep -rnIE -e "$kind:" hooks lib bin 2>/dev/null ) | awk -F: '$1 !~ /\/tests\// && $1 !~ /\.(md|html|tsv|json|py)$/ { print $1 ":" $2 }' | while IFS= read -r ref; do
-      case "$kind" in
-        spec-active-ok) scan "$root" "$PAT_ACTIVE" ;;
-        merged-ok) scan "$root" "$PAT_MERGED" ;;
-      esac | cut -d: -f1,2 | grep -qxF -- "$ref" || echo "DEAD-MARKER $kind $ref"
+    logical "$root" "$pat" "$marker" dead | while IFS= read -r line; do
+      echo "DEAD-MARKER $kind $(printf '%s' "$line" | cut -d: -f1,2)"
     done
   done
 }
 # marked <root> -- `kind file` for every marked hit, one line each, sorted.
 marked() {
-  scan "$1" "$PAT_ACTIVE" | grep -F 'spec-active-ok:' | cut -d: -f1 | sed 's/^/spec-active-ok /'
-  scan "$1" "$PAT_MERGED" | grep -F 'merged-ok:' | cut -d: -f1 | sed 's/^/merged-ok /'
+  scan "$1" "$PAT_ACTIVE" 'spec-active-ok:' | grep -F 'spec-active-ok:' | cut -d: -f1 | sed 's/^/spec-active-ok /'
+  scan "$1" "$PAT_MERGED" 'merged-ok:' | grep -F 'merged-ok:' | cut -d: -f1 | sed 's/^/merged-ok /'
 }
 
 # ---------------------------------------------------------------------------- the pinned markers
 # `kind file count`. A new marker, or a marker that moves to another file, is an edit here.
 PINNED="merged-ok lib/config/merge-command.sh 1
-merged-ok lib/mega/mega.sh 1
+merged-ok lib/mega/mega.sh 2
 merged-ok lib/queue/orchestrate.sh 1
-merged-ok lib/wrap/wrap-apply.sh 3
-merged-ok lib/wrap/wrap-carry.sh 3
-merged-ok lib/wrap/wrap-land.sh 1
+merged-ok lib/wrap/wrap-adopt.sh 1
+merged-ok lib/wrap/wrap-apply.sh 4
+merged-ok lib/wrap/wrap-carry.sh 4
+merged-ok lib/wrap/wrap-land.sh 2
 merged-ok lib/wrap/wrap-merge.sh 6
-spec-active-ok hooks/ship-gate.sh 1
-spec-active-ok lib/gate/gate-ledger.sh 2
-spec-active-ok lib/gate/proof-ledger.sh 2
+merged-ok lib/wrap/wrap-rebase.sh 1
+merged-ok lib/wrap/wrap-scan.sh 2
+spec-active-ok hooks/ship-gate.sh 2
+spec-active-ok lib/gate/gate-ledger.sh 3
+spec-active-ok lib/gate/proof-ledger.sh 3
+spec-active-ok lib/goal/mega-merge.sh 1
 spec-active-ok lib/pitch.sh 2
 spec-active-ok lib/registry/feature-registry.sh 1
 spec-active-ok lib/spec/spec-next.sh 3"
@@ -118,6 +148,7 @@ cat > "$FX/hooks/bad-spec.sh" <<'EOF'
 SPEC=$(ls docs/specs/SPEC-*.md | tail -1)
 SPEC2=$(find . -path '*/docs/specs/SPEC-*.md' | head -1)
 spec_for_slug() { echo private; }
+SPEC3=$(spec_for_slug "$ROOT" "$SLUG")
 EOF
 cat > "$FX/lib/bad-merged.sh" <<'EOF'
 st=$(gh pr view "$n" --json state -q .state)
@@ -126,6 +157,17 @@ git cherry origin/main "$b"
 git diff a b | git patch-id --stable
 gh pr list --state all --head "$b" --json state
 git merge-base --is-ancestor "$tip" "origin/main"
+git branch --merged origin/main
+git branch -d "$b"
+jq '.merged_at' pr.json
+[ "$(git rev-list --count origin/main.."$b")" = 0 ]
+git log origin/main.."$b" | wc -l
+gh pr list --head "$b" --json state
+gh pr list --head "$b" --state "$st"
+gh pr list --state all \
+  --head "$b" --json number
+gh pr view "$n" \
+  --json state
 EOF
 cat > "$FX/lib/clean.sh" <<'EOF'
 # gh pr view "$n" --json state in a comment is not a hit
@@ -135,21 +177,31 @@ find "$root/docs" -path "$root/docs/specs" -prune -o -print
 EOF
 echo 'ls docs/specs/SPEC-*.md' > "$FX/lib/x/tests/t.sh"        # a test file: ignored
 echo 'ls docs/specs/SPEC-*.md' > "$FX/lib/spec/spec-active.sh" # the shared file: ignored
-echo 'gh pr view 1 --json state # merged-ok: the PR this script just merged' > "$FX/lib/ok-marker.sh"
+printf 'gh pr view 1 \\\n  --json state # merged-ok: the PR this script just merged, marker on the last line\n' > "$FX/lib/ok-marker.sh"
 echo 'gh pr view 1 --json state # merged-ok:' > "$FX/lib/no-reason.sh"
 echo 'x=1 # merged-ok: nothing here matches a pattern' > "$FX/lib/dead.sh"
 FP="$(problems "$FX" | sort)"
-WANT="DEAD-MARKER merged-ok lib/dead.sh:1
+WANT="DEAD-MARKER merged lib/dead.sh:1
 NO-REASON merged lib/no-reason.sh:1
 UNMARKED active hooks/bad-spec.sh:1
 UNMARKED active hooks/bad-spec.sh:2
 UNMARKED active hooks/bad-spec.sh:3
+UNMARKED active hooks/bad-spec.sh:4
 UNMARKED merged lib/bad-merged.sh:1
 UNMARKED merged lib/bad-merged.sh:2
 UNMARKED merged lib/bad-merged.sh:3
 UNMARKED merged lib/bad-merged.sh:4
 UNMARKED merged lib/bad-merged.sh:5
-UNMARKED merged lib/bad-merged.sh:6"
+UNMARKED merged lib/bad-merged.sh:6
+UNMARKED merged lib/bad-merged.sh:7
+UNMARKED merged lib/bad-merged.sh:8
+UNMARKED merged lib/bad-merged.sh:9
+UNMARKED merged lib/bad-merged.sh:10
+UNMARKED merged lib/bad-merged.sh:11
+UNMARKED merged lib/bad-merged.sh:12
+UNMARKED merged lib/bad-merged.sh:13
+UNMARKED merged lib/bad-merged.sh:14
+UNMARKED merged lib/bad-merged.sh:16"
 eq "every bad pattern, an empty reason and a dead marker are named; comments, tests, the shared file, ls-files, up-to-date and prune are not" "$FP" "$(printf '%s\n' "$WANT" | sort)"
 
 echo
