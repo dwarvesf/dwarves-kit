@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# bin/proof-capture -- kit entrypoint for the proof-capture module (visual proof capture). One exec, one guard.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="$SELF_DIR/../lib/proof-capture/bin/proof-capture"
+[ -x "$TARGET" ] || { echo "proof-capture: module files missing: $TARGET" >&2; exit 69; }
+exec "$TARGET" "$@"

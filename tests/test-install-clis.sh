@@ -10,10 +10,10 @@ KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 pass=0; fail=0
 assert_true(){ if [ "$2" = "0" ]; then echo "  ok: $1"; pass=$((pass+1)); else echo "  FAIL: $1" >&2; fail=$((fail+1)); fi; }
 
-echo "== --with session,worktree,prose_rag exposes the CLIs as kit-managed shim files =="
+echo "== --with session,worktree,prose_rag,proof_capture exposes the CLIs as kit-managed shim files =="
 H1="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
-HOME="$H1" bash "$KIT_DIR/install.sh" --with session,worktree,prose_rag >${TMPDIR:-/tmp}/kitcli-h1.log 2>&1
-for cli in session worktree-provision prose-rag; do
+HOME="$H1" bash "$KIT_DIR/install.sh" --with session,worktree,prose_rag,proof_capture >${TMPDIR:-/tmp}/kitcli-h1.log 2>&1
+for cli in session worktree-provision prose-rag proof-capture; do
   assert_true "$cli shim exists + executable" "$([ -x "$H1/.local/bin/$cli" ]; echo $?)"
   assert_true "$cli is a shim file (not symlink), kit-marked" \
     "$([ ! -L "$H1/.local/bin/$cli" ] && grep -q 'dwarves-kit CLI shim' "$H1/.local/bin/$cli"; echo $?)"
@@ -48,6 +48,7 @@ HOME="$H2" bash "$KIT_DIR/install.sh" --prune >${TMPDIR:-/tmp}/kitcli-h2.log 2>&
 assert_true "no session shim without the session module" "$([ ! -e "$H2/.local/bin/session" ]; echo $?)"
 assert_true "no worktree-provision shim without the worktree module" "$([ ! -e "$H2/.local/bin/worktree-provision" ]; echo $?)"
 assert_true "no prose-rag shim without the prose_rag module" "$([ ! -e "$H2/.local/bin/prose-rag" ]; echo $?)"
+assert_true "no proof-capture shim without the proof_capture module" "$([ ! -e "$H2/.local/bin/proof-capture" ]; echo $?)"
 
 echo "== NC: a user-owned file at the shim path is never clobbered =="
 H3="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1

@@ -140,8 +140,8 @@ F13="$(mfile t13)"
 [ -n "$F13" ] && [ -f "$R/.kit/proof-assets/t13/$F13" ] && pass "image cached under .kit/proof-assets/" || fail "no cache file"
 [ "$(jq -r '.assets[0].status' "$M" 2>/dev/null)" = r2 ] && pass "entry status r2 (destination, not progress)" || fail "status=$(jq -r '.assets[0].status' "$M" 2>/dev/null)"
 SHA="$(shasum -a 256 "$R/.kit/proof-assets/t13/$F13" 2>/dev/null | awk '{print $1}')"
-{ [ -n "$SHA" ] && [ "$(jq -r '.assets[0].sha256' "$M" 2>/dev/null)" = "$SHA" ]; } \
-  && pass "manifest sha256 matches the cached bytes" || fail "sha mismatch"
+{ [ -n "$SHA" ] && [ "$(jq -r '.assets[0].sha256' "$M" 2>/dev/null)" = "sha256:$SHA" ]; } \
+  && pass "manifest sha256 is sha256:<hex> of the cached bytes" || fail "sha mismatch"
 printf '%s' "$F13" | grep -q "shot-${SHA:0:8}\.webp" \
   && pass "the file name carries the first 8 sha hex (edge-cache bust)" || fail "file=$F13 sha=$SHA"
 RAND_OUT="$(printf '%s' "$OUT" | sed -E 's#.*t13/([0-9a-f]{32})/.*#\1#')"
@@ -370,6 +370,47 @@ PORC="$(cd "$R" && git status --porcelain)"
 [ -z "$PORC" ] && pass "git status --porcelain is empty after the flush" || fail "dirty: $PORC"
 IGN="$(cd "$R" && git status --porcelain --ignored=matching | grep -v '^!! ')"
 [ -z "$IGN" ] && pass "only ignored cache lines remain: land's dirty check would pass" || fail "non-ignored: $IGN"
+
+echo "== 21: nothing a put adds to the tree holds a bare digest (the operator's commit-time secret scan) =="
+# A scan that refuses a bare 64-hex run on an added line would refuse every committed
+# manifest. Exempt: a run right after a lowercase sha256: / sha256= / sha256- marker
+# (with an optional space) or after sha256 plus a quote. Any other 40+ hex run is bare.
+bare_digest_lines() {  # bare_digest_lines <repo>: added lines holding a bare 40+ hex run
+  git -C "$1" add -A >/dev/null 2>&1
+  git -C "$1" diff --cached -U0 | grep -E '^\+' | grep -vE '^\+\+\+ ' \
+    | sed -E 's/sha256(: ?|=|-| ["'"'"'])[0-9a-fA-F]{64}/EXEMPT/g' \
+    | grep -E '[0-9a-fA-F]{40}' || true
+}
+R="$TMP/r21"; mkrepo "$R"; mkimg "$R/img.png"; : > "$UP_FAIL"
+run env PROOF_ASSET_UPLOADER="$STUB/uploader.sh" PROOF_ASSET_CONVERT="$STUB/conv-webp.sh" \
+  bash "$BIN" put t21 img.png --name shot
+BARE21="$(bare_digest_lines "$R")"
+[ -z "$BARE21" ] && pass "an offline put leaves no bare digest on any added line" || fail "bare digest added: $BARE21"
+[ -n "$(git -C "$R" diff --cached --name-only)" ] && pass "the put did add a tracked file (the check saw one)" || fail "nothing staged"
+rm -f "$UP_FAIL"
+SHA21="$(shasum -a 256 "$R/.kit/proof-assets/t21/$(mfile t21)" | awk '{print $1}')"
+[ "$(jq -r '.assets[0].sha256' "$(manifest t21)")" = "sha256:$SHA21" ] \
+  && pass "the manifest digest reads sha256:<hex>" || fail "sha256 field: $(jq -r '.assets[0].sha256' "$(manifest t21)")"
+# The scan rule itself: a bare run is caught, a prefixed run is not.
+printf '{"sha256":"%s"}\n' "$SHA21" > "$R/bare.json"
+[ -n "$(bare_digest_lines "$R")" ] && pass "the check flags a bare digest line (control)" || fail "control: bare digest not flagged"
+
+echo "== 22: an old-shape record (bare digest) still flushes and re-puts =="
+R="$TMP/r22"; mkrepo "$R"; mkimg "$R/img.png"; : > "$UP_FAIL"
+run env PROOF_ASSET_UPLOADER="$STUB/uploader.sh" PROOF_ASSET_CONVERT="$STUB/conv-webp.sh" \
+  bash "$BIN" put t22 img.png --name shot
+OLD22="$(jq -r '.assets[0].sha256 | sub("^sha256:"; "")' "$(manifest t22)")"
+jq --arg s "$OLD22" '.assets[0].sha256 = $s' "$(manifest t22)" > "$TMP/m22" && mv "$TMP/m22" "$(manifest t22)"
+rm -f "$UP_FAIL"
+run env PROOF_ASSET_UPLOADER="$STUB/uploader.sh" bash "$BIN" flush
+{ [ $RC -eq 0 ] && printf '%s' "$OUT" | grep -qE '^!\[shot\]\(https://proof\.test/'; } \
+  && pass "flush drains a queue whose manifest holds the old bare digest" || fail "flush rc=$RC out=[$OUT] err=[$ERR]"
+run env PROOF_ASSET_UPLOADER="$STUB/uploader.sh" PROOF_ASSET_CONVERT="$STUB/conv-webp.sh" \
+  bash "$BIN" put t22 img.png --name shot
+{ [ $RC -eq 0 ] && [ "$(jq '.assets | length' "$(manifest t22)")" = 1 ]; } \
+  && pass "a re-put over an old-shape manifest keeps one entry" || fail "re-put rc=$RC ($ERR)"
+[ "$(jq -r '.assets[0].sha256' "$(manifest t22)")" = "sha256:$OLD22" ] \
+  && pass "the re-put rewrites the entry in the new shape" || fail "sha256 field: $(jq -r '.assets[0].sha256' "$(manifest t22)")"
 
 echo "== usage and outside-a-repo guards =="
 OUT="$(bash "$BIN" 2>&1)"; RC=$?
