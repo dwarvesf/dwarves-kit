@@ -51,7 +51,7 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    `bin/proof-asset put <slug> <file>` (it prints the `![name](url)` line to paste; the image goes
    to the owner's R2 bucket and expires after 90 days, never into git), a committed tracked image,
    or, with `assets = "local"` in a tracked `.kit.toml`, a cached local copy. Offline, `put`
-   queues the upload and `wrap land` flushes it. `proof-gate.sh contract "<task>"` names the
+   queues the upload and `wrap land` flushes it. The committed manifest `docs/verification/<slug>/assets.json` records each digest as `sha256:<hex>`; the gate also reads the bare hex an older `put` wrote. `proof-gate.sh contract "<task>"` names the
    artifact each task type owes (SPEC-385). Off by default: nothing changes until a repo or the
    operator file turns it on.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the

@@ -89,6 +89,29 @@ _log_anchor_head_lines() {
   ' "$1"
 }
 
+# _repo_label <git-common-dir> -- the repo's own name for a message: the directory that holds
+# `.git`, so a linked worktree reads as its main repo, or a bare repo's name without `.git`.
+_repo_label() {
+  local c="$1"
+  case "$c" in */.git) c="${c%/.git}" ;; esac
+  c="${c##*/}"
+  printf '%s' "${c%.git}"
+}
+
+# _log_outside_note <log-file> -- one stderr line when the caller stands in a git repo that is
+# not the log's. One log serves every repo the operator wraps, so the write is right, but a
+# line landing in another repo's checkout passes for one in the caller's own: name the file.
+# Silent from the log's repo (main checkout, subdirectory or worktree) and from outside any
+# repo. Never changes where the line went or the exit code.
+_log_outside_note() {
+  local file="$1" cur_common log_common log_label="no git repo"
+  cur_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+  log_common="$(git -C "$(dirname "$file")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || log_common=""
+  [ "$cur_common" != "$log_common" ] || return 0
+  [ -z "$log_common" ] || log_label="repo $(_repo_label "$log_common")"
+  echo "wrap log: wrote ${file} (${log_label}), outside the current repo $(_repo_label "$cur_common")" >&2
+}
+
 cmd_log() {
   local date_str text="" arg have_text=0
   date_str="$(date +%F)"
@@ -170,6 +193,7 @@ cmd_log() {
   [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
   mv -f "$tmp" "$resolved"
   printf '%s\n' "$line"
+  _log_outside_note "$resolved"
   kit_warn_default_branch "$resolved" "wrap log"
   return 0
 }

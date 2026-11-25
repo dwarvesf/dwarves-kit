@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shared worker page</title>
+</head>
+<body>
+<main>
+  <h1>Shared worker page</h1>
+  <p role="status" id="state"></p>
+</main>
+<script>
+  var worker = new SharedWorker('/shared-worker.js');
+  worker.port.onmessage = function () { document.getElementById('state').textContent = 'shared worker done'; };
+  worker.onerror = function () { document.getElementById('state').textContent = 'shared worker done'; };
+  worker.port.postMessage('go');
+</script>
+</body>
+</html>
