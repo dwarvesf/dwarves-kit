@@ -3,6 +3,7 @@
 # Prints one line per case (PASS, FAIL or SKIP) and a recap; exit 0 when nothing failed.
 # Every case runs the tool through a stub browser or stub vhs, never a real one (case 11 is opt-in).
 # The tool gets a private TMPDIR, so "nothing left behind" is an exact assertion.
+# operator-layer: unpinned-ok the suite never reaches the config resolver; the kit-config text below is a planted lint violation
 set -u
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
