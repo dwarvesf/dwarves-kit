@@ -35,14 +35,14 @@ spec's `## Review` DO-NOT-SHIP verdict and the safety gates.
 
 ### Step 2: Run tests
 
-Detect the test runner and execute:
-- Node.js: `npm test` or `pnpm test` or `yarn test`
-- Go: `go test ./...`
-- Python: `pytest` or `python -m pytest`
-- Rust: `cargo test`
+Run the narrowest tests that cover the change (in the kit repo `bin/test-affected`; in any other repo its own diff-scoped check, else the test files the diff touches, else the smallest command that fails if the change is wrong), with the repo's runner scoped to them:
+- Node.js: `npm test -- <files>` (or the pnpm/yarn equivalent)
+- Go: `go test <changed packages>`
+- Python: `pytest <files>`
+- Rust: `cargo test <filter>`
 
-If `kit_config_get test.suite full` (`lib/config/kit-config.sh`) is `affected`, run only the narrowest tests that cover the change (in the kit repo `bin/test-affected`) and note that the full suite runs on the schedule.
-In a tiered mega-goal node (`[mega] verify = "tiered"` at the base), resolve the scope with `bash lib/gate/known-failures.sh suite <root> <base> <goal-file>` instead of the `kit_config_get` read above and run what it names (`affected`: the narrowest tests that cover the change). A red run that `bash lib/gate/known-failures.sh classify <log> <root> <base> --exit <n> [--prev-count <n>]` prints `known` for does not stop the ship: every failure is on the lead's known-failures list at the base and the executed count did not drop. Name the known failures in the summary.
+Never the whole suite: it runs only in the release and nightly path (`.github/workflows/test.yml` on dispatch or tag, and the operator's nightly job).
+In a tiered mega-goal node (`[mega] verify = "tiered"` at the base), a red run that `bash lib/gate/known-failures.sh classify <log> <root> <base> --exit <n> [--prev-count <n>]` prints `known` for does not stop the ship: every failure is on the lead's known-failures list at the base and the executed count did not drop. Name the known failures in the summary.
 If tests fail: STOP. Show the failures. Ask if the user wants to fix them first.
 If no test runner found: WARN but continue.
 

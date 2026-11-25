@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-known-failures.sh -- lib/gate/known-failures.sh: the lead-committed known-failures list and the
-# node suite scope of a tiered mega-goal (docs/specs/SPEC-421-tiered-verification.md rules 1 and 2).
+# affected-only node scope of a tiered mega-goal (docs/specs/SPEC-421-tiered-verification.md rules 1 and 2).
 # Cases C1 to C5 of the spec's test plan. Offline: a throwaway repo from tests/lib/node-fixture.sh.
 # Negative control: lib/gate/negctl.sh with this suite as the test command and `read` mutated to read
 # the branch copy instead of the base copy; C2 must go red.
@@ -43,25 +43,17 @@ run_log green STUB_COUNT=149
 run_log crash STUB_CRASH=1
 printf "  FAIL: Skim settings panel wrong\n" > "$TMP/nosummary.log"; echo 1 > "$TMP/nosummary.rc"
 
-# ---- C1 node-runs-affected: the node scope resolves to affected from the lead's line, and a branch edit cannot move it
-printf '# SG-01\nTest-suite: affected\n' > "$TMP/goal-affected.md"
-printf '# SG-02\n' > "$TMP/goal-plain.md"
-out=$(bash "$KF" suite "$W" "$BASE" "$TMP/goal-affected.md")
-[ "$out" = affected ] && pass "C1: Test-suite: affected in the goal file resolves to affected" || fail "C1: goal-file line -> '$out'"
-out=$(bash "$KF" suite "$W" "$BASE" "$TMP/goal-plain.md")
-[ "$out" = full ] && pass "C1: no line and [test] suite = full at the base resolves to full" || fail "C1: default -> '$out'"
-git -C "$W" checkout -q -b feat/weaken origin/main 2>/dev/null
-sed 's/^suite = "full"/suite = "affected"/' "$W/.kit.toml" > "$TMP/kit.toml.new"; cp "$TMP/kit.toml.new" "$W/.kit.toml"
-nf_git "$W" commit -q -am "chore: branch edit"
-out=$(bash "$KF" suite "$W" "$BASE" "$TMP/goal-plain.md")
-[ "$out" = full ] && pass "C1: a node branch edit of .kit.toml does not move the base value" || fail "C1: branch edit -> '$out'"
-git -C "$W" checkout -q chore/run 2>/dev/null
-[ ! -s "$STUB_LOG" ] && pass "C1: resolving the scope never invokes the suite (stub log empty)" || fail "C1: stub log: $(cat "$STUB_LOG")"
+# ---- C1 node-runs-affected: the work loop runs only the affected selection; no full-suite knob is left
 wired=0
-for f in commands/execute.md commands/ship.md agents/task-verifier.md agents/recheck-verifier.md; do
-  grep -qF 'known-failures.sh suite' "$KIT/$f" || { fail "C1: $f does not resolve the node scope through known-failures.sh suite"; wired=1; }
+for f in commands/execute.md commands/ship.md commands/verify.md agents/task-verifier.md; do
+  grep -qF 'bin/test-affected' "$KIT/$f" || { fail "C1: $f does not name the affected selection (bin/test-affected)"; wired=1; }
 done
-[ "$wired" = 0 ] && pass "C1: execute, ship, task-verifier and recheck-verifier all resolve the scope through the script"
+for f in commands/execute.md commands/ship.md commands/verify.md agents/task-verifier.md agents/recheck-verifier.md lib/gate/known-failures.sh; do
+  grep -qE 'test\.suite|known-failures\.sh suite' "$KIT/$f" && { fail "C1: $f still reads a full-suite knob"; wired=1; }
+done
+[ "$wired" = 0 ] && pass "C1: execute, ship, verify and task-verifier run the affected selection; no test.suite knob is read"
+bash "$KF" suite "$W" "$BASE" >/dev/null 2>&1; [ $? = 64 ] && pass "C1: the suite verb is gone (usage exit 64)" || fail "C1: known-failures.sh still answers suite"
+git -C "$W" checkout -q chore/run 2>/dev/null
 
 # ---- C2 known-failures-read-at-base: a branch edit of the list does not change classify; the base copy decides
 git -C "$W" checkout -q -b feat/edit origin/main 2>/dev/null

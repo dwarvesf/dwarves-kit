@@ -19,7 +19,7 @@ collector that does not exist yet (each carries a board row before build).
 | Test granularity | tests passed / total per cell, not just the boolean | bench row | internal | now |
 | Defect caught rate | defects stopped by a gate/verifier before ship (`caught=bool`) | gate-ledger | user + internal | join |
 | Defect escape rate | defects found AFTER ship, per shipped task; the denominator of gate value | incident/feedback rows | user + internal | planned |
-| Verifier disagreement | task-verifier PASS later overturned by acceptance/system verifier; measures verification quality itself | verifier records | internal | join |
+| Verifier disagreement | task-verifier PASS later overturned by acceptance verifier; measures verification quality itself | verifier records | internal | join |
 | Spec fidelity | logged deviations per task (implementation-notes deltas) | impl-notes | internal | planned |
 
 ## 2. Efficiency (what does a shipped task cost?)
