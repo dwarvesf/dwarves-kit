@@ -56,7 +56,7 @@ refuse() {
 # clean <text>: every character outside A-Za-z0-9._/@- , comma and space becomes ?.
 clean() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
 # plain <file>: the file with control characters (an escape, a carriage return) removed.
-plain() { LC_ALL=C tr -d '\000-\010\013-\037\177' <"$1"; }
+plain() { LC_ALL=C sed "s/[$(printf '\001-\010\013-\037\177')]//g" <"$1"; }
 
 use_fix='bash scripts/negctl.sh "<test command>" "<mutate command>"'
 

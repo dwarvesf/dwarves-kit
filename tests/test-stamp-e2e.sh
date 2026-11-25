@@ -74,12 +74,6 @@ expect "every generated script is executable" [ "$modes_bad" -eq 0 ]
 
 # AC2, AC3: every generated test, kit absent, non-default values (the harness stamps and runs them)
 bash tests/test-stamp-kitfree.sh all > "$WORK/kitfree.out" 2>&1; krc=$?
-# A system tool (tr, a shell) was seen to die with a segmentation fault now and then on a loaded
-# macOS host; that is not a template defect. Retry once, and only on that signature.
-if [ "$krc" -ne 0 ] && grep -q 'Segmentation fault' "$WORK/kitfree.out"; then
-  echo "note: a tool crashed (segmentation fault) in the kit-free pass; retrying it once"
-  bash tests/test-stamp-kitfree.sh all > "$WORK/kitfree.out" 2>&1; krc=$?
-fi
 ntests="$(grep -c '^scripts/test-' "$WORK/manifest.txt")"
 nran="$(grep -c '^ok - kit-free run: scripts/test-' "$WORK/kitfree.out")"
 expect "the kit-free harness exits 0" [ "$krc" -eq 0 ]
