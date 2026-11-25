@@ -10,6 +10,7 @@
 # modules under test (the test-affected cache key greps this line):
 # lib/spec/spec-active.sh lib/gate/branch-merged.sh
 # Run: bash tests/test-shared-lookups.sh     Exit 0 = all pass.
+# operator-layer: unpinned-ok names lib/wrap paths as data in the pinned list; reads files as text, runs no resolver
 set -uo pipefail
 unset $(git rev-parse --local-env-vars) 2>/dev/null
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
