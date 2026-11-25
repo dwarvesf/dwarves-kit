@@ -95,14 +95,14 @@ The `run page` lifecycle (the part a builder gets wrong). `$$` is the tool, CPID
     +-- no browser / no vhs (or the env path not executable) ---------------------------------> exit 69
     |
     work=$(mktemp -d "${TMPDIR:-/tmp}/proof-capture.XXXXXX")   mode 0700; profile=<work>/profile; partial=<work>/partial.png (or .gif)
-    trap: INT, TERM, HUP -> if no reap is running: reap at once in interrupt mode, "proof-capture: interrupted", exit 1
+    trap: INT, TERM, HUP, QUIT, USR1, USR2, ALRM, PIPE -> if no reap is running: reap at once in interrupt mode, "proof-capture: interrupted", exit 1
                             if a reap is running: only set INTR=1 (the running reap sees it and goes straight to KILL)
           EXIT -> reap if none ran
-    set -m ; start the child in the BACKGROUND, stdin /dev/null, stdout and stderr to /dev/null ; CPID=$! ; set +m
-    set -m ; start the watchdog, same redirections ; WDPID=$! ; set +m
+    set -m ; LAUNCHED=1 ; start the child in the BACKGROUND, stdin /dev/null, stdout and stderr to /dev/null ; CPID=$!
+           ; start the watchdog at once, same redirections ; WDPID=$! ; set +m      (a reap that finds CPID empty and LAUNCHED set uses $!)
         watchdog: ( n=0 ; while kill -0 -- -CPID and n < deadline + 5 : sleep 1, n++ ; then, if the group still exists, kill -KILL -- -CPID )
         page flags: --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars
-        --user-data-dir=<profile> --window-size=<w>,<h> [--virtual-time-budget=<ms>] --screenshot=<partial> <url>
+        --use-mock-keychain --password-store=basic --user-data-dir=<profile> --window-size=<w>,<h> [--virtual-time-budget=<ms>] --screenshot=<partial> <url>
         tape: vhs -o <partial> <absolute tape path>
     check: ps -o pgid= -p CPID prints CPID -> ok ; prints a different id -> reap the one pid, exit 1 ("cannot isolate the browser process group") ;
            prints nothing (the child already exited, a fast stub) -> not a fault, go to the file check
@@ -110,9 +110,10 @@ The `run page` lifecycle (the part a builder gets wrong). `$$` is the tool, CPID
         partial is valid (page: PNG magic, IEND trailer, size > 0; tape: vhs exited 0 and GIF magic, trailer, size > 0)
             and its size is equal on two reads 0.3 s apart ----------------------------------------------> done
         CPID gone: look at the partial once more ; still not valid ---------------------------------------> fail
-    done: copy partial to <outdir>/.proof-capture.XXXXXX (mktemp, exclusive create, name kept in FINAL_TMP) ; mv it onto <out> ;
+    done: recheck <out> and <outdir> (symlink, directory) ; copy partial to <outdir>/.proof-capture.XXXXXX (mktemp, exclusive create,
+          name kept in FINAL_TMP) ; recheck again ; mv it onto <out> (mv -fh on macOS and the BSDs, mv -fT elsewhere) ; WROTE=1 ;
           THEN reap (the copy comes first: the reap removes the work dir) ; print ; exit 0
-    fail: reap ; one stderr line ; exit 1      (an existing <out> is left untouched)
+    fail: reap first, then one stderr line (a closed stderr cannot stop the cleanup) ; exit 1      (an existing <out> is left untouched)
     reap(): reaping=1, CPID and WDPID kept in saved variables until KILL has been sent
         deadline, fail, done:  kill -TERM -- -CPID ; wait up to 2 s for the group to empty (kill -0 -- -CPID), looping every 0.1 s ;
                                leave the wait early to KILL when INTR=1 or the 2 s are used
@@ -127,8 +128,8 @@ Rules for the reap, each one a blocking review point:
 - A group kill on CPID needs a numeric pid greater than 1 and the group check above. Without both, nothing is group-signalled.
 - KILL is not optional: TERM alone left browser helpers running (Grounding 11), and a TERM-ignoring child would otherwise outlive the deadline. A suite stub that ignores TERM proves it (cases 5, 6 and 13).
 - One reap runs at a time. `reaping` and the saved pids stay set until KILL has been sent, so a second signal can neither abandon the reap nor start a second one: while a reap runs the trap only sets `INTR=1`, and the reap's wait loop reads it and goes straight to KILL, then kills the watchdog and removes the work dir.
-- The watchdog is the answer to a KILL sent to the tool, which cannot be caught: it is its own group, so it survives and ends the browser group at deadline plus 5 s. It polls `kill -0 -- -CPID` once a second and exits as soon as the group is gone, so it never signals a group id that was freed and recycled: a pid is not reused while a process group with that id exists, and the watchdog acts only while it has just seen the group exist. The numeric and group checks of the previous rule are made once by the tool before it starts the watchdog; they do not repeat inside it. Its stdout and stderr go to `/dev/null`, so a caller capturing the tool's output never waits on it. A normal exit kills it by WDPID.
-- The browser never writes beside `<out>`: the partial lives in the private work dir. Only after a valid artifact does the tool make one exclusive `mktemp` file in `<outdir>`, copy into it and rename it onto `<out>`; the signal trap and the reap remove that file if it is still there. A planted symlink at a guessable name therefore has nothing to hit, and `<out>` or `<outdir>` being a symlink is refused (exit 64). On macOS `/tmp` is itself a symlink, so a caller names a directory under `$TMPDIR` or a real directory.
+- The watchdog is the answer to a KILL sent to the tool, which cannot be caught: it is its own group, so it survives and ends the browser group at deadline plus 5 s. It polls `kill -0 -- -CPID` once a second and exits as soon as the group is gone, so it never signals a group id that was freed and recycled: a pid is not reused while a process group with that id exists, and the watchdog acts only while it has just seen the group exist. The tool starts it right after the child, before the group check, so the window with no watchdog is the two process starts between the child and the watchdog (a KILL there leaves a browser that never exits; stated in the README, not closed). A numeric check (`is_pid`) guards the start; the group check of the previous rule is made after it, and a failed group check reaps the child and the watchdog together. The watchdog itself acts only on a group it has just seen exist. Its stdout and stderr go to `/dev/null`, so a caller capturing the tool's output never waits on it. A normal exit kills it by WDPID.
+- The browser never writes beside `<out>`: the partial lives in the private work dir. Only after a valid artifact does the tool make one exclusive `mktemp` file in `<outdir>`, copy into it and rename it onto `<out>`; the signal trap and the reap remove that file if it is still there. A planted symlink at a guessable name therefore has nothing to hit, and `<out>` or `<outdir>` being a symlink is refused (exit 64 at the start; exit 1 with the same message when it changes during the run). The check repeats before the temp file is made and before the rename, and the rename does not follow a symlink (`mv -fh`, or `-fT`). It checks `<out>` and the one directory it names, not the parts above; a second writer inside the last instants can still win, because a check and the write after it are two steps. On macOS `/tmp` is itself a symlink, so a caller names a directory under `$TMPDIR` or a real directory.
 - The tool never attaches to a running browser and never passes a profile it did not create: `--user-data-dir` is always the fresh `<work>/profile`.
 - `<work>` is removed with `rm -rf` only when it was created by this run's `mktemp -d` and its name matches `*/proof-capture.*`.
 
@@ -185,13 +186,13 @@ OUT
   A parent directory that does not exist is created. A failed run leaves any existing <out> untouched.
   stdout, one line:  proof-capture: wrote <out> (<n> bytes)
   stderr: diagnostics, one line per fault. No sidecar file, no state, nothing under ~/.
-  While running: one private 0700 directory under $TMPDIR (removed on every exit path a signal can reach). Next to <out>,
+  While running: one private 0700 directory under $TMPDIR (removed on every exit path a catchable signal can reach; a KILL leaves it). Next to <out>,
   a hidden .proof-capture.XXXXXX file exists only for the final copy and rename.
 
 EXIT
   0   artifact written and valid
   1   capture failed: no valid artifact before the deadline, the browser or vhs exited without one (vhs: or
-      exited non-zero), or the tool was interrupted (INT, TERM or HUP)
+      exited non-zero), or the tool was interrupted (INT, TERM, HUP, QUIT, USR1, USR2, ALRM or PIPE)
   64  usage or bad input: unknown verb, missing argument, unknown flag, input file missing, bad scheme, a path starting with "-",
       a number outside its range, <out> is a directory or a symlink, <outdir> is a symlink
   69  a required dependency is missing: no browser for page, no vhs for tape
@@ -389,7 +390,7 @@ The `git grep --no-index`, `grep -rniE` and `git diff --stat` lines print nothin
 4. `--width`, `--height`, `--wait` or `--deadline` not an integer in its range: exit 64. `--wait 0` is refused on purpose: Edge wrote no file at `--virtual-time-budget=0` (Grounding 7). `PROOF_CAPTURE_DEADLINE` follows the same rule.
 5. Two captures at once: each has its own work dir, profile, group and watchdog, so they do not collide. Two captures to one `<out>`: the last rename wins.
 6. The page needs JavaScript time: `--wait 3000` gives it virtual time; without it the shot is of the first paint.
-7. `TMPDIR` unset: `/tmp`. The work dir is removed on every exit path a signal can reach, including a deadline.
+7. `TMPDIR` unset: `/tmp`. The work dir is removed on every exit path a catchable signal can reach, including a deadline.
 8. A browser that prints errors to stderr (the CVDisplayLink lines seen in the probe) is silenced; the tool prints only its own one-line faults. The shell's own "Terminated" job notice is silenced too (the `wait` runs with stderr discarded).
 9. `run tape` with a tape that declares its own `Output`: the `-o` flag adds the partial path; only the partial is checked and copied to `<out>`. Any other output the tape declares is vhs's and is not touched.
 10. A `PROOF_CAPTURE_BROWSER` that is a stub script: used as is; this is the seam the suite uses.
@@ -503,6 +504,7 @@ Dry trace for the negative control of AC3: mutation = change the group kill in t
 - DEC-P: the browser writes only into the tool's private 0700 work dir; the artifact reaches `<outdir>` by an exclusive `mktemp` file and a rename. Why: a partial named by pid beside `<out>` is guessable, and a planted symlink there would be written through. `<out>` and `<outdir>` being symlinks are refused.
 - DEC-Q: a watchdog (its own recorded group) ends the browser group at deadline plus 5 s, so a KILL sent to the tool no longer leaks a browser that never exits. Cost: one more recorded process and the narrow pid-recycle residual in Failure modes.
 - DEC-S: no third validation round. Lead decision after round 2: the round 1 criticals were cleared, round 2 found two criticals with exact fixes (the TERM-ignoring stub and the single-reap rule), both folded here, and the build's own suites and its multi-lens review cover the rest. Consequence: the last validate verdict in the ledger is NEEDS-REVISION, overridden on the lead's decision (not the operator's), and no fresh round has read the round 2 fold.
+- DEC-T: changes after the independent security review of the built tool, each with a suite case and a run negative control (see `docs/implementation-notes/visual-proof-module.md`): a reap that finds CPID empty after a launch uses `$!`; the watchdog starts right after the child; the output checks repeat before the temp file and before the rename, and the rename does not follow a symlink; `fail` reaps before it prints and QUIT, USR1, USR2, ALRM and PIPE are trapped; a signal after the rename lets the run finish with exit 0; an `<out>` ending in a slash exits 64; a bare `PROOF_CAPTURE_BROWSER` or `PROOF_CAPTURE_VHS` name is looked up on `PATH`; the no-own-group branch signals the pid only while it is still the tool's child; the browser gets `--use-mock-keychain --password-store=basic`; the suite records each pid with its start time and signals only a pid whose start time still matches. Considered and not added: `--disable-background-networking` and `--disable-component-update`.
 - DEC-R: the validity rule is magic plus trailer plus size-stable twice, and for a tape also vhs exit 0. Why: size-equal on two reads alone accepts a writer that paused mid-file.
 
 ## Open questions

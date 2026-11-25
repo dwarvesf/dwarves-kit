@@ -23,7 +23,7 @@ Capture the page or terminal in the theme the user will see: the real stylesheet
 ## Gotchas
 
 - A browser can write the file and never exit. That is normal here: the tool treats the file as the result and ends the browser's own process group.
-- On macOS the short temp path under `/tmp` is a symlink, and the tool refuses a symlinked output directory. Pass a real directory, such as one under `$TMPDIR`.
+- On macOS `/tmp` is a symlink, and the tool refuses a symlink as the output directory it is given (it checks that directory and `<out>`, not the parts above). Pass a real directory, such as one under `$TMPDIR`.
 - A locale without UTF-8 turns box-drawing glyphs into raw bytes in a tape. Set `LANG` on the tape's first line (`Env LANG "en_US.UTF-8"`).
 - A page that animates or fetches after load needs `--wait MS` (virtual time), or the shot is of the first paint.
 - A tape runs its commands as you. Read it first.
@@ -33,7 +33,7 @@ Capture the page or terminal in the theme the user will see: the real stylesheet
 Run the browser by hand with the same flags the tool uses, with `--user-data-dir` set to a fresh temp directory and the stderr redirect removed so you can read the browser's own messages:
 
 ```
-<browser> --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars --user-data-dir=<fresh temp dir> --window-size=1280,800 --screenshot=<out.png> <url>
+<browser> --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars --use-mock-keychain --password-store=basic --user-data-dir=<fresh temp dir> --window-size=1280,800 --screenshot=<out.png> <url>
 ```
 
 If the file appears but the command never returns, that is the browser behavior the tool is built around. If no file appears at all, that browser does not support headless screenshots in this way; name another one in `PROOF_CAPTURE_BROWSER`.

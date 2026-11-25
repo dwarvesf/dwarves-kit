@@ -24,14 +24,8 @@ TOOL_PID=""
 NPASS=0; NFAIL=0; NSKIP=0
 
 cleanup() {
-  local p
-  if [ -n "$TOOL_PID" ] && kill -0 "$TOOL_PID" 2>/dev/null; then kill -TERM "$TOOL_PID" 2>/dev/null; fi
-  if [ -f "$STUB_PIDS" ]; then
-    while read -r p; do
-      case "$p" in ''|*[!0-9]*) continue ;; esac
-      kill -KILL "$p" 2>/dev/null
-    done <"$STUB_PIDS"
-  fi
+  if tool_alive; then kill -TERM "$TOOL_PID" 2>/dev/null; fi
+  [ ! -f "$STUB_PIDS" ] || kill_owned
   case "$SUITE_TMP" in */pcsuite.*) rm -rf "$SUITE_TMP" ;; esac
 }
 trap cleanup EXIT
@@ -56,17 +50,21 @@ start_tool() {
   : >"$OUTF"; : >"$ERRF"
   {
     set -m
-    PATH="${RUN_PATH-$PATH}" "$BASH" "$ENTRY" "$@" </dev/null >"$OUTF" 2>"$ERRF" &
+    PATH="${RUN_PATH-$PATH}" "$BASH" "${ENTRY_USE:-$ENTRY}" "$@" </dev/null >"$OUTF" 2>"$ERRF" &
     TOOL_PID=$!
     set +m
   } 2>/dev/null
 }
 
+# tool_alive: the tool is a running job of this shell. A job bash has already reaped is not listed, so a pid that
+# may have been reused is never signalled.
+tool_alive() { [ -n "$TOOL_PID" ] && jobs -pr 2>/dev/null | grep -qx "$TOOL_PID"; }
+
 # wait_tool [limit]: waits for the tool by pid, under a guard (default 30 s) that kills only that pid.
 wait_tool() {
   local end=$((SECONDS + ${1:-30}))
   TIMED_OUT=0
-  while kill -0 "$TOOL_PID" 2>/dev/null; do
+  while tool_alive; do
     if [ "$SECONDS" -ge "$end" ]; then
       kill -KILL "$TOOL_PID" 2>/dev/null
       TIMED_OUT=1
@@ -123,7 +121,8 @@ for a in "$@"; do
   esac
 done
 if [ -n "${STUB_ARGV:-}" ]; then printf '%s\n' "$@" >>"$STUB_ARGV"; fi
-echo $$ >>"$STUB_PIDS"
+rec() { local l; l=$(ps -o lstart= -p "$1" 2>/dev/null); echo "$1|$(echo $l)" >>"$STUB_PIDS"; }
+rec $$
 [ -z "$prof" ] || mkdir -p "$prof"
 ready() { if [ -n "${STUB_READY:-}" ]; then : >"$STUB_READY"; fi; }
 case "${STUB_MODE:-ok}" in
@@ -136,16 +135,26 @@ case "${STUB_MODE:-ok}" in
   write-then-hang)
     cp "$STUB_PNG" "$shot"
     sleep 20 &
-    echo $! >>"$STUB_PIDS"
+    rec $!
     ready
     exec sleep 20 ;;
   never-write) ready; exec sleep 20 ;;
   term-ignore)
     trap '' TERM
     ( trap '' TERM; exec sleep 20 ) &
-    echo $! >>"$STUB_PIDS"
+    rec $!
     ready
     exec sleep 20 ;;
+  term-mark)
+    trap ': >"$STUB_TERMED"' TERM
+    ( trap '' TERM; exec sleep 20 ) &
+    rec $!
+    ready
+    while :; do sleep 20 & wait $!; done ;;
+  swap-outdir)
+    mv "$STUB_SWAP_DIR" "$STUB_SWAP_DIR.moved"
+    ln -s "$STUB_SWAP_TO" "$STUB_SWAP_DIR"
+    cp "$STUB_PNG" "$shot"; ready; exit 0 ;;
   exit-no-file) ready; exit 0 ;;
 esac
 exit 3
@@ -167,20 +176,59 @@ export STUB_PNG
 PNG_SIZE=$(wc -c <"$STUB_PNG")
 PNG_SIZE=${PNG_SIZE//[[:space:]]/}
 
-reset_pids() {
-  local p
-  while read -r p; do
-    case "$p" in ''|*[!0-9]*) continue ;; esac
-    kill -KILL "$p" 2>/dev/null
+# A pid record is "pid|start time", written by the stub itself. The suite signals a pid only when the live process
+# shows the recorded start time (proof it is that stub and not a reused pid). It counts a pid as gone only when the
+# pid is dead or shows a different start time; a pid it cannot tell about counts as alive.
+lstart_of() { local l; l=$(ps -o lstart= -p "$1" 2>/dev/null); echo $l; }
+
+proves_own() {
+  local pid=${1%%|*} start=${1#*|} now
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$start" ] && [ "$start" != "$1" ] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  now=$(lstart_of "$pid")
+  [ -n "$now" ] && [ "$now" = "$start" ]
+}
+
+record_gone() {
+  local pid=${1%%|*} start=${1#*|} now
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 0
+  [ -n "$start" ] && [ "$start" != "$1" ] || return 1
+  now=$(lstart_of "$pid")
+  [ -n "$now" ] && [ "$now" != "$start" ]
+}
+
+kill_owned() {
+  local r
+  while read -r r; do
+    [ -n "$r" ] || continue
+    if proves_own "$r"; then kill -KILL "${r%%|*}" 2>/dev/null; fi
   done <"$STUB_PIDS"
+}
+
+records_valid() {
+  local r bad=0
+  while read -r r; do
+    [ -n "$r" ] || continue
+    case "$r" in
+      [0-9]*'|'*) case "${r%%|*}" in *[!0-9]*) bad=1 ;; esac ;;
+      *) bad=1 ;;
+    esac
+  done <"$STUB_PIDS"
+  [ "$bad" = 0 ]
+}
+
+reset_pids() {
+  kill_owned
   : >"$STUB_PIDS"
 }
 
 pids_alive() {
-  local p n=0
-  while read -r p; do
-    case "$p" in ''|*[!0-9]*) continue ;; esac
-    if kill -0 "$p" 2>/dev/null; then n=$((n + 1)); fi
+  local r n=0
+  while read -r r; do
+    [ -n "$r" ] || continue
+    record_gone "$r" || n=$((n + 1))
   done <"$STUB_PIDS"
   echo "$n"
 }
@@ -189,6 +237,7 @@ pids_alive() {
 want_pids_gone() {
   local end=$((SECONDS + ${2:-15}))
   [ -s "$STUB_PIDS" ] || { note_bad "$1: the stub recorded no pid (the check would be empty)"; return 0; }
+  records_valid || note_bad "$1: a pid record is malformed, so the check cannot be trusted"
   while [ "$(pids_alive)" != 0 ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.2; done
   [ "$(pids_alive)" = 0 ] || note_bad "$1: a recorded stub pid is still alive"
 }
@@ -296,6 +345,8 @@ case_3() {
   want_rc 0 "run"
   grep -qxF -- "--headless=new" "$d/argv" || note_bad "argv lacks --headless=new"
   grep -qxF -- "--disable-sync" "$d/argv" || note_bad "argv lacks --disable-sync"
+  grep -qxF -- "--use-mock-keychain" "$d/argv" || note_bad "argv lacks --use-mock-keychain"
+  grep -qxF -- "--password-store=basic" "$d/argv" || note_bad "argv lacks --password-store=basic"
   grep -qxF -- "--window-size=1280,800" "$d/argv" || note_bad "argv lacks the default window size"
   if grep -q -- '--virtual-time-budget' "$d/argv"; then note_bad "argv has a time budget although --wait was not given"; fi
   prof=$(grep -- '^--user-data-dir=' "$d/argv" | head -n 1)
@@ -343,11 +394,11 @@ signal_row() {
   start_tool run page "$EXAMPLES/hello.html" "$d/s.png"
   if ! wait_ready "$d/ready"; then
     note_bad "$label: the stub never became ready"
-    kill -TERM "$TOOL_PID" 2>/dev/null
+    tool_alive && kill -TERM "$TOOL_PID" 2>/dev/null
     wait_tool 15
     return 0
   fi
-  kill -s "$sig" "$TOOL_PID"
+  tool_alive && kill -s "$sig" "$TOOL_PID"
   wait_tool 15
   [ "$TIMED_OUT" = 0 ] || note_bad "$label: the tool did not exit after the signal"
   want_rc 1 "$label"
@@ -401,7 +452,7 @@ case_12() {
   if ! wait_ready "$d/ready"; then
     note_bad "the stub never became ready"
   fi
-  { kill -KILL "$TOOL_PID"; wait_tool 10; } 2>/dev/null
+  { tool_alive && kill -KILL "$TOOL_PID"; wait_tool 10; } 2>/dev/null
   [ "$(pids_alive)" -ge 1 ] || note_bad "the stub was already gone right after the KILL, so the check would prove nothing"
   want_gone_by "KILL to the tool" "$t0" 17
   # The documented residual: the work dir of a killed tool stays under TMPDIR. Remove it so later cases start clean.
@@ -414,24 +465,45 @@ case_12() {
 }
 
 # ---- case 13: a second signal during the reap --------------------------------------------------
-case_13() {
-  local d t0
-  begin_case 13 "a second signal during the reap"
+# The term-mark stub touches $STUB_TERMED when it gets the tool's TERM and then keeps running, so the marker tells
+# the suite the reap is inside its TERM wait. The second TERM goes out at once. The tool must read it, skip the rest
+# of the wait and KILL: it exits well inside the 2 s wait. Without the flag check it would sit out the whole wait.
+second_term_attempt() {
+  local d n
   d=$(new_dir)
-  stub_env term-ignore "$d/argv"
-  export STUB_READY="$d/ready"
-  t0=$SECONDS
+  stub_env term-mark "$d/argv"
+  export STUB_READY="$d/ready" STUB_TERMED="$d/termed"
   start_tool run page "$EXAMPLES/hello.html" "$d/s.png" --deadline 2
   wait_ready "$d/ready" || note_bad "the stub never became ready"
-  # About 1 s into the 2 s TERM wait: the deadline is 2 s, the signal goes out at 3 s.
-  while [ $((SECONDS - t0)) -lt 3 ]; do sleep 0.2; done
-  kill -s TERM "$TOOL_PID" 2>/dev/null
+  if ! wait_ready "$d/termed" 20; then
+    note_bad "the stub never got the tool's TERM"
+    tool_alive && kill -TERM "$TOOL_PID" 2>/dev/null
+    wait_tool 15
+    return 0
+  fi
+  tool_alive && kill -s TERM "$TOOL_PID" 2>/dev/null
+  n=0
+  while tool_alive && [ "$n" -lt 24 ]; do sleep 0.05; n=$((n + 1)); done
+  SECOND_FAST=1
+  if tool_alive; then SECOND_FAST=0; fi
   wait_tool 15
   [ "$TIMED_OUT" = 0 ] || note_bad "the tool did not exit"
   want_rc 1 "second TERM"
-  want_gone_by "second TERM during the reap" "$t0" 16
+  want_pids_gone "second TERM during the reap" 6
   want_tool_tmp_clean "second TERM"
   want_no_hidden_left "$d" "second TERM"
+}
+
+case_13() {
+  local keep
+  begin_case 13 "a second signal during the reap"
+  SECOND_FAST=0
+  second_term_attempt
+  if [ "$SECOND_FAST" = 0 ] && [ "$CBAD" = 0 ]; then
+    # one retry: a loaded host can delay the tool past the bound without the flag check being missing
+    second_term_attempt
+  fi
+  [ "$SECOND_FAST" = 1 ] || note_bad "the tool did not leave the TERM wait at once after the second TERM (twice)"
   end_case
 }
 
@@ -547,6 +619,23 @@ case_7() {
   [ -s "$d/argv2" ] || note_bad "built-in discovery: the PATH stub was not the browser that ran"
   want_same_file "$d/disc.png" "$STUB_PNG" "built-in discovery"
 
+  # PROOF_CAPTURE_BROWSER as a bare name is looked up on PATH, and the file that was checked is the file that runs
+  stub_env ok "$d/argv3"
+  mkdir "$d/bin2"
+  cp "$STUB_BROWSER" "$d/bin2/mybrowser"
+  export PROOF_CAPTURE_BROWSER=mybrowser
+  RUN_PATH="$d/bin2:/usr/bin:/bin"
+  run_tool run page "$f" "$d/bare.png"
+  unset RUN_PATH
+  want_rc 0 "PROOF_CAPTURE_BROWSER as a bare name"
+  [ -s "$d/argv3" ] || note_bad "PROOF_CAPTURE_BROWSER as a bare name: the named browser did not run"
+  export PROOF_CAPTURE_BROWSER=no-such-bare-name
+  RUN_PATH="$d/bin2:/usr/bin:/bin"
+  run_tool run page "$f" "$d/bare2.png"
+  unset RUN_PATH
+  want_rc 69 "PROOF_CAPTURE_BROWSER as an unknown bare name"
+  want_err_is "proof-capture: PROOF_CAPTURE_BROWSER is not an executable file: no-such-bare-name" "unknown bare name"
+
   want_tool_tmp_clean "case 7"
   end_case
 }
@@ -597,6 +686,8 @@ case_8() {
   row "width 10001" "--width must be" run page "$f" "$d/o.png" --width 10001
   row "height abc" "--height must be" run page "$f" "$d/o.png" --height abc
   row "output is a directory" "output path is a directory" run page "$f" "$d/adir"
+  row "output ends with a slash" "output path ends with a slash" run page "$f" "$d/newdir/"
+  [ ! -e "$d/newdir" ] || note_bad "an output path ending in a slash created a directory"
 
   export PROOF_CAPTURE_DEADLINE=0
   row "env deadline 0" "PROOF_CAPTURE_DEADLINE must be" run page "$f" "$d/o.png"
@@ -633,7 +724,8 @@ while [ $# -gt 0 ]; do
   [ -z "${STUB_ARGV:-}" ] || printf '%s\n' "$1" >>"$STUB_ARGV"
   shift
 done
-echo $$ >>"$STUB_PIDS"
+rec() { local l; l=$(ps -o lstart= -p "$1" 2>/dev/null); echo "$1|$(echo $l)" >>"$STUB_PIDS"; }
+rec $$
 ready() { if [ -n "${STUB_READY:-}" ]; then : >"$STUB_READY"; fi; }
 case "${STUB_MODE:-ok}" in
   ok) cp "$STUB_GIF" "$out"; ready; exit 0 ;;
@@ -644,7 +736,7 @@ case "${STUB_MODE:-ok}" in
   term-ignore)
     trap '' TERM
     ( trap '' TERM; exec sleep 20 ) &
-    echo $! >>"$STUB_PIDS"
+    rec $!
     ready
     exec sleep 20 ;;
 esac
@@ -754,10 +846,10 @@ case_9() {
   t0=$SECONDS
   start_tool run tape "$d/x.tape" "$d/j.gif"
   if wait_ready "$d/ready"; then
-    kill -s TERM "$TOOL_PID"
+    tool_alive && kill -s TERM "$TOOL_PID"
   else
     note_bad "the stub never became ready"
-    kill -TERM "$TOOL_PID" 2>/dev/null
+    tool_alive && kill -TERM "$TOOL_PID" 2>/dev/null
   fi
   wait_tool 15
   want_rc 1 "TERM mid-run"
@@ -833,7 +925,7 @@ case_11() {
     return 0
   fi
   d=$(new_dir)
-  printf '#!/bin/bash\necho $$ >>"$STUB_PIDS"\nexec "$REAL_BROWSER" "$@"\n' >"$d/wrapper"
+  printf '#!/bin/bash\nl=$(ps -o lstart= -p $$ 2>/dev/null)\necho "$$|$(echo $l)" >>"$STUB_PIDS"\nexec "$REAL_BROWSER" "$@"\n' >"$d/wrapper"
   chmod +x "$d/wrapper"
   export REAL_BROWSER="$real"
   export PROOF_CAPTURE_BROWSER="$d/wrapper"
@@ -852,11 +944,233 @@ case_11() {
   want_tool_tmp_clean "real browser"
   gone=0
   while read -r wh; do
+    wh=${wh%%|*}
     case "$wh" in ''|*[!0-9]*) continue ;; esac
     if [ -n "$(pgrep -g "$wh" 2>/dev/null)" ]; then gone=1; fi
   done <"$STUB_PIDS"
   [ "$gone" = 0 ] || note_bad "a process of the recorded group is still alive"
   unset REAL_BROWSER
+  end_case
+}
+
+# ---- helpers for the cases below ------------------------------------------------------------------
+# make_copy <dest> <before|after> <anchor ERE> <line>: a copy of the tool with <line> placed next to the one line
+# the anchor matches (exactly one match is required). It simulates a signal or a second writer landing at one exact
+# point of the run, which a stub cannot time. The anchors use [$] and no backslash, so awk takes them as written.
+make_copy() {
+  awk -v where="$2" -v a="$3" -v l="$4" '
+    $0 ~ a { c++; if (where == "before") print l }
+    { print }
+    $0 ~ a { if (where == "after") print l }
+    END { exit (c == 1 ? 0 : 3) }' "$ENTRY" >"$1" || { note_bad "injection anchor not found exactly once: $3"; return 1; }
+  chmod +x "$1"
+}
+
+# drop_work_dirs: remove the work dirs a killed tool leaves under the private TMPDIR (the documented residual).
+drop_work_dirs() {
+  local w
+  for w in "$TOOL_TMP"/proof-capture.*; do
+    [ -d "$w" ] || continue
+    case "$w" in "$TOOL_TMP"/proof-capture.*) rm -rf "$w" ;; esac
+  done
+}
+
+# fake_ps <dir>: a process lister that can wait for a marker or sleep, report a fixed pgid or ppid, and otherwise
+# runs the real one.
+fake_ps() {
+  mkdir -p "$1"
+  cat >"$1/ps" <<'PSEOF'
+#!/bin/bash
+[ -z "${PS_MARK:-}" ] || : >"$PS_MARK"
+n=0
+while [ -n "${PS_WAIT_FILE:-}" ] && [ ! -e "$PS_WAIT_FILE" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+sleep "${PS_SLEEP:-0}"
+PATH=/usr/bin:/bin
+case "$*" in
+  *pgid=*) if [ -n "${PS_FAKE_PGID:-}" ]; then echo "$PS_FAKE_PGID"; exit 0; fi ;;
+  *ppid=*) if [ -n "${PS_FAKE_PPID:-}" ]; then echo "$PS_FAKE_PPID"; exit 0; fi ;;
+esac
+exec ps "$@"
+PSEOF
+  chmod +x "$1/ps"
+}
+
+# ---- case 14: the other signals ------------------------------------------------------------------
+case_14() {
+  local sig
+  begin_case 14 "QUIT, USR1, USR2, ALRM and PIPE to the tool"
+  for sig in QUIT USR1 USR2 ALRM PIPE; do
+    signal_row never-write "$sig"
+  done
+  end_case
+}
+
+# ---- case 15: the launch window, a slow ps, and the no-own-group branch -----------------------------
+case_15() {
+  local d copy t0
+  begin_case 15 "launch window, slow ps, no own group"
+  d=$(new_dir)
+
+  # a signal after the launch and before "CPID=$!": the tool must still end the child it just started
+  copy="$d/tool-window"
+  if make_copy "$copy" before '^    CPID=[$]!$' '    n=0; while [ ! -e "${STUB_READY:-/nonexistent}" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done; kill -TERM $$'; then
+    stub_env never-write "$d/argv"
+    export STUB_READY="$d/ready"
+    t0=$SECONDS
+    ENTRY_USE="$copy" start_tool run page "$EXAMPLES/hello.html" "$d/w.png"
+    wait_tool 20
+    [ "$TIMED_OUT" = 0 ] || note_bad "window: the tool did not exit"
+    want_rc 1 "window"
+    want_err_is "proof-capture: interrupted" "window"
+    want_gone_by "a signal between the launch and CPID" "$t0" 17
+    want_tool_tmp_clean "window"
+  fi
+
+  # a KILL to the tool while the ps check is slow: the watchdog must already be running
+  fake_ps "$d/psbin"
+  stub_env never-write "$d/argv2"
+  export STUB_READY="$d/ready2" PS_MARK="$d/psmark" PS_SLEEP=6
+  t0=$SECONDS
+  RUN_PATH="$d/psbin:/usr/bin:/bin" start_tool run page "$EXAMPLES/hello.html" "$d/k.png" --deadline 2
+  wait_ready "$d/psmark" || note_bad "slow ps: the tool never reached the ps check"
+  wait_ready "$d/ready2" || note_bad "slow ps: the stub never became ready"
+  { tool_alive && kill -KILL "$TOOL_PID"; wait_tool 10; } 2>/dev/null
+  [ "$(pids_alive)" -ge 1 ] || note_bad "slow ps: the stub was already gone right after the KILL, so the check would prove nothing"
+  want_gone_by "KILL during a slow ps check" "$t0" 17
+  drop_work_dirs
+  unset PS_MARK PS_SLEEP
+
+  # no own group (the lister reports another pgid): the one pid is ended while it is still this tool's child ...
+  stub_env never-write "$d/argv3"
+  export STUB_READY="$d/ready3" PS_FAKE_PGID=12345 PS_WAIT_FILE="$d/ready3"
+  RUN_PATH="$d/psbin:/usr/bin:/bin" start_tool run page "$EXAMPLES/hello.html" "$d/n.png"
+  wait_tool 20
+  want_rc 1 "no own group"
+  want_err_is "proof-capture: cannot isolate the browser process group" "no own group"
+  want_pids_gone "no own group, the child of the tool" 10
+  want_tool_tmp_clean "no own group"
+
+  # ... and left alone when the pid is not its child (a reused pid)
+  stub_env never-write "$d/argv4"
+  export STUB_READY="$d/ready4" PS_WAIT_FILE="$d/ready4" PS_FAKE_PPID=1
+  RUN_PATH="$d/psbin:/usr/bin:/bin" start_tool run page "$EXAMPLES/hello.html" "$d/n2.png"
+  wait_tool 20
+  want_rc 1 "no own group, not its child"
+  [ "$(pids_alive)" -ge 1 ] || note_bad "no own group: a pid that was not the tool's child was signalled"
+  reset_pids
+  unset PS_FAKE_PGID PS_FAKE_PPID PS_WAIT_FILE STUB_READY
+  want_tool_tmp_clean "case 15"
+  end_case
+}
+
+# ---- case 16: the output path checked again before each write ----------------------------------------
+case_16() {
+  local d copy
+  begin_case 16 "output path rechecked before it is written"
+  d=$(new_dir)
+
+  # <outdir> becomes a symlink while the browser runs (the browser stub plays the second writer)
+  mkdir "$d/od" "$d/elsewhere"
+  # The copy of the tool marks the point after the temp file would have been made: it must not be reached.
+  copy="$d/tool-mktemp"
+  if make_copy "$copy" after '^  FINAL_TMP=[$][(]mktemp' '  : >"$STUB_SEEN"'; then
+    stub_env swap-outdir "$d/argv"
+    export STUB_SWAP_DIR="$d/od" STUB_SWAP_TO="$d/elsewhere" STUB_SEEN="$d/seen"
+    ENTRY_USE="$copy" run_tool run page "$EXAMPLES/hello.html" "$d/od/o.png"
+    want_rc 1 "outdir swapped"
+    want_err_has "refusing a symlink" "outdir swapped"
+    [ -z "$(ls -A "$d/elsewhere")" ] || note_bad "outdir swapped: something was written through the symlink"
+    [ ! -e "$d/seen" ] || note_bad "outdir swapped: the temp file was made through the symlink"
+    want_tool_tmp_clean "outdir swapped"
+    unset STUB_SWAP_DIR STUB_SWAP_TO STUB_SEEN
+  fi
+
+  # <out> becomes a symlink to a directory between the copy and the rename
+  mkdir "$d/od2" "$d/elsewhere2"
+  copy="$d/tool-swap"
+  if make_copy "$copy" after '^  cp "[$]PARTIAL" "[$]FINAL_TMP"' '  ln -s "$STUB_SWAP_TO" "$OUT"'; then
+    stub_env ok "$d/argv2"
+    export STUB_SWAP_TO="$d/elsewhere2"
+    ENTRY_USE="$copy" run_tool run page "$EXAMPLES/hello.html" "$d/od2/o.png"
+    want_rc 1 "out swapped"
+    want_err_has "refusing a symlink" "out swapped"
+    [ -z "$(ls -A "$d/elsewhere2")" ] || note_bad "out swapped: something was written through the symlink"
+    want_no_hidden_left "$d/od2" "out swapped"
+    want_tool_tmp_clean "out swapped"
+    unset STUB_SWAP_TO
+  fi
+
+  # a signal after the rename cannot undo the write: the run finishes and reports success
+  copy="$d/tool-late"
+  if make_copy "$copy" before '^  n=[$][(]file_size "[$]OUT"[)]$' '  kill -TERM $$'; then
+    stub_env ok "$d/argv3"
+    ENTRY_USE="$copy" run_tool run page "$EXAMPLES/hello.html" "$d/late.png"
+    want_rc 0 "signal after the rename"
+    want_same_file "$d/late.png" "$STUB_PNG" "signal after the rename"
+    want_err_is "" "signal after the rename"
+    want_tool_tmp_clean "signal after the rename"
+  fi
+  end_case
+}
+
+# ---- case 17: a closed stderr must not stop the cleanup -----------------------------------------------
+case_17() {
+  local d t0 rc
+  begin_case 17 "stderr is a closed pipe"
+  d=$(new_dir)
+  stub_env never-write "$d/argv"
+  export STUB_READY="$d/ready"
+  t0=$SECONDS
+  : >"$OUTF"
+  {
+    set -m
+    ( "$BASH" "$ENTRY" run page "$EXAMPLES/hello.html" "$d/p.png" --deadline 2 </dev/null 2>&1 >"$OUTF" | true
+      echo "${PIPESTATUS[0]}" >"$d/rc" ) &
+    TOOL_PID=$!
+    set +m
+  } 2>/dev/null
+  wait_tool 25
+  [ "$TIMED_OUT" = 0 ] || note_bad "the tool did not exit"
+  rc=$(cat "$d/rc" 2>/dev/null)
+  [ "$rc" = 1 ] || note_bad "exit $rc, wanted 1"
+  want_gone_by "closed stderr" "$t0" 17
+  want_tool_tmp_clean "closed stderr"
+  want_absent "$d/p.png" "closed stderr wrote an artifact"
+  end_case
+}
+
+# ---- case 18: the suite signals only pids it can prove are its own --------------------------------------
+case_18() {
+  local decoy proven
+  begin_case 18 "the suite never signals a pid it cannot prove"
+  reset_pids
+  sleep 8 &
+  decoy=$!
+  records_valid || note_bad "an empty record list was called malformed"
+  printf 'not-a-record\n' >>"$STUB_PIDS"
+  if records_valid; then note_bad "a malformed record was accepted"; fi
+  : >"$STUB_PIDS"
+  # a pid with no start time, and a pid with a start time that is not the process's: neither may be signalled
+  printf '%s|\n%s|Mon Jan 1 00:00:00 2001\n' "$decoy" "$decoy" >>"$STUB_PIDS"
+  records_valid || note_bad "well-formed records were called malformed"
+  # no start time: cannot tell, so alive; a different start time: provably another process, so gone
+  [ "$(pids_alive)" = 1 ] || note_bad "pids_alive: wanted 1 (the record with no start time), got $(pids_alive)"
+  reset_pids
+  kill -0 "$decoy" 2>/dev/null || note_bad "reset_pids signalled a pid it had no proof for"
+  printf '%s|\n' "$decoy" >>"$STUB_PIDS"
+  kill_owned
+  kill -0 "$decoy" 2>/dev/null || note_bad "kill_owned signalled a pid it had no proof for"
+  : >"$STUB_PIDS"
+  # the control: a record with the right start time is signalled
+  sleep 8 &
+  proven=$!
+  printf '%s|%s\n' "$proven" "$(lstart_of "$proven")" >>"$STUB_PIDS"
+  kill_owned
+  { wait "$proven"; } 2>/dev/null
+  if kill -0 "$proven" 2>/dev/null; then note_bad "a pid with proof was not signalled (the helper does nothing)"; fi
+  : >"$STUB_PIDS"
+  kill "$decoy" 2>/dev/null
+  { wait "$decoy"; } 2>/dev/null
   end_case
 }
 
@@ -878,6 +1192,11 @@ run_case 10 case_10
 run_case 11 case_11
 run_case 12 case_12
 run_case 13 case_13
+run_case 14 case_14
+run_case 15 case_15
+run_case 16 case_16
+run_case 17 case_17
+run_case 18 case_18
 
 echo "$NPASS passed, $NFAIL failed, $NSKIP skipped"
 [ "$NFAIL" = 0 ]

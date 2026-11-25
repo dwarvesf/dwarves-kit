@@ -17,10 +17,10 @@ Arguments only. One file out (PNG or GIF, checked by magic bytes and trailer), o
 - Success is the file on disk (valid, size stable), never the child's exit. For `tape`, vhs must also exit 0.
 - Every child starts in its own process group, headless, with a private profile and work directory, and is bounded by a deadline.
 - The only signals the tool sends go to the group of a pid it recorded. No kill by name or pattern, no process-table listing.
-- TERM, then KILL after 2 s. INT, TERM and HUP reap at once and exit 1. A second signal during a reap only sets a flag.
-- A watchdog in its own group ends the child's group at the deadline plus 5 s, even if the tool is killed.
-- The browser writes only into the private work directory. The artifact reaches `<outdir>` by an exclusive temp file and a rename. A symlink `<out>` or `<outdir>` is refused.
-- The work directory is removed on every exit path a signal can reach.
+- TERM, then KILL after 2 s. INT, TERM, HUP, QUIT, USR1, USR2, ALRM and PIPE reap at once and exit 1, also between the launch and the pid record. A second signal during a reap only sets a flag. A signal after the rename does not undo the write.
+- A watchdog in its own group ends the child's group at the deadline plus 5 s, even if the tool is killed. It starts right after the child, so only the two process starts between them are unprotected.
+- The browser writes only into the private work directory. The artifact reaches `<outdir>` by an exclusive temp file and a rename. A symlink `<out>` or `<outdir>` is refused at the start and again before the temp file and before the rename.
+- The work directory is removed on every exit path a catchable signal can reach. A KILL to the tool leaves it.
 - Nothing is stored, scheduled or credentialed.
 
 ## Checks

@@ -30,8 +30,8 @@ Arguments only. No stdin. No config file.
 - `--width N`: viewport width in px, 1 to 10000, default 1280. `--height N`: 1 to 10000, default 800.
 - `--wait MS`: 1 to 120000. Lets the page run MS ms of virtual time before the shot (maps to `--virtual-time-budget`). Default none: the shot is of the first paint. `0` exits 64, because the browser writes no file at budget 0.
 - `--deadline S`: 1 to 600 seconds to wait for a valid artifact. Default 45 for `page`, 120 for `tape`.
-- `PROOF_CAPTURE_BROWSER`: path to a Chromium-family browser. When set, it is used or the run fails; there is no fallback.
-- `PROOF_CAPTURE_VHS`: path to `vhs`. Same rule.
+- `PROOF_CAPTURE_BROWSER`: path to a Chromium-family browser. A bare name (no slash) is looked up on `PATH`, and the file found is the file that runs. When set, it is used or the run fails; there is no fallback.
+- `PROOF_CAPTURE_VHS`: path to `vhs`. Same rules.
 - `PROOF_CAPTURE_DEADLINE`: seconds, same range as `--deadline`. The flag wins. A value out of range exits 64.
 - `PROOF_CAPTURE_BROWSER_CANDIDATES`: colon-separated absolute paths or command names that replace the built-in discovery list. A test uses it to make "no browser" reproducible on a host that has one.
 - Built-in discovery, when no env names a browser, first hit wins: `google-chrome`, `chromium`, `chromium-browser`, `microsoft-edge` on `PATH`; then the Google Chrome, Chromium and Microsoft Edge apps under `/Applications` on macOS. Brave is not listed: it wrote no file in 40 s on the build host. Name it in `PROOF_CAPTURE_BROWSER` if you want it.
@@ -41,10 +41,10 @@ Every dependency check runs before any external command, so the entry runs with 
 ## OUT
 
 - `<out>` is written only when valid. PNG for `page`: the 8-byte magic, the 12-byte IEND trailer (`0000000049454e44ae426082`), not empty. GIF for `tape`: starts `GIF8`, ends with the byte `3b`, not empty. A file only counts when its size is equal on two reads 0.3 s apart.
-- A parent directory that does not exist is created. A failed run leaves any existing `<out>` untouched. The file lands by a copy into a hidden `.proof-capture.XXXXXX` file next to `<out>` and a rename.
+- A parent directory that does not exist is created. A failed run leaves any existing `<out>` untouched. The file lands by a copy into a hidden `.proof-capture.XXXXXX` file next to `<out>` and a rename. A signal that arrives after the rename cannot undo the write, so that run still ends with exit 0 and the new file.
 - stdout, one line: `proof-capture: wrote <out> (<n> bytes)`.
 - stderr: diagnostics, one line per fault. No sidecar file, no state, nothing under your home.
-- While running: one private directory (mode 0700) under `$TMPDIR`, with the browser profile and the partial file. It is removed on every exit path a signal can reach.
+- While running: one private directory (mode 0700) under `$TMPDIR`, with the browser profile and the partial file. It is removed after a success, a failure, the deadline, and any signal the tool can catch (INT, TERM, HUP, QUIT, USR1, USR2, ALRM, PIPE). A KILL cannot be caught and leaves it (see Residuals).
 
 The artifact is the whole API. A consumer reads the file; it never reads the script.
 
@@ -53,8 +53,8 @@ The artifact is the whole API. A consumer reads the file; it never reads the scr
 | Code | Meaning |
 |---|---|
 | 0 | artifact written and valid |
-| 1 | capture failed: no valid artifact before the deadline, the browser or vhs exited without one (vhs: or exited non-zero), or the tool was interrupted (INT, TERM or HUP) |
-| 64 | usage or bad input: unknown verb, missing argument, unknown flag, input file missing, bad scheme, a path starting with `-`, a number out of range, `<out>` is a directory or a symlink, `<outdir>` is a symlink |
+| 1 | capture failed: no valid artifact before the deadline, the browser or vhs exited without one (vhs: or exited non-zero), or the tool was interrupted by a signal it can catch |
+| 64 | usage or bad input: unknown verb, missing argument, unknown flag, input file missing, bad scheme, a path starting with `-`, a number out of range, `<out>` is a directory, a symlink or ends with a slash, `<outdir>` is a symlink |
 | 69 | a required dependency is missing: no browser for `page`, no vhs for `tape` |
 
 ## Exact messages
@@ -77,12 +77,14 @@ The artifact is the whole API. A consumer reads the file; it never reads the scr
 
 ## Process safety
 
-The tool starts the browser (or vhs) in its own process group, records the pid, and ends that group by pid: TERM, a 2 s wait, then KILL. It never kills by name or pattern and never lists the process table. A watchdog in its own group ends the browser group at the deadline plus 5 s, so a KILL sent to the tool does not leave a browser running. A TERM, INT or HUP to the tool reaps at once and exits 1.
+The tool starts the browser (or vhs) in its own process group, records the pid, and ends that group by pid: TERM, a 2 s wait, then KILL. It never kills by name or pattern and never lists the process table. A watchdog in its own group ends the browser group at the deadline plus 5 s, so a KILL sent to the tool does not leave a browser running for long. The watchdog starts right after the browser, so a KILL that lands in the two process starts between them (a fraction of a second) leaves a browser nothing will end. A catchable signal (INT, TERM, HUP, QUIT, USR1, USR2, ALRM, PIPE) reaps at once and exits 1, also when it lands between the launch and the moment the tool records the pid. A closed stderr cannot stop the cleanup: the tool ends the browser and removes its directory before it prints.
+
+The checks that refuse a symlink or a directory as `<out>` or `<outdir>` run at the start, again before the temp file is made, and again before the rename. A second writer that swaps the path inside the last instants can still win, because a check and the write that follows it are two steps.
 
 Residuals, stated so nobody is surprised:
 
 - A KILL sent to the tool cannot be caught. The watchdog still ends the browser group, but the tool's work directory stays under `$TMPDIR`. Delete it by hand (it is named `proof-capture.XXXXXX`).
-- A browser child that leaves the process group (calls `setsid`) is not reached. The opt-in real-browser case reports that.
+- A browser child that leaves the process group (calls `setsid`) is not reached. Nothing in the tool or its suite sees it: the opt-in real-browser case reads only the recorded group, so a child that left the group is invisible to it.
 
 ## Warnings
 
@@ -90,7 +92,7 @@ Residuals, stated so nobody is surprised:
 - `<src>` is the caller's choice. A task text can point the browser at an internal endpoint, and the capture will show it. Open every image and check it before it is committed.
 - The capture does not resize. `proof-asset put` (in the kit) caps stills at 300 KB (it converts them) and GIFs at 2 MB, so an over-size GIF fails at `put` with exit 2, not at capture. Shorten the tape or lower its size.
 - The tool does not compare the image width with `--width`; a browser may clamp its window. The opt-in real-browser case does.
-- On macOS `/tmp` is a symlink and the tool refuses a symlinked output directory. Pass a real directory, such as one under `$TMPDIR`.
+- The tool checks `<out>` and the one directory it names, not the parts above them. On macOS `/tmp` is itself a symlink, so naming it as the output directory is refused, while a path below it is accepted. Pass a real directory, such as one under `$TMPDIR`.
 
 ## Tests
 

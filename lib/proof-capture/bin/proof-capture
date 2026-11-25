@@ -119,14 +119,26 @@ else
 fi
 
 OUT=$POS2
-if [ -L "$OUT" ]; then usage_fail "refusing a symlink: $OUT"; fi
-if [ -d "$OUT" ]; then usage_fail "output path is a directory: $OUT"; fi
 case "$OUT" in
   */*) OUTDIR=${OUT%/*}; [ -n "$OUTDIR" ] || OUTDIR=/ ;;
   *) OUTDIR=. ;;
 esac
-if [ -L "$OUTDIR" ]; then usage_fail "refusing a symlink: $OUTDIR"; fi
-if [ -e "$OUTDIR" ] && [ ! -d "$OUTDIR" ]; then usage_fail "output directory is not a directory: $OUTDIR"; fi
+
+# out_refusal: succeeds, with the message in REFUSAL, when <out> or <outdir> is not safe to write through. It runs at
+# the start and again in finish, because the final copy and rename can come up to the deadline later.
+out_refusal() {
+  REFUSAL=""
+  if [ -L "$OUT" ]; then REFUSAL="refusing a symlink: $OUT"
+  elif [ -d "$OUT" ]; then REFUSAL="output path is a directory: $OUT"
+  elif [ -L "$OUTDIR" ]; then REFUSAL="refusing a symlink: $OUTDIR"
+  elif [ -e "$OUTDIR" ] && [ ! -d "$OUTDIR" ]; then REFUSAL="output directory is not a directory: $OUTDIR"
+  fi
+  [ -n "$REFUSAL" ]
+}
+case "$OUT" in
+  */) usage_fail "output path ends with a slash: $OUT" ;;
+esac
+if out_refusal; then usage_fail "$REFUSAL"; fi
 
 # ---- dependencies (still builtins only) ---------------------------------------------------------
 # try_candidate <item>: an absolute path or a command name; sets FOUND to an executable path.
@@ -144,12 +156,22 @@ try_candidate() {
   return 0
 }
 
+# env_executable <value>: a value with a slash is a path to an executable file; a bare name is looked up on PATH.
+# Sets FOUND to the path that will run, so the file that was checked is the file that runs.
+env_executable() {
+  FOUND=""
+  case "$1" in
+    */*) [ -f "$1" ] && [ -x "$1" ] || return 1; FOUND=$1; return 0 ;;
+    *) try_candidate "$1" ;;
+  esac
+}
+
 resolve_browser() {
   local list rest item
   BROWSER=""
   if [ -n "${PROOF_CAPTURE_BROWSER:-}" ]; then
-    if [ -f "$PROOF_CAPTURE_BROWSER" ] && [ -x "$PROOF_CAPTURE_BROWSER" ]; then
-      BROWSER=$PROOF_CAPTURE_BROWSER
+    if env_executable "$PROOF_CAPTURE_BROWSER"; then
+      BROWSER=$FOUND
       return 0
     fi
     printf 'proof-capture: PROOF_CAPTURE_BROWSER is not an executable file: %s\n' "$PROOF_CAPTURE_BROWSER" >&2
@@ -173,8 +195,8 @@ resolve_browser() {
 resolve_vhs() {
   VHS=""
   if [ -n "${PROOF_CAPTURE_VHS:-}" ]; then
-    if [ -f "$PROOF_CAPTURE_VHS" ] && [ -x "$PROOF_CAPTURE_VHS" ]; then
-      VHS=$PROOF_CAPTURE_VHS
+    if env_executable "$PROOF_CAPTURE_VHS"; then
+      VHS=$FOUND
       return 0
     fi
     printf 'proof-capture: PROOF_CAPTURE_VHS is not an executable file: %s\n' "$PROOF_CAPTURE_VHS" >&2
@@ -190,7 +212,7 @@ if [ "$KIND" = page ]; then resolve_browser; else resolve_vhs; fi
 # ---- everything below may call external commands ----------------------------------------------
 
 WORK=""; PARTIAL=""; PROFILE=""; CPID=""; WDPID=""; FINAL_TMP=""
-REAPING=0; REAP_DONE=0; INTR=0; NOGROUP=0
+REAPING=0; REAP_DONE=0; INTR=0; NOGROUP=0; LAUNCHED=0; WROTE=0
 
 # remove_work: rm -rf only on the directory this run made with mktemp -d, and only by its name.
 remove_work() {
@@ -213,14 +235,22 @@ group_alive() { is_pid "$1" && kill -0 -- "-$1" 2>/dev/null; }
 # Signals go only to the group of a pid this run recorded, never by name. One reap runs at a time: while it runs
 # the trap only sets INTR, and the wait below reads it and goes straight to KILL.
 reap() {
-  local c w i=0 tend
+  local c w pp i=0 tend dowait=1
   [ "$REAPING" = 0 ] && [ "$REAP_DONE" = 0 ] || return 0
   REAPING=1
   c=$CPID
   w=$WDPID
+  if [ -z "$c" ] && [ "$LAUNCHED" = 1 ]; then
+    # A signal landed between the launch and "CPID=$!": the child exists and $! names it. $! is unbound until the
+    # first background job, and bash 3.2 errors on that even with a default, so unset checking is off for one line.
+    set +u; c=$!; set -u
+  fi
   if is_pid "$c"; then
     if [ "$NOGROUP" = 1 ]; then
-      kill -KILL "$c" 2>/dev/null
+      # No own group: signal the one pid, and only while it is still this tool's child (a reused pid is not).
+      pp=$(ps -o ppid= -p "$c" 2>/dev/null)
+      pp=${pp//[[:space:]]/}
+      if [ "$pp" = "$$" ]; then kill -KILL "$c" 2>/dev/null; else dowait=0; fi
     else
       if [ "${1:-}" != interrupt ] && group_alive "$c"; then
         kill -TERM -- "-$c" 2>/dev/null
@@ -234,7 +264,7 @@ reap() {
     fi
   fi
   if group_alive "$w"; then kill -KILL -- "-$w" 2>/dev/null; fi
-  if is_pid "$c"; then { wait "$c"; } 2>/dev/null; fi
+  if is_pid "$c" && [ "$dowait" = 1 ]; then { wait "$c"; } 2>/dev/null; fi
   if is_pid "$w"; then { wait "$w"; } 2>/dev/null; fi
   [ -z "$FINAL_TMP" ] || rm -f "$FINAL_TMP"
   remove_work
@@ -244,17 +274,22 @@ reap() {
   return 0
 }
 
+# A signal after the rename (WROTE=1) cannot undo the write: the run finishes and reports success.
 on_signal() {
   INTR=1
   [ "$REAPING" = 0 ] || return 0
+  [ "$WROTE" = 0 ] || return 0
+  trap '' PIPE
   reap interrupt
-  printf 'proof-capture: interrupted\n' >&2
+  printf 'proof-capture: interrupted\n' >&3
   exit 1
 }
-trap on_signal INT TERM HUP
+exec 3>&2
+trap on_signal INT TERM HUP QUIT USR1 USR2 ALRM PIPE
 trap reap EXIT
 
-fail() { printf 'proof-capture: %s\n' "$1" >&2; reap; exit 1; }
+# fail: end the child and remove what this run made first, then say why. A closed stderr cannot stop the cleanup.
+fail() { local m=$1; reap; trap '' PIPE; printf 'proof-capture: %s\n' "$m" >&3; exit 1; }
 
 # file_size <file>: bytes, digits only.
 file_size() { local n; n=$(wc -c <"$1" 2>/dev/null); echo "${n//[[:space:]]/}"; }
@@ -287,12 +322,20 @@ artifact_stable() {
 }
 
 # finish: copy the valid partial next to <out> under an exclusive temp name, rename it onto <out>, reap, report.
+# The symlink and directory checks repeat before each step that writes, because the run can be minutes old.
+case "$(uname 2>/dev/null)" in
+  Darwin|FreeBSD|OpenBSD|NetBSD) MV_ARGS=-fh ;;
+  *) MV_ARGS=-fT ;;
+esac
 finish() {
   local n
   mkdir -p "$OUTDIR" 2>/dev/null || fail "cannot create the output directory"
+  if out_refusal; then fail "$REFUSAL"; fi
   FINAL_TMP=$(mktemp "$OUTDIR/.proof-capture.XXXXXX" 2>/dev/null) || { FINAL_TMP=""; fail "cannot write next to the output path"; }
   cp "$PARTIAL" "$FINAL_TMP" 2>/dev/null || fail "cannot copy the artifact"
-  mv -f "$FINAL_TMP" "$OUT" 2>/dev/null || fail "cannot write the output path"
+  if out_refusal; then fail "$REFUSAL"; fi
+  mv $MV_ARGS "$FINAL_TMP" "$OUT" 2>/dev/null || fail "cannot write the output path"
+  WROTE=1
   FINAL_TMP=""
   n=$(file_size "$OUT")
   reap
@@ -304,10 +347,22 @@ finish() {
 # valid artifact until the deadline. Job control (set -m) makes the group id equal to the child's pid.
 capture_run() {
   local end pg wd_end vrc
+  wd_end=$((SECONDS + DEADLINE + 5))
+  LAUNCHED=1
   {
     set -m
-    "$@" </dev/null >/dev/null 2>&1 &
+    "$@" </dev/null >/dev/null 2>&1 3>&- &
     CPID=$!
+    # The watchdog runs in its own group and ends the child's group at the deadline plus 5 s even if this tool is
+    # killed. It starts right after the child, so the unprotected window is these two forks. It acts only while it
+    # has just seen the group exist.
+    if is_pid "$CPID"; then
+      (
+        while kill -0 -- "-$CPID" 2>/dev/null && [ "$SECONDS" -lt "$wd_end" ]; do sleep 1; done
+        if kill -0 -- "-$CPID" 2>/dev/null; then kill -KILL -- "-$CPID" 2>/dev/null; fi
+      ) </dev/null >/dev/null 2>&1 3>&- &
+      WDPID=$!
+    fi
     set +m
   } 2>/dev/null
   pg=$(ps -o pgid= -p "$CPID" 2>/dev/null)
@@ -315,20 +370,6 @@ capture_run() {
   if [ -n "$pg" ] && [ "$pg" != "$CPID" ]; then
     NOGROUP=1
     fail "cannot isolate the browser process group"
-  fi
-  # The watchdog runs in its own group and ends the child's group at the deadline plus 5 s even if this tool is
-  # killed. It acts only while it has just seen the group exist.
-  if group_alive "$CPID"; then
-    wd_end=$((SECONDS + DEADLINE + 5))
-    {
-      set -m
-      (
-        while kill -0 -- "-$CPID" 2>/dev/null && [ "$SECONDS" -lt "$wd_end" ]; do sleep 1; done
-        if kill -0 -- "-$CPID" 2>/dev/null; then kill -KILL -- "-$CPID" 2>/dev/null; fi
-      ) </dev/null >/dev/null 2>&1 &
-      WDPID=$!
-      set +m
-    } 2>/dev/null
   fi
   end=$((SECONDS + DEADLINE))
   while :; do
@@ -358,7 +399,7 @@ PROFILE="$WORK/profile"
 if [ "$KIND" = page ]; then
   PARTIAL="$WORK/partial.png"
   set -- --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars \
-    "--user-data-dir=$PROFILE" "--window-size=$WIDTH,$HEIGHT"
+    --use-mock-keychain --password-store=basic "--user-data-dir=$PROFILE" "--window-size=$WIDTH,$HEIGHT"
   [ -z "$WAIT_MS" ] || set -- "$@" "--virtual-time-budget=$WAIT_MS"
   set -- "$@" "--screenshot=$PARTIAL" "$URL"
   capture_run "$BROWSER" "$@"
