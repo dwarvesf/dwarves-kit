@@ -64,45 +64,85 @@ PASS floor-comment-edit-is-sized-and-logged
 PASS floor-config-key-flip-keeps-full
 PASS sized-notices-relay-and-cap
 PASS floor-sized-flood-keeps-floor
+PASS floor-workflow-base-expression-names
+PASS floor-workflow-base-workflow-run-anywhere
+PASS floor-workflow-base-unclassifiable-keeps-full
+PASS floor-workflow-replaced-objects-keep-full
+PASS floor-workflow-byte-count-must-be-digits
+PASS floor-tools-missing-prints-a-hit
+PASS floor-workflow-action-allowlist
+PASS floor-workflow-single-fault-rows
 PASS rule-a-checks-are-load-bearing
 ```
 Exit: 0
 
-## Per-finding mutation
+## Review round: red before, green after
 
-The case `rule-a-checks-are-load-bearing` copies `lib/`, switches one finding's tagged checks off and runs that finding's rows against the copy. Each line below is the FAIL a mutated build produced (red-before); the real libs pass the same rows (green-after, section above).
+The security review of the built code returned BLOCK on the base-side name reader and five smaller rows. Each new rule row was run first against the libs of the previous commit (`76dbc8e8`) and failed there:
+
+Command: `LANE_CLASSIFY_LIB=<old lib> SHIP_RULES_LIB=<old lib> bash tests/test-ceremony-fits-diff.sh <the eight new cases>`
+Output:
+```
+FAIL floor-workflow-base-expression-names:  [expression-suffix => ''] [expression-suffix-job-name => ''] [matrix-include-bare-expression => ''] [bare-expression-matches-any-name => ''] [expression-in-
+FAIL floor-workflow-base-workflow-run-anywhere:  [workflow-run-one-line-list => ''] [workflow-run-multi-line-list => ''] [workflow-run-scalar => ''] [workflow-run-unrelated-new-name => ''] [workflow-r
+FAIL floor-workflow-base-unclassifiable-keeps-full:  [quoted-job-key => ''] [single-quoted-job-key => ''] [folded-name => ''] [literal-name => ''] [empty-name => ''] [anchored-name => ''] [alias-name 
+FAIL floor-workflow-replaced-objects-keep-full:  [replaced-blob-hides-write-permission => '']
+FAIL floor-workflow-byte-count-must-be-digits:  [wc-prints-garbage => ''] [wc-prints-nothing => '']
+FAIL floor-tools-missing-prints-a-hit:  [without git => ''] [without awk => ''] [without sed => ''] [without tr => ''] [without grep => ''] [without wc => ''] [no temp dir => '']
+FAIL floor-workflow-action-allowlist:  [actions/cache => ''] [actions/upload-artifact => ''] [actions/github-script => ''] [actions/download-artifact => '']
+PASS floor-workflow-single-fault-rows
+```
+Exit: 1
+
+Against the fixed libs the same cases pass (the suite listing above). The mutation case switches each row's checks off in a copy of `lib/` and requires the row to go red:
 
 Command: `MUT_SHOW=1 bash tests/test-ceremony-fits-diff.sh rule-a-checks-are-load-bearing`
 Output:
 ```
 MUT ALL: FAIL floor-additive-workflow-is-sized: out='full ci: .github/workflows/new.yml' err=''
-MUT G: FAIL floor-workflow-grammar-refusals:  [if-key => ''] [step-env => ''] [job-needs => ''] [job-strategy => ''] [continue-on-error => ''] [job-permissions => ''] [write-all => ''] [contents-write => ''] [extra-permission => '
+MUT G: FAIL floor-workflow-grammar-refusals:  [if-key => ''] [step-env => ''] [job-needs => ''] [job-strategy => ''] [continue-on-error => ''] [job-permissions => ''] [write-all => ''] [contents-write
 MUT F1: FAIL floor-workflow-escapes-keep-full:  [block-backslash => ''] [block-tab => ''] [block-cr => ''] [block-non-ascii => '']
 MUT F2: FAIL floor-workflow-on-block-tricks-keep-full:  [complex-key => ''] [pr-target => ''] [schedule => ''] [workflow-run => '']
-MUT F3: FAIL floor-workflow-name-tricks-keep-full:  [prefix-of-matrix-name => ''] [job-key-equals-base-key => ''] [workflow-name-equals-base => ''] [case-insensitive => ''] [matrix-shaped => ''] [reusable-call-shaped => ''] [expre
+MUT F3: FAIL floor-workflow-name-tricks-keep-full:  [prefix-of-matrix-name => ''] [job-key-equals-base-key => ''] [workflow-name-equals-base => ''] [case-insensitive => ''] [matrix-shaped => ''] [reus
 MUT F4: FAIL floor-workflow-reuse-and-privilege-keep-full:  [short-pin-action => ''] [workflow-run-target-name => '']
 MUT F5: FAIL floor-workflow-read-failures-keep-full:  [nul-byte => ''] [oversized-file => '']
 MUT F6: FAIL sized-notices-relay-and-cap:  [workflow SIZED log line lost] [no L count line] [no A count line] [workflow advisory lost]
 MUT F7: FAIL floor-workflow-collision-read-points:  [stale-base-collides-with-origin-tip => ''] [collision-at-config-rev => ''] [no-origin-keeps-floor => '']
 MUT F9: FAIL floor-workflow-mixed-diffs-keep-full:  [two-workflows => ''] [wf-plus-comment-only-gh-file => ''] [wf-plus-gh-markdown => '']
 MUT F10: FAIL floor-workflow-existing-workflow-keeps-full:  [modified-every-name-changed => '']
-MUT BLK: FAIL floor-workflow-block-scalar-cannot-smuggle:  [block-with-deeper-and-blank-lines => 'full ci: .github/workflows/new.yml'] [key-shaped-text-inside-block => 'full ci: .github/workflows/new.yml']
+MUT BLK: FAIL floor-workflow-block-scalar-cannot-smuggle:  [block-with-deeper-and-blank-lines => 'full ci: .github/workflows/new.yml'] [key-shaped-text-inside-block => 'full ci: .github/workflows/new.
 MUT NOTE: FAIL floor-additive-workflow-is-sized: out='' err=''
+MUT R1: FAIL floor-workflow-base-expression-names:  [expression-suffix => ''] [expression-suffix-job-name => ''] [matrix-include-bare-expression => ''] [bare-expression-matches-any-name => ''] [expres
+MUT R2: FAIL floor-workflow-base-workflow-run-anywhere:  [workflow-run-one-line-list => ''] [workflow-run-scalar => ''] [workflow-run-unrelated-new-name => ''] [workflow-run-in-a-comment => ''] [workf
+MUT R3: FAIL floor-workflow-base-unclassifiable-keeps-full:  [quoted-job-key => ''] [single-quoted-job-key => ''] [folded-name => ''] [literal-name => ''] [empty-name => ''] [anchored-name => ''] [ali
+MUT R4: FAIL floor-workflow-replaced-objects-keep-full:  [replaced-blob-hides-write-permission => '']
+MUT R5: FAIL floor-workflow-byte-count-must-be-digits:  [wc-prints-garbage => ''] [wc-prints-nothing => '']
+MUT R6: FAIL floor-tools-missing-prints-a-hit:  [without git => ''] [without awk => ''] [without sed => ''] [without tr => ''] [without grep => ''] [without wc => 'full ci: .github/workflows/new.yml']
+MUT R7: FAIL floor-workflow-action-allowlist:  [actions/cache => ''] [actions/upload-artifact => ''] [actions/github-script => ''] [actions/download-artifact => '']
+MUT PERM: FAIL floor-workflow-single-fault-rows:  [quoted-permission-value => ''] [quoted-permission-key => '']
+MUT PERM: FAIL floor-workflow-single-fault-rows:  [quoted-permission-value => ''] [quoted-permission-key => '']
+MUT PIN: FAIL floor-workflow-single-fault-rows:  [unpinned-checkout => ''] [third-party-action => '']
+MUT PIN: FAIL floor-workflow-single-fault-rows:  [unpinned-checkout => ''] [third-party-action => '']
+MUT EMPTY: FAIL floor-workflow-single-fault-rows:  [empty-file => '']
+MUT MODE: FAIL floor-workflow-single-fault-rows:  [executable-mode => '']
+MUT F3: FAIL floor-workflow-single-fault-rows:  [expression-in-a-comment => '']
+MUT F2: FAIL floor-workflow-single-fault-rows:  [second-document-marker => '']
+MUT EXTRA: FAIL floor-workflow-single-fault-rows:  [extra-hard-path-also-matches => '']
 ```
 Exit: 0
 
-| Finding | Row | Red with checks off | Green on real libs |
+| Review row | Test row | Red before | Green after |
 |---|---|---|---|
-| 1 escapes, bytes | `floor-workflow-escapes-keep-full` | yes | yes |
-| 2 `on:` block | `floor-workflow-on-block-tricks-keep-full` | yes | yes |
-| 3 matrix and call names | `floor-workflow-name-tricks-keep-full` | yes | yes |
-| 4 job `uses:`, pins, `workflow_run` target | `floor-workflow-reuse-and-privilege-keep-full` | yes | yes |
-| 5 read once, tested status | `floor-workflow-read-failures-keep-full`, `floor-workflow-odd-path-keeps-full` | yes | yes |
-| 6 uncapped workflow audit line | `sized-notices-relay-and-cap` | yes | yes |
-| 7 three read points | `floor-workflow-collision-read-points` | yes | yes |
-| 8 residual | stated in the spec and `docs/WORKFLOW.md`; no row | n/a | n/a |
-| 9 unblanked path list | `floor-workflow-mixed-diffs-keep-full` | yes | yes |
-| 10 status and rows | `floor-workflow-existing-workflow-keeps-full` | yes | yes |
+| 1 expression names as globs | `floor-workflow-base-expression-names` | yes | yes |
+| 2 `workflow_run` anywhere | `floor-workflow-base-workflow-run-anywhere` | yes | yes |
+| 3 unclassifiable base line | `floor-workflow-base-unclassifiable-keeps-full` | yes | yes |
+| 4 replace refs | `floor-workflow-replaced-objects-keep-full` | yes | yes |
+| 5 byte count digits | `floor-workflow-byte-count-must-be-digits` | yes | yes |
+| 6 tools missing | `floor-tools-missing-prints-a-hit` | yes | yes |
+| 7 action allow list | `floor-workflow-action-allowlist` | yes | yes |
+| 8 single-fault fixtures | `floor-workflow-single-fault-rows` (red per label under PERM, PIN, EMPTY, MODE, EXTRA, F3, F2) | yes (by mutation) | yes |
+
+The earlier findings table (findings 1 to 10) stands: its rows are still in the suite and still go red under their mutation (the `F` lines above).
 
 ## Done line end to end
 
@@ -160,6 +200,8 @@ Exit: 0
 
 ## NEGATIVE CONTROL
 
+Re-run after the review round, one command per call under the ticket lock.
+
 (a) Remove the whole Rule A drop; the "one workflow file passes" rows go red.
 
 ## Negative control (negctl)
@@ -169,7 +211,7 @@ Output:
   PASS floor-additive-workflow-is-sized
   PASS ship-rule-floor-sizes-workflow-add
 
-Mutation: sed -i.bak 's/if \[ "$bestkind" = ci \] \&\& _floor_workflow_additive/if false \&\& _floor_workflow_additive/' lib/classify/lane-classify.sh; rm lib/classify/lane-classify.sh.bak
+Mutation: sed -i.bak 's/if \[ "$bestkind" = ci \] \&\& _floor_workflow_additive/if false \&\& _floor_workflow_additive/' lib/classify/lane-classify.sh; mv lib/classify/lane-classify.sh.bak /private/tmp/claude-501/-Users-tieubao--orca-bots-personal/2ae980b7-b8d1-428d-ae0a-b527c4058063/scratchpad/lc.bak2
 Changed: lib/classify/lane-classify.sh
 Exit: 1 (under mutation, RED expected)
 Output:
@@ -178,29 +220,29 @@ Output:
   (no spec found for 'rid-1'; a hard-path diff owes the full lane's gates with or without one)
       gap: validate
   Run the missing gate(s), or log an explicit override (recorded for audit):
-    bash "/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.tuu4Jt/ledger.sh" override rid-1 <phase> "<reason>" log=2026-11-24T22:44:58Z | BLOCKED | ship-gate | rid-1 (hard-path ci)
+    bash "/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.p8FtcS/ledger.sh" override rid-1 <phase> "<reason>" log=2026-11-25T00:31:06Z | BLOCKED | ship-gate | rid-1 (hard-path ci)
 
 Restore: git checkout HEAD -- lib/classify/lane-classify.sh
 Exit: 0 (green after restore)
 Verdict: PASS
 
-(b) Remove the grammar check so any new workflow sizes; the bypass rows go red.
+(b) Remove the grammar and base-classification checks so any new workflow sizes; the bypass rows go red.
 
 ## Negative control (negctl)
-Command: bash tests/test-ceremony-fits-diff.sh floor-workflow-grammar-refusals floor-workflow-on-block-tricks-keep-full floor-workflow-reuse-and-privilege-keep-full
+Command: bash tests/test-ceremony-fits-diff.sh floor-workflow-grammar-refusals floor-workflow-on-block-tricks-keep-full floor-workflow-base-unclassifiable-keeps-full
 Exit: 0 (green before mutation)
 Output:
   PASS floor-workflow-grammar-refusals
   PASS floor-workflow-on-block-tricks-keep-full
-  PASS floor-workflow-reuse-and-privilege-keep-full
+  PASS floor-workflow-base-unclassifiable-keeps-full
 
-Mutation: sed -i.bak -E '/# chk:([A-Za-z0-9]+ )*G( [A-Za-z0-9]+)*$/s/return 1/true/' lib/classify/lane-classify.sh; rm lib/classify/lane-classify.sh.bak
+Mutation: sed -i.bak -E '/# chk:([A-Za-z0-9]+ )*(G|R3|F2)( [A-Za-z0-9]+)*$/s/(bad|unsafe)\(/ign(/; /# chk:([A-Za-z0-9]+ )*(G|R3|F2)( [A-Za-z0-9]+)*$/s/return 1/true/' lib/classify/lane-classify.sh; mv lib/classify/lane-classify.sh.bak /private/tmp/claude-501/-Users-tieubao--orca-bots-personal/2ae980b7-b8d1-428d-ae0a-b527c4058063/scratchpad/lc.bak3
 Changed: lib/classify/lane-classify.sh
 Exit: 1 (under mutation, RED expected)
 Output:
   FAIL floor-workflow-grammar-refusals:  [if-key => ''] [step-env => ''] [job-needs => ''] [job-strategy => ''] [continue-on-error => ''] [job-permissions => ''] [write-all => ''] [contents-write => ''] [extra-permission => ''] [no-permissions => ''] [other-brace => ''] [secrets-in-run => ''] [anchor => ''] [tag => ''] [merge-key => ''] [percent-directive => ''] [run-colon => ''] [run-comment => ''] [run-flow => ''] [run-and-uses => ''] [duplicate-run => ''] [duplicate-name => ''] [runs-on-flow-other => ''] [boolean-name => ''] [job-without-steps => ''] [quoted-list-item => ''] [odd-indent => '']
   FAIL floor-workflow-on-block-tricks-keep-full:  [complex-key => ''] [pr-target => ''] [schedule => ''] [workflow-run => ''] [alias-on => ''] [flow-on => ''] [inline-on => ''] [second-document => ''] [filter-under-dispatch => '']
-  FAIL floor-workflow-reuse-and-privilege-keep-full:  [job-level-uses => ''] [unpinned-action => ''] [short-pin-action => ''] [third-party-action => '']
+  FAIL floor-workflow-base-unclassifiable-keeps-full:  [quoted-job-key => ''] [single-quoted-job-key => ''] [folded-name => ''] [literal-name => ''] [empty-name => ''] [anchored-name => ''] [alias-name => ''] [flow-job-map => ''] [anchored-job => ''] [inline-jobs => ''] [job-key-with-dot => ''] [job-level-uses => ''] [complex-key => ''] [merge-key => ''] [tab-in-base => ''] [document-marker => ''] [flow-document => ''] [quoted-workflow-name-with-escape => ''] [unclassified-top-level => '']
 
 Restore: git checkout HEAD -- lib/classify/lane-classify.sh
 Exit: 0 (green after restore)
@@ -209,20 +251,18 @@ Verdict: PASS
 (c) Remove the audit line; its rows go red.
 
 ## Negative control (negctl)
-Command: bash tests/test-ceremony-fits-diff.sh floor-additive-workflow-is-sized floor-comment-edit-is-sized-and-logged sized-notices-relay-and-cap
+Command: bash tests/test-ceremony-fits-diff.sh floor-additive-workflow-is-sized floor-comment-edit-is-sized-and-logged
 Exit: 0 (green before mutation)
 Output:
   PASS floor-additive-workflow-is-sized
   PASS floor-comment-edit-is-sized-and-logged
-  PASS sized-notices-relay-and-cap
 
-Mutation: sed -i.bak -E 's/^_floor_sized_note\(\) \{/_floor_sized_note() { return 0;/' lib/classify/lane-classify.sh; rm lib/classify/lane-classify.sh.bak
+Mutation: sed -i.bak -E 's/^_floor_sized_note\(\) \{/_floor_sized_note() { return 0;/' lib/classify/lane-classify.sh; mv lib/classify/lane-classify.sh.bak /private/tmp/claude-501/-Users-tieubao--orca-bots-personal/2ae980b7-b8d1-428d-ae0a-b527c4058063/scratchpad/lc.bak4
 Changed: lib/classify/lane-classify.sh
 Exit: 1 (under mutation, RED expected)
 Output:
   FAIL floor-additive-workflow-is-sized: out='' err=''
   FAIL floor-comment-edit-is-sized-and-logged: out='' err=''
-  PASS sized-notices-relay-and-cap
 
 Restore: git checkout HEAD -- lib/classify/lane-classify.sh
 Exit: 0 (green after restore)
@@ -255,7 +295,8 @@ Verdict: PASS
 | 21 | `sized-notices-relay-and-cap` | PASS |
 | 22 | `floor-sized-flood-keeps-floor` | PASS |
 | 23 | `rule-a-checks-are-load-bearing` | PASS |
-| 24 | regression | see "Regression" |
+| 24 to 31 | the eight review-round cases listed above | PASS |
+| 32 | regression | see "Regression" |
 
 ## Regression
 
@@ -277,3 +318,5 @@ Follow-up on each non-green suite:
 | `test-ceremony-fits-diff` | 300 s default ceiling under load 252; the suite now holds about 150 scratch repos and 12 mutated-lib runs | ceiling set to 900 in `bin/test-affected.timeouts`; `bash tests/test-ceremony-fits-diff.sh` alone: 48 PASS, 0 FAIL, 4m14s |
 | `test-registry-freshness-guard` | the operator's global git pre-commit secret hook blocks the suite's fixture commit of `hooks/codex-hooks.json` (64-hex pins); files untouched by this change | not re-run green here; `PASS=24 FAIL=2`, both on that fixture commit |
 | `test-wrap-land`, `test-wrap-ship` | timeouts only, files untouched by this change | not re-run (host load) |
+
+After the review round no run-all was started again (host rule: one narrow suite per call). Suites the lead should run: `test-lanes-data`, `test-hooks`, `test-classify-md-inert`, `test-registry-freshness-guard`, `test-wrap-land`, `test-wrap-ship`, `test-no-personal-paths`.
