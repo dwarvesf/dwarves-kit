@@ -1,0 +1,472 @@
+## 1-sync-argv
+### all-keys
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"reminders,notion,hermes,github,multica,notion-taskboard"
+opt	--archive-file	"BACKLOG-archive.md"
+opt	--backlog	"<W>/s1/all-keys/_meta/BACKLOG.md"
+opt	--github-repo	"o/r"
+opt	--hermes-assignee	"bot"
+opt	--hermes-board	"crew"
+opt	--hermes-home	"/srv/h"
+opt	--hermes-target	"box"
+opt	--hermes-workspace	"dir:/w/{id}"
+opt	--list	"ListA"
+opt	--multica-project	"pj-1"
+opt	--multica-url	"https://operator.example"
+opt	--multica-workspace	"ws-1"
+opt	--notion-db	"db-1"
+opt	--notion-parent	"page-1"
+opt	--notion-taskboard-db	"tb-1"
+opt	--notion-taskboard-owner	"user-1"
+opt	--notion-taskboard-priority-map	"u-hi=P0"
+opt	--notion-taskboard-props	"{}"
+opt	--notion-taskboard-pull-db	"pull-1"
+opt	--notion-taskboard-pull-done-option	"Shipped"
+opt	--notion-taskboard-pull-props	"{}"
+opt	--notion-taskboard-status-default	"Backlog"
+opt	--notion-taskboard-status-map	"queued=Backlog,executing=In progress"
+opt	--notion-taskboard-types	"{}"
+opt	--notion-taskboard-weight-map	"f-hi=2"
+opt	--notion-title	"Board"
+opt	--scope-exit-cap	"7"
+filter	"github:intake=all"
+filter	"github:only_tags=g1"
+filter	"github:skip_tags=g2"
+filter	"hermes:intake=all"
+filter	"hermes:only_tags=h1"
+filter	"hermes:skip_tags=h2"
+filter	"multica:intake=none"
+filter	"multica:only_tags=m1"
+filter	"multica:skip_tags=m2"
+filter	"notion-taskboard:only_tags=t1"
+filter	"notion-taskboard:skip_tags=t2"
+filter	"notion:intake=none"
+filter	"notion:only_tags=n1"
+filter	"notion:skip_tags=n2"
+filter	"reminders:intake=all"
+filter	"reminders:only_tags=alpha,beta"
+filter	"reminders:skip_tags=gamma"
+env	MULTICA_TOKEN=set
+env	KIT_PROJECT_ROOT=<W>/s1/all-keys
+rc	0
+lookup	secret-cache-read	--ttl	21600	MULTICA_TOKEN	op://operator/ref
+### legacy-sources-alias
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"hermes"
+opt	--backlog	"<W>/s1/legacy-sources-alias/_meta/BACKLOG.md"
+opt	--hermes-home	"/h"
+opt	--hermes-target	"t"
+env	MULTICA_TOKEN=unset
+env	KIT_PROJECT_ROOT=<W>/s1/legacy-sources-alias
+rc	0
+### legacy-surfaces-alias
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"reminders"
+opt	--backlog	"<W>/s1/legacy-surfaces-alias/_meta/BACKLOG.md"
+env	MULTICA_TOKEN=unset
+env	KIT_PROJECT_ROOT=<W>/s1/legacy-surfaces-alias
+rc	0
+### multica-project-only
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"multica"
+opt	--backlog	"<W>/s1/multica-project-only/_meta/BACKLOG.md"
+opt	--multica-project	"p"
+opt	--multica-workspace	"w"
+env	MULTICA_TOKEN=unset
+env	KIT_PROJECT_ROOT=<W>/s1/multica-project-only
+rc	0
+stderr	board sync: ignoring sync.multica_url from the project .kit.toml (root-only key); set it in <W>/s1/multica-project-only/op/kit.toml
+stderr	board sync: ignoring sync.multica_token_ref from the project .kit.toml (root-only key); set it in <W>/s1/multica-project-only/op/kit.toml
+### multica-operator
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"multica"
+opt	--backlog	"<W>/s1/multica-operator/_meta/BACKLOG.md"
+opt	--multica-project	"p"
+opt	--multica-url	"https://operator.example"
+opt	--multica-workspace	"w"
+env	MULTICA_TOKEN=set
+env	KIT_PROJECT_ROOT=<W>/s1/multica-operator
+rc	0
+lookup	secret-cache-read	--ttl	21600	MULTICA_TOKEN	op://operator/ref
+### multica-token-preset
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"multica"
+opt	--backlog	"<W>/s1/multica-token-preset/_meta/BACKLOG.md"
+opt	--multica-url	"https://operator.example"
+env	MULTICA_TOKEN=set
+env	KIT_PROJECT_ROOT=<W>/s1/multica-token-preset
+rc	0
+### relay-hermes
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"notion-taskboard"
+opt	--backlog	"<W>/s1/relay-hermes/_meta/BACKLOG.md"
+opt	--notion-taskboard-db	"tb-1"
+opt	--notion-taskboard-status-default	"Backlog"
+caller	"--apps"
+caller	"hermes"
+caller	"--filter"
+caller	"hermes:only_tags=notion-intake"
+caller	"--filter"
+caller	"hermes:intake=all"
+caller	"--filter"
+caller	"hermes:intake_skip_re=^filed-by: bot"
+caller	"--hermes-target"
+caller	"box"
+caller	"--hermes-home"
+caller	"/srv/h"
+caller	"--hermes-board"
+caller	"crew"
+caller	"--hermes-assignee"
+caller	"bot"
+caller	"--hermes-workspace"
+caller	"dir:/w/{id}"
+caller	"--notion-taskboard-db"
+caller	""
+env	MULTICA_TOKEN=unset
+env	KIT_PROJECT_ROOT=<W>/s1/relay-hermes
+rc	0
+### pull-intake
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"notion-taskboard-pull"
+opt	--backlog	"<W>/s1/pull-intake/_meta/BACKLOG.md"
+opt	--notion-taskboard-pull-db	"pull-1"
+caller	"--apps"
+caller	"notion-taskboard-pull"
+caller	"--notion-taskboard-pull-db"
+caller	"pull-1"
+caller	"--notion-taskboard-db"
+caller	""
+env	MULTICA_TOKEN=unset
+env	KIT_PROJECT_ROOT=<W>/s1/pull-intake
+rc	0
+### caller-dry-run
+engine	<KIT>/lib/board/../sync/backlog_sync.py
+apps	"reminders"
+opt	--backlog	"<W>/s1/caller-dry-run/_meta/BACKLOG.md"
+opt	--list	"ListA"
+caller	"--dry-run"
+caller	"--scope-exit-cap"
+caller	"3"
+env	MULTICA_TOKEN=unset
+env	KIT_PROJECT_ROOT=<W>/s1/caller-dry-run
+rc	0
+### unconfigured
+(engine not reached)
+rc	2
+stderr	board sync: no [sync] apps configured in <W>/s1/unconfigured/.kit.toml
+stderr	  add e.g.:
+stderr	  [sync]
+stderr	  apps = "reminders"
+### unconfigured-empty-sync
+(engine not reached)
+rc	2
+stderr	board sync: no [sync] apps configured in <W>/s1/unconfigured-empty-sync/.kit.toml
+stderr	  add e.g.:
+stderr	  [sync]
+stderr	  apps = "reminders"
+## 2-engine-flags
+--allow-archived-closes	one-run override when a legitimate bulk archive pass closes more cards than the cap
+--allow-flips	one-run override when a legitimate bulk status flip exceeds the cap
+--allow-scope-exit	one-run override when a legitimate bulk exit exceeds the cap
+--apps,--surfaces,--sources	comma list of apps (cmd_sync fills this from .kit.toml [sync] apps; --surfaces/--sources are legacy aliases)
+--archive-file	board archive closed rows move to (default: BACKLOG-archive.md beside the board). A linked spoke card closes only when its id sits here with a closed status.
+--backlog	
+--dry-run	
+--filter	app:key=value (key: only_tags|skip_tags|intake|intake_skip_re); repeatable; cmd_sync fills these from .kit.toml
+--github-repo	owner/repo for the github app (default: the cwd's origin remote, as gh resolves it)
+--hermes-assignee	profile name to assign every relayed task to
+--hermes-board	kanban board slug (default: the instance's own current board)
+--hermes-home	
+--hermes-target	ssh host, or `local`, or `sudo:<user>` for an instance owned by another uid on this host
+--hermes-workspace	workspace for every relayed task, e.g. 'dir:/path/outbox/{id}'; `{id}` is the board id
+--list	Reminders list name
+--multica-project	Multica project UUID
+--multica-url	Multica server base URL
+--multica-workspace	Multica workspace UUID
+--notion-db	bind an existing Notion database id
+--notion-parent	Notion page id to create the board under (bootstrap)
+--notion-taskboard-db	target Notion database id for the one-way insert-only Task Board push
+--notion-taskboard-owner	Owner value (people-prop user id by default)
+--notion-taskboard-priority-map	tag->Priority map, e.g. 'u-hi=P0,u-mid=P1,u-lo=P2'
+--notion-taskboard-props	JSON overriding prop names {title,status,priority,weight,owner,notes}
+--notion-taskboard-pull-db	source Notion database id for the read-only Task Board intake
+--notion-taskboard-pull-done-option	Status option treated as done, and thus never pulled (default: Done)
+--notion-taskboard-pull-props	JSON overriding prop names {title,status,notes,queue}
+--notion-taskboard-status-default	Status option for board states not in the map
+--notion-taskboard-status-map	board-state->option map, e.g. 'queued=Backlog,executing=In progress'
+--notion-taskboard-types	JSON overriding prop types {status,priority,weight,owner}
+--notion-taskboard-weight-map	tag->Weight map, e.g. 'f-hi=2,f-mid=5,f-lo=13'
+--notion-title	title of the Notion board created at bootstrap (default Backlog)
+--scope-exit-cap	
+--state-root	
+-h,--help	show this help message and exit
+## 7-help-errors
+### board help
+board.sh -- the kit's cockpit board command. `mirror`/`status` and `writeback` were added
+later as the git<->Hermes kanban bridge's read-mirror and writeback legs.
+
+The SOLE cockpit board command: it ABSORBS the render logic that used to live in ops-toolkit's
+`_meta/board` (the `priority` quadrant awk, single-repo) and `_meta/board-all` (the `boards.txt`
+registry walk + `priority matrix` cross-repo pivot), ADDS a `queue` subcommand that emits an
+allow-listed overnight-runner queue, ADDS `mirror`/`status`: a one-way git ->
+Hermes kanban bridge over opt-in repos + active mega-goals, native `hermes kanban` CLI only, and
+ADDS `writeback`: the reverse leg -- a Hermes-side card status move flows back into a
+repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the
+mirror snapshot's row_hash conflict rule (git wins, always). Base kanban render
+(board/next/set/states) is UNCHANGED and still delegates to `lib/board/backlog.sh` -- this file never
+reimplements it. The substantial `mirror`/`status` logic (extract/diff/plan/apply) lives in
+`lib/board/board-mirror.sh`; the substantial `writeback` logic (diff/apply/PR) lives in
+`lib/board/board-writeback.sh` (which itself reuses `lib/board/board-mirror.sh`'s extract/hash machinery) --
+the same delegation shape `queue` already has with `lib/board/parse-board.sh`.
+
+The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
+describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
+`--repo-root <path>` / the `REPO_ROOT` env var (the kit's existing consumer pattern -- see
+lib/reflect/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
+precedent). Never invents a `CONSUMER_ROOT` var.
+
+Usage:
+  board.sh board  [--backlog-file <path>]                    single-repo kanban render
+  board.sh next   [--backlog-file <path>]                    first queued ID
+  board.sh get <ID> [--backlog-file <path>]                  one row's full status cell
+  board.sh set <ID> <state> [note] [--backlog-file <path>]   flip a row's state
+  board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
+                                                              one id down to one
+  board.sh lint [--backlog-file <path>]                      enumerate malformed board rows
+                                                              (cell count, dup ids, `\|`
+                                                              escapes, bad statuses); an
+                                                              enumerator, exits 0
+  board.sh add <title> [--notes T] [--mid V]... [--status S] [--section H] [--backlog-file <path>]
+                                                              file ONE new row: the next id is
+                                                              minted and written under the board
+                                                              lock, in the target table's own
+                                                              column count; prints the id. The
+                                                              one row-minting verb (capture and
+                                                              promote call it too).
+  board.sh normalize [--check] <board.md>                     pad short rows to their table's own
+                                                              column count (one-shot repair; keeps
+                                                              every id, idempotent)
+  board.sh states [--backlog-file <path>]                    legal state names
+  board.sh run <ID> [--backlog-file <path>] [--dir <megadir>] [--exec] [-- <orchestrate-args>]
+                                                              the single-row dispatch path:
+                                                              scaffold a minimal mega-goal dir
+                                                              (one `SG-<NN> , auto` ROADMAP line,
+                                                              POINTER_PROMPT seeded from the
+                                                              row's Item + Notes, the goals/
+                                                              plumbing) under the repo's
+                                                              megagoals convention, then print
+                                                              the exact `orchestrate.sh run
+                                                              <dir>` command. Never launches a
+                                                              session itself; --exec composes
+                                                              the launch. Forwards to
+                                                              lib/board/board-run.sh verbatim.
+  board.sh work [--json] [--idle-min N] [--code-root D] [--backlog-file <path>]  who is on what: board x mega x git x orca x ledger, read-only
+  board.sh priority [counts|brief|overview|full] [all|work|learn] [--backlog-file <path>]
+                                                              single-repo urgency x fit quadrant
+  board.sh promote [<n>... | all | reject <n>...]             review + flush backlog-stage's
+                                                              staged candidates onto the board
+                                                              (the human gate; absorbed the
+                                                              retired `add-backlog` entry per
+                                                              the kit naming decision, no alias).
+                                                              Forwards to lib/board/bin/add-backlog
+                                                              verbatim, behavior unchanged.
+
+  board.sh all board|next|states [--repo-root <path>] [--registry <path>]
+                                                              cross-repo render, grouped by repo
+  board.sh all priority [counts|brief|overview|full] [all|work|learn] [--repo-root <path>] [--registry <path>]
+                                                              each repo's quadrant, grouped by repo
+  board.sh all priority matrix [--repo-root <path>] [--registry <path>]
+                                                              cross-repo urgency x repo pivot table
+
+STALENESS WARNING (every `all` mode): each render reads a repo's BACKLOG.md out of a LOCAL
+checkout. A checkout behind its upstream returns rows that already shipped, and before this
+check nothing in the output said so. `_behind_count` now probes each registered checkout, marks
+a lagging repo's header `[STALE: N behind upstream]`, and prints one trailer naming every
+lagging repo. See `_behind_count` for the never-fetch, fail-open contract and its blind spot.
+
+  board.sh queue [--dry-run] [--repo-root <path>] [--registry <path>]
+                                                              walk the registry, parse every
+                                                              repo's BACKLOG.md via
+                                                              lib/board/parse-board.sh, emit
+                                                              slug<TAB>repo-path<TAB>pointer-path
+                                                              for every allow-listed `#queue{}`
+                                                              token on a `queued` row. `slug` is
+                                                              `<repo-name>__<ID>` (globally
+                                                              unique even though ID-NNN prefixes
+                                                              collide across some repos, see
+                                                              CLAUDE.md's dwarves-kit/ops-toolkit
+                                                              ID- note). `--dry-run` is accepted
+                                                              for forward-compat with a future
+                                                              write-capable extension; `queue`
+                                                              itself never mutates any BACKLOG.md
+                                                              regardless of the flag, so it is
+                                                              currently a documented no-op.
+
+  board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
+                   [--mega-board <name>] [--board-prefix <prefix>]
+                   [--remote <user@host>] [--remote-kit-path <path>]
+                                                              project opt-in (`bridge=on`)
+                                                              cockpit boards + one card per
+                                                              ACTIVE mega-goal onto a Hermes
+                                                              kanban, idempotently. `--dry-run`
+                                                              prints the plan and applies
+                                                              nothing (no Hermes calls, no
+                                                              snapshot write). `--remote` ships
+                                                              the plan over ONE `ssh` call to a
+                                                              remote host's own board-mirror.sh
+                                                              apply-plan (argv vectors, never a
+                                                              templated shell string); default
+                                                              is local (`$HERMES_BIN`/`hermes`
+                                                              runs on this host). See
+                                                              `lib/board/board-mirror.sh` for the full
+                                                              ETL design + state-mapping table.
+  board.sh status [--repo-root <path>] [--registry <path>] [--snapshot <path>]
+                                                              mirror staleness: per opted-in
+                                                              repo, the snapshot's newest
+                                                              `seen_at` vs the BACKLOG.md's own
+                                                              last git-log touch time.
+
+  board.sh board  --with-mega [--mega-code-root <path>] [--backlog-file <path>]
+  board.sh status --with-mega [--mega-code-root <path>] [--repo-root <path>] [--registry <path>]
+                                                              OPT-IN (kit-modularity sub-goal
+                                                              08): appends a trailing
+                                                              "MEGA ROLLUP" section listing, for
+                                                              every ACTIVE mega under
+                                                              <repo-root>/_meta/megagoals/*/
+                                                              (>=1 unchecked sub-goal box), the
+                                                              `lib/mega/mega.sh status <slug>
+                                                              --rollup-only` line (roadmap-vs-git
+                                                              reconciliation, drift-flagged --
+                                                              never a re-render of the roadmap's
+                                                              own `[x]`/`[ ]` prose). DEFAULT OFF
+                                                              on both `board` and `status`: it
+                                                              makes real `gh` calls per
+                                                              sub-goal, so it must never run
+                                                              inside the byte-identical render
+                                                              non-regression NC (test-board.sh's
+                                                              NC-e) or slow down a plain render.
+                                                              `--mega-code-root <path>` overrides
+                                                              where the megas' OWN branches/PRs
+                                                              live (default: the same repo
+                                                              `--backlog-file`/`--repo-root`
+                                                              resolves to -- override it when a
+                                                              mega's ROADMAP.md lives in one repo
+                                                              but its sub-goals build in a
+                                                              DIFFERENT one, e.g. kit-modularity:
+                                                              ROADMAP in ops-toolkit, PRs/
+                                                              branches in dwarves-kit).
+
+  board.sh writeback [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
+                      [--board-prefix <prefix>] [--branch <name>] [--pr-base <branch>]
+                                                              the reverse leg: reads
+                                                              each opted-in repo's live Hermes
+                                                              board (`hermes kanban --board <b>
+                                                              list --json`) + the mirror
+                                                              snapshot, builds a changeset of
+                                                              rows whose Hermes status moved,
+                                                              validates (opted-in repo, legal
+                                                              backlog.sh state, row_hash still
+                                                              matches the snapshot -- git wins on
+                                                              any mismatch), and applies matched
+                                                              rows' Status column via a fresh
+                                                              `chore/board-sync` branch (built in
+                                                              an isolated `git worktree`, never
+                                                              this repo's own checkout) + one
+                                                              attributed commit (`actor=hermes`)
+                                                              + `gh pr create` -- HELD, never
+                                                              auto-merged. `--dry-run` prints the
+                                                              changeset and applies nothing (no
+                                                              git branch/commit/push, no PR, no
+                                                              snapshot refresh; it STILL reads
+                                                              Hermes, since that read is exactly
+                                                              what a dry-run previews). Missing
+                                                              or corrupt `--snapshot` REFUSES ALL
+                                                              edits (explicit error, nonzero
+                                                              exit) rather than silently applying
+                                                              everything. See `lib/board/board-writeback.sh`
+                                                              for the full design (reverse state
+                                                              mapping, conflict rule, snapshot
+                                                              refresh semantics).
+
+  board.sh sweep --registry <path> [--poster <cmd>] [--preflight <cmd>] [--on-clean <cmd>]
+                  [--mirror-hermes-home <dir>] [--dry-run] ...
+                                                              one scheduled pass over every
+                                                              registry board: per-repo
+                                                              `sync`, change-only digest,
+                                                              `publish`, the Hermes mirror leg
+                                                              fed from origin, one digest post
+                                                              per cluster through the operator's
+                                                              --poster. Forwards to
+                                                              lib/sync/sweep/board-sweep; every
+                                                              flag is documented there.
+  board.sh sweep verify --registry <path> --run <cmd> | --last-tick [<repo>]
+                                                              prove a sweep wrote no board, or
+                                                              read what the newest tick did.
+  board.sh mirror-cleanup [--registry <path>] [--snapshot <path>] [--hermes-home <dir>]
+                           [--kinds-file <path>] [--expire-only] [--apply]
+                                                              reconcile the open Hermes cards
+                                                              against the boards (dry run by
+                                                              default; never deletes). A kinds-file
+                                                              rule with an expire block archives
+                                                              its cards by age; --expire-only runs
+                                                              just that. Forwards to
+                                                              lib/board/board-mirror-cleanup.py.
+  board.sh health run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
+  board.sh health record --repo <name> --rc <n>               the periodic board health digest per
+                                                              cluster (open, stale, archived since
+                                                              the last run, sync health per spoke);
+                                                              `sweep --health` runs it every tick.
+                                                              Forwards to lib/sync/sweep/board-health.
+  board.sh brief run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
+                                                              ONE message per cluster per day built on
+                                                              `health`: what needs the operator's decision,
+                                                              open incidents (from an --incidents hook),
+                                                              the boards every third day, one line of what
+                                                              the bots did; details follow as a second
+                                                              message. Forwards to lib/sync/sweep/board-brief.
+                                                              `health run` and `brief run` read their flags
+                                                              from --config FILE, $DWARVES_BOARD_CONFIG, or
+                                                              the board.json that `config data path config board.json` prints.
+  board.sh hermes link [--home <dir>] [--profile <name>] [--cluster <c>] [--dry-run] [--yes] [--no-verify]
+  board.sh hermes check [--record]                            link a Hermes agent profile to the kit: install
+                                                              integrations/hermes/skills into the profile with a
+                                                              version stamp, record the link and the cluster's
+                                                              rail and boards, prove it with one agent turn.
+                                                              `check` finds linked profiles whose skills are
+                                                              stale (`sweep` records it, `brief` says so).
+                                                              Forwards to lib/sync/sweep/board-hermes.
+
+Registry location: `--registry F` > $KIT_BOARDS_REGISTRY > `<repo-root>/_meta/boards.txt`.
+Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
+rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
+exactly the literal token `on` opts in; absent, `off`, or any other value stays OUT (default
+OFF -- a repo must explicitly opt in; sensitive repos like `trading`/`family-office` must never
+be `on`). `board`/`next`/`priority`/`states`/`queue` never read this field (they only ever
+consumed the first two columns, per this command's own forward-compat design), so adding it is a
+zero-code-change, non-regressing registry format extension.
+
+--repo-root resolution precedence (cross-repo `all`/`queue`/`mirror`/`status` modes only): the
+`--repo-root` flag, else the `REPO_ROOT` env var, else `git rev-parse --show-toplevel` of the
+CURRENT cwd, else cwd itself. The single-repo subcommands never need --repo-root; the shim that
+calls them always passes an explicit --backlog-file instead.
+
+DWARVES_KIT overrides where lib/board/backlog.sh + lib/board/parse-board.sh + lib/board/board-mirror.sh are found
+relative to this file (they are always siblings in lib/, so this only matters if board.sh is
+copied standalone).
+
+rc	0
+### unknown verb
+usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}
+rc	64
+### engine without --apps
+dry-run reminders: 0 spoke items, 6 board rows
+rc	0
+stub calls:
+  osascript	-l	JavaScript	-e	Application('Reminders').lists.name().length
+  osascript	-l	JavaScript	-e	 function run(argv) {   const app = Application('Reminders');   const name = argv[0];   const names 	Backlog
+### engine with an unknown app
+unknown source 'bogus'
+rc	1
+### sweep with an unknown flag
+board sweep: unknown arg: --bogus-flag
+rc	64

@@ -40,3 +40,31 @@ Warnings from the spec validation that the build's own tests would catch or that
 ## Rejected during validation (do not re-add)
 
 A config key for the adapter directory; a colon list of directories; a package per adapter; a wrapper over `python3` for the bash reader; a stderr line for every unknown first word in `board`; reading the Multica secret only for named apps; requiring `https` for the Multica URL.
+
+## Baselines retaken on the branch base (phase 1, before any change)
+
+Taken on this host after merging `origin/master` (a19ca13d), each suite alone, in the foreground. They equal the spec's Test plan numbers, so none moved on master.
+
+| Suite | Result line |
+|---|---|
+| `tests/test-sync.sh` | `326 passed` |
+| `tests/test-sync-dispatch.sh` | `=== 10/10 passed ===` |
+| `tests/test-board-states.sh` | 32 `PASS` lines, `All board-states tests passed.` |
+| `tests/test-board-hermes.sh` | `79 passed, 0 failed` |
+| `tests/test-board-mirror.sh` | `TOTAL: 116   PASS: 116   FAIL: 0   SKIP: 0` |
+| `tests/test-board-writeback.sh` | `TOTAL: 75   PASS: 74   FAIL: 0   SKIP: 1` |
+| `tests/test-board-mirror-cleanup.sh` | `TOTAL: 31   PASS: 31   FAIL: 0` |
+| `tests/test-board-mirror-expire.sh` | `TOTAL: 31   PASS: 31   FAIL: 0` |
+| `tests/test-board-sweep.sh` | `PASS=55 FAIL=0` |
+| `tests/test-board-sweep-mirror.sh` | `PASS=43 FAIL=0` |
+| `tests/test-board-sweep-expire.sh` | `TOTAL: 14   PASS: 14   FAIL: 0` |
+| `tests/test-board-health.sh` | `97 passed, 0 failed` |
+| `tests/test-board-brief.sh` | `243 passed, 0 failed` |
+
+## Characterization harness (TASK-A1, TASK-A2): what the next builder must know
+
+- Run it with `bash tests/test-sync-characterize.sh`. A red section prints its name and a unified diff. `CHARACTERIZE_UPDATE=1` rewrites `golden.txt`; use it only in the task that causes a stated delta, and add the `<section><TAB><tag>` row to `deltas.txt` in the same commit. `CHARACTERIZE_KIT=<dir>` runs the entry points of a copy of the tree (needs `bin` and `lib`), which is how the negative controls mutate a temp copy. `CHARACTERIZE_PYTHON=<python3>` picks the interpreter; the golden holds on 3.12 and 3.15 (the engine does not import on `/usr/bin/python3` 3.9, today's floor).
+- Every entry point runs under `env -i` with a scratch `HOME`, scratch data and config roots, and PATH stubs. The stubs live in the scratch `$HOME/.local/bin` because `board-sweep` puts that directory first on its own PATH. The transport guard is a `sitecustomize.py` on `PYTHONPATH` (subprocess of a transport program outside the stub dir, or a non-loopback socket, raises and logs) plus a PATH resolution check and an absolute-path grep over `lib/board lib/sync lib/config bin`.
+- Sections are named `## <n>-<name>`, with `### <case>` sub-sections, so a red diff names the section and the app or case. The numbering follows the spec: 1 sync argv, 2 engine flags, 3 engine dry run per app, 4 sweep, 5 health and brief (including both `--help` outputs, for the `health-brief-help` tag), 6 bridge verbs, 7 help and errors.
+- The golden argv of section 1 is normalized as the spec says: `--apps` first, config-derived flag pairs sorted, `--filter` pairs sorted, caller flags last in their own order. Values are JSON-quoted so an empty `--notion-taskboard-db ""` stays visible.
+- Section 3 builds its `Namespace` with both the legacy engine dest names and the config key names (`list_name` and `reminders_list`), because phase 2 renames dests to the config keys. Keep both when the engine changes.
