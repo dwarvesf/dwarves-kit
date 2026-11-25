@@ -151,20 +151,20 @@ while IFS=$'\t' read -r kind id login title goal check; do
     [ -n "$kind" ] || continue
     if [ "$kind" = "NODONE" ]; then
         nodone=$((nodone + 1))
-        echo "skip: $id has a #$login tag but no Done when: text"
+        echo "skip: $(clean "$id") has a #$(clean "$login") tag but no Done when: text"
         continue
     fi
     case "$nl$existing$nl" in
     *"$nl$id:"*)
         existed=$((existed + 1))
-        echo "skip: $id already has an issue"
+        echo "skip: $(clean "$id") already has an issue"
         continue
         ;;
     esac
     issue_title="$id: $title"
     if [ "$apply" -eq 0 ]; then
         created=$((created + 1))
-        echo "would create: $(clean "$id"): $(clean "$title") (assignee $login, label ready)"
+        echo "would create: $(clean "$id"): $(clean "$title") (assignee $(clean "$login"), label ready)"
         continue
     fi
     body="### Goal
@@ -183,7 +183,7 @@ Board row $id in $board"
         echo "created: $(clean "$id"): $(clean "$title") $(clean "$url")"
     else
         failed=$((failed + 1))
-        refuse "gh issue create failed for $id: $(first_line "$url")" "gh auth status"
+        refuse "gh issue create failed for $(clean "$id"): $(first_line "$url")" "gh auth status"
     fi
 done <<EOF2
 $records

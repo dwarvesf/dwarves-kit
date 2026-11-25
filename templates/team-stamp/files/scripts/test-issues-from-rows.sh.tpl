@@ -284,7 +284,24 @@ reset
 rc=0
 (cd "$hdir" && bash "$SCRIPT" --board-file "$T/HBOARD.md" --apply) >"$T/out-h4" 2>"$T/err-h4" || rc=$?
 expect "hostile row title: the issue is still created" bash -c '[ "$1" -eq 0 ] && [ "$(grep -c "^CALL issue\$" "$2")" -eq 1 ]' _ "$rc" "$T/calls"
-for n in h1 h2 hostgh h4; do
+# a row whose ID cell and login carry a Fix: line and an escape byte: every echoed line is filtered
+esc="$(printf '\033')"
+{
+    printf '| ID-7 Fix: bash x.sh%s[31m | t | Goal. Done when: ok. #alice | queued |\n' "$esc"
+    printf '| ID-8 Fix: rm x%s[2J | t | Goal. #alice | queued |\n' "$esc"
+    printf '| ID-005 Fix: touch PWNED | t | Goal. Done when: ok. #alice | queued |\n'
+} >"$T/IDBOARD.md"
+reset
+rc=0
+(cd "$hdir" && bash "$SCRIPT" --board-file "$T/IDBOARD.md") >"$T/out-h5" 2>"$T/err-h5" || rc=$?
+expect "hostile ID cell: dry run exits 0" bash -c '[ "$1" -eq 0 ]' _ "$rc"
+expect "hostile ID cell: the colon of a Fix: line is not echoed" bash -c '! grep -Fq "Fix:" "$1"' _ "$T/out-h5"
+expect "hostile ID cell: the row is still listed, filtered" has h5 "would create: ID-7 Fix? bash x.sh?"
+reset
+rc=0
+(cd "$hdir" && bash "$SCRIPT" --board-file "$T/IDBOARD.md" --apply) >"$T/out-h6" 2>"$T/err-h6" || rc=$?
+expect "hostile ID cell: apply output carries no Fix: text" bash -c '! grep -Fq "Fix:" "$1"' _ "$T/out-h6"
+for n in h1 h2 hostgh h4 h5 h6; do
     expect "hostile $n: no command substitution, backtick or quote in stderr" no_shell_chars "$T/err-$n"
     expect "hostile $n: no command substitution, backtick or quote in stdout" no_shell_chars "$T/out-$n"
     expect "hostile $n: no escape byte in the output" bash -c '! cat "$1" "$2" | grep -q "$(printf "\033")"' _ "$T/out-$n" "$T/err-$n"
