@@ -16,6 +16,7 @@ mkdir -p "$d/bin"
 cat > "$d/bin/python3" <<'STUB'
 #!/usr/bin/env bash
 printf 'ARGV:%s\n' "$*"
+printf 'FAKE_TOKEN:%s\n' "${FAKE_TOKEN:+set}"
 STUB
 chmod +x "$d/bin/python3"
 export PATH="$d/bin:$PATH"
@@ -80,6 +81,38 @@ check "the operator kit.toml still supplies the multica url" \
   '[[ "$out" == *"--multica-url https://operator.example"* ]]' "$out"
 check "the operator kit.toml still supplies the secret ref" \
   'grep -q "op://operator/ref" "$LOOKUP_LOG"' "$(cat "$LOOKUP_LOG")"
+
+# the adapter manifests declare the rest of the surface: the fixture adapter (no real app) has an
+# `opt` row of each scope, a `secret` row and three apps of the three modes
+export KIT_ADAPTERS_DIR="$KIT_ROOT/lib/sync/tests/fixtures/adapters"
+mkdir -p "$d/repoF/_meta" "$d/fcfg"; touch "$d/repoF/_meta/BACKLOG.md"
+git -C "$d/repoF" init -q
+printf '[sync]\napps = "fake-two,fake-create,fake-pull"\nfake_name = "Store One"\nfake_url = "https://project.example"\nfake_token_ref = "op://project/ref"\nfake_two_only_tags = "a,b"\nfake_two_intake = "all"\nfake_create_skip_tags = "c"\nfake_create_intake = "all"\nfake_pull_only_tags = "d"\n' > "$d/repoF/.kit.toml"
+: > "$LOOKUP_LOG"
+out="$(KIT_CONFIG_OPERATOR="$d/fcfg" FAKE_TOKEN= bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoF/_meta/BACKLOG.md" 2>&1)"
+check "an adapter opt row becomes an engine flag" \
+  '[[ "$out" == *"--fake-name Store One"* ]]' "$out"
+check "a project .kit.toml cannot set a root-scope opt row, and the shadow note names it" \
+  '[[ "$out" != *"--fake-url"* && "$out" == *"ignoring sync.fake_url from the project .kit.toml"* ]]' "$out"
+check "a project .kit.toml cannot pick the secret ref (no lookup runs, the variable stays unset)" \
+  '[ ! -s "$LOOKUP_LOG" ] && grep -q "^FAKE_TOKEN:$" <<<"$out"' "$out"
+check "filter keys follow the app mode: two-way gets intake, create-only does not, pull-only gets none" \
+  '[[ "$out" == *"--filter fake-two:only_tags=a,b"* && "$out" == *"--filter fake-two:intake=all"* && "$out" == *"--filter fake-create:skip_tags=c"* && "$out" != *"fake-create:intake"* && "$out" != *"fake-pull:"* ]]' "$out"
+printf '[sync]\nfake_url = "https://operator.example"\nfake_token_ref = "op://operator/ref"\n' > "$d/fcfg/kit.toml"
+: > "$LOOKUP_LOG"
+out="$(KIT_CONFIG_OPERATOR="$d/fcfg" FAKE_TOKEN= bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoF/_meta/BACKLOG.md" 2>&1)"
+check "the operator kit.toml supplies a root-scope opt row" \
+  '[[ "$out" == *"--fake-url https://operator.example"* ]]' "$out"
+check "a secret row reaches the engine by environment only, never argv" \
+  'grep -q "^FAKE_TOKEN:set$" <<<"$out" && ! grep "^ARGV" <<<"$out" | grep -q "stub-token" && grep -q "op://operator/ref" "$LOOKUP_LOG"' "$out"
+: > "$LOOKUP_LOG"
+out="$(KIT_CONFIG_OPERATOR="$d/fcfg" FAKE_TOKEN=preset bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoF/_meta/BACKLOG.md" 2>&1)"
+check "a secret variable that is already set is not looked up again" \
+  'grep -q "^FAKE_TOKEN:set$" <<<"$out" && [ ! -s "$LOOKUP_LOG" ]' "$(cat "$LOOKUP_LOG")"
+out="$(KIT_CONFIG_OPERATOR="$d/opcfg" bash "$KIT_ROOT/bin/board" sync --backlog-file "$d/repoC/_meta/BACKLOG.md" 2>&1)"
+check "the no-apps hint names a placeholder, not an app" \
+  '[[ "$out" == *"apps = \"<app>\""* ]]' "$out"
+unset KIT_ADAPTERS_DIR
 
 printf '=== %d/%d passed ===\n' "$PASS" "$((PASS+FAIL))"
 [ "$FAIL" -eq 0 ]

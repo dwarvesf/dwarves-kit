@@ -23,19 +23,26 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "config"))
+import adapters  # noqa: E402
 import kit_data  # noqa: E402
 
 from sync_core import (ID_TOKEN, apply_board, board_lock, build_state,  # noqa: E402
                        describe, detect_prefix, parse_board,
                        plan_create_only, plan_pull_only, plan_sync)
 
+# Apps the engine still builds itself, until each one's adapter takes it over (the registry is asked
+# first; a name in neither the registry nor these sets is unknown). The create-only and pull-only
+# sets are the legacy half of the modes; the registry adds the manifest half.
 # apps that push one-way and read boards with any repo prefix (not just ID-)
 CREATE_ONLY_APPS = {"notion-taskboard"}
 # apps that only READ a foreign board and intake into the hub
 PULL_ONLY_APPS = {"notion-taskboard-pull"}
+LEGACY_APPS = {"reminders", "notion", "notion-taskboard", "notion-taskboard-pull",
+               "github", "hermes", "multica"}
 from sources.github import GitHubSource  # noqa: E402
 from sources.hermes import HermesSource  # noqa: E402
 from sources.multica import MulticaSource  # noqa: E402
@@ -174,7 +181,7 @@ def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
 
 
 def check_pull_isolation(names: list, args,
-                         filters: dict | None = None) -> None:
+                         filters: dict | None = None, reg=None) -> None:
     """Three refusals that keep a read-only intake read-only.
 
     FILTER: this app takes none. The source board's own `Agent Queue` checkbox
@@ -209,12 +216,14 @@ def check_pull_isolation(names: list, args,
             sys.exit(f"{', '.join(clash)} points at the same database as "
                      "notion_taskboard_pull_db. That board is read-only by "
                      "contract; never aim a write-capable app at it.")
-    filtered = sorted(set(filters or {}) & PULL_ONLY_APPS)
+    reg = reg if reg is not None else adapters.load()
+    pull_apps = PULL_ONLY_APPS | reg.pull_only_apps()
+    filtered = sorted(set(filters or {}) & pull_apps)
     if filtered:
         sys.exit(f"{filtered[0]}: this app takes no --filter; the source "
                  "board's own Agent Queue checkbox is the gate.")
-    pull = [n for n in names if n in PULL_ONLY_APPS]
-    others = [n for n in names if n not in PULL_ONLY_APPS]
+    pull = [n for n in names if n in pull_apps]
+    others = [n for n in names if n not in pull_apps]
     if pull and others:
         sys.exit(f"{pull[0]}: a pull app runs alone, but this invocation also "
                  f"lists {', '.join(others)}. Run intake first, publish the "
@@ -325,7 +334,28 @@ def board_state_dir(root: Path, backlog: Path) -> Path:
     return d
 
 
-def build_source(name: str, args):
+def _check_mode(name: str, src, mode: str) -> None:
+    """The manifest mode is the contract: the source object must agree with it."""
+    got = ("pull-only" if getattr(src, "pull_only", False)
+           else "create-only" if getattr(src, "create_only", False) else "two-way")
+    if got != mode:
+        sys.exit(f"adapters: {name}: the manifest says {mode} but the source "
+                 f"object is {got}")
+
+
+def build_source(name: str, args, reg=None, state_path=None):
+    """The one seam that turns an app name into a source object: the registry
+    answers first; a name it does not provide falls back to the legacy chain
+    below, which empties as each adapter takes its app over."""
+    reg = reg if reg is not None else adapters.load()
+    if name in reg.apps:
+        opts = {o.key: getattr(args, o.key, None) for o in reg.opts}
+        ctx = SimpleNamespace(state_path=state_path,
+                              project_root=os.environ.get("KIT_PROJECT_ROOT"))
+        src = reg.build(name, opts, ctx)
+        if src is not None:
+            _check_mode(name, src, reg.mode(name))
+        return src
     if name == "reminders":
         return RemindersSource(args.list_name or "Backlog")
     if name == "notion":
@@ -388,13 +418,14 @@ def build_source(name: str, args):
                      "(.kit.toml) or pass the matching --flags")
         return MulticaSource(args.multica_url, args.multica_workspace,
                              args.multica_project)
-    sys.exit(f"unknown source {name!r}")
+    sys.exit(f"no adapter provides {name} (searched: {reg.dir})")
 
 
 def main(argv=None):
+    reg = adapters.load()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--apps", "--surfaces", "--sources", dest="apps",
-                    default="reminders",
+                    default="",
                     help="comma list of apps (cmd_sync fills this from "
                          ".kit.toml [sync] apps; --surfaces/--sources are "
                          "legacy aliases)")
@@ -475,6 +506,8 @@ def main(argv=None):
     ap.add_argument("--allow-archived-closes", type=int, default=0,
                     help="one-run override when a legitimate bulk archive "
                          "pass closes more cards than the cap")
+    for o in reg.opts:
+        ap.add_argument(f"--{o.flag}", dest=o.key, help=o.help)
     args = ap.parse_args(argv)
 
     filters: dict[str, dict] = {}
@@ -497,9 +530,19 @@ def main(argv=None):
                      "(only_tags|skip_tags|intake|intake_skip_re)")
 
     names = [s.strip() for s in args.apps.split(",") if s.strip()]
+    if not names:
+        print("backlog_sync: no apps (--apps)", file=sys.stderr)
+        sys.exit(2)
     # before any source is built, so a refused combination never touches a
-    # transport or the board file
-    check_pull_isolation(names, args, filters)
+    # transport or the board file: the guards of the adapters that provide a
+    # named app, then the generic isolation rules, then the unknown-app exit
+    opts = {o.key: getattr(args, o.key, None) for o in reg.opts}
+    for guard in reg.hooks("guard", only=names):
+        guard(names, opts)
+    check_pull_isolation(names, args, filters, reg)
+    unknown = [n for n in names if n not in reg.apps and n not in LEGACY_APPS]
+    if unknown:
+        sys.exit(f"no adapter provides {unknown[0]} (searched: {reg.dir})")
 
     if not args.backlog.exists():
         sys.exit(f"no backlog at {args.backlog}; pass --backlog or run via "
@@ -534,7 +577,7 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         sys.exit("another backlog-sync run holds the lock; try again")
-    strict_id = not (set(names) & CREATE_ONLY_APPS)
+    strict_id = not (set(names) & (CREATE_ONLY_APPS | reg.create_only_apps()))
     if not warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id):
         sys.exit(1)
 
@@ -554,7 +597,9 @@ def main(argv=None):
                 print("notion: skipped (no binding; set notion_db/notion_parent"
                       " in [sync] (.kit.toml) or pass --notion-db)")
                 continue
-        src = build_source(name, args)
+        src = build_source(name, args, reg, state_path)
+        if src is None:
+            continue
         if not sync_source(src, args.backlog, state_path, args.dry_run,
                            filt=filters.get(name), cap=args.scope_exit_cap,
                            allow=args.allow_scope_exit,

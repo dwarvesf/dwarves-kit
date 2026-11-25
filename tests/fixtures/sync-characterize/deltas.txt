@@ -1,1 +1,6 @@
 3-engine-dry-run	describe-line
+1-sync-argv	apps-hint
+1-sync-argv	apps-hint
+3-engine-dry-run	unknown-app
+7-help-errors	apps-default
+7-help-errors	unknown-app

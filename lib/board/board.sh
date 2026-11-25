@@ -908,6 +908,7 @@ cmd_sync() {
   backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
   [ -f "$backlog" ] || { echo "board sync: no backlog at $backlog" >&2; exit 2; }
   . "$BOARD_DIR/../config/kit-config.sh"
+  . "$BOARD_DIR/../sync/adapters.sh"
   # git-aware repo root: BACKLOG.md lives at _meta/ in some repos and at repo
   # root in others; _repo_root_for handles both
   KIT_PROJECT_ROOT="$(_repo_root_for "$backlog")"
@@ -918,7 +919,7 @@ cmd_sync() {
   [ -n "$v" ] || v="$(kit_config_get sync.sources "")"   # older legacy alias
   if [ -z "$v" ]; then
     echo "board sync: no [sync] apps configured in $KIT_PROJECT_ROOT/.kit.toml" >&2
-    printf '  add e.g.:\n  [sync]\n  apps = "reminders"\n' >&2
+    printf '  add e.g.:\n  [sync]\n  apps = "<app>"\n' >&2
     exit 2
   fi
   args+=(--apps "$v")
@@ -992,6 +993,47 @@ cmd_sync() {
     fi
     export MULTICA_TOKEN
   fi
+  # The adapter manifests (lib/adapters/*/adapter.tsv) declare the rest: per-app filter keys, one engine
+  # flag per `opt` row, one env secret per `secret` row. A manifest error is global and loud.
+  local rows rdir rflag rkey rscope rapp rmode renv rval fks
+  rows="$(adapters_rows app)" || exit 1
+  while IFS=$'\t' read -r rdir rapp rmode; do
+    [ -n "$rapp" ] || continue
+    case "$rmode" in
+      two-way) fks="only_tags skip_tags intake" ;;
+      create-only) fks="only_tags skip_tags" ;;
+      *) fks="" ;;
+    esac
+    for fk in $fks; do
+      v="$(kit_config_get "sync.${rapp//-/_}_${fk}" "")"
+      [ -n "$v" ] && args+=(--filter "${rapp}:${fk}=${v}")
+    done
+  done <<< "$rows"
+  rows="$(adapters_rows opt)" || exit 1
+  while IFS=$'\t' read -r rdir rflag rkey rscope _; do
+    [ -n "$rflag" ] || continue
+    if [ "$rscope" = root ]; then
+      v="$(kit_config_get_root "sync.$rkey" "")"; _sync_note_shadow "sync.$rkey" "$v"
+    else
+      v="$(kit_config_get "sync.$rkey" "")"
+    fi
+    [ -n "$v" ] && args+=("--$rflag" "$v")
+  done <<< "$rows"
+  # a secret rides the environment, never argv (ps leaks argv): root-only ref, Keychain-cached read
+  # first, raw `op read` as the fallback, skipped when the variable is already set
+  rows="$(adapters_rows secret)" || exit 1
+  while IFS=$'\t' read -r rdir renv rkey; do
+    [ -n "$renv" ] || continue
+    v="$(kit_config_get_root "sync.$rkey" "")"; _sync_note_shadow "sync.$rkey" "$v"
+    if [ -n "$v" ] && [ -z "${!renv:-}" ]; then
+      if command -v secret-cache-read >/dev/null 2>&1; then
+        rval="$(secret-cache-read --ttl 21600 "$renv" "$v")"
+      else
+        rval="$(op read "$v")"
+      fi
+      export "$renv=$rval"
+    fi
+  done <<< "$rows"
   exec python3 "$BOARD_DIR/../sync/backlog_sync.py" "${args[@]}" ${fwd[@]+"${fwd[@]}"}
 }
 

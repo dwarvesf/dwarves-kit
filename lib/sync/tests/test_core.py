@@ -4,10 +4,12 @@ adapter with fake transports; live runs are recorded in docs/proof-of-done.md.
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -1376,3 +1378,182 @@ def test_describe_words_an_adopted_row_neutrally():
     p = plan_create_only(_marker_rows(), {}, bound_re=FAKE_MARKER_RE)
     assert ("= spoke     ID-1 bound to an existing remote item "
             "(pull marker), not created") in describe(p)
+
+
+# --- the engine over a fixture adapter (KIT_ADAPTERS_DIR) -----------------
+
+FAKE_DIR = Path(__file__).resolve().parent / "fixtures" / "adapters"
+
+
+@pytest.fixture
+def fake_adapters(monkeypatch):
+    """Point the loader at the neutral fixture adapter and undo what the loader leaves in the process."""
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(FAKE_DIR))
+    yield FAKE_DIR
+    sys.path[:] = before_path
+    for name in set(sys.modules) - before_mods:
+        if name.startswith("kit_adapter_"):
+            del sys.modules[name]
+
+
+def _board_and_state(tmp_path):
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD)
+    return board, tmp_path / "state"
+
+
+def _run_engine(tmp_path, *extra, apps):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    backlog_sync.main(["--apps", apps, "--backlog", str(board),
+                       "--state-root", str(state), "--dry-run", *extra])
+    return state
+
+
+@pytest.mark.parametrize("app,header", [
+    ("fake-two", "dry-run fake-two: 0 spoke items, "),
+    ("fake-create", "dry-run fake-create: "),
+    ("fake-pull", "dry-run fake-pull: 0 to intake")])
+def test_engine_syncs_a_board_through_each_fixture_mode(fake_adapters, tmp_path, capsys,
+                                                         app, header):
+    _run_engine(tmp_path, apps=app)
+    assert capsys.readouterr().out.startswith(header)
+
+
+def test_engine_flags_and_modes_come_from_the_manifest(fake_adapters, tmp_path, capsys):
+    import backlog_sync
+    with pytest.raises(SystemExit):
+        backlog_sync.main(["--help"])
+    help_text = capsys.readouterr().out
+    assert "--fake-name" in help_text and "name of the fixture store (a field with spaces)" in help_text
+    reg = backlog_sync.adapters.load()
+    assert reg.create_only_apps() == {"fake-create"} and reg.pull_only_apps() == {"fake-pull"}
+
+
+def test_build_source_asks_the_registry_first(fake_adapters):
+    import backlog_sync
+    ns = SimpleNamespace(fake_name="x", fake_url=None)
+    src = backlog_sync.build_source("fake-two", ns)
+    assert src.name == "fake-two" and not src.create_only and not src.pull_only
+    assert backlog_sync.build_source("fake-pull", ns).pull_only is True
+
+
+def test_build_source_hands_the_adapter_every_opt_and_the_context(fake_adapters, tmp_path,
+                                                                   monkeypatch):
+    import backlog_sync
+    seen = {}
+    reg = backlog_sync.adapters.load()
+    real = reg.build
+
+    def spy(app, opts, ctx):
+        seen.update(opts=dict(opts), ctx=ctx)
+        return real(app, opts, ctx)
+
+    reg.build = spy
+    monkeypatch.setenv("KIT_PROJECT_ROOT", "/some/root")
+    backlog_sync.build_source("fake-two", SimpleNamespace(fake_name="n"), reg,
+                              tmp_path / "s.json")
+    assert seen["opts"] == {"fake_name": "n", "fake_url": None}
+    assert seen["ctx"].state_path == tmp_path / "s.json"
+    assert seen["ctx"].project_root == "/some/root"
+
+
+def test_a_skipped_app_is_not_synced(fake_adapters, tmp_path, capsys):
+    _run_engine(tmp_path, "--fake-name", "skip", apps="fake-two")
+    out = capsys.readouterr().out
+    assert "fake-two: skipped (fixture)" in out and "dry-run" not in out
+
+
+def test_no_apps_is_an_error(tmp_path, capsys):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    for argv in ([], ["--apps", ""], ["--apps", " , "]):
+        with pytest.raises(SystemExit) as exc:
+            backlog_sync.main([*argv, "--backlog", str(board), "--state-root", str(state)])
+        assert exc.value.code == 2
+    assert "backlog_sync: no apps (--apps)" in capsys.readouterr().err
+    assert not state.exists()
+
+
+def test_unknown_app_exits_before_the_lock_and_syncs_nothing(fake_adapters, tmp_path, capsys):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        backlog_sync.main(["--apps", "fake-two,nosuch", "--backlog", str(board),
+                           "--state-root", str(state), "--dry-run"])
+    assert str(exc.value) == f"no adapter provides nosuch (searched: {FAKE_DIR})"
+    assert not state.exists()           # no state dir, so no lock was taken
+    assert "fake-two" not in capsys.readouterr().out
+
+
+def test_a_guard_refusal_runs_before_the_generic_checks(fake_adapters, tmp_path):
+    import backlog_sync
+    board, state = _board_and_state(tmp_path)
+    # the run also breaks the pull-only rule and names an unknown app; the guard answers first
+    with pytest.raises(SystemExit, match="refused by the fixture guard"):
+        backlog_sync.main(["--apps", "fake-pull,fake-two,nosuch", "--fake-name", "refuse",
+                           "--backlog", str(board), "--state-root", str(state), "--dry-run"])
+    assert not state.exists()
+
+
+def test_a_guard_checks_only_runs_that_name_one_of_its_apps(fake_adapters, tmp_path, capsys,
+                                                            monkeypatch):
+    other = tmp_path / "adapters"
+    shutil.copytree(FAKE_DIR, other)
+    other_dir = other / "other"
+    other_dir.mkdir()
+    (other_dir / "adapter.tsv").write_text("app\tother-app\ttwo-way\n")
+    (other_dir / "adapter.py").write_text(
+        "from __future__ import annotations\n\nfrom types import SimpleNamespace\n\n\n"
+        "def build(app, opts, ctx):\n"
+        "    return SimpleNamespace(name=app, sync_fields=True, create_only=False, pull_only=False,\n"
+        "                           read=lambda: [], apply=lambda *a, **k: {})\n")
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(other))
+    _run_engine(tmp_path, "--fake-name", "refuse", apps="other-app")
+    assert "dry-run other-app" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="refused by the fixture guard"):
+        _run_engine(tmp_path, "--fake-name", "refuse", apps="fake-two")
+
+
+def test_pull_only_fixture_app_runs_alone(fake_adapters, tmp_path):
+    with pytest.raises(SystemExit, match="fake-pull: a pull app runs alone"):
+        _run_engine(tmp_path, apps="fake-pull,fake-two")
+
+
+def test_pull_only_fixture_app_takes_no_filter(fake_adapters, tmp_path):
+    with pytest.raises(SystemExit, match="fake-pull: this app takes no --filter"):
+        _run_engine(tmp_path, "--filter", "fake-pull:only_tags=x", apps="fake-pull")
+    _run_engine(tmp_path, "--filter", "fake-two:only_tags=x", apps="fake-pull")
+
+
+def test_a_manifest_mode_must_match_the_source_object(tmp_path, monkeypatch):
+    import backlog_sync
+    d = tmp_path / "adapters" / "bad"
+    d.mkdir(parents=True)
+    (d / "adapter.tsv").write_text("app\tbad-two\ttwo-way\n")
+    (d / "adapter.py").write_text(
+        "from __future__ import annotations\n\nfrom types import SimpleNamespace\n\n\n"
+        "def build(app, opts, ctx):\n"
+        "    return SimpleNamespace(name=app, sync_fields=True, create_only=False, pull_only=True,\n"
+        "                           read=lambda: [])\n")
+    before_path, before_mods = list(sys.path), set(sys.modules)
+    monkeypatch.setenv("KIT_ADAPTERS_DIR", str(tmp_path / "adapters"))
+    try:
+        with pytest.raises(SystemExit, match="bad-two: the manifest says two-way but the source "
+                                             "object is pull-only"):
+            backlog_sync.build_source("bad-two", SimpleNamespace())
+    finally:
+        sys.path[:] = before_path
+        for name in set(sys.modules) - before_mods:
+            if name.startswith("kit_adapter_"):
+                del sys.modules[name]
+
+
+def test_create_only_fixture_app_reads_boards_with_any_prefix(fake_adapters, tmp_path, capsys):
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(BOARD.replace("ID-", "DF-"))
+    import backlog_sync
+    backlog_sync.main(["--apps", "fake-create", "--backlog", str(board),
+                       "--state-root", str(tmp_path / "s"), "--dry-run"])
+    assert "dry-run fake-create: 5 board rows, 5 to create" in capsys.readouterr().out

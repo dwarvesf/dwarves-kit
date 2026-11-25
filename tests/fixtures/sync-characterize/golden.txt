@@ -156,14 +156,14 @@ rc	2
 stderr	board sync: no [sync] apps configured in <W>/s1/unconfigured/.kit.toml
 stderr	  add e.g.:
 stderr	  [sync]
-stderr	  apps = "reminders"
+stderr	  apps = "<app>"
 ### unconfigured-empty-sync
 (engine not reached)
 rc	2
 stderr	board sync: no [sync] apps configured in <W>/s1/unconfigured-empty-sync/.kit.toml
 stderr	  add e.g.:
 stderr	  [sync]
-stderr	  apps = "reminders"
+stderr	  apps = "<app>"
 ## 2-engine-flags
 --allow-archived-closes	one-run override when a legitimate bulk archive pass closes more cards than the cap
 --allow-flips	one-run override when a legitimate bulk status flip exceeds the cap
@@ -272,7 +272,7 @@ multica ['multica_url']	multica: set multica_workspace, multica_project in [sync
 notion-taskboard []	notion-taskboard: set notion_taskboard_db in [sync] (.kit.toml) or pass --notion-taskboard-db
 notion-taskboard ['notion_taskboard_db']	notion-taskboard: set notion_taskboard_status_map (and/or notion_taskboard_status_default) in [sync]
 notion-taskboard-pull []	notion-taskboard-pull: set notion_taskboard_pull_db in [sync] (.kit.toml) or pass --notion-taskboard-pull-db
-bogus []	unknown source 'bogus'
+bogus []	no adapter provides bogus (searched: <KIT>/lib/adapters)
 ## 4-sweep
 ### no leg flags
 [<TS>] char: start
@@ -1059,13 +1059,10 @@ rc	0
 usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}
 rc	64
 ### engine without --apps
-dry-run reminders: 0 spoke items, 6 board rows
-rc	0
-stub calls:
-  osascript	-l	JavaScript	-e	Application('Reminders').lists.name().length
-  osascript	-l	JavaScript	-e	 function run(argv) {   const app = Application('Reminders');   const name = argv[0];   const names 	Backlog
+backlog_sync: no apps (--apps)
+rc	2
 ### engine with an unknown app
-unknown source 'bogus'
+no adapter provides bogus (searched: <KIT>/lib/adapters)
 rc	1
 ### sweep with an unknown flag
 board sweep: unknown arg: --bogus-flag
