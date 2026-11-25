@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# test-adapters.sh -- the module suite of lib/adapters: the manifest grammar, the Python loader
+# (lib/sync/adapters.py) and its bash twin (lib/sync/adapters.sh), the frozen core lists, and the pytest roots.
+#
+# Every adapter directory here is a fixture under a scratch dir (KIT_ADAPTERS_DIR), never the live one; no
+# case reaches a store or a service. `bin/test-affected` selects this suite for any change under lib/adapters.
+#
+# Run: bash lib/adapters/tests/test-adapters.sh
+set -uo pipefail
+
+KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-adapters-none.$$"
+PASS=0; FAIL=0
+ok()  { PASS=$((PASS+1)); printf '  PASS %s\n' "$1"; }
+bad() { FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
+eq()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; fi; }
+has() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1 (missing '$3' in '$2')" ;; esac; }
+
+W="$(mktemp -d "${TMPDIR:-/tmp}/kit-adapters.XXXXXX")" || exit 1
+W="$(cd "$W" && pwd -P)"
+trap 'command rm -rf "$W"' EXIT
+unset KIT_ADAPTERS_DIR KIT_PROJECT_ROOT DWARVES_KIT
+
+PY="$(command -v python3)"
+FIXTURE="$KIT/lib/sync/tests/fixtures/adapters"
+SH="$KIT/lib/sync/adapters.sh"
+
+# ---- readers ------------------------------------------------------------------------------------
+cat > "$W/pydump.py" <<'EOF'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+import adapters  # noqa: E402
+
+mode, arg = sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""
+try:
+    reg = adapters.load(warn=lambda m: sys.stderr.write(m + "\n"))
+    if mode == "rows":
+        for d, f in reg.rows(arg):
+            print("\t".join([d] + f))
+    elif mode == "verb":
+        hit = reg.verb(arg)
+        if hit is None:
+            sys.exit(1)
+        print("\t".join([hit[0]] + hit[1]))
+    elif mode == "const":
+        name, _, default = arg.partition("=")
+        print(reg.const(name, default))
+    elif mode == "dir":
+        print(reg.dir)
+except SystemExit as e:
+    if e.code not in (None, 0, 1):
+        sys.stderr.write(str(e.code) + "\n")
+    sys.exit(1 if e.code else 0)
+EOF
+# sh_run <bash> <dir|-> <function and args...>: run a reader function under the given bash; "-" leaves
+# KIT_ADAPTERS_DIR unset
+sh_run() {
+  local shell="$1" dir="$2"; shift 2
+  if [ "$dir" = "-" ]; then env -u KIT_ADAPTERS_DIR "$shell" -c 'set -euo pipefail; . "$0"; "$@"' "$SH" "$@"
+  else KIT_ADAPTERS_DIR="$dir" "$shell" -c 'set -euo pipefail; . "$0"; "$@"' "$SH" "$@"; fi
+}
+py_run() {  # py_run <dir|-> <mode> [arg]
+  local dir="$1"; shift
+  if [ "$dir" = "-" ]; then env -u KIT_ADAPTERS_DIR "$PY" -I "$W/pydump.py" "$KIT/lib/sync" "$@"
+  else KIT_ADAPTERS_DIR="$dir" "$PY" -I "$W/pydump.py" "$KIT/lib/sync" "$@"; fi
+}
+
+# mk <dir> <name> <printf format of the manifest> [nopy]: an adapter directory with a stub entry module
+mk() {
+  mkdir -p "$1/$2"
+  printf "$3" > "$1/$2/adapter.tsv"
+  [ "${4:-}" = nopy ] || printf 'from __future__ import annotations\n\n\ndef build(app, opts, ctx):\n    return None\n' > "$1/$2/adapter.py"
+}
+
+echo "=== files and the language floor ==="
+for f in lib/sync/adapters.py lib/sync/adapters.sh lib/adapters/README.md lib/adapters/tests/conftest.py \
+         lib/sync/tests/test_adapters.py lib/sync/tests/fixtures/adapters/fake/adapter.tsv lib/sync/tests/fixtures/adapters/fake/adapter.py; do
+  [ -f "$KIT/$f" ] && ok "$f exists" || bad "$f is missing"
+done
+cat > "$W/floor.py" <<'EOF'
+import ast
+import sys
+
+bad = []
+for path in sys.argv[1:]:
+    tree = ast.parse(open(path).read(), feature_version=(3, 9))
+    body = tree.body[1:] if tree.body and isinstance(tree.body[0], ast.Expr) and isinstance(
+        getattr(tree.body[0], "value", None), ast.Constant) and isinstance(tree.body[0].value.value, str) else tree.body
+    first = body[0] if body else None
+    if not (isinstance(first, ast.ImportFrom) and first.module == "__future__"
+            and [a.name for a in first.names] == ["annotations"]):
+        bad.append(path + ": the first statement is not `from __future__ import annotations`")
+print("\n".join(bad))
+EOF
+newpy=""
+for f in lib/sync/adapters.py lib/adapters/tests/conftest.py lib/sync/tests/test_adapters.py lib/sync/tests/fixtures/adapters/fake/adapter.py; do
+  [ -f "$KIT/$f" ] && newpy="$newpy $KIT/$f"
+done
+# shellcheck disable=SC2086
+floor_out="$("$PY" "$W/floor.py" $newpy 2>&1)"
+eq "every new Python file parses as 3.9 and starts with the future import" "$floor_out" ""
+printf 'match x:\n    case 1:\n        pass\n' > "$W/match.py"
+if "$PY" "$W/floor.py" "$W/match.py" >/dev/null 2>&1; then bad "negative control: a planted match statement passed the 3.9 parse"
+else ok "negative control: a planted match statement fails the 3.9 parse"; fi
+printf 'import os\n' > "$W/nofuture.py"
+[ -n "$("$PY" "$W/floor.py" "$W/nofuture.py")" ] && ok "negative control: a missing future import is reported" || bad "a missing future import was not reported"
+/bin/bash -n "$SH" 2>/dev/null && ok "adapters.sh parses under /bin/bash" || bad "adapters.sh does not parse under /bin/bash"
+sh_silence="$(/bin/bash -c 'set -euo pipefail; . "$0"' "$SH" 2>&1; echo "rc=$?")"
+eq "sourcing adapters.sh prints nothing and succeeds under set -euo pipefail (/bin/bash)" "$sh_silence" "rc=0"
+bash_silence="$(bash -c 'set -euo pipefail; . "$0"' "$SH" 2>&1; echo "rc=$?")"
+eq "the same under PATH bash" "$bash_silence" "rc=0"
+
+if [ "$(/bin/bash -c 'echo "${BASH_VERSINFO[0]}"')" -lt 4 ]; then
+  { cat "$SH"; printf '\ndeclare -A planted_bash4_only\n'; } > "$W/adapters-bash4.sh"
+  if /bin/bash -c 'set -euo pipefail; . "$0"' "$W/adapters-bash4.sh" >/dev/null 2>&1; then
+    bad "negative control: a planted bash 4 construct passed under /bin/bash"
+  else ok "negative control: a planted bash 4 construct (declare -A) fails under /bin/bash"; fi
+else ok "/bin/bash is bash 4 or newer here: the bash 3.2 control is skipped"; fi
+
+echo "=== both readers on the fixture adapter ==="
+for kind in app opt secret verb sweep-opt leg const hook; do
+  p="$(py_run "$FIXTURE" rows "$kind" 2>&1)"
+  for shell in bash /bin/bash; do
+    b="$(sh_run "$shell" "$FIXTURE" adapters_rows "$kind" 2>&1)"
+    eq "rows of kind $kind agree ($shell)" "$b" "$p"
+  done
+done
+[ -n "$(py_run "$FIXTURE" rows app)" ] && ok "the fixture lists its three apps" || bad "the fixture lists no app"
+eq "a verb resolves the same" "$(sh_run /bin/bash "$FIXTURE" adapters_verb fakeverb)" "$(py_run "$FIXTURE" verb fakeverb)"
+eq "a constant resolves the same" "$(sh_run /bin/bash "$FIXTURE" adapters_const inbox-heading dflt)" "$(py_run "$FIXTURE" const 'inbox-heading=dflt')"
+eq "the constant keeps its field with spaces" "$(sh_run bash "$FIXTURE" adapters_const inbox-heading dflt)" "### Fixture inbox"
+eq "a missing constant falls back to the default" "$(sh_run bash "$FIXTURE" adapters_const nosuch dflt)" "dflt"
+eq "a constant defaults the same in Python" "$(py_run "$FIXTURE" const 'nosuch=dflt')" "dflt"
+sh_run bash "$FIXTURE" adapters_verb next >/dev/null 2>&1 && bad "a core verb resolved through the adapters" || ok "a core verb never resolves (returns 1 at once)"
+sh_run bash "$FIXTURE" adapters_verb nosuchverb >/dev/null 2>&1 && bad "an unknown verb resolved" || ok "an unknown verb returns 1"
+eq "the help text keeps its spaces in a field" "$(sh_run bash "$FIXTURE" adapters_rows opt | head -n 1 | awk -F'\t' '{print $NF}')" "name of the fixture store (a field with spaces)"
+
+# CRLF and a trailing field: the same rows come back
+mkdir -p "$W/crlf/fake"; cp "$FIXTURE/fake/adapter.py" "$W/crlf/fake/"
+sed 's/$/\r/' "$FIXTURE/fake/adapter.tsv" > "$W/crlf/fake/adapter.tsv"
+for kind in app opt const; do
+  eq "CRLF manifest: rows of kind $kind match the LF fixture (bash)" "$(sh_run bash "$W/crlf" adapters_rows "$kind" | sed "s#$W/crlf#$FIXTURE#")" "$(py_run "$FIXTURE" rows "$kind")"
+  eq "CRLF manifest: rows of kind $kind match the LF fixture (python)" "$(py_run "$W/crlf" rows "$kind" | sed "s#$W/crlf#$FIXTURE#")" "$(py_run "$FIXTURE" rows "$kind")"
+done
+
+# negative control: change one row after the Python run, the comparison must fail
+cp -R "$FIXTURE" "$W/mutant"
+sed 's/two-way/pull-only/' "$FIXTURE/fake/adapter.tsv" > "$W/mutant/fake/adapter.tsv"
+if [ "$(sh_run bash "$W/mutant" adapters_rows app | sed "s#$W/mutant#$FIXTURE#")" = "$(py_run "$FIXTURE" rows app)" ]; then
+  bad "negative control: a changed mode still compared equal"; else ok "negative control: a changed mode makes the readers differ"; fi
+
+echo "=== each grammar rule: both readers fail with the same line ==="
+mkdir -p "$W/bad"
+# bad_case <label> <expected fragment>: the adapter dir $W/bad/<label> is already built
+bad_case() {
+  local d="$W/bad/$1" b p brc prc
+  b="$(sh_run bash "$d" adapters_rows app 2>&1 >/dev/null)"; brc=$?
+  p="$(py_run "$d" rows app 2>&1 >/dev/null)"; prc=$?
+  b="$(printf '%s' "$b" | grep '^adapters:' | head -n 1)"; p="$(printf '%s' "$p" | grep '^adapters:' | head -n 1)"
+  if [ "$brc" -ne 0 ] && [ "$prc" -ne 0 ] && [ "$b" = "$p" ] && [ -n "$b" ]; then
+    case "$b" in *"$2"*) ok "$1: $2" ;; *) bad "$1: wanted '$2', both readers said: $b" ;; esac
+  else bad "$1: readers disagree or one passed (bash rc=$brc '$b', python rc=$prc '$p')"; fi
+}
+mk "$W/bad/scope" a 'opt\tflag-a\tkey_a\tmaybe\thelp\n';                           bad_case scope "bad scope 'maybe'"
+mk "$W/bad/env" a 'secret\tlower\tkey_a\n';                                       bad_case env "bad ENV name 'lower'"
+mk "$W/bad/envname" a 'secret\tPATH\tkey_a\n';                                    bad_case envname "reserved ENV name 'PATH'"
+mk "$W/bad/envprefix" a 'secret\tKIT_TOKEN\tkey_a\n';                             bad_case envprefix "reserved ENV prefix 'KIT_' in 'KIT_TOKEN'"
+mk "$W/bad/sweepenv" a 'sweep-opt\tflag-a\tSWEEP_X\thelp\n';                      bad_case sweepenv "reserved ENV prefix 'SWEEP_'"
+mk "$W/bad/dotdot" a 'verb\tgo\t../x.sh\n';                                       bad_case dotdot "bad script path '../x.sh'"
+mk "$W/bad/abs" a 'verb\tgo\t/bin/x\n';                                           bad_case abs "bad script path '/bin/x'"
+mk "$W/bad/legdotdot" a 'leg\tlast\tlegs/../../x.sh\n';                           bad_case legdotdot "bad script path"
+mkdir -p "$W/bad/symlink/a"; : > "$W/bad/symlink/real.sh"; ln -s ../real.sh "$W/bad/symlink/a/x.sh"
+mk "$W/bad/symlink" a 'verb\tgo\tx.sh\n';                                         bad_case symlink "script 'x.sh' is a symlink"
+mkdir -p "$W/bad/legsym/a"; : > "$W/bad/legsym/real.sh"; ln -s ../real.sh "$W/bad/legsym/a/l.sh"
+mk "$W/bad/legsym" a 'leg\tlast\tl.sh\n';                                         bad_case legsym "script 'l.sh' is a symlink"
+mk "$W/bad/dirname" Bad_Name 'verb\tgo\tx.sh\n';                                  bad_case dirname "bad adapter directory name 'Bad_Name'"
+mk "$W/bad/dupflag" a 'opt\tflag-a\tkey_a\t-\th\nopt\tflag-a\tkey_b\t-\th\n';      bad_case dupflag "duplicate flag 'flag-a'"
+mk "$W/bad/dupkey" a 'opt\tflag-a\tkey_a\t-\th\nopt\tflag-b\tkey_a\t-\th\n';       bad_case dupkey "duplicate key 'key_a'"
+mk "$W/bad/dupconst" a 'const\tmirror-label\tX\nconst\tmirror-label\tY\n';        bad_case dupconst "duplicate const 'mirror-label'"
+mk "$W/bad/duphook" a 'app\tx\ttwo-way\nhook\tbody_expander\nhook\tbody_expander\n'; bad_case duphook "duplicate hook 'body_expander'"
+mk "$W/bad/dupapp" a 'app\tx\ttwo-way\n'; mk "$W/bad/dupapp" b 'app\tx\ttwo-way\n'; bad_case dupapp "duplicate app 'x'"
+mk "$W/bad/dupverb" a 'verb\tgo\tx.sh\n'; mk "$W/bad/dupverb" b 'verb\tgo\ty.sh\n'; bad_case dupverb "duplicate verb 'go'"
+mk "$W/bad/dupenv" a 'secret\tFAKE_A\tkey_a\nsweep-opt\tflag-a\tFAKE_A\thelp\n'; bad_case dupenv "duplicate ENV 'FAKE_A'"
+mk "$W/bad/dupsweep" a 'sweep-opt\tflag-a\tFAKE_A\th\nsweep-opt\tflag-a\tFAKE_B\th\n'; bad_case dupsweep "duplicate sweep flag 'flag-a'"
+mk "$W/bad/coreflag" a 'opt\tapps\tfake_apps\t-\th\n';                             bad_case coreflag "flag 'apps' is a core engine flag"
+mk "$W/bad/coredest" a 'opt\tzzz\tdry_run\t-\th\n';                               bad_case coredest "key 'dry_run' is a core engine dest"
+mk "$W/bad/coresweep" a 'sweep-opt\tposter\tFAKE_P\th\n';                         bad_case coresweep "flag 'poster' is a core sweep flag"
+mk "$W/bad/secreturl" a 'secret\tFAKE_T\tfake_ref\nopt\tfake-url\tfake_url\t-\th\n'; bad_case secreturl "opt key 'fake_url' has scope - and sits beside a secret row"
+mk "$W/bad/secrettarget" a 'opt\tfake-target\tfake_target\t-\th\nsecret\tFAKE_T\tfake_ref\n'; bad_case secrettarget "opt key 'fake_target' has scope -"
+mk "$W/bad/coreverb" a 'verb\tnext\tx.sh\n';                                      bad_case coreverb "verb 'next' is a core verb"
+mk "$W/bad/mode" a 'app\tx\tsideways\n';                                          bad_case mode "bad mode 'sideways'"
+mk "$W/bad/arity" a 'app\tx\n';                                                   bad_case arity "app needs 2 fields"
+mk "$W/bad/arityopt" a 'opt\tflag-a\tkey_a\t-\n';                                 bad_case arityopt "opt needs at least 4 fields"
+mk "$W/bad/empty" a 'app\tx\t\n';                                                 bad_case empty "empty field"
+mk "$W/bad/nopy" a 'app\tx\ttwo-way\n' nopy;                                      bad_case nopy "adapter.py is missing"
+mk "$W/bad/nopyhook" a 'hook\tguard\n' nopy;                                      bad_case nopyhook "adapter.py is missing"
+mk "$W/bad/phase" a 'leg\tmiddle\tlegs/x.sh\n';                                   bad_case phase "bad phase 'middle'"
+mk "$W/bad/hookname" a 'hook\tmystery\n';                                         bad_case hookname "bad hook name 'mystery'"
+mk "$W/bad/constname" a 'const\tBad\tX\n';                                        bad_case constname "bad const name 'Bad'"
+mk "$W/bad/flagname" a 'opt\tBad\tkey_a\t-\th\n';                                 bad_case flagname "bad flag 'Bad'"
+mk "$W/bad/keyname" a 'opt\tflag-a\tBad\t-\th\n';                                 bad_case keyname "bad key 'Bad'"
+mk "$W/bad/appname" a 'app\tBad\ttwo-way\n';                                      bad_case appname "bad app name 'Bad'"
+mk "$W/bad/verbname" a 'verb\tBad\tx.sh\n';                                       bad_case verbname "bad verb 'Bad'"
+
+# the fixed row loads (the negative control of the bad-row table)
+mk "$W/good" a 'opt\tflag-a\tkey_a\t-\thelp\n'
+[ "$(sh_run bash "$W/good" adapters_rows opt | wc -l | tr -d ' ')" = 1 ] && [ -n "$(py_run "$W/good" rows opt)" ] \
+  && ok "the same row with the fault fixed loads in both readers" || bad "a valid row did not load"
+
+# an unknown kind: the loader warns once and loads the rest; the bash reader stays silent
+mk "$W/unknown" a 'mystery\tx\napp\tx\ttwo-way\n'
+perr="$(py_run "$W/unknown" rows app 2>&1 >/dev/null)"
+has "an unknown row kind warns from the Python loader" "$perr" "unknown row kind 'mystery' (ignored)"
+eq "the rest of that adapter still loads (python)" "$(py_run "$W/unknown" rows app 2>/dev/null | awk -F'\t' '{print $2}')" "x"
+eq "the bash reader loads it silently" "$(sh_run bash "$W/unknown" adapters_rows app 2>&1 | awk -F'\t' '{print $2}')" "x"
+
+echo "=== the directory ==="
+for shell in bash /bin/bash; do
+  rc=0; msg="$(KIT_ADAPTERS_DIR=rel/dir "$shell" -c '. "$0"; adapters_dir' "$SH" 2>&1)" || rc=$?
+  eq "a relative KIT_ADAPTERS_DIR is refused ($shell)" "$rc:$msg" "1:adapters: KIT_ADAPTERS_DIR must be an absolute path"
+  rc=0; msg="$(KIT_ADAPTERS_DIR= "$shell" -c '. "$0"; adapters_dir' "$SH" 2>&1)" || rc=$?
+  eq "an empty KIT_ADAPTERS_DIR is refused ($shell)" "$rc:$msg" "1:adapters: KIT_ADAPTERS_DIR must be an absolute path"
+done
+rc=0; msg="$(KIT_ADAPTERS_DIR=rel/dir "$PY" -I "$W/pydump.py" "$KIT/lib/sync" dir 2>&1)" || rc=$?
+eq "a relative KIT_ADAPTERS_DIR is refused (python)" "$rc:$msg" "1:adapters: KIT_ADAPTERS_DIR must be an absolute path"
+rc=0; msg="$(KIT_ADAPTERS_DIR= "$PY" -I "$W/pydump.py" "$KIT/lib/sync" dir 2>&1)" || rc=$?
+eq "an empty KIT_ADAPTERS_DIR is refused (python)" "$rc:$msg" "1:adapters: KIT_ADAPTERS_DIR must be an absolute path"
+eq "the default is lib/adapters of the running kit (bash)" "$(sh_run bash - adapters_dir)" "$KIT/lib/adapters"
+eq "the default is lib/adapters of the running kit (python)" "$(py_run - dir)" "$KIT/lib/adapters"
+# the decoy: a fixture repo with its own lib/adapters, cwd and the project and kit variables pointing at it
+mkdir -p "$W/decoyrepo/lib/adapters/decoy"
+printf 'app\tdecoy-app\ttwo-way\n' > "$W/decoyrepo/lib/adapters/decoy/adapter.tsv"
+printf 'from __future__ import annotations\nopen(%s, "w").write("ran")\n\n\ndef build(app, opts, ctx):\n    return None\n' "'$W/decoy.marker'" > "$W/decoyrepo/lib/adapters/decoy/adapter.py"
+dec="$(cd "$W/decoyrepo" && KIT_PROJECT_ROOT="$W/decoyrepo" DWARVES_KIT="$W/decoyrepo" env -u KIT_ADAPTERS_DIR "$PY" -I "$W/pydump.py" "$KIT/lib/sync" rows app)"
+eq "python never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" ""
+dec="$(cd "$W/decoyrepo" && KIT_PROJECT_ROOT="$W/decoyrepo" DWARVES_KIT="$W/decoyrepo" env -u KIT_ADAPTERS_DIR bash -c '. "$0"; adapters_rows app' "$SH")"
+eq "bash never loads a decoy adapter from cwd, KIT_PROJECT_ROOT or DWARVES_KIT" "$dec" ""
+[ ! -e "$W/decoy.marker" ] && ok "the decoy module never ran" || bad "the decoy adapter module ran"
+# a missing directory is zero adapters and silent; an unreadable one is a load error
+eq "a missing directory loads zero adapters silently (bash)" "$(sh_run bash "$W/nosuchdir" adapters_rows app 2>&1; echo "rc=$?")" "rc=0"
+eq "a missing directory loads zero adapters silently (python)" "$(py_run "$W/nosuchdir" rows app 2>&1; echo "rc=$?")" "rc=0"
+mkdir -p "$W/locked/a"; printf 'app\tx\ttwo-way\n' > "$W/locked/a/adapter.tsv"; chmod 000 "$W/locked"
+if [ -r "$W/locked" ]; then ok "unreadable directory: skipped (this account can read it anyway)"
+else
+  b="$(sh_run bash "$W/locked" adapters_rows app 2>&1 >/dev/null)"; p="$(py_run "$W/locked" rows app 2>&1 >/dev/null)"
+  eq "an unreadable directory is a load error with one line (bash)" "$b" "adapters: cannot read $W/locked"
+  eq "an unreadable directory is a load error with one line (python)" "$p" "adapters: cannot read $W/locked"
+fi
+chmod 755 "$W/locked"
+# the kit installs lib through a symlink on this host: the default directory still resolves physically
+mkdir -p "$W/linkkit"; ln -s "$KIT/lib" "$W/linkkit/lib"
+eq "bash resolves the default directory through a symlinked lib" "$(env -u KIT_ADAPTERS_DIR bash -c '. "$0"; adapters_dir' "$W/linkkit/lib/sync/adapters.sh")" "$KIT/lib/adapters"
+ln -s "$KIT/lib/sync/adapters.sh" "$W/adapters-link.sh"
+eq "bash resolves the default directory through a symlinked file" "$(env -u KIT_ADAPTERS_DIR bash -c '. "$0"; adapters_dir' "$W/adapters-link.sh")" "$KIT/lib/adapters"
+eq "python resolves the default directory through a symlinked lib" "$(env -u KIT_ADAPTERS_DIR "$PY" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import adapters; print(adapters.adapters_dir())' "$W/linkkit/lib/sync")" "$KIT/lib/adapters"
+
+echo "=== the real manifests ==="
+real=0
+for m in "$KIT"/lib/adapters/*/adapter.tsv; do
+  [ -f "$m" ] || continue
+  real=$((real+1))
+done
+for kind in app opt secret verb sweep-opt leg const hook; do
+  eq "the real set: rows of kind $kind agree (bash, python)" "$(sh_run bash - adapters_rows "$kind" 2>&1)" "$(py_run - rows "$kind" 2>&1)"
+done
+ok "the real set holds $real adapter manifest(s); the loader skips lib/adapters/tests and docs"
+
+echo "=== the frozen core lists ==="
+# CORE_VERBS: the main() labels of board.sh that are not adapter verbs, plus the first token of each alternative
+# in the backlog.sh usage braces. Until the bridge verbs move out of main(), five labels are adapter verbs by
+# design and are excluded here: mirror status writeback mirror-cleanup hermes.
+main_labels="$(awk '/^main\(\) \{/{m=1;next} m && /^}/{m=0} m && /^    [-a-z|]+\)/{sub(/^    /,""); sub(/\).*/,""); print}' "$KIT/lib/board/board.sh" | tr '|' '\n' | grep -E '^[a-z][a-z-]*$')"
+usage_line="$(grep -m1 'usage: backlog.sh {' "$KIT/lib/board/backlog.sh")"
+backlog_verbs="$(printf '%s' "$usage_line" | sed 's/.*usage: backlog.sh {//; s/}.*//' | tr '|' '\n' | awk '{print $1}')"
+expected="$(printf '%s\n%s\n' "$main_labels" "$backlog_verbs" | grep -vxE 'mirror|status|writeback|mirror-cleanup|hermes' | sort -u | tr '\n' ' ')"
+actual="$(bash -c '. "$0"; printf "%s\n" $CORE_VERBS' "$SH" | sort -u | tr '\n' ' ')"
+eq "CORE_VERBS equals the main() labels and the backlog.sh verbs (minus the adapter verbs)" "$actual" "$expected"
+cp "$SH" "$W/adapters-mut.sh"; sed -i.bak 's/^CORE_VERBS="all /CORE_VERBS="/' "$W/adapters-mut.sh"
+mut="$(bash -c '. "$0"; printf "%s\n" $CORE_VERBS' "$W/adapters-mut.sh" | sort -u | tr '\n' ' ')"
+[ "$mut" != "$expected" ] && ok "negative control: dropping a verb from CORE_VERBS breaks the equality" || bad "a dropped core verb still compared equal"
+engine_core="$(grep -oE 'add_argument\([^)]*' "$KIT/lib/sync/backlog_sync.py" | grep -oE '"--[a-z][a-z-]*"' | tr -d '"' | sed 's/^--//' | grep -vE '^(list|notion-|github-repo|hermes-|multica-)' | sort -u | tr '\n' ' ')"
+want_engine="$(bash -c '. "$0"; printf "%s\n" $ADAPTERS_ENGINE_FLAGS' "$SH" | grep -vx help | sort -u | tr '\n' ' ')"
+eq "ADAPTERS_ENGINE_FLAGS equals the engine flags that stay core" "$engine_core" "$want_engine"
+sweep_flags="$(awk '/^while \[ \$# -gt 0 \]; do case/{m=1;next} m && /^esac; done/{m=0} m' "$KIT/lib/sync/sweep/board-sweep" | grep -oE '^  --?[a-z][a-z|-]*\)' | tr -d ' )' | tr '|' '\n' | grep -E '^--' | sed 's/^--//' | grep -vxE 'mirror-hermes-home|mirror-snapshot|expire-kinds-file' | sort -u | tr '\n' ' ')"
+want_sweep="$(bash -c '. "$0"; printf "%s\n" $ADAPTERS_SWEEP_FLAGS' "$SH" | sort -u | tr '\n' ' ')"
+eq "ADAPTERS_SWEEP_FLAGS equals the sweep flags that stay core" "$sweep_flags" "$want_sweep"
+
+echo "=== the pytest roots ==="
+uv run --no-project --with pytest -- pytest "$KIT/lib/adapters/tests" -q > "$W/pytest.out" 2>&1; prc=$?
+if [ "$prc" -eq 0 ] || [ "$prc" -eq 5 ]; then ok "pytest lib/adapters/tests: exit $prc (5 means no tests yet)"
+else bad "pytest lib/adapters/tests exit $prc: $(tail -n 3 "$W/pytest.out" | tr '\n' ' ')"; fi
+
+printf '=== %d passed, %d failed ===\n' "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ]

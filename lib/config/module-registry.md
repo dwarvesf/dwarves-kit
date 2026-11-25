@@ -207,12 +207,13 @@ real reader consumes it today (all rows below are, except where noted).
 
 All resolved in `board.sh cmd_sync` via `kit_config_get` at invocation and
 passed to the python engine as flags (the engine reads no TOML; ADR-0034
-single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
+single-reader fence). One env var, `KIT_ADAPTERS_DIR`; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push, not part of the two-way mesh. `notion-taskboard-pull` is the opposite posture, a read-only intake FROM a foreign board; it runs alone and the engine refuses an invocation that lists it beside any other app. |
 | - | sync.mode | `"manual"` | [impl] | sync | `manual` (default) or `cron`. Read by `lib/sync/deploy/macos/install` (kit ID-289): a repo must set `mode = "cron"` before that installer will render or load a per-repo scheduled-sync LaunchAgent; any other value is a clean refusal, not a silent fallthrough. Not read by `board.sh cmd_sync` itself -- manual `board sync` runs are unaffected by this key. ALSO re-read live by the installed `board-sync-cron` launcher on every scheduled run: flipping `mode` back to `"manual"` after install makes the next scheduled run skip cleanly (exit 0, logged) rather than silently keep syncing against a config that says it shouldn't. |
+| KIT_ADAPTERS_DIR | env-only | `lib/adapters/` of the running kit | [impl] | sync | `lib/sync/adapters.py` and `lib/sync/adapters.sh`: the one directory the adapter loader scans (an absolute path; empty or relative exits 1). It replaces the in-tree directory, it does not add to it, and no config key selects it. It has the trust of `PATH`: it picks code that runs with the caller's environment, so never point it at a path a project or another account can write. |
 | - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
 | - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |

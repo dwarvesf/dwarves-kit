@@ -1,0 +1,14 @@
+# a neutral fixture adapter: one app of each mode, and one of each other row kind
+app	fake-two	two-way
+app	fake-create	create-only
+app	fake-pull	pull-only
+opt	fake-name	fake_name	-	name of the fixture store (a field with spaces)
+opt	fake-url	fake_url	root	base URL of the fixture service
+secret	FAKE_TOKEN	fake_token_ref
+verb	fakeverb	run.sh	first-arg
+sweep-opt	fake-home	FAKE_HOME	fixture store for the legs
+leg	after-sync	legs/fake.sh
+const	mirror-label	Fixture
+const	inbox-heading	### Fixture inbox
+hook	guard
+hook	body_expander
