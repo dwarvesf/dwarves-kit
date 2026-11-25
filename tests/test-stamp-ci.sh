@@ -164,7 +164,19 @@ expect "the trigger is pull_request" grep -qx '  pull_request:' "$CIA"
 expect "no pull_request_target and no workflow_dispatch" bash -c "! grep -Eq 'pull_request_target|workflow_dispatch' '$CIA'"
 expect "the job changes exists" grep -qx '  changes:' "$CIA"
 expect "the job pr-shape exists" grep -qx '  pr-shape:' "$CIA"
-expect "the changes job has no if: (it runs on every pull request)" bash -c "awk '/^  changes:/ { j = 1; next } /^  [a-z]/ { j = 0 } j && /^    if:/ { bad = 1 } END { exit bad }' '$CIA'"
+job_text() { awk -v j="$2" '$0 == "  " j ":" { g = 1; next } g && /^  [a-z#]/ { exit } g' "$1"; }
+for j in changes pr-shape tests; do
+  expect "the job $j runs only for a pull request from this repo (fork guard)" bash -c "$(declare -f job_text); job_text '$CIA' $j | grep -qxF '    if: github.event.pull_request.head.repo.full_name == github.repository'"
+done
+expect "the workflow has the three jobs changes, pr-shape and tests" grep -qx '  tests:' "$CIA"
+expect "the pr-shape job runs none of the pull request's scripts/test-*.sh" bash -c "$(declare -f job_text); ! job_text '$CIA' pr-shape | grep -q 'scripts/test-'"
+expect "the changes job runs none of the pull request's scripts/test-*.sh" bash -c "$(declare -f job_text); ! job_text '$CIA' changes | grep -q 'scripts/test-'"
+expect "the tests job runs the pull request's scripts/test-*.sh" bash -c "$(declare -f job_text); job_text '$CIA' tests | grep -q 'for t in scripts/test-\*.sh'"
+expect "the tests job never reads the gate directory or RUNNER_TEMP" bash -c "$(declare -f job_text); ! job_text '$CIA' tests | grep -q 'RUNNER_TEMP'"
+expect "neither gate job executes a file from the checkout except through git show" bash -c "$(declare -f job_text); for j in changes pr-shape; do job_text '$CIA' \$j | grep -E '^ +(run: )?(bash|sh|source|\\.) ' | grep -vE 'bash -c \"\\\$\(cat \"\\\$RUNNER_TEMP/gate/check-owners.sh\"\)\"|bash \"\\\$RUNNER_TEMP/gate/pr-shape.sh\"' | grep -q . && exit 1; done; exit 0"
+expect "the header says the workflow file itself comes from the pull request" grep -q 'a pull request can edit THIS file' "$CIA"
+expect "the header says to use an ephemeral runner and not a public repo" bash -c "grep -q 'ephemeral runner or a container job' '$CIA' && grep -q 'Not for public repos' '$CIA'"
+expect "the header says a skipped job leaves its check missing and the merge guard refuses" grep -q 'A skipped job leaves its check missing' "$CIA"
 expect "the changes job exposes the product output" grep -qF 'product: ${{ steps.filter.outputs.product }}' "$CIA"
 expect "the end of the file shows where the repo's own jobs go" grep -q 'own build and test jobs go here' "$CIA"
 expect "the pr-shape job gets the title and body through env: entries" bash -c "grep -qxF '          PR_TITLE: \${{ github.event.pull_request.title }}' '$CIA' && grep -qxF '          PR_BODY: \${{ github.event.pull_request.body }}' '$CIA'"
@@ -322,9 +334,9 @@ expect "the copy aside is the base text" grep -qx 'echo base-version' "$WORK/rt-
 expect "the step says which revision the copy came from" grep -q "gate: scripts/pr-shape.sh is the copy from base $BASE" "$WORK/shape1.out"
 ROOT_C="$(gi "$G" commit-tree -m empty "$(gi "$G" hash-object -t tree -w /dev/null)")"
 gate_step shape2 "Take the PR shape check from the base revision" "$ROOT_C"
-expect "a base without the script falls back to the pull request's copy" [ "$grc" -eq 0 ]
-expect "the fallback copy is the pull request's" grep -qx 'echo weak-version' "$WORK/rt-shape2/gate/pr-shape.sh"
-expect "the fallback says so" grep -q "base has no scripts/pr-shape.sh, using the PR's copy" "$WORK/shape2.out"
+expect "a base without the script fails the step (the bootstrap pull request is merged by hand)" [ "$grc" -ne 0 ]
+expect "no copy of the pull request's script was taken" test ! -s "$WORK/rt-shape2/gate/pr-shape.sh"
+expect "the failure says to merge the first stamp pull request by hand" grep -q 'Merge it by hand' "$WORK/shape2.err"
 gate_step shape3 "Take the PR shape check from the base revision" "$(printf '%040d' 0)"
 expect "a base revision missing from the checkout fails the step" [ "$grc" -ne 0 ]
 expect "a missing base revision is named" grep -q 'is not in this checkout' "$WORK/shape3.err"
