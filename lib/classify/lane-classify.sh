@@ -524,13 +524,23 @@ deescalate() {
 # list and the added lines are scanned in ONE pass, so the cost stays flat as the diff grows (the
 # hook has a short timeout that fails open). The project's lane data is read from <root>.
 _DOC_AWK='cur ~ /\.(md|markdown|txt|rst|adoc)$/ || cur ~ /(^|\/)docs\//'
+# A floor that cannot run its own tools must not answer "no hit": print a hit instead.
+_floor_tools_ok() {
+  local t
+  for t in git awk sed tr grep wc; do
+    command -v "$t" >/dev/null 2>&1 || { printf 'full tools-missing: %s\n' "$t"; return 1; }
+  done
+  return 0
+}
 floor() {
   local root="${1:-}" base="${2:-}" head="${3:-HEAD}" tmp
   [ -n "$root" ] || { echo "usage: lane-classify.sh floor <root> [<base> [<head>]]" >&2; return 64; }
+  _floor_tools_ok || return 0   # prints `full tools-missing: <name>` itself
   export KIT_PROJECT_ROOT="$root"
+  export GIT_NO_REPLACE_OBJECTS=1   # a `git replace` ref must not change what any floor read sees
   [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
   [ -n "$base" ] || return 0
-  tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || return 0
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || { printf 'full tools-missing: tmpdir\n'; return 0; }
   _floor_scan "$root" "$base" "$head" "$tmp"
   rm -rf "$tmp"   # the scratch dir this call made; no RETURN trap, which would outlive the function
   return 0
@@ -541,7 +551,7 @@ floor() {
 # into docs/, and no attributes file.
 _floor_git() {
   local root="$1"; shift
-  env -u GIT_EXTERNAL_DIFF git -C "$root" -c core.quotePath=false -c color.diff=false -c color.ui=false \
+  env -u GIT_EXTERNAL_DIFF git --no-replace-objects -C "$root" -c core.quotePath=false -c color.diff=false -c color.ui=false \
     -c diff.noprefix=false -c diff.mnemonicPrefix=false -c diff.renames=false -c diff.external= \
     -c core.attributesFile=/dev/null "$@"
 }
@@ -700,11 +710,11 @@ function stepkey(t,   v) {
   if (t == "with:") { once(sk, "with"); wopen = 1; split("", wk); return }
   if (t == "run: |") { once(sk, "run"); inblk = 1; blkn = 0; return }
   if (t ~ /^run: /) { v = substr(t, 6); if (v !~ /^[A-Za-z0-9._\/-][A-Za-z0-9 ._\/=+,@"'$()&|;<>*-]*$/) bad("run value"); once(sk, "run"); return }
-  if (t ~ /^uses: actions\/[A-Za-z0-9_-]+@[0-9a-f]+$/) { v = t; sub(/^.*@/, "", v); if (length(v) != 40) bad("action pin"); once(sk, "uses"); return }   # chk:F4
+  if (t ~ /^uses: actions\/(checkout|setup-[A-Za-z0-9_-]+)@[0-9a-f]+$/) { v = t; sub(/^.*@/, "", v); if (length(v) != 40) bad("action pin"); once(sk, "uses"); return }   # chk:F4
   if (t ~ /^name: /) { v = substr(t, 7); if (!okname(v)) bad("step name"); once(sk, "name"); return }
   if (t ~ /^shell: (bash|sh)$/) { once(sk, "shell"); return }
   if (t ~ /^working-directory: [A-Za-z0-9][A-Za-z0-9 ._\/-]*$/) { once(sk, "working-directory"); return }
-  bad("step key outside the grammar")
+  bad("step key outside the grammar")   # chk:PIN
 }
 function top(t,   v) {
   sec = ""
@@ -784,7 +794,7 @@ function jobl(ind, t,   v) {
   if (ind == 0) { top(t); next }
   if (sec == "on") { onl(ind, t); next }
   if (sec == "perm") { if (ind == 2 && t == "contents: read" && !permc) { permc = 1; next }
-    bad("permissions entry outside the grammar") }
+    bad("permissions entry outside the grammar") }   # chk:PERM
   if (sec == "jobs") { jobl(ind, t); next }
   bad("indented line outside a section")
 }
@@ -792,43 +802,109 @@ END {
   if (failed) exit 1
   if (inblk && blkn == 0) bad("empty block scalar")
   jobend()
-  if (!seen["name"] || !seen["on"] || !seen["jobs"] || !seen["permissions"] || !(permok || permc)) bad("a required section is missing")   # chk:F2
+  if (!seen["name"] || !seen["on"] || !seen["jobs"] || !seen["permissions"] || !(permok || permc)) bad("a required section is missing")   # chk:F2 PERM EMPTY
   if (nev < 1 || nj < 1) bad("no event or no job")
   for (n in names) print n
 }
 AWK
-# The name set of a workflow file at some revision: every name value, every key at indent 1 or more, every list
-# item and flow-list entry, each also cut before " (" and before "${{", and its last " / " segment. Broad on
-# purpose: a false collision keeps the floor, a missed one would let a new job borrow a required check's name.
-read -r -d '' _WF_BASENAMES <<'AWK' || true
-function add(v,   p, n, seg, i, s) {
-  sub(/ +#.*$/, "", v); gsub(/^["' ]+/, "", v); gsub(/["' ,]+$/, "", v)
-  if (v == "") return
-  if (v ~ /^\[.*\]$/) { n = split(substr(v, 2, length(v) - 2), seg, ","); for (i = 1; i <= n; i++) add(seg[i]); return }
+# The base workflows are files we do not control, so each is read by "anything we cannot classify keeps the
+# floor". The program prints one lowercased glob per name that could become a check name (the workflow name,
+# each job key, each job-level `name:`; each `${{ ... }}` becomes `*`) and exits 3 on the first line it cannot
+# classify: a `workflow_run` anywhere, a document marker, a tab, a top-level line that is not a plain key, an
+# inline `jobs:`, a quoted or complex key, a job key that is not `[A-Za-z0-9_-]+:`, a job-level `uses:`, a name
+# value that is empty, a block or folded scalar, an anchor, an alias, a tag or a flow value.
+read -r -d '' _WF_BASECHECK <<'AWK' || true
+function unsafe(m) { print "unclassifiable base line " NR ": " m > "/dev/stderr"; failed = 1; exit 3 }
+function ign(m) { }
+function add(v,   p, n, seg) {
+  gsub(/^ +| +$/, "", v); if (v == "") return
   out[v] = 1
   p = index(v, " ("); if (p > 0) out[substr(v, 1, p - 1)] = 1
-  p = index(v, "${{"); if (p > 0) { s = substr(v, 1, p - 1); gsub(/ +$/, "", s); if (s != "") out[s] = 1 }
   n = split(v, seg, " / "); if (n > 1) out[seg[n]] = 1
 }
-{ l = tolower($0); sub(/\r$/, "", l)
-  if (match(l, /^[ -]*name:[ ]*/)) add(substr(l, RLENGTH + 1))
-  if (match(l, /^ +[a-z0-9_.-]+:/)) { k = substr(l, 1, RLENGTH - 1); gsub(/^ +/, "", k); add(k) }
-  if (match(l, /^ *- +/)) add(substr(l, RLENGTH + 1))
-  if (match(l, /\[[^]]*\]/)) add(substr(l, RSTART, RLENGTH))
+function glob(v,   o, i, j) {
+  o = ""
+  while ((i = index(v, "${{")) > 0) {
+    j = index(substr(v, i), "}}")
+    if (j == 0) unsafe("unterminated expression")   # chk:R3
+    o = o substr(v, 1, i - 1) "*"; v = substr(v, i + j + 1)
+  }
+  return o v
 }
-END { for (v in out) print v }
+function nameval(raw,   v, c) {
+  v = raw; sub(/ +#.*$/, "", v); gsub(/^ +| +$/, "", v)
+  if (v == "") unsafe("empty name value")   # chk:R3
+  c = substr(v, 1, 1)
+  if (c ~ /[|>&*!{\[%@`?]/) unsafe("name value shape")   # chk:R3
+  if (c == "\"" || c == "'") {
+    if (length(v) < 2 || substr(v, length(v)) != c) unsafe("quoted name")   # chk:R3
+    v = substr(v, 2, length(v) - 2)
+    if (index(v, "\\") || index(v, c)) unsafe("escape in a quoted name")   # chk:R3
+  }
+  if (index(v, ": ")) unsafe("mapping inside a name")   # chk:R3
+  add(glob(v))
+}
+{
+  l = $0; sub(/\r$/, "", l); lo = tolower(l)
+  if (index(lo, "workflow_run")) unsafe("workflow_run")   # chk:R2
+  if (index(l, "\t")) unsafe("tab")   # chk:R3
+  if (l == "---" || l ~ /^--- / || l ~ /^\.\.\./) unsafe("document marker")   # chk:R3
+  if (l ~ /^ *$/ || l ~ /^ *#/) next
+  match(l, /^ */); ind = RLENGTH; t = substr(lo, ind + 1)
+  if (t ~ /^["'?&*!{\[]/) unsafe("key shape")   # chk:R3
+  if (ind == 0) {
+    injobs = 0
+    if (t !~ /^[a-z_][a-z0-9_-]*:/) unsafe("top-level shape")   # chk:R3
+    if (t ~ /^jobs:/) { if (t !~ /^jobs: *(#.*)?$/) unsafe("inline jobs"); injobs = 1; jl = -1; pl = -1; next }   # chk:R3
+    if (t ~ /^name:/) nameval(substr(t, 6))
+    next
+  }
+  if (!injobs) next
+  if (jl < 0) jl = ind
+  if (ind < jl) unsafe("dedent inside jobs")   # chk:R3
+  if (ind == jl) {
+    if (t !~ /^[a-z0-9_-]+: *(#.*)?$/) unsafe("job key shape")   # chk:R3
+    id = t; sub(/:.*$/, "", id); add(id); pl = -1; next
+  }
+  if (pl < 0) pl = ind
+  if (ind == pl) {
+    if (t !~ /^(- [^ ]|[a-z0-9_-]+ *:)/) unsafe("job property shape")   # chk:R3
+    if (t ~ /^uses *:/) unsafe("job-level uses")   # chk:R3
+    if (t ~ /^name *:/) { v = t; sub(/^name *:/, "", v); nameval(v) }
+  }
+}
+END { if (failed) exit 3; for (v in out) print v }
 AWK
-# _floor_wf_read <root> <rev> <out> <tmp>: append every workflow file at <rev> to <out>. Returns 1 on any read
-# error, more than 50 files or a file over 200000 bytes; the caller then keeps the floor.
+# The collision test: every glob in the first file against every new name in the second. A glob is a literal
+# with `*` for each base expression; a bare `*` matches every name, so the floor stands. Exit 3 on a match.
+read -r -d '' _WF_GLOBMATCH <<'AWK' || true
+function gmatch(s, p,   n, parts, i, pos) {
+  n = split(p, parts, "*")
+  if (n == 1) return s == p
+  if (substr(s, 1, length(parts[1])) != parts[1]) return 0
+  s = substr(s, length(parts[1]) + 1)
+  if (length(s) < length(parts[n]) || (parts[n] != "" && substr(s, length(s) - length(parts[n]) + 1) != parts[n])) return 0
+  s = substr(s, 1, length(s) - length(parts[n]))
+  for (i = 2; i < n; i++) { pos = index(s, parts[i]); if (pos == 0) return 0; s = substr(s, pos + length(parts[i])) }
+  return 1
+}
+NR == FNR { pat[++np] = $0; next }
+{ for (i = 1; i <= np; i++) if (gmatch($0, pat[i])) hit = 1 }
+END { exit hit ? 3 : 0 }
+AWK
+# _floor_wf_read <root> <rev> <out> <tmp>: append the name globs of every workflow file at <rev> to <out>.
+# Returns 1 on any read error, more than 50 files, a file over 200000 bytes, a byte count that is not all
+# digits, or a file the base program cannot classify; the caller then keeps the floor.
 _floor_wf_read() {
-  local root="$1" rev="$2" out="$3" tmp="$4" f n=0 img="$tmp/wf.rd" list="$tmp/wf.ls"
+  local root="$1" rev="$2" out="$3" tmp="$4" f n=0 img="$tmp/wf.rd" list="$tmp/wf.ls" bytes
   _floor_git "$root" ls-tree -r -z --name-only "$rev" -- .github/workflows > "$list" 2>/dev/null || return 1
   while IFS= read -r -d '' f; do
     n=$((n + 1)); [ "$n" -le 50 ] || return 1
     _floor_git "$root" show "$rev:$f" > "$img" 2>/dev/null || return 1
-    [ "$(($(wc -c < "$img")))" -le 200000 ] || return 1
-    cat "$img" >> "$out" || return 1
-    printf '\n' >> "$out" || return 1
+    bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
+    case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
+    [ "$bytes" -le 200000 ] || return 1
+    LC_ALL=C awk "$_WF_BASECHECK" "$img" >> "$out" 2>/dev/null || return 1   # chk:F3 F4
   done < "$list"
   return 0
 }
@@ -837,11 +913,11 @@ _floor_wf_read() {
 # than the expected one returns 1 and the floor stands. No `git show` output is piped into a test here: each
 # image is read once into a file and its exit status is tested.
 _floor_workflow_additive() {
-  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path st hm k extra rc rev def img="$tmp/wf.img"
+  local root="$1" base="$2" head="$3" tmp="$4" n="$5" kind="$6" path st hm k extra rc rev def bytes img="$tmp/wf.img"
   [ "$kind" = ci ] || return 1
   path="$(sed -n "${n}p" "$tmp/paths")"; st="$(sed -n "${n}p" "$tmp/status")"; hm="$(sed -n "${n}p" "$tmp/hmode")"
   [ -n "$path" ] || return 1
-  [ "$st" = A ] && [ "$hm" = 100644 ] || return 1   # chk:F10
+  [ "$st" = A ] && [ "$hm" = 100644 ] || return 1   # chk:F10 MODE
   printf '%s\n' "$path" | grep -Eq -e '^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$' || return 1   # chk:F5
   for k in $_HP_KINDS; do
     [ "$k" != ci ] || continue
@@ -852,24 +928,25 @@ _floor_workflow_additive() {
   while IFS= read -r extra; do
     [ -n "$extra" ] || continue
     rc=0; printf '%s\n' "$path" | grep -Eiq -e "$extra" || rc=$?
-    [ "$rc" -eq 1 ] || return 1   # chk:F5
+    [ "$rc" -eq 1 ] || return 1   # chk:F5 EXTRA
   done <<< "$_EXTRA_LIST"
   [ "$(grep -Eic -e '(^|/)\.github/' "$tmp/paths.all")" = 1 ] || return 1   # chk:F9
   _floor_git "$root" show "$head:$path" > "$img" 2>/dev/null || return 1   # chk:F5
-  [ -s "$img" ] || return 1   # chk:F5
-  [ "$(($(wc -c < "$img")))" -le 20000 ] || return 1   # chk:F5
+  [ -s "$img" ] || return 1   # chk:F5 EMPTY
+  bytes="$(wc -c < "$img")"; bytes="${bytes// /}"
+  case "$bytes" in ''|*[!0-9]*) return 1 ;; esac   # chk:R5
+  [ "$bytes" -le 20000 ] || return 1   # chk:F5
   LC_ALL=C tr -d '\0' < "$img" | cmp -s - "$img" || return 1   # chk:F5
   if ! LC_ALL=C awk "$_WF_GRAMMAR" "$img" > "$tmp/wf.names" 2>/dev/null; then return 1; fi   # chk:G
   def="$(_deesc_default_branch "$root")"
   case "$def" in origin/*) ;; *) return 1 ;; esac   # chk:F7
   _floor_git "$root" rev-parse --verify -q "$def^{commit}" >/dev/null 2>&1 || return 1   # chk:F7
-  : > "$tmp/wf.base"
+  : > "$tmp/wf.pat"
   for rev in "$base" "${KIT_FLOOR_CONFIG_AT:-}" "$def"; do
     [ -n "$rev" ] || continue
-    _floor_wf_read "$root" "$rev" "$tmp/wf.base" "$tmp" || return 1   # chk:F7
+    _floor_wf_read "$root" "$rev" "$tmp/wf.pat" "$tmp" || return 1   # chk:F7
   done
-  LC_ALL=C awk "$_WF_BASENAMES" "$tmp/wf.base" > "$tmp/wf.baseset" 2>/dev/null || return 1   # chk:F3 F4
-  rc=0; LC_ALL=C awk 'NR == FNR { b[$0] = 1; next } ($0 in b) { c = 1 } END { exit c ? 3 : 0 }' "$tmp/wf.baseset" "$tmp/wf.names" 2>/dev/null || rc=$?
+  rc=0; LC_ALL=C awk "$_WF_GLOBMATCH" "$tmp/wf.pat" "$tmp/wf.names" 2>/dev/null || rc=$?
   [ "$rc" -eq 0 ] || return 1   # chk:F3 F4
   _floor_sized_note ci additive-workflow "plain read-only check workflow, closed line grammar" "$path"
   return 0
