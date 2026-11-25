@@ -215,10 +215,12 @@ def test_providers_survive_a_bad_provider(tmp_path, monkeypatch):
          py="from __future__ import annotations\n\n\ndef brief_decisions(h, c, f):\n    return [((6, 0), 'a')]\n")
     make(tmp_path, "b", "hook\tbrief_decisions\n", py="def brief_decisions(:\n")
     make(tmp_path, "c", "hook\tbrief_decisions\n", py="X = 1\n")
-    make(tmp_path, "d", "const\tmirror-label\tD\n", py=None)
+    make(tmp_path, "d", "hook\tbrief_decisions\n", py="raise SystemExit('exits at import')\n")
+    make(tmp_path, "e", "const\tmirror-label\tE\n", py=None)
     use(monkeypatch, tmp_path)
     got = adapters.load().providers("brief_decisions")
-    assert [g[0] for g in got] == ["a", "b", "c"]
+    assert [g[0] for g in got] == ["a", "b", "c", "d"]
+    assert got[3][1] is None and isinstance(got[3][2], SystemExit)
     assert got[0][1](None, None, None) == [((6, 0), "a")] and got[0][2] is None
     assert got[1][1] is None and isinstance(got[1][2], SyntaxError)
     assert got[2][1] is None and isinstance(got[2][2], AttributeError)

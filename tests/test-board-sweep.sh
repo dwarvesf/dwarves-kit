@@ -237,6 +237,10 @@ LEG
 printf 'echo "  second leg, gated by [${FX_FLAG:-}]"\n[ -n "${FX_FLAG:-}" ] || exit 0\necho "  second leg ran"\n' > "$ADIR/fx/legs/second.sh"
 printf 'echo "  tail leg"\n' > "$ADIR/fx/legs/tail.sh"
 run_fx() { ( export KIT_ADAPTERS_DIR="$ADIR"; run_sweep "$@" ); }
+# a logging `bash` first on the sweep's PATH: a leg must start under the sweep's own interpreter ($BASH), never through PATH
+mkdir -p "$WORK/.local/bin"
+printf '#!/bin/bash\n[ -n "${BASH_SHIM_LOG:-}" ] && echo "$*" >> "$BASH_SHIM_LOG"\nexec /bin/bash "$@"\n' > "$WORK/.local/bin/bash"; chmod +x "$WORK/.local/bin/bash"
+export BASH_SHIM_LOG="$WORK/bash-shim.log"; : > "$BASH_SHIM_LOG"
 reset
 printf '  + spoke     AB-7 · from alpha\n' > "$WORK/out/r-alpha.out"
 out="$(run_fx --poster "$WORK/poster" --cluster-map "team=crew,solo=pers" --fx-flag val1 --name legs 2>&1)"; rc=$?
@@ -250,6 +254,10 @@ l_sync="$(grep -n '  gamma rc=0' <<<"$out" | cut -d: -f1)"; l_first="$(grep -n '
 l_second="$(grep -n 'second leg ran' <<<"$out" | cut -d: -f1)"; l_post="$(grep -n 'digest: team posted' <<<"$out" | cut -d: -f1)"; l_tail="$(grep -n 'tail leg' <<<"$out" | cut -d: -f1)"
 [ -n "$l_sync" ] && [ -n "$l_post" ] && [ "$l_sync" -lt "$l_first" ] && [ "$l_first" -lt "$l_second" ] && [ "$l_second" -lt "$l_post" ] && [ "$l_post" -lt "$l_tail" ] \
   && ok "order: per-repo syncs, after-sync legs in manifest order, digests, last legs" || bad "order wrong: sync=$l_sync first=$l_first second=$l_second post=$l_post tail=$l_tail"
+grep -q "legs/first.sh" "$BASH_SHIM_LOG" && bad "a leg was started through PATH bash: $(grep legs/ "$BASH_SHIM_LOG")" || ok "a leg starts as \"\$BASH\" <script>, never through PATH bash"
+grep -q "board-digest.sh" "$BASH_SHIM_LOG" && ok "(control) the shim does see the sweep's own PATH bash calls" || bad "control: the shim logged nothing: $(cat "$BASH_SHIM_LOG")"
+out="$( ( export KIT_ADAPTERS_DIR="$ADIR"; "$SWEEP" --help ) 2>&1)"
+grep -q -e "--fx-flag VALUE  fixture flag, VALUE reaches the legs" <<<"$out" && ok "--help lists the adapter's flag (an adapter present reads differently from absent)" || bad "help with the fixture adapter: $(tail -3 <<<"$out")"
 out="$(run_fx 2>&1)"
 grep -q "second leg, gated by \[\]" <<<"$out" && ! grep -q "second leg ran" <<<"$out" && ok "an empty sweep-opt value is passed as empty" || bad "gating: $(grep 'second leg' <<<"$out")"
 reset
@@ -346,6 +354,19 @@ sig_case() {  # <INT|TERM> <expected rc>
 }
 sig_case TERM 143
 sig_case INT 130
+
+echo "case bad-manifest (a manifest error ends the sweep with 1 before any sync, with or without an adapter flag):"
+BDIR="$WORK/adapters-bad"; mkdir -p "$BDIR/bd"
+printf 'sweep-opt\tfx-flag\tFX_FLAG\tfixture\nleg\tnowhere\tlegs/x.sh\n' > "$BDIR/bd/adapter.tsv"
+for flag in "" "--fx-flag v"; do
+  reset
+  out="$( ( export KIT_ADAPTERS_DIR="$BDIR"; run_sweep $flag ) 2>&1)"; rc=$?
+  [ "$rc" -eq 1 ] && ok "[${flag:-no flag}] exit 1" || bad "[${flag:-no flag}] exit $rc: $out"
+  grep -q "adapters: $BDIR/bd/adapter.tsv:2: bad phase 'nowhere'" <<<"$out" && ok "[${flag:-no flag}] the load error names the file and the line" || bad "[${flag:-no flag}] message: $out"
+  [ ! -s "$WORK/calls.log" ] && ok "[${flag:-no flag}] no sync ran" || bad "[${flag:-no flag}] a sync ran"
+done
+out="$( ( export KIT_ADAPTERS_DIR="$BDIR"; "$SWEEP" --help ) 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q "Usage: board sweep" <<<"$out" && ok "--help still prints the usage" || bad "help with a bad manifest: rc=$rc"
 
 echo "case no-adapter (an empty adapter directory: the syncs run, no leg, rc 0; a leg flag is unknown):"
 EDIR="$WORK/adapters-empty"; mkdir -p "$EDIR"

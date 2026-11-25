@@ -175,7 +175,8 @@ while [ $# -gt 0 ]; do case "$1" in
   --repo-root) REPO_ROOT="${2:-}"; shift 2;;
   --dry-run) DRY_RUN=1; shift;;
   -h|--help) usage; exit 0;;
-  *) if sweepopt_set "$1" "${2:-}"; then shift; [ $# -eq 0 ] || shift
+  *) [ "$ADAPTER_ROWS_BAD" -eq 0 ] || exit 1   # a manifest error (already printed): the flags it declares are unknown
+     if sweepopt_set "$1" "${2:-}"; then shift; [ $# -eq 0 ] || shift
      else echo "board sweep: unknown arg: $1 (adapter dir: $(adapters_dir 2>/dev/null))" >&2; exit 64; fi;;
 esac; done
 [ "$ADAPTER_ROWS_BAD" -eq 0 ] || exit 1

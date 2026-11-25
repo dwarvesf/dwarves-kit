@@ -369,6 +369,8 @@ class Registry:
                 out.append((a.name, self._hook_fn(a, name), None))
             except HookFailure as failure:
                 out.append((a.name, None, failure.exc))
+            except SystemExit as failure:   # a refusal of the loader itself, or an adapter that exits at import
+                out.append((a.name, None, failure))
         return out
 
     def hook(self, name: str):

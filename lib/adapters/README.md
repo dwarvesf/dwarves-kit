@@ -64,7 +64,8 @@ out-of-tree scripts; scripts that ship in the kit derive it from their own locat
 
 **Leg environment.** A leg runs as `"$BASH" <script>` with `SWEEP_NAME`, `SWEEP_BOARDS`, `SWEEP_REPO_ROOT`,
 `SWEEP_DRY_RUN` (0 or 1), `SWEEP_BOARD_CMD`, `SWEEP_HEALTH_BIN`, `SWEEP_HEALTH_STATE`, `KIT_LIB` and every `sweep-opt`
-variable (empty when not given). It gets no sweep token, no `GH_TOKEN` and no `GIT_ASKPASS`.
+variable (empty when not given). The runner sets no sweep token, no `GH_TOKEN` and no `GIT_ASKPASS` for it; whatever
+the sweep itself inherited from its caller passes through, as it did to the legs before they moved.
 
 **The directory.** The loader scans `$KIT_ADAPTERS_DIR` when it is set (an absolute path; empty or relative exits 1) and
 otherwise `lib/adapters/` of the running kit, found from the loader file's real location, never from cwd,

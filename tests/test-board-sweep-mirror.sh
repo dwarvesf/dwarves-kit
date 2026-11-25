@@ -43,7 +43,9 @@ echo "board called: $*" >> "${FAKE_CALL_LOG:-/dev/null}"
 echo "board env HERMES_HOME=${HERMES_HOME:-UNSET}" >> "${FAKE_CALL_LOG:-/dev/null}"
 if [ "${1:-}" = "mirror" ]; then
   [ -n "${FAKE_MIRROR_UP:-}" ] && : > "$FAKE_MIRROR_UP"
-  [ -n "${FAKE_MIRROR_SLEEP:-}" ] && sleep "$FAKE_MIRROR_SLEEP"
+  if [ -n "${FAKE_MIRROR_RELEASE:-}" ]; then
+    i=0; while [ ! -f "$FAKE_MIRROR_RELEASE" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+  fi
   echo "mirror stub plan applied"
   exit "${FAKE_MIRROR_RC:-0}"
 fi
@@ -54,7 +56,7 @@ printf '#!/usr/bin/env bash\necho "on-clean ran" >> "$FAKE_CALL_LOG"\n' > "$WORK
 chmod +x "$WORK/hook-clean"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/.local/bin/hermes"
 chmod +x "$WORK/.local/bin/hermes"
-export FAKE_CALL_LOG FAKE_MIRROR_RC FAKE_MIRROR_SLEEP FAKE_MIRROR_UP
+export FAKE_CALL_LOG FAKE_MIRROR_RC FAKE_MIRROR_RELEASE FAKE_MIRROR_UP
 
 run_sweep() {  # extra sweep args...
   HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
@@ -144,17 +146,20 @@ grep -qE "^board called: mirror .* --dry-run\$" "$FAKE_CALL_LOG" && ok "mirror i
 
 echo "case dry-run-health (a dry run with the mirror leg leaves a real health-state.json byte identical):"
 HSR="$WORK/real-health.json"; printf '{"keep":"me"}\n' > "$HSR"; before="$(cksum < "$HSR")"
+echo '[]' > "$WORK/kinds.json"
 FAKE_CALL_LOG="$WORK/call-dryhealth.log"; : > "$FAKE_CALL_LOG"
-out="$(FAKE_MIRROR_RC=1 run_sweep --dry-run --health-state-file "$HSR" 2>&1)"
-grep -q "mirror rc=1" <<<"$out" && ok "the leg ran and failed in the dry run" || bad "no mirror line: $out"
+out="$(FAKE_MIRROR_RC=1 run_sweep --dry-run --health-state-file "$HSR" --mirror-snapshot "$WORK/dry-snap.jsonl" --expire-kinds-file "$WORK/kinds.json" 2>&1)"
+grep -q "mirror rc=1" <<<"$out" && ok "the mirror leg ran and failed in the dry run" || bad "no mirror line: $out"
+grep -q "expire rc=0" <<<"$out" && ok "and the expiry leg ran (all three flags given)" || bad "no expire line: $out"
+grep -qE "^board called: mirror .* --snapshot $WORK/dry-snap\.jsonl --dry-run\$" "$FAKE_CALL_LOG" && ok "the snapshot flag reached the mirror" || bad "snapshot: $(grep 'called: mirror' "$FAKE_CALL_LOG")"
 [ "$(cksum < "$HSR")" = "$before" ] && ok "the real health state is byte identical (the leg recorded into the scratch copy)" || bad "a dry run wrote the real health state: $(cat "$HSR")"
 
 echo "case leg-signal (INT or TERM during board mirror: the sweep ends 130 or 143, nothing is left at the repo root):"
 mirror_sig_case() {  # <INT|TERM> <expected rc>
   local sig="$1" want="$2" i=0 pid rc hs="$WORK/sig-health.json"
-  rm -f "$hs" "$WORK/mirror.up"; FAKE_CALL_LOG="$WORK/call-sig.log"; : > "$FAKE_CALL_LOG"
+  rm -f "$hs" "$WORK/mirror.up" "$WORK/mirror.release"; FAKE_CALL_LOG="$WORK/call-sig.log"; : > "$FAKE_CALL_LOG"
   set -m
-  FAKE_MIRROR_SLEEP=1 FAKE_MIRROR_UP="$WORK/mirror.up" HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
+  FAKE_MIRROR_RELEASE="$WORK/mirror.release" FAKE_MIRROR_UP="$WORK/mirror.up" HOME="$WORK" PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin" \
     "$SWEEP" --registry "$WORK/boards.txt" --board-cmd "$WORK/board" --repo-root "$WORK" --mirror-hermes-home "$WORK/hermes-home" \
     --health-state-file "$hs" --on-clean "$WORK/hook-clean" > "$WORK/sig.out" 2>&1 < /dev/null &
   pid=$!
@@ -163,6 +168,7 @@ mirror_sig_case() {  # <INT|TERM> <expected rc>
   if [ ! -f "$WORK/mirror.up" ]; then bad "$sig: board mirror never started"; kill -TERM "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return; fi
   [ -n "$(ls -A "$FIXTURE_ROOT" | grep 'board-mirror-origin' || true)" ] && ok "$sig: (control) the origin copy exists while board mirror runs" || bad "$sig: no origin copy during the run"
   kill -"$sig" "$pid"
+  : > "$WORK/mirror.release"   # only now may the stub return, so the signal always lands during board mirror
   wait "$pid"; rc=$?
   [ "$rc" -eq "$want" ] && ok "$sig: the sweep exits $want" || bad "$sig: exit $rc (want $want): $(cat "$WORK/sig.out")"
   [ -z "$(ls -A "$FIXTURE_ROOT" | grep 'board-mirror-origin' || true)" ] && ok "$sig: no origin copy left at the repo root" || bad "$sig: a stray origin copy: $(ls -A "$FIXTURE_ROOT")"
