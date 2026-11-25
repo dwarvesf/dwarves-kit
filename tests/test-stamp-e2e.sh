@@ -4,6 +4,7 @@
 # the scan-safe digests, and the privacy scan of the whole branch.
 #   STAMP_DENYLIST_FILE=<file, one string per line, kept outside the repo> bash tests/test-stamp-e2e.sh
 # The privacy section FAILS when STAMP_DENYLIST_FILE is unset: a run without the list proves nothing.
+# shellcheck disable=SC2054,SC2046
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ROOT="$PWD"
