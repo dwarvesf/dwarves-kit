@@ -426,8 +426,8 @@ SHA40=0123456789abcdef0123456789abcdef01234567
 # wfrepo [noorigin]: a repo with the fixture committed on main, origin/main at that commit, feat/x checked out.
 wfrepo() {
   mkrepo
-  printf '[gate]\nlane_gates = true\n\n[lanes]\nextra_hard_paths = "^hooks/|^lib/gate/"\n' > "$ROOT/.kit.toml"
-  base .github/workflows/ci.yml "$WF_BASE"; base hooks/guard.sh "$HOOKB"
+  printf '[gate]\nlane_gates = true\n\n[lanes]\nextra_hard_paths = "%s"\n' "${WFR_EXTRA:-^hooks/|^lib/gate/}" > "$ROOT/.kit.toml"
+  base .github/workflows/ci.yml "${WF_BASE_X:-$WF_BASE}"; base hooks/guard.sh "$HOOKB"
   local f; for f in ${WFR_FILES:-}; do base "$f" "$SHBASE"; done
   branch
   if [ "${1:-}" != noorigin ]; then
@@ -720,13 +720,144 @@ case_floor_sized_flood_keeps_floor() {
   case "$out" in "full "*) pass floor-sized-flood-keeps-floor ;; *) fail floor-sized-flood-keeps-floor "got '$out'" ;; esac
 }
 
+
+# --- Review round: the base side is "anything we cannot classify keeps the floor".
+# A base workflow whose name holds an expression becomes a glob; every other base shape is classified or refused.
+basetry() {  # basetry <sized|full> <label> <base ci.yml text> [<new workflow text>]
+  WF_BASE_X="$3" try "$1" "$2" "$WFP" "${4:-$WF_OK}"
+}
+wf_base_sub() {  # wf_base_sub <from> <to>: WF_BASE with the first occurrence replaced
+  local s="$WF_BASE" from="$1" to="$2"
+  case "$s" in *"$from"*) printf '%s%s%s' "${s%%"$from"*}" "$to" "${s#*"$from"}" ;; *) printf '%s' "$s"; echo "wf_base_sub: not found: $from" >&2 ;; esac
+}
+
+case_floor_workflow_base_expression_names() {
+  local nm='    name: test (${{ matrix.os }})' nw
+  basetry full expression-suffix "$(wf_base_sub "$nm" '    name: lint-${{ matrix.lang }}')" "$(wf_sub '  lint:' '  lint-go:')"
+  basetry full expression-suffix-job-name "$(wf_base_sub "$nm" '    name: lint-${{ matrix.lang }}')" "$(wf_sub 'lint check' 'lint-py')"
+  basetry full matrix-include-bare-expression "$(wf_base_sub "$nm" '    name: ${{ matrix.target }}')" "$(wf_sub '  lint:' '  linux-e2e:')"
+  basetry full bare-expression-matches-any-name "$(wf_base_sub "$nm" '    name: ${{ matrix.target }}')"
+  basetry full expression-in-middle "$(wf_base_sub "$nm" '    name: a-${{ matrix.x }}-z')" "$(wf_sub 'lint check' 'a-q-z')"
+  basetry full unterminated-expression "$(wf_base_sub "$nm" '    name: a-${{ matrix.x')"
+  basetry sized glob-does-not-match-other-name "$(wf_base_sub "$nm" '    name: unit-${{ matrix.x }}')"
+  basetry sized glob-suffix-mismatch "$(wf_base_sub "$nm" '    name: ${{ matrix.x }}-unit')"
+  done_case floor-workflow-base-expression-names
+}
+
+case_floor_workflow_base_workflow_run_anywhere() {
+  local wr=$'name: privileged\non:\n  workflow_run:\n    workflows: [Release Gate]\npermissions:\n  contents: read\njobs:\n  go:\n    runs-on: self-hosted\n    steps:\n      - run: make go'
+  basetry full workflow-run-one-line-list "$wr"
+  basetry full workflow-run-multi-line-list "${wr/\[Release Gate\]/[
+      \"Release Gate\"
+    ]}"
+  basetry full workflow-run-scalar "${wr/\[Release Gate\]/Release Gate}"
+  basetry full workflow-run-unrelated-new-name "$wr" "$WF_OK"
+  basetry full workflow-run-in-a-comment "${WF_BASE}"$'\n# triggered by workflow_run elsewhere'
+  basetry full workflow-run-upper-case "${wr/workflow_run/Workflow_Run}"
+  basetry sized control-no-workflow-run "$WF_BASE"
+  done_case floor-workflow-base-workflow-run-anywhere
+}
+
+case_floor_workflow_base_unclassifiable_keeps_full() {
+  local j='  build:'
+  basetry full quoted-job-key "$(wf_base_sub "$j" '  "required":')"
+  basetry full single-quoted-job-key "$(wf_base_sub "$j" "  'required':")"
+  basetry full folded-name "$(wf_base_sub '    name: test (${{ matrix.os }})' $'    name: >-\n      Required Check')"
+  basetry full literal-name "$(wf_base_sub '    name: test (${{ matrix.os }})' $'    name: |\n      Required Check')"
+  basetry full empty-name "$(wf_base_sub '    name: test (${{ matrix.os }})' '    name:')"
+  basetry full anchored-name "$(wf_base_sub '    name: test (${{ matrix.os }})' '    name: &n Required')"
+  basetry full alias-name "$(wf_base_sub '    name: test (${{ matrix.os }})' '    name: *n')"
+  basetry full flow-job-map "$(wf_base_sub "$j" '  build: {runs-on: self-hosted, name: Required}')"
+  basetry full anchored-job "$(wf_base_sub "$j" '  build: &b')"
+  basetry full inline-jobs $'name: ci\non:\n  push:\npermissions:\n  contents: read\njobs: {required: {runs-on: x}}'
+  basetry full job-key-with-dot "$(wf_base_sub "$j" '  build.x:')"
+  basetry full job-level-uses "$(wf_base_sub '    runs-on: self-hosted' '    uses: ./.github/workflows/call.yml')"
+  basetry full complex-key "$(wf_base_sub '    runs-on: self-hosted' $'    ? required\n    runs-on: self-hosted')"
+  basetry full merge-key "$(wf_base_sub '    runs-on: self-hosted' $'    <<: *x\n    runs-on: self-hosted')"
+  basetry full tab-in-base "$(wf_base_sub '    runs-on: self-hosted' $'\truns-on: self-hosted')"
+  basetry full document-marker "$WF_BASE"$'\n---\nname: x'
+  basetry full flow-document $'{"name": "ci", "jobs": {"b": {}}}'
+  basetry full quoted-workflow-name-with-escape $'name: "a\\x41"\non:\n  push:\npermissions:\n  contents: read\njobs:\n  build:\n    runs-on: self-hosted\n    steps:\n      - run: make'
+  basetry full unclassified-top-level $'name: ci\n- x\njobs:\n  build:\n    runs-on: self-hosted'
+  basetry sized control-quoted-plain-name "$(wf_base_sub '    name: test (${{ matrix.os }})' '    name: "Unit"')"
+  done_case floor-workflow-base-unclassifiable-keeps-full
+}
+
+case_floor_workflow_replaced_objects_keep_full() {
+  local evil benign out
+  wfrepo
+  put "$WFP" $'name: lint\non:\n  pull_request:\npermissions:\n  contents: write\njobs:\n  lint:\n    runs-on: self-hosted\n    steps:\n      - run: make lint'
+  _commit "ci: add"
+  evil="$(_git rev-parse HEAD:"$WFP")"; benign="$(printf '%s\n' "$WF_OK" | _git hash-object -w --stdin)"
+  _git replace "$evil" "$benign" >/dev/null 2>&1
+  out="$(floor_out)"; chk full replaced-blob-hides-write-permission "$out"
+  _git replace -d "$evil" >/dev/null 2>&1
+  try sized control-no-replace "$WFP" "$WF_OK"
+  done_case floor-workflow-replaced-objects-keep-full
+}
+
+case_floor_workflow_byte_count_must_be_digits() {
+  local d; d="$(_mk)"; printf '#!/bin/sh\necho x\n' > "$d/wc"; chmod +x "$d/wc"
+  wfrepo; put "$WFP" "$WF_OK"; _commit "ci: add"
+  chk full wc-prints-garbage "$(PATH="$d:$PATH" floor_out)"
+  printf '#!/bin/sh\necho\n' > "$d/wc"
+  chk full wc-prints-nothing "$(PATH="$d:$PATH" floor_out)"
+  chk sized control-real-wc "$(floor_out)"
+  done_case floor-workflow-byte-count-must-be-digits
+}
+
+case_floor_tools_missing_prints_a_hit() {
+  local d t out bash_bin n
+  bash_bin="$(command -v bash)"
+  for t in git awk sed tr grep wc; do
+    d="$(_mk)"
+    for n in env dirname basename mktemp cat rm cut sort head tail date mkdir cp mv paste cmp readlink uname id sleep git awk sed tr grep wc; do
+      [ "$n" != "$t" ] || continue
+      [ ! -x "$(command -v "$n" 2>/dev/null)" ] || ln -s "$(command -v "$n")" "$d/$n"
+    done
+    wfrepo; put "$WFP" "$WF_OK"; _commit "ci: add"
+    out="$(env -i HOME="$HOME" PATH="$d" KIT_CONFIG_OPERATOR=/nonexistent "$bash_bin" "$LC" floor "$ROOT" main 2>/dev/null)"
+    [ "$out" = "full tools-missing: $t" ] || BAD="$BAD [without $t => '$out']"
+  done
+  wfrepo; put "$WFP" "$WF_OK"; _commit "ci: add"
+  out="$(TMPDIR=/nonexistent/dir lcx floor "$ROOT" main 2>/dev/null)"
+  [ "$out" = "full tools-missing: tmpdir" ] || BAD="$BAD [no temp dir => '$out']"
+  done_case floor-tools-missing-prints-a-hit
+}
+
+case_floor_workflow_action_allowlist() {
+  local sha="$SHA40" a
+  for a in cache upload-artifact github-script download-artifact; do
+    try full "actions/$a" "$WFP" "$(wf_sub '      - name: build' $'      - uses: actions/'"$a"$'@'"$sha"$'\n      - name: build')"
+  done
+  try full third-party "$WFP" "$(wf_sub '      - name: build' $'      - uses: docker/login-action@'"$sha"$'\n      - name: build')"
+  try sized actions-checkout "$WFP" "$(wf_sub '      - name: build' $'      - uses: actions/checkout@'"$sha"$'\n      - name: build')"
+  try sized actions-setup-node "$WFP" "$(wf_sub '      - name: build' $'      - uses: actions/setup-node@'"$sha"$'\n      - name: build')"
+  done_case floor-workflow-action-allowlist
+}
+
+# Each fixture below is the one valid sized workflow with exactly one thing changed, so only its own check refuses it.
+case_floor_workflow_single_fault_rows() {
+  try full quoted-permission-value "$WFP" "$(wf_sub '  contents: read' '  contents: "read"')"
+  try full quoted-permission-key "$WFP" "$(wf_sub '  contents: read' '  "contents": read')"
+  try full expression-in-a-comment "$WFP" "$WF_OK"$'\n# ${{ github.sha }}'
+  try full unpinned-checkout "$WFP" "$(wf_sub '      - name: build' $'      - uses: actions/checkout@v4\n      - name: build')"
+  try full third-party-action "$WFP" "$(wf_sub '      - name: build' $'      - uses: some/action@'"$SHA40"$'\n      - name: build')"
+  tryx full empty-file ": > $WFP"
+  WF_OK_X="$WF_OK" tryx full executable-mode "printf '%s\n' \"\$WF_OK_X\" > $WFP; chmod +x $WFP"
+  try full second-document-marker "$WFP" "$WF_OK"$'\n---'
+  WFR_EXTRA='^hooks/|^\.github/workflows/ex-' try full extra-hard-path-also-matches ".github/workflows/ex-a.yml" "$WF_OK"
+  try sized control-one-valid-file "$WFP" "$WF_OK"
+  done_case floor-workflow-single-fault-rows
+}
+
 # Each finding's checks carry a `# chk:<id>` tag. A copy of the libs with one id switched off (bad( becomes a
 # no-op, `return 1` becomes `true`) must turn that finding's rows RED; the real libs keep them green.
 mut_libs() {  # mut_libs <id> <extra-sed-expr-lane-classify|-> <extra-sed-expr-ship-rules|->; prints the copy dir
   local d id="$1" re
   d="$(_mk)"; cp -R "$KIT/lib" "$d/lib"; cp "$KIT/kit.toml" "$d/kit.toml" 2>/dev/null
   re="# chk:([A-Za-z0-9]+ )*$id( [A-Za-z0-9]+)*\$"
-  sed -E -e "/$re/s/bad\\(/ign(/g" -e "/$re/s/return 1/true/g" "$KIT/lib/classify/lane-classify.sh" > "$d/lib/classify/lane-classify.sh"
+  sed -E -e "/$re/s/(bad|unsafe)\\(/ign(/g" -e "/$re/s/return 1/true/g" "$KIT/lib/classify/lane-classify.sh" > "$d/lib/classify/lane-classify.sh"
   [ "${2:--}" = - ] || { sed -E -e "$2" "$d/lib/classify/lane-classify.sh" > "$d/lc.tmp" && mv "$d/lc.tmp" "$d/lib/classify/lane-classify.sh"; }
   [ "${3:--}" = - ] || { sed -E -e "$3" "$KIT/lib/gate/ship-rules.sh" > "$d/lib/gate/ship-rules.sh"; }
   printf '%s' "$d"
@@ -739,7 +870,7 @@ mut_red() {  # mut_red <id> <label> <lc-sed|-> <sr-sed|-> <case>...: the cases m
   fi
   out="$(LANE_CLASSIFY_LIB="$d/lib/classify/lane-classify.sh" SHIP_RULES_LIB="$d/lib/gate/ship-rules.sh" bash "$KIT/tests/test-ceremony-fits-diff.sh" "$@" 2>&1)"
   [ -z "${MUT_SHOW:-}" ] || printf 'MUT %s: %s\n' "$id" "$(printf '%s\n' "$out" | grep '^FAIL ' | cut -c1-260)"
-  printf '%s\n' "$out" | grep -q '^FAIL ' || BAD="$BAD [$label: rows stayed green with the checks off]"
+  printf '%s\n' "$out" | grep '^FAIL ' | grep -q -- "${WANT:-}" || BAD="$BAD [$label: rows stayed green with the checks off]"
 }
 case_rule_a_checks_are_load_bearing() {
   mut_red ALL "whole Rule A drop" 's/if \[ "\$bestkind" = ci \] && _floor_workflow_additive/if false \&\& _floor_workflow_additive/' - \
@@ -756,6 +887,22 @@ case_rule_a_checks_are_load_bearing() {
   mut_red F10 "finding 10 status" - - floor-workflow-existing-workflow-keeps-full
   mut_red BLK "block scalar tracking" 's/RLENGTH >= 10 && \(blkn/RLENGTH >= 14 \&\& (blkn/' - floor-workflow-block-scalar-cannot-smuggle
   mut_red NOTE "audit line" 's/^_floor_sized_note\(\) \{/_floor_sized_note() { return 0;/' - floor-additive-workflow-is-sized floor-comment-edit-is-sized-and-logged
+  mut_red R1 "review 1 expression glob" 's/o = o substr\(v, 1, i - 1\) "\*"/o = o substr(v, 1, i - 1) "~"/' - floor-workflow-base-expression-names
+  mut_red R2 "review 2 workflow_run anywhere" - - floor-workflow-base-workflow-run-anywhere
+  mut_red R3 "review 3 unclassifiable base" - - floor-workflow-base-unclassifiable-keeps-full
+  mut_red R4 "review 4 replace objects" 's/git --no-replace-objects/git/; s/export GIT_NO_REPLACE_OBJECTS=1/:/' - floor-workflow-replaced-objects-keep-full
+  mut_red R5 "review 5 digits" - - floor-workflow-byte-count-must-be-digits
+  mut_red R6 "review 6 tools" 's/_floor_tools_ok \|\| return 0/true/' - floor-tools-missing-prints-a-hit
+  mut_red R7 "review 7 action allowlist" 's/\(checkout\|setup-/(checkout|cache|upload-artifact|github-script|download-artifact|setup-/' - floor-workflow-action-allowlist
+  WANT=quoted-permission-value mut_red PERM "single fault: permission" - - floor-workflow-single-fault-rows
+  WANT=quoted-permission-key mut_red PERM "single fault: permission key" - - floor-workflow-single-fault-rows
+  WANT=unpinned-checkout mut_red PIN "single fault: unpinned" - - floor-workflow-single-fault-rows
+  WANT=third-party-action mut_red PIN "single fault: third party" - - floor-workflow-single-fault-rows
+  WANT=empty-file mut_red EMPTY "single fault: empty" - - floor-workflow-single-fault-rows
+  WANT=executable-mode mut_red MODE "single fault: mode" - - floor-workflow-single-fault-rows
+  WANT=expression-in-a-comment mut_red F3 "single fault: expression" - - floor-workflow-single-fault-rows
+  WANT=second-document-marker mut_red F2 "single fault: document" - - floor-workflow-single-fault-rows
+  WANT=extra-hard-path-also-matches mut_red EXTRA "single fault: extra path" - - floor-workflow-single-fault-rows
   done_case rule-a-checks-are-load-bearing
 }
 
@@ -763,7 +910,7 @@ run_case() {
   local fn="case_${1//-/_}"
   if declare -F "$fn" >/dev/null; then "$fn"; else fail "$1" "no such case"; fi
 }
-ALL="class-docs-tree-any-extension-is-inert class-code-under-docs-keeps-its-class class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff floor-additive-workflow-is-sized ship-rule-floor-sizes-workflow-add sized-workflow-still-owes-proof floor-hook-behavior-change-keeps-full floor-workflow-mixed-diffs-keep-full floor-workflow-existing-workflow-keeps-full floor-workflow-escapes-keep-full floor-workflow-on-block-tricks-keep-full floor-workflow-name-tricks-keep-full floor-workflow-reuse-and-privilege-keep-full floor-workflow-read-failures-keep-full floor-workflow-collision-read-points floor-workflow-block-scalar-cannot-smuggle floor-workflow-odd-path-keeps-full floor-workflow-odd-file-keeps-full floor-workflow-grammar-refusals floor-workflow-data-loss-line-keeps-full floor-code-to-comment-keeps-full floor-comment-edit-is-sized-and-logged floor-config-key-flip-keeps-full sized-notices-relay-and-cap floor-sized-flood-keeps-floor rule-a-checks-are-load-bearing"
+ALL="class-docs-tree-any-extension-is-inert class-code-under-docs-keeps-its-class class-docs-subject-words-ignored class-markdown-anywhere-is-inert class-other-files-keep-class class-docs-plus-code-follows-code check-docs-tree-owes-no-proof floor-docs-never-hit floor-code-under-docs-or-doc-named-still-hits floor-docs-beside-real-hard-path-still-hit floor-comment-only-edit-is-not-a-hit floor-comment-removal-is-not-a-hit floor-code-change-is-a-hit floor-cannot-decide-keeps-the-floor floor-new-comment-only-file-is-not-a-hit floor-skips-comment-only-then-names-the-real-hit floor-cap-keeps-the-floor-on-a-flood floor-hash-that-is-not-a-comment-keeps-the-floor floor-secret-pattern-beats-first-kind floor-nul-byte-keeps-the-floor floor-readme-exec-is-code floor-blanking-keeps-line-numbers-aligned floor-exempt-notice-survives-drops floor-data-loss-still-hits-in-comments ship-rule-floor-follows-the-diff floor-additive-workflow-is-sized ship-rule-floor-sizes-workflow-add sized-workflow-still-owes-proof floor-hook-behavior-change-keeps-full floor-workflow-mixed-diffs-keep-full floor-workflow-existing-workflow-keeps-full floor-workflow-escapes-keep-full floor-workflow-on-block-tricks-keep-full floor-workflow-name-tricks-keep-full floor-workflow-reuse-and-privilege-keep-full floor-workflow-read-failures-keep-full floor-workflow-collision-read-points floor-workflow-block-scalar-cannot-smuggle floor-workflow-odd-path-keeps-full floor-workflow-odd-file-keeps-full floor-workflow-grammar-refusals floor-workflow-data-loss-line-keeps-full floor-code-to-comment-keeps-full floor-comment-edit-is-sized-and-logged floor-config-key-flip-keeps-full sized-notices-relay-and-cap floor-sized-flood-keeps-floor floor-workflow-base-expression-names floor-workflow-base-workflow-run-anywhere floor-workflow-base-unclassifiable-keeps-full floor-workflow-replaced-objects-keep-full floor-workflow-byte-count-must-be-digits floor-tools-missing-prints-a-hit floor-workflow-action-allowlist floor-workflow-single-fault-rows rule-a-checks-are-load-bearing"
 if [ "$#" -eq 0 ]; then set -- $ALL; fi
 for c in "$@"; do run_case "$c"; done
 [ "$FAILS" -eq 0 ]
