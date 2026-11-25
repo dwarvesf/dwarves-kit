@@ -15,6 +15,10 @@ cd "$(dirname "$0")/.."
 
 OWNERS=OWNERS.md
 refusals=""
+# Repo text (a file name, a table cell) is attacker-chosen. clean() makes it printable on one line
+# (every character outside a small set becomes ?); safe() says it may sit inside a pasted command.
+clean() { local s="${1:0:200}"; printf '%s' "${s//[!A-Za-z0-9._\/@ :,=#()+-]/?}"; }
+safe() { [[ "$1" =~ ^[A-Za-z0-9._/@][A-Za-z0-9._/@-]*$ ]]; }
 refuse() { # refuse <rule> <fix>: queue one two-line refusal
     refusals="${refusals}check-owners: $1
 Fix: $2
@@ -31,9 +35,10 @@ if [ ! -f "$OWNERS" ]; then
     finish
 fi
 
-# One line per table row: path;owner;sponsor;label. The path is empty for a job with no file.
+# One line per table row: path, owner, sponsor, label (separated by byte 037). The path is empty for a job with no file.
 # A header row is the row right before a |---| separator row; it is dropped.
 rows="$(awk -F'|' '
+    BEGIN { SEP = "\037" }
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     function emit(line,   c, first, path, label) {
         split(line, c, "|")
@@ -41,7 +46,7 @@ rows="$(awk -F'|' '
         if (first == "") return
         if (first ~ /^`.*`$/) { path = first; gsub(/`/, "", path); label = path }
         else { path = ""; label = first }
-        print path ";" trim(c[4]) ";" trim(c[5]) ";" label
+        print path SEP trim(c[4]) SEP trim(c[5]) SEP label
     }
     function flush() { if (have) { emit(buf); have = 0 } }
     /^\|/ {
@@ -54,30 +59,38 @@ rows="$(awk -F'|' '
 ' "$OWNERS")"
 
 tracked="$(git ls-files scripts .github/workflows)"
-owned_paths="$(printf '%s\n' "$rows" | awk -F';' '$1 != "" { print $1 }')"
+owned_paths="$(printf '%s\n' "$rows" | awk -F'\037' '$1 != "" { print $1 }')"
 
 count=0
 while IFS= read -r file; do
     [ -n "$file" ] || continue
     count=$((count + 1))
     if ! printf '%s\n' "$owned_paths" | grep -Fxq -- "$file"; then
-        refuse "no owner yet for $file; every script and workflow needs a row in $OWNERS" \
-            "printf '%s\\n' '| \`$file\` | what it does | @github-login | |' >> $OWNERS"
+        if safe "$file"; then
+            fix="printf '%s\\n' '| \`$file\` | what it does | @github-login | |' >> $OWNERS"
+        else
+            fix="add a row for that file to $OWNERS by hand (its name holds characters this script will not put in a command)"
+        fi
+        refuse "no owner yet for $(clean "$file"); every script and workflow needs a row in $OWNERS" "$fix"
     fi
 done <<EOF2
 $tracked
 EOF2
 
-while IFS=';' read -r path owner sponsor label; do
+while IFS=$'\037' read -r path owner sponsor label; do
     [ -n "$label" ] || continue
     if [ -n "$path" ] && [ ! -e "$path" ]; then
-        refuse "row names a path that does not exist: $path" \
-            "grep -vF '\`$path\`' $OWNERS > $OWNERS.new && mv $OWNERS.new $OWNERS"
+        if safe "$path"; then
+            fix="grep -vF '\`$path\`' $OWNERS > $OWNERS.new && mv $OWNERS.new $OWNERS"
+        else
+            fix="delete that row from $OWNERS by hand (its path holds characters this script will not put in a command)"
+        fi
+        refuse "row names a path that does not exist: $(clean "$path")" "$fix"
     fi
     if [ -z "$owner" ]; then
-        refuse "empty owner: $label" "\${EDITOR:-vi} $OWNERS # put a @github-login in the Owner cell of $label"
+        refuse "empty owner: $(clean "$label")" "\${EDITOR:-vi} $OWNERS # put a @github-login in the Owner cell of that row"
     elif [ "${owner#@}" = "$owner" ] && [ -z "$sponsor" ]; then
-        refuse "agent owner '$owner' has no sponsor: $label" "\${EDITOR:-vi} $OWNERS # name the human who answers for $owner in the Sponsor cell of $label"
+        refuse "agent owner $(clean "$owner") has no sponsor: $(clean "$label")" "\${EDITOR:-vi} $OWNERS # name the human who answers for that agent in the Sponsor cell of its row"
     fi
 done <<EOF2
 $rows

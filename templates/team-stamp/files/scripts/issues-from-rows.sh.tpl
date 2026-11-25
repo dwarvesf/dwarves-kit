@@ -26,7 +26,11 @@ DECISION_TAG='{{DECISION_TAG}}'
 refuse() { # refuse <rule> <fix>: the two-line refusal on stderr
     printf 'issues-from-rows: %s\nFix: %s\n' "$1" "$2" >&2
 }
-first_line() { printf '%s\n' "$1" | head -n 1; }
+# Repo text and gh output are attacker-chosen. clean() makes text printable on one line (every
+# character outside a small set becomes ?); safe() says a value may sit inside a pasted command.
+clean() { local s="${1:0:200}"; printf '%s' "${s//[!A-Za-z0-9._\/@ :,=#()+-]/?}"; }
+safe() { [[ "$1" =~ ^[A-Za-z0-9._/@][A-Za-z0-9._/@-]*$ ]]; }
+first_line() { clean "$(printf '%s\n' "$1" | head -n 1)"; }
 
 usage() {
     cat <<'EOF2'
@@ -47,7 +51,7 @@ while [ $# -gt 0 ]; do
         [ $# -ge 2 ] || { refuse "--board-file needs a path" "bash scripts/issues-from-rows.sh --help"; exit 2; }
         board="$2"; shift 2 ;;
     -h | --help) usage; exit 0 ;;
-    *) refuse "unknown argument: $1" "bash scripts/issues-from-rows.sh --help"; exit 2 ;;
+    *) refuse "unknown argument: $(clean "$1")" "bash scripts/issues-from-rows.sh --help"; exit 2 ;;
     esac
 done
 
@@ -63,7 +67,12 @@ case "$board" in
 *) board_path="$root/$board" ;;
 esac
 [ -f "$board_path" ] || {
-    refuse "board file not found: $board" "mkdir -p \"\$(dirname '$board_path')\" && printf '| ID | Item | Notes | Status |\\n|---|---|---|---|\\n' > '$board_path'"
+    if safe "$board_path"; then
+        fix="mkdir -p \"${board_path%/*}\" && printf '| ID | Item | Notes | Status |\\n|---|---|---|---|\\n' > $board_path"
+    else
+        fix="create the board file by hand (its path holds characters this script will not put in a command)"
+    fi
+    refuse "board file not found: $(clean "$board")" "$fix"
     exit 1
 }
 
@@ -155,7 +164,7 @@ while IFS=$'\t' read -r kind id login title goal check; do
     issue_title="$id: $title"
     if [ "$apply" -eq 0 ]; then
         created=$((created + 1))
-        echo "would create: $issue_title (assignee $login, label ready)"
+        echo "would create: $(clean "$issue_title") (assignee $login, label ready)"
         continue
     fi
     body="### Goal
@@ -171,7 +180,7 @@ $check
 Board row $id in $board"
     if url="$(gh issue create --title "$issue_title" --body "$body" --label ready --assignee "$login" </dev/null 2>&1)"; then
         created=$((created + 1))
-        echo "created: $issue_title $url"
+        echo "created: $(clean "$issue_title") $(clean "$url")"
     else
         failed=$((failed + 1))
         refuse "gh issue create failed for $id: $(first_line "$url")" "gh auth status"

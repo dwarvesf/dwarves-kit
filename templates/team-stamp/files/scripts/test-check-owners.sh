@@ -123,7 +123,7 @@ r="$(mkrepo)"
 write_owners "$r" '| `scripts/check-owners.sh` | Owners check | @alice | |' '| `scripts/build.sh` | Build | build-agent | |' '| `.github/workflows/ci.yml` | CI | @alice | |'
 run "$r" nosponsor
 expect "agent owner, no sponsor: exit 1" [ "$rc" -eq 1 ]
-expect "agent owner, no sponsor: names the owner" has nosponsor.err "agent owner 'build-agent' has no sponsor"
+expect "agent owner, no sponsor: names the owner" has nosponsor.err "agent owner build-agent has no sponsor"
 expect "agent owner, no sponsor: rule then Fix" pairs_ok nosponsor
 write_owners "$r" '| `scripts/check-owners.sh` | Owners check | @alice | |' '| `scripts/build.sh` | Build | build-agent | @alice |' '| `.github/workflows/ci.yml` | CI | @alice | |'
 run "$r" sponsor
@@ -171,6 +171,37 @@ printf '%s\n' '#!/usr/bin/env bash' >"$r/scripts/scratch.sh"
 write_owners "$r" "$FULL_ROWS"
 run "$r" untracked
 expect "untracked file: exit 0" [ "$rc" -eq 0 ]
+
+# 13. hostile names: nothing from the repo reaches a pasted command, a second Fix line or the terminal
+payload="x'"
+payload="$payload"'$(touch PWNED)`touch PWNED`;touch PWNED'
+no_shell_chars() { ! grep -F -e '$(' -e '`' -e "'" "$T/$1.err"; }
+no_pwned() { [ -z "$(find "$1" -name 'PWNED*' -not -path '*/.git/*')" ]; }
+r="$(mkrepo)"
+esc="$(printf 'scripts/e\033[31mred.sh')"
+nlname="$(printf 'scripts/a\nFix: bash -c evil.sh')"
+made=0
+if printf '#!/usr/bin/env bash\n' >"$r/scripts/$payload.sh" 2>/dev/null \
+    && printf '#!/usr/bin/env bash\n' >"$r/$esc" 2>/dev/null \
+    && printf '#!/usr/bin/env bash\n' >"$r/$nlname" 2>/dev/null; then
+    made=1
+fi
+if [ "$made" -eq 0 ]; then
+    echo "NOTE  hostile file names: this filesystem refuses the names, case skipped"
+else
+    git -C "$r" add -A 2>/dev/null
+    write_owners "$r" "$FULL_ROWS" "| \`scripts/gone$payload\` | Dead row | @alice | |" "| $payload | A job with a hostile name | | |" "| \`scripts/build-$payload\` | Agent row | agent$payload | |"
+    run "$r" evil
+    expect "hostile names: exit 1" [ "$rc" -eq 1 ]
+    expect "hostile names: stderr is only rule and Fix pairs (no faked second Fix line)" pairs_ok evil
+    expect "hostile names: no command substitution, backtick or quote in the output" no_shell_chars evil
+    expect "hostile names: no escape byte in the output" bash -c '! grep -q "$(printf "\033")" "$1"' _ "$T/evil.err"
+    grep '^Fix: ' "$T/evil.err" >"$T/evil.fix" || true
+    while IFS= read -r l; do
+        (cd "$r" && EDITOR=true bash -c "${l#Fix: }") >/dev/null 2>&1 || true
+    done <"$T/evil.fix"
+    expect "hostile names: running every printed Fix line creates no PWNED file" no_pwned "$r"
+fi
 
 echo "failures: $fails"
 [ "$fails" -eq 0 ]

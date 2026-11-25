@@ -19,7 +19,7 @@ cat >"$T/bin/gh" <<'EOF'
 case "$1 $2" in
 "issue list")
     printf '%s\n' "$*" >>"$FAKE_T/list-calls"
-    [ -f "$FAKE_T/list-fails" ] && { echo "boom" >&2; exit 1; }
+    [ -f "$FAKE_T/list-fails" ] && { echo "${FAKE_BOOM:-boom}" >&2; exit 1; }
     cat "$FAKE_T/existing"
     ;;
 "issue create")
@@ -257,6 +257,43 @@ else
     expect "stamped board file: read with no argument, from a subdirectory" bash -c '[ "$1" -eq 0 ] && grep -Fq "created: ID-001: Plain tagged row" "$2"' _ "$rc" "$T/out-default"
     expect "stamped board file: the Scope line names it" grep -Fxq -- "Board row ID-001 in $STAMPED_BOARD" "$T/calls"
 fi
+
+# 11. hostile text (a path, an argument, gh output, a row title) never reaches a pasted command, a
+# second Fix line or the terminal
+payload="x'"
+payload="$payload"'$(touch PWNED)`touch PWNED`;touch PWNED'
+no_shell_chars() { ! grep -F -e '$(' -e '`' -e "'" "$1"; }
+hdir="$T/hostile"
+mkdir -p "$hdir"
+reset
+rc=0
+(cd "$hdir" && bash "$SCRIPT" --board-file "$hdir/$payload.md") >"$T/out-h1" 2>"$T/err-h1" || rc=$?
+expect "hostile board path: exit 1, rule then Fix" bash -c '[ "$1" -eq 1 ]' _ "$rc"
+expect "hostile board path: the refusal is exactly two lines" pair h1
+rc=0
+(cd "$hdir" && bash "$SCRIPT" "--$payload") >"$T/out-h2" 2>"$T/err-h2" || rc=$?
+expect "hostile argument: exit 2, rule then Fix" bash -c '[ "$1" -eq 2 ]' _ "$rc"
+expect "hostile argument: the refusal is exactly two lines" pair h2
+: >"$T/list-fails"
+FAKE_BOOM="$payload" run hostgh --apply
+expect "hostile gh error text: exit 1, rule then Fix" bash -c '[ "$1" -eq 1 ]' _ "$rc"
+expect "hostile gh error text: the refusal is exactly two lines" pair hostgh
+rm -f "$T/list-fails"
+printf '| ID-001 | %s title | Goal here. Done when: it is ok. #alice | queued |\n' "$payload" >"$T/HBOARD.md"
+reset
+rc=0
+(cd "$hdir" && bash "$SCRIPT" --board-file "$T/HBOARD.md" --apply) >"$T/out-h4" 2>"$T/err-h4" || rc=$?
+expect "hostile row title: the issue is still created" bash -c '[ "$1" -eq 0 ] && [ "$(grep -c "^CALL issue\$" "$2")" -eq 1 ]' _ "$rc" "$T/calls"
+for n in h1 h2 hostgh h4; do
+    expect "hostile $n: no command substitution, backtick or quote in stderr" no_shell_chars "$T/err-$n"
+    expect "hostile $n: no command substitution, backtick or quote in stdout" no_shell_chars "$T/out-$n"
+    expect "hostile $n: no escape byte in the output" bash -c '! cat "$1" "$2" | grep -q "$(printf "\033")"' _ "$T/out-$n" "$T/err-$n"
+    grep -h '^Fix: ' "$T/err-$n" >"$T/fix-$n" || true
+    while IFS= read -r l; do
+        (cd "$hdir" && EDITOR=true bash -c "${l#Fix: }") >/dev/null 2>&1 || true
+    done <"$T/fix-$n"
+done
+expect "hostile text: running every printed Fix line creates no PWNED file" bash -c '[ -z "$(find "$1" -name "PWNED*")" ]' _ "$T"
 
 echo "failures: $fails"
 [ "$fails" -eq 0 ]

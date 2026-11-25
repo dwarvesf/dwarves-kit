@@ -219,7 +219,7 @@ expect "a dot in the version is not a wildcard" [ "$rc" -eq 1 ]
 # 10. a missing version and a missing file
 run missing 9.9.9 "$T/ver.md"
 expect "missing version: exit 1" [ "$rc" -eq 1 ]
-expect "missing version: names it" has missing.err "no '## [9.9.9]' section"
+expect "missing version: names it" has missing.err "no ## [9.9.9] section"
 expect "missing version: rule then Fix" pair missing
 run nofile Unreleased "$T/does-not-exist.md"
 expect "missing file: exit 1" [ "$rc" -eq 1 ]
@@ -268,6 +268,35 @@ expect "no python3 on PATH: same notes" cmp -s "$T/nopy.out" "$T/mixed"
 rc=0
 PATH="$T/nopy" "$T/nopy/bash" "$SCRIPT" Unreleased "$T/untagged.md" >"$T/nopy2.out" 2>"$T/nopy2.err" || rc=$?
 expect "no python3 on PATH: the refusal still fires" bash -c '[ "$1" -eq 1 ] && grep -q "^Fix: " "$2"' _ "$rc" "$T/nopy2.err"
+
+# 14. hostile text (a changelog line, a section name, a file path) never reaches a pasted command,
+# a second Fix line or the terminal
+payload="x'"
+payload="$payload"'$(touch PWNED)`touch PWNED`;touch PWNED'
+no_shell_chars() { ! grep -F -e '$(' -e '`' -e "'" "$1"; }
+hdir="$T/hostile"
+mkdir -p "$hdir"
+printf '## [Unreleased]\n\n- %s: fine.\n- %sx: %s\n' "$P1" "$P1" "$payload" >"$T/hostile.md"
+printf '## [Unreleased]\n\n- %s: fine.\n- %s\033[31m: an escape in the tag.\n' "$P1" "$P1" >"$T/escape.md"
+run h1 Unreleased "$T/hostile.md"
+expect "hostile changelog line: exit 1, rule then Fix" bash -c '[ "$1" -eq 1 ]' _ "$rc"
+run h2 "$payload" "$T/ver.md"
+expect "hostile section name: exit 1, rule then Fix" bash -c '[ "$1" -eq 1 ]' _ "$rc"
+run h3 Unreleased "$T/$payload.md"
+expect "hostile file path: exit 1, rule then Fix" bash -c '[ "$1" -eq 1 ]' _ "$rc"
+run h4 "$payload" "$T/$payload.md"
+run h5 Unreleased "$T/escape.md"
+expect "escape sequence in a changelog line: exit 1" bash -c '[ "$1" -eq 1 ]' _ "$rc"
+for n in h1 h2 h3 h4 h5; do
+    expect "hostile $n: the refusal is exactly two lines" pair "$n"
+    expect "hostile $n: no command substitution, backtick or quote in stderr" no_shell_chars "$T/$n.err"
+    expect "hostile $n: no escape byte in the output" bash -c '! grep -q "$(printf "\033")" "$1"' _ "$T/$n.err"
+    grep -h '^Fix: ' "$T/$n.err" >"$T/$n.fix" || true
+    while IFS= read -r l; do
+        (cd "$hdir" && EDITOR=true bash -c "${l#Fix: }") >/dev/null 2>&1 || true
+    done <"$T/$n.fix"
+done
+expect "hostile text: running every printed Fix line creates no PWNED file" bash -c '[ -z "$(find "$1" -name "PWNED*")" ]' _ "$hdir"
 
 echo "failures: $fails"
 [ "$fails" -eq 0 ]

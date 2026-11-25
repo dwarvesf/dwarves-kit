@@ -13,6 +13,10 @@ set -euo pipefail
 TAGS='{{TAGS}}'
 TAGS_ERE='{{TAGS_ERE}}'
 
+# Repo text and arguments are attacker-chosen. clean() makes text printable on one line (every
+# character outside a small set becomes ?); safe() says a value may sit inside a pasted command.
+clean() { local s="${1:0:200}"; printf '%s' "${s//[!A-Za-z0-9._\/@ :,=#()+-]/?}"; }
+safe() { [[ "$1" =~ ^[A-Za-z0-9._/@][A-Za-z0-9._/@-]*$ ]]; }
 refuse() { # refuse <rule> <fix>: the two-line refusal on stderr
     printf 'release-notes: %s\nFix: %s\n' "$1" "$2" >&2
 }
@@ -41,7 +45,12 @@ case "$0" in
 esac
 file="${2:-$here/../CHANGELOG.md}"
 if [ ! -f "$file" ]; then
-    refuse "$file not found" "printf '# Changelog\\n\\n## [Unreleased]\\n' > $file"
+    if safe "$file"; then
+        fix="printf '# Changelog\\n\\n## [Unreleased]\\n' > $file"
+    else
+        fix="create the changelog by hand (its path holds characters this script will not put in a command)"
+    fi
+    refuse "$(clean "$file") not found" "$fix"
     exit 1
 fi
 
@@ -96,15 +105,21 @@ END {
 }' "$file")" || rc=$?
 
 if [ "$rc" -ne 0 ]; then
+    if safe "$file"; then edit="\${EDITOR:-vi} $file # "; else edit="edit the changelog by hand: "; fi
     IFS=$'\t' read -r _ kind detail <<EOF2
 $result
 EOF2
     case "$kind" in
     NOSECTION)
-        refuse "no '## [$section]' section in $file" "printf '\\n## [%s]\\n' '$section' >> $file"
+        if safe "$section" && safe "$file"; then
+            fix="printf '\\n## [%s]\\n' '$section' >> $file"
+        else
+            fix="add that section heading to the changelog by hand (a name holds characters this script will not put in a command)"
+        fi
+        refuse "no ## [$(clean "$section")] section in $(clean "$file")" "$fix"
         ;;
     UNTAGGED)
-        refuse "entry without a tag (${TAGS//,/, }): $detail" "\${EDITOR:-vi} $file # start the entry with one of: ${TAGS//,/: }:"
+        refuse "entry without a tag (${TAGS//,/, }): $(clean "$detail")" "${edit}start the entry with one of: ${TAGS//,/: }:"
         ;;
     *)
         product=""
@@ -112,7 +127,7 @@ EOF2
         IFS=','
         for t in $TAGS; do [ "$t" = dev ] || product="$product $t:"; done
         IFS="$oldifs"
-        refuse "[$section] has no entry for a user; only dev: lines, or none at all" "\${EDITOR:-vi} $file # add an entry tagged with one of:${product:- a product tag}"
+        refuse "[$(clean "$section")] has no entry for a user; only dev: lines, or none at all" "${edit}add an entry tagged with one of:${product:- a product tag}"
         ;;
     esac
     exit 1
