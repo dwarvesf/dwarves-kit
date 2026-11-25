@@ -309,3 +309,15 @@ Two things the guards do not cover, measured in the real browser by case `observ
 - Fix round F4 controls were run by hand on temp copies of the runner and are copied from the shell, not from a notes table.
 - Fix round F2 controls were each seen red by hand, and the notes recorded no per-mutation table for them.
 - No dispatch needed a rerun, so there is no rerun to disclose.
+
+## Outcome
+
+The verdict lines in the live dispatch section are the agent's own output under test; two of them are FAIL by design (the planted bug and the uncovered criterion). The outcome of this proof is the suite run on the final tree, after the last fix pass and the merge with master:
+
+```
+Command: bash tests/test-ui-acceptance-verifier.sh
+Exit: 0
+Output:
+  test-ui-acceptance-verifier: 469 passed, 0 failed, 0 skipped
+Verdict: PASS
+```
