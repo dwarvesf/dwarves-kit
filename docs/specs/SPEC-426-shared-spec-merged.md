@@ -124,7 +124,7 @@ branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] <repo> <default> <gh
 - `--tip SHA`: judge this commit instead of `refs/heads/<branch>` (a caller that read and guarded a tip, or a remote-only branch).
 - `--prs-json FILE`: use this merged-PR list (`gh pr list --state merged --json headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository`) instead of one gh call; the origin sweep reads once for all branches. Rows are filtered to `headRefName == <branch>`, `isCrossRepository != true`, `baseRefName == <default>`.
 - exit: always 0 for a verdict (callers read stdout); 64 on usage error with empty stdout, which every caller reads as LEAVE.
-- Moves with it, unchanged: `_absorbed`, `_squash_json`, `_squash_verdict`, `_gh_state`, `_gh_note`. `lib/wrap/wrap-common.sh` sources the file (precedent: it already sources `lib/gate/default-branch-warn.sh`); `lib/goal/wt.sh` sources `$LIB/gate/branch-merged.sh`.
+- Moves with it, unchanged: `_absorbed`, `_squash_verdict`, `_gh_state`, `_gh_note`, `_origin_url`. `_squash_json` moves widened (it also requests `number`, `headRefName` and `isCrossRepository`), and `_squash_rows` is new: it keeps a merged-PR row only when `isCrossRepository` is exactly false and `headRefName` names the branch, so a field gh did not send never reads as the permissive value. `lib/wrap/wrap-common.sh` sources the file (precedent: it already sources `lib/gate/default-branch-warn.sh`); `lib/goal/wt.sh` sources `$LIB/gate/branch-merged.sh`.
 
 ### What is deliberately not a merged check (excluded by name, not by regex luck)
 
@@ -147,6 +147,9 @@ Merged checks, repro in `## Grounding`. Strictest caller that guards a deletion:
 | DM4 | Stray commits whose patch landed, with later edits to the same file: carry patch-id vs ladder | carry says landed (`reset --keep`); the ladder says `LEAVE none` | stays out of the shared function, as a named `merged-ok` exclusion: it answers "did this commit land", not "is this branch merged"; adding a looser rung to the shared function would loosen every deleting caller |
 | DM5 | A merged `<branch>-squash` PR at any tip: carry sibling probe | counts as landed with no tip compared (`wrap-carry.sh:103`) | stays, as a named `merged-ok` exclusion: it only skips opening a duplicate PR; the reset after it is gated by a separate "origin holds HEAD" check |
 | DM6 | Cross-repo PRs: ladder vs origin sweep | the sweep ignores a fork PR; the ladder counts it | both ignore it (`isCrossRepository != true`). Stricter, no known real input |
+| DM8 | Default mode, a merged PR that exists only from a fork, or a row missing `isCrossRepository` or `headRefName` | the old ladder counted it (a fork row at the exact tip was SAFE squash; `LEAVE tip`/`LEAVE base` named it otherwise) | stricter: such rows never count, so the answer is `LEAVE none`. No known real input: gh sends both fields |
+| DM9 | Two PRs from one head, one merged and a newer one open: `wt.sh close` | first PR's state decided; with the first PR OPEN or CLOSED it refused | refuse whenever an OPEN PR names the head or the open list cannot be read; the origin delete is leased to the judged tip, so a branch that moved on stays |
+| DM10 | The origin sweep's open-PR protection through a pipe | a protect list past the pipe buffer let a base branch go | matched in the shell with a `case`; an open row that names no head or base skips the sweep |
 | DM7 | Adopt accepts the merged PR head equal to the worktree tip or origin's tracking tip | two tips | adopt calls `branch_merged --need pr --tip` once per tip |
 
 Active spec:
