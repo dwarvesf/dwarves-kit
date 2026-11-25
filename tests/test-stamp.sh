@@ -338,6 +338,12 @@ sed -i.bak 's|^value BOARD_FILE .*|value BOARD_FILE docs/BOARD.md|; s|^value DOO
 run "$RX"
 expect "a planted approver is used but shown, with its source" has "using: DOOR_APPROVER=mallory (lock)"
 
+# 17f. a product path that makes an invalid pattern, or starts with *, is refused
+for badp in "*/src" "*" "a[b/" "a(b/" "a)b/" "a\\/"; do
+  RX="$(newrepo)"; OUT="$($STAMP --default-branch main --owner alice --product-paths "$badp" "$RX" 2>&1)"; RC=$?
+  expect "product path '$badp' is refused with a two-line refusal" bash -c "[ $RC -eq 1 ] && printf '%s\n' \"\$1\" | tail -n 2 | sed -n 2p | grep -q '^Fix: ' && [ ! -e '$RX/.claude' ]" _ "$OUT"
+done
+
 # 17e. take: the backup never goes through a symlink
 TPLB="$(fixture_copy)"; RB="$(newrepo)"
 STAMP_TEMPLATES="$TPLB" run "$RB" $FLAGS

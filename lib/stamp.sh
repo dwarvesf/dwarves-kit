@@ -164,6 +164,14 @@ TAGS_COLON="$(printf '%s' "$TAGS" | awk -F, '{for(i=1;i<=NF;i++) printf "%s%s:",
 TAGS_AWK="$(printf '%s' "$TAGS" | awk -F, '{for(i=1;i<=NF;i++) printf "%s\"%s\"", (i>1?", ":""), $i}')"
 PRODUCT_ERE="^($(printf '%s' "$PRODUCT_PATHS" | sed 's/[.]/\\./g' | tr ',' '|'))"
 PRODUCT_ARRAY="$(quote_list "$PRODUCT_PATHS")"
+# a pattern the generated scripts will feed to grep -E must be valid there: run it on empty input and
+# refuse exit 2 (an invalid pattern would silently turn "is this a product path" into false). A product
+# path may not start with * either.
+for pat_pair in "product-paths:$PRODUCT_ERE" "tags:^($TAGS_ERE)"; do
+  printf '' | grep -E -- "${pat_pair#*:}" >/dev/null 2>&1
+  [ "$?" -ne 2 ] || refuse "--${pat_pair%%:*} makes an invalid grep -E pattern: ${pat_pair#*:}" "pass plain paths such as --product-paths src/,lib/ (no regex characters)"
+done
+case ",$PRODUCT_PATHS," in *,\**) refuse "--product-paths has an item that starts with *: $PRODUCT_PATHS" "pass plain paths such as --product-paths src/,lib/";; esac
 DOOR_ARRAY="$(quote_list "$DOOR_PATHS")"
 if [ -n "$DOOR_PATHS" ]; then DOOR_CASE="$(printf '%s' "$DOOR_PATHS" | tr ',' '|')"; else DOOR_CASE=".stamp-no-door-path"; fi
 
