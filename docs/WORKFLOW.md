@@ -30,6 +30,8 @@ via `install.sh --with <modules>`, recording the enabled set in the consumer's
 
 ## Where work comes from (the board)
 
+This section describes the board in a repo that keeps one. The kit's own board is maintainer only and lives in a private repo, so a public clone has no `_meta/`. An outside contributor files an issue instead.
+
 `_meta/BACKLOG.md` is the kanban board: one row per work item, the Status column is
 the state machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, plus
 `parked` / `dropped`), declared once in `lib/board/states.tsv` (state, class, forward path) and printed by

@@ -132,7 +132,7 @@ kit-weekly exposes via its own bridge. Per the job-monitoring-onboarding
 convention (a scheduled job isn't "done" until it's monitored), actually
 WIRING that up (an ops-toolkit `vps-mon` probe or bridge script for
 `board-sync-<slug>`) is a separate follow-up in
-`ops-toolkit/tools/vps-mon/`, not part of this kit repo.
+the vps-mon repo (`dwarvesf/vps-mon`), not part of this kit repo.
 
 ## Uninstall
 
