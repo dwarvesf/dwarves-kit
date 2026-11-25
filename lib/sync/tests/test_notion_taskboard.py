@@ -12,8 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sources.notion_taskboard import (NotionTaskBoardSource, _rich,  # noqa: E402
                                       parse_map)
 from sources.notion_taskboard_pull import MARKER_PREFIX  # noqa: E402
-from sync_core import (PULL_MARKER_RE, Plan, Row,  # noqa: E402
-                       plan_create_only)
+from sync_core import Plan, Row, plan_create_only  # noqa: E402
+
+PULL_MARKER_RE = NotionTaskBoardSource.bound_marker_re
 
 
 class FakeNtn:
@@ -112,7 +113,7 @@ PULL_PID = "0123456789abcdef0123456789abcdef"
 def test_marker_row_adopts_instead_of_creating():
     r = rows(("DF-1", "intake row", "queued",
               f"notion-intake ; notion-page:{PULL_PID} ; some body"))
-    plan = plan_create_only(r, {})
+    plan = plan_create_only(r, {}, bound_re=PULL_MARKER_RE)
     assert plan.src_create == []
     assert plan.src_adopt == [("DF-1", PULL_PID)]
 
@@ -128,7 +129,8 @@ def test_dropped_or_filtered_marker_row_plans_nothing():
     r = rows(("DF-1", "dropped intake", "dropped", f"notion-page:{PULL_PID}"),
              ("DF-2", "filtered intake", "queued",
               f"#family notion-page:{PULL_PID}"))
-    plan = plan_create_only(r, {}, filt={"skip_tags": {"family"}})
+    plan = plan_create_only(r, {}, filt={"skip_tags": {"family"}},
+                            bound_re=PULL_MARKER_RE)
     assert plan.src_create == [] and plan.src_adopt == []
 
 

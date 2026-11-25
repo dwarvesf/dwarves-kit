@@ -686,22 +686,8 @@ def plan_sync(rows: dict, items: list, state: dict,
     return p
 
 
-# The pull adapter's identity marker (sources/notion_taskboard_pull.py
-# MARKER_PREFIX), matched against a row's raw notes cell. A row carrying this
-# was written by the pull adapter (`_NEUTRALIZE` there defangs the same
-# pattern before untrusted text reaches the board), never by a Task Board
-# editor, so the push leg can trust it as proof the row already has a page.
-PULL_MARKER_RE = re.compile(r"notion-page:([0-9a-f]{32})")
-
-
-def bound_page_id(notes: str) -> str | None:
-    """The Notion page id a row's notes already carry, or None."""
-    m = PULL_MARKER_RE.search(notes)
-    return m.group(1) if m else None
-
-
 def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
-                     filt: dict | None = None) -> Plan:
+                     filt: dict | None = None, bound_re=None) -> Plan:
     """One-way, insert-only plan for a write-only sink.
 
     Emits a `src_create` for every in-scope board row NOT already recorded in
@@ -710,10 +696,12 @@ def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
     the map is the identity index and a row is pushed exactly once, so a team
     member's later edits on the sink are never overwritten.
 
-    A row whose notes already carry a pull-adapter marker (`notion-page:<id>`)
-    is bound, not created: it was born on this very Task Board, so a create
-    would mint a duplicate page. `src_adopt` records the binding as plan data
-    so `sync_create_only` can persist it without a network call.
+    A row whose notes already carry the sink's own identity marker is bound,
+    not created: it was born on this very sink, so a create would mint a
+    duplicate. `bound_re` is the sink's compiled marker regex (group 1 is the
+    remote id); with the default `None` no row is adopted. `src_adopt` records
+    the binding as plan data so `sync_create_only` can persist it without a
+    network call.
     """
     p = Plan()
     skip = skip_kw if skip_kw is not None else {"dropped"}
@@ -725,9 +713,9 @@ def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
             continue
         if not in_scope(row, filt):
             continue
-        pid = bound_page_id(row.notes)
-        if pid is not None:
-            p.src_adopt.append((bid, pid))
+        m = bound_re.search(row.notes) if bound_re is not None else None
+        if m:
+            p.src_adopt.append((bid, m.group(1)))
             continue
         p.src_create.append((bid, title_for(bid, row.item), row.notes,
                              row.status_kw))
@@ -923,7 +911,7 @@ def describe(plan: Plan, assigned: dict | None = None) -> str:
     for bid, t, _b, _kw in plan.src_create:
         out.append(f"  + spoke     {t}")
     for bid, _pid in plan.src_adopt:
-        out.append(f"  = spoke     {bid} bound to an existing Notion page "
+        out.append(f"  = spoke     {bid} bound to an existing remote item "
                    "(pull marker), not created")
     for rid, kw in plan.src_set_status:
         out.append(f"  ~ spoke     {rid} -> {kw}")

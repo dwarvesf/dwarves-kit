@@ -3,6 +3,7 @@ adapter with fake transports; live runs are recorded in docs/proof-of-done.md.
 """
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ from sync_core import (  # noqa: E402
     next_id,
     parse_board,
     parse_title,
+    plan_create_only,
     plan_sync,
     strip_tags,
     title_for,
@@ -1344,3 +1346,33 @@ def test_intake_skip_re_also_sees_the_title():
                   filt={"intake": "all", "intake_skip_re": r"^\[to:"})
     assert [a[0] for a in p.board_add] == ["r41"]
     assert any("intake filtered" in n and "[to:chonky]" in n for n in p.notes)
+
+
+# --- create-only planner: the bound-marker parameter ---------------------
+
+FAKE_ID = "0123456789abcdef0123456789abcdef"
+FAKE_MARKER_RE = re.compile(r"fake-id:([0-9a-f]{32})")
+
+
+def _marker_rows():
+    return {"ID-1": Row("ID-1", "has a marker", "queued", 0,
+                        f"intake ; fake-id:{FAKE_ID} ; body"),
+            "ID-2": Row("ID-2", "plain row", "queued", 1, "no marker")}
+
+
+def test_create_only_with_no_bound_re_adopts_nothing():
+    p = plan_create_only(_marker_rows(), {})
+    assert [c[0] for c in p.src_create] == ["ID-1", "ID-2"]
+    assert p.src_adopt == []
+
+
+def test_create_only_binds_a_row_carrying_the_sink_marker():
+    p = plan_create_only(_marker_rows(), {}, bound_re=FAKE_MARKER_RE)
+    assert p.src_adopt == [("ID-1", FAKE_ID)]
+    assert [c[0] for c in p.src_create] == ["ID-2"]
+
+
+def test_describe_words_an_adopted_row_neutrally():
+    p = plan_create_only(_marker_rows(), {}, bound_re=FAKE_MARKER_RE)
+    assert ("= spoke     ID-1 bound to an existing remote item "
+            "(pull marker), not created") in describe(p)

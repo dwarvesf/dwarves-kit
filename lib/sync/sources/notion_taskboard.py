@@ -14,6 +14,8 @@ board, so a typo'd map value is a hard error instead of a silently
 auto-created select option. `read()` returns [] (the sink is write-only).
 """
 
+import re
+
 from sources.ntn import run_ntn  # noqa: E402
 from sync_core import extract_tags, strip_tags
 
@@ -69,6 +71,12 @@ class NotionTaskBoardSource:
     name = "notion-taskboard"
     create_only = True   # engine runs plan_create_only + the write-only path
     sync_fields = False
+    # A row whose notes carry this marker was written by the pull adapter
+    # (sources/notion_taskboard_pull.py MARKER_PREFIX; `_NEUTRALIZE` there
+    # defangs the same pattern before untrusted text reaches the board), never
+    # by a Task Board editor, so the push leg binds it instead of creating a
+    # duplicate page.
+    bound_marker_re = re.compile(r"notion-page:([0-9a-f]{32})")
 
     def __init__(self, db=None, status_map=None, *, status_default=None,
                  priority_map=None, weight_map=None, owner=None,

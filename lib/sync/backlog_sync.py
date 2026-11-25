@@ -108,7 +108,8 @@ def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
     if hasattr(src, "binding") and state.get("binding"):
         src.binding = state["binding"]
     plan = plan_create_only(rows, state, skip_kw=getattr(src, "skip_kw", None),
-                            filt=filt)
+                            filt=filt,
+                            bound_re=getattr(src, "bound_marker_re", None))
     # Validate the whole batch (maps resolve, options exist) BEFORE any write,
     # so `--dry-run` surfaces config errors and a live run never dies part-way.
     if hasattr(src, "preflight"):

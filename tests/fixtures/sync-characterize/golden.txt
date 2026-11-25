@@ -230,7 +230,7 @@ dry-run notion-taskboard: 6 board rows, 5 to create
   + spoke     ID-3 · Executing thing
   + spoke     ID-4 · Parked thing
   + spoke     ID-5 · Shipped thing
-  = spoke     ID-6 bound to an existing Notion page (pull marker), not created
+  = spoke     ID-6 bound to an existing remote item (pull marker), not created
 call	{"args": ["datasources", "resolve", "tb1", "--json"], "data": null}
 call	{"args": ["api", "v1/data_sources/ds-tb1"], "data": null}
 ### notion-taskboard-pull
