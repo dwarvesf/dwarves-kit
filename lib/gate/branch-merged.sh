@@ -68,13 +68,13 @@ _squash_json() {
     --json number,headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null
 }
 
-# _squash_rows <json> <branch> <strict 0|1> -- the merged-PR rows that may speak for <branch>: same
-# repo only (a fork's same-named branch never counts). A row from `gh pr list --head` may omit
-# headRefName; strict (a caller-supplied list) demands it equal <branch>. Unusable JSON prints nothing.
+# _squash_rows <json> <branch> -- the merged-PR rows that may speak for <branch>: rows that say, in
+# fields gh sent, that they name this head (headRefName) and come from this repo
+# (isCrossRepository exactly false). A field that is null or missing keeps the row out: nothing
+# gh did not send is read as the answer that lets a delete through. Unusable JSON prints nothing.
 _squash_rows() {
-  printf '%s' "$1" | jq -c --arg b "$2" --argjson strict "$3" '
-    [.[] | select(((.isCrossRepository // false) | not)
-                  and (if $strict == 1 then .headRefName == $b else ((.headRefName // $b) == $b) end))]' 2>/dev/null
+  printf '%s' "$1" | jq -c --arg b "$2" '
+    [.[] | select(.isCrossRepository == false and .headRefName == $b)]' 2>/dev/null
 }
 
 # The merge-proof grammar. The ladder and its squash rung print ONE line, `<code> <reason> <detail>`:
@@ -113,7 +113,7 @@ _squash_verdict() {
 #   --tip SHA       judge this commit instead of refs/heads/<branch>: a caller that read and guarded a tip,
 #                   or a branch that exists only on origin.
 #   --prs-json FILE use this merged-PR list instead of one gh call (the origin sweep reads it once for
-#                   every branch). Rows must name headRefName; fork rows and non-default bases never count.
+#                   every branch). Rows must say headRefName and isCrossRepository=false; others never count.
 #   --numbers       print the numbers of the merged PRs that speak for the tip, one per line, instead of a
 #                   verdict: exit 0 at least one, 1 none, 2 unreadable (gh not ok, gh failed, unusable JSON).
 # A usage error exits 64 with nothing on stdout, which every caller reads as LEAVE.
@@ -121,7 +121,7 @@ _squash_verdict() {
 # branch called origin/<def> beats the remote-tracking ref. Either once proved an unlanded
 # worktree branch "merged".
 branch_merged() {
-  local need=any tip="" prsjson="" numbers=0 repo def ghs b json rows grc=0 strict=0 out
+  local need=any tip="" prsjson="" numbers=0 repo def ghs b json rows grc=0 out
   while [ $# -gt 0 ]; do
     case "$1" in
       --need) need="${2:-}"; shift 2 || return 64 ;;
@@ -150,11 +150,11 @@ branch_merged() {
     printf 'LEAVE nogh %s\n' "$(_gh_note "$ghs")"; return 0
   fi
   if [ -n "$prsjson" ]; then
-    json="$(cat "$prsjson" 2>/dev/null)" || grc=1; strict=1
+    json="$(cat "$prsjson" 2>/dev/null)" || grc=1
   else
     json="$(_squash_json "$(_origin_url "$repo")" "$b")" || grc=1
   fi
-  rows="$(_squash_rows "$json" "$b" "$strict")"
+  rows="$(_squash_rows "$json" "$b")"
   if [ "$numbers" = 1 ]; then
     [ "$grc" = 0 ] && [ -n "$rows" ] || return 2
     out="$(printf '%s' "$rows" | jq -r --arg tip "$tip" --arg def "$def" \
