@@ -439,3 +439,12 @@ Negative controls run in this half (hand mutations on a temp copy of `run.mjs` o
 | scenario clock does not cap a step | `hang-bounded` | `FAIL the scenario clock caps a step in flight: the row is NO-CHECK 'scenario timeout'` |
 | `mismatch` read as `unverified` | `identity-and-readiness` | `FAIL a different 40-hex value -> mismatch (exit 0, got: unverified/ffffffffffff/PASS/)` |
 | a UUID read as a build id | `identity-and-readiness` | `FAIL a UUID -> unverified (exit 2, got: mismatch/123e4567-e89/NO-CHECK/preview is not the head)` |
+
+## Spec sync after the build
+
+The spec now says what the code does for the resolver pin, the redirect hop, the clocks, the retry, the FAIL reason, the timeout flags, exit 4 rows, the environment-fault scope and the preflight order (Decision Log entries DEC-30 to DEC-38). Two corrections to the build logs above:
+
+- The first build log says the runner never opens DNS when no entry is runnable. The code runs the allowed-host address check before it plans rows, so the DNS check (and the private-address refusal) always runs. Only the install check and the browser are skipped when no entry is runnable.
+- The second build log says a hop after the first may show as `page did not settle`. The code flags any top-level navigation that fails at name resolution as `redirected off an allowed host`, and no case exercises a chain of more than one hop, so the spec pins one hop only.
+
+Open for the lead (code, not spec): `expect_no_text` returns FAIL with an empty `observed` when its step limit is under 500 ms, which only happens with `--step-timeout-ms` below 500. A FAIL there says the text was present when it was not, so it misreports the page.
