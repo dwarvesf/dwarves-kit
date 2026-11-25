@@ -5,7 +5,7 @@ docs/proof-of-done.md). Owner: the kit `sync` module. Supersedes the
 single-source backlog-reminders-sync design (kept as the Reminders adapter).
 
 Amended 2026-07-16 (modularization pass): engine graduated from
-ops-toolkit/tools/ into dwarves-kit as registered module `sync` (leg Specify)
+the ops-toolkit tools tree into dwarves-kit as registered module `sync` (leg Specify)
 at `lib/sync/`, verb `board sync`. Config moved from `_meta/sync.toml` to the
 ADR-0034 layer: per-repo `.kit.toml [sync]` keys (declared in kit.toml,
 registered in `lib/config/module-registry.md`), resolved in `board.sh
