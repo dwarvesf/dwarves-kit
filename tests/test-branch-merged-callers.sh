@@ -173,13 +173,41 @@ out="$(wt_close)"; rc=$?
 chk "wt close: a merged PR plus an OPEN PR from the same head refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
 chk "wt close: the open PR's branch stays on origin" "$(wt_origin_has w9; echo $?)"
 
-# Merged PR at A, then a newer CLOSED PR from the same head: origin moved on to Y after the merge.
+# Merged PR at A, then a newer CLOSED PR from the same head: origin moved on to Y after the merge, local is at A.
+# Nothing local may go: the remote ref is read before any removal and must be absent or the judged tip.
 wt_case w10; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"
-git -C "$WT_CLONE" checkout -q -b newer feat/x; echo more > "$WT_CLONE/y"; git -C "$WT_CLONE" add y
+git -C "$WT_CLONE" worktree add -q "$WT_CLONE/.claude/worktrees/x" feat/x
+git -C "$WT_CLONE" checkout -q -b newer master 2>/dev/null; git -C "$WT_CLONE" reset -q --hard "$A"
+echo more > "$WT_CLONE/y"; git -C "$WT_CLONE" add y
 git -C "$WT_CLONE" commit -qm "feat: pushed after the merge"; Y="$(git -C "$WT_CLONE" rev-parse HEAD)"
 git -C "$WT_CLONE" push -q origin "newer:refs/heads/feat/x"; git -C "$WT_CLONE" checkout -q master; git -C "$WT_CLONE" branch -q -D newer
+echo "scratch edit" > "$WT_CLONE/.claude/worktrees/x/uncommitted.txt"
 out="$(wt_close)"; rc=$?
-chk "wt close: origin's branch keeps the newer tip (the remote delete is leased to the judged tip)" "$([ "$(git -C "$TMPD/bare-w10" rev-parse refs/heads/feat/x 2>/dev/null)" = "$Y" ]; echo $?)"
+chk "wt close: a remote branch that moved past the judged tip refuses" "$([ "$rc" -ne 0 ]; echo $?)"
+chk_has "wt close: the refusal names the remote tip" "$out" "LEAVE remote $Y"
+chk "wt close: the local branch stays" "$(wt_has_branch; echo $?)"
+chk "wt close: the worktree stays" "$([ -d "$WT_CLONE/.claude/worktrees/x" ]; echo $?)"
+chk "wt close: the worktree's uncommitted file stays" "$([ -f "$WT_CLONE/.claude/worktrees/x/uncommitted.txt" ]; echo $?)"
+chk "wt close: origin's branch keeps the newer tip" "$([ "$(git -C "$TMPD/bare-w10" rev-parse refs/heads/feat/x 2>/dev/null)" = "$Y" ]; echo $?)"
+
+# The remote read itself fails: a failed read refuses too (ls-remote cannot reach a missing origin).
+wt_case w10b; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"
+git -C "$WT_CLONE" remote set-url origin "$TMPD/does-not-exist.git"; git -C "$WT_CLONE" config --unset "url.$TMPD/bare-w10b.insteadOf"
+out="$(wt_close)"; rc=$?
+chk "wt close: a failed remote read refuses and keeps the branch" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+
+# GitHub moved the PR head past the local tip (Update branch, a web suggestion), then the PR merged: exact tip is the rule.
+wt_case w14; Y2="$(printf '%040d' 7)"; shim_set merged-feat_x "[$(pr_row 1 feat/x "$Y2" master)]"
+git -C "$WT_CLONE" worktree add -q "$WT_CLONE/.claude/worktrees/x" feat/x
+out="$(wt_close)"; rc=$?
+chk "wt close: a PR head past the local tip refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+chk_has "wt close: the refusal is LEAVE tip" "$out" "LEAVE tip $Y2"
+chk_has "wt close: and ends with the way out" "$out" "Fix: git -C $WT_CLONE/.claude/worktrees/x pull --ff-only, then close again"
+wt_case "w15+x"; shim_set merged-feat_x "[$(pr_row 1 feat/x "$Y2" master)]"
+out="$(wt_close)"; rc=$?
+chk "wt close: a worktree path outside the safe character set still refuses" "$([ "$rc" -ne 0 ] && wt_has_branch; echo $?)"
+chk_has "wt close: and names no path" "$out" "Fix: in that worktree run git pull --ff-only, then close again"
+chk_no "wt close: the unsafe path is not echoed into the fix line" "$out" "Fix: git -C"
 
 # Only the merged list fails: the open list and everything else answer.
 wt_case w11; shim_set merged-feat_x "[$(pr_row 1 feat/x "$A" master)]"; shim_set mode-merged fail
@@ -301,6 +329,21 @@ s11="$(sweep_repo s11)"; sweep_rows s11
 jq -c '[.[] | select(.headRefName == "gone") | .isCrossRepository = null]' "$SHIM/merged-all" > "$SHIM/merged-all.tmp"; mv "$SHIM/merged-all.tmp" "$SHIM/merged-all"
 out="$(sweep_run s11 1)"
 chk "sweep: a merged row with a null isCrossRepository keeps the branch" "$(alive s11 gone; echo $?)"
+
+# The wrap stub in strict mode answers a PR list with only the fields the caller named in --json, as gh does,
+# so code that stops requesting a field it relies on reads a row without it and keeps the branch.
+echo "=== the --need pr callers under the strict gh stub ==="
+mkdir -p "$TMPD/strict"
+sed -n "/^cat > \"\$TMPD\/stub\/gh\" <<'STUB'/,/^STUB\$/p" "$KIT_DIR/tests/lib/wrap-stub.sh" | sed '1d;$d' > "$TMPD/strict/gh"; chmod +x "$TMPD/strict/gh"
+chk "the strict stub was cut from tests/lib/wrap-stub.sh" "$([ "$(wc -l < "$TMPD/strict/gh")" -gt 20 ]; echo $?)"
+wt_case w16
+out="$(PATH="$TMPD/strict:$PATH" GH_STUB_STRICT_JSON=1 GH_STUB_MERGED_feat_x="[$(pr_row 1 feat/x "$A" master)]" wt_close)"; rc=$?
+chk "strict stub: wt close at a merged PR's exact tip still closes" "$([ "$rc" -eq 0 ] && ! wt_has_branch; echo $?)"
+s12="$(sweep_repo s12)"; sweep_rows s12
+out="$(PATH="$TMPD/strict:$PATH" GH_STUB_STRICT_JSON=1 GH_STUB_MERGED_ALL="$(cat "$SHIM/merged-all")" GH_STUB_OPEN_PRS="$(cat "$SHIM/open")" sweep_run s12 1)"
+chk "strict stub: the sweep deletes the exact-tip branch" "$(! alive s12 gone; echo $?)"
+chk "strict stub: the sweep keeps a PR merged into another base" "$(alive s12 otherbase; echo $?)"
+chk "strict stub: the sweep keeps the base of an open PR" "$(alive s12 openbase; echo $?)"
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-branch-merged-callers: $PASS passed, $FAIL FAILED"; exit 1; fi

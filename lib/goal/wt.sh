@@ -54,7 +54,17 @@ case "$verb" in
     verdict="$(branch_merged --need pr --tip "$tip" "$MAIN" master "$(_gh_state)" "$br")"
     case "$verdict" in
       "SAFE squash "*) ;;
-      *) echo "wt.sh: refusing to close: $br is not at the head of a merged PR (${verdict:-no answer})" >&2; exit 1 ;;
+      *) echo "wt.sh: refusing to close: $br is not at the head of a merged PR (${verdict:-no answer})" >&2
+         # GitHub can move the PR head past the local tip (Update branch, a web suggestion) before it
+         # merges; the exact tip stays the rule, so say how to bring the local branch level.
+         case "$verdict" in
+           "LEAVE tip "*)
+             case "$wt" in
+               ""|*[!A-Za-z0-9/._-]*) echo "Fix: in that worktree run git pull --ff-only, then close again" >&2 ;;
+               *) echo "Fix: git -C $wt pull --ff-only, then close again" >&2 ;;
+             esac ;;
+         esac
+         exit 1 ;;
     esac
     # gh lists the newest PR first, so one merged PR says nothing about a later one from the same head:
     # any OPEN PR that names the head keeps the branch, and so does a list that cannot be read.
@@ -63,6 +73,15 @@ case "$verb" in
       echo "wt.sh: refusing to close: an open PR names $br, or the open-PR list could not be read" >&2; exit 1
     fi
     [ "$(git rev-parse -q --verify "refs/heads/$br")" = "$tip" ] || { echo "wt.sh: refusing to close: $br moved while it was checked" >&2; exit 1; }
+    # The remote ref is read once, before anything local is removed: it must be gone already or sit at the
+    # judged tip. A branch that moved on (a newer PR from the same head), or a read that failed, keeps everything.
+    if ! remote="$(git ls-remote origin "refs/heads/$br" 2>/dev/null)"; then
+      echo "wt.sh: refusing to close: LEAVE remote unreadable (the origin ref of $br could not be read)" >&2; exit 1
+    fi
+    rsha="$(printf '%s\n' "$remote" | awk -v r="refs/heads/$br" '$2 == r { print $1; exit }')"
+    if [ -n "$rsha" ] && [ "$rsha" != "$tip" ]; then
+      echo "wt.sh: refusing to close: LEAVE remote $rsha (origin/$br is not at the judged tip)" >&2; exit 1
+    fi
     bash "$LIB/goal/goal-registry.sh" release "$slug" 2>/dev/null || true
     # -f -f: a single --force no-ops on a locked worktree, and the `git branch -D` below then
     # fails with "used by worktree", which reads as a second unrelated problem.
