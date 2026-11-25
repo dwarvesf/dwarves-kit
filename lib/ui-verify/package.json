@@ -1,0 +1,9 @@
+{
+  "name": "kit-ui-verify",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned Playwright for lib/ui-verify/run.mjs. Installed by the operator into the install root, never into the kit checkout.",
+  "pinnedOn": "2026-11-25",
+  "engines": { "node": ">=22" },
+  "dependencies": { "playwright": "1.65.1" }
+}

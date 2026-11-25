@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Offsite page</title>
+</head>
+<body>
+<main>
+  <h1>Offsite page</h1>
+  <p role="status" id="state"></p>
+</main>
+<script>
+  var host = 'localhost:__PORT2__';
+  var plain = fetch('http://' + host + '/pixel', { mode: 'no-cors' }).then(function () {}, function () {});
+  var socket = new Promise(function (resolve) {
+    try {
+      var ws = new WebSocket('ws://' + host + '/socket');
+      ws.onopen = ws.onerror = ws.onclose = function () { resolve(); };
+    } catch (error) { resolve(); }
+  });
+  Promise.all([plain, socket]).then(function () {
+    document.getElementById('state').textContent = 'offsite done';
+  });
+</script>
+</body>
+</html>
