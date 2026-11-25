@@ -12,7 +12,7 @@ References: `lib/queue/orchestrate.sh` `cmd_flip` (lines 990 to 1020: the one ex
 
 A mega-goal lead closes every sub-goal the same way: check on GitHub that the PR merged, copy the merge sha, edit the sub-goal's ROADMAP line by hand, and record the result in the attempt store. In one VimMotion run (`01-human-first-upgrade`, 44 sub-goals) the lead wrote that `gh` audit plus `sed` by hand about ten times. Two of those hand edits put wrong data into the ledger:
 
-- Commit `3047044` ticked `- [x] 21-app-shell-seams, PR #57, merged OPEN `. The lead read a PR field while the PR was still open (its `mergeable` read `UNKNOWN`), and the word `OPEN` went into the sha slot.
+- Commit `3047044` ticked `- [x] 21-app-shell-seams, PR #57, merged OPEN `. The word `OPEN` went into the sha slot. By the lead's own account (not sampled), the PR's `mergeable` read `UNKNOWN` at that moment and the hand flow pressed on.
 - A tick wrote `merged 2819920` for PR #37, whose merge commit is `281992a`. The wrong sha stayed in the ROADMAP until a later audit (commit `8e749b2`, "fix 13 sha").
 
 `mega status` finds a `[x]` line whose PR is not merged (CLAIM-UNVERIFIED), but only after the fact, and it never reads the sha. Nothing writes the line from gh truth to begin with. The kit owns the ROADMAP grammar (`lib/mega/box.tsv`) and the attempt store. It should also own the one verb that moves a sub-goal to done.
@@ -100,7 +100,7 @@ The check order as a flowchart (ASCII; this repo's operator rule forbids mermaid
  exactly one open/done line for <id>; not parked;
  primary PR absent or == N; annotation rule holds? --no--> unlock, exit 3
    | yes
- attempt record: none | live attempt | done | --attempt known? --no--> unlock, exit 5
+ attempt record: none | eligible attempt (live on dispatched, or winner on done)? --no--> unlock, exit 5
    | yes
  new line == current line? --yes--> UNCHANGED (no write)
    | no
@@ -143,7 +143,7 @@ mega tick <mega-slug> <sub-id> --pr <N>
 - `--keep-note`: keep the current line's trailing annotation verbatim (defined under "Line format"). `--note` and `--keep-note` together give exit 64.
 - `--attempt <aid>`: commit this attempt id instead of the resolved one.
 - `--code-root <path>`: the repo whose PRs and default branch are git truth. It resolves as `mega status` does: flag > `$CODE_ROOT` > git toplevel of cwd. `gh` runs with this directory as its working directory, as `gh pr view <N> --json state,mergeCommit,baseRefName,headRefName`.
-- Environment seams, the same convention `mega status` already uses: `GH_BIN` (the gh binary), `ATTEMPT_STATE_BIN` (default: the sibling `lib/goal/attempt-state.sh`), `ATTEMPT_REGISTRY_DIR` (honored by attempt-state itself), and `MEGA_TICK_LOCK_WAIT_SECS` (default 10, the lock wait before exit 7).
+- Environment seams, the same convention `mega status` already uses: `GH_BIN` (the gh binary), `ATTEMPT_STATE_BIN` (default: the sibling `lib/goal/attempt-state.sh`), `ATTEMPT_REGISTRY_DIR` (honored by attempt-state itself), `MEGA_TICK_LOCK_WAIT_SECS` (default 10, the lock wait before exit 7), and `MEGA_TICK_TEST_PAUSE_FILE` (tests only: after acquiring the lock, wait while this file exists, so a test can inspect the held lock).
 
 **Line format** (written)
 
@@ -160,7 +160,9 @@ mega tick <mega-slug> <sub-id> --pr <N>
 
 - A candidate line matches `^<box_re> <BOX_ID_RE>` (both from `lib/mega/box.sh`). Its captured id must EQUAL `<sub-id>`; a prefix match is not enough (`13-hintkit` never matches `13-hintkit-labels`).
 - Primary PR: the first `PR #<digits>` in the line, the same parse `cmd_status` uses (`mega.sh:317`). Annotation text after it (`fix-forward PR #43`) never counts.
-- Existing annotation: on a line of the exact written shape `<box> <id>, PR #<n>, merged <hex 6 to 40> (<text>)`, the `<text>` between the first ` (` after the sha and the final `)`.
+- Repairable ticked shape: a done-box line is rewritten only when it has the shape `<box> <id>, PR #<n>` optionally followed by `, merged` and one word with no space or `(`, optionally followed by ` (<text>)`, and nothing else but trailing spaces. This covers the canonical line, a wrong sha (`merged 2819920`), a non-sha word (`merged OPEN `), and a bare `merged`. Any other done-box line (for example the older kit form `- [x] 01-module-collapse (dwarves-kit), <prose>, PR #190 merged cb64f15 (<prose>)`) refuses with exit 3, so no prose is dropped in silence. The line is fixed by hand first.
+- Existing annotation: the `<text>` of the ` (<text>)` group above, from the first ` (` after the merged word to the final `)`.
+- An open-box line keeps nothing after its id. Its planning prose is replaced by the completion format, as the ROADMAP's own "Format on completion" rule says.
 
 **Exit codes and output**
 
@@ -168,9 +170,9 @@ mega tick <mega-slug> <sub-id> --pr <N>
 |---|---|---|
 | 0 | `TICKED` or `UNCHANGED`, and the attempt line | ROADMAP (TICKED only) and the attempt store (when a record exists) |
 | 1 | gh audit refused: not MERGED, no merge commit oid, base is not the code-root default branch, gh failed or returned unparseable JSON, or no default branch resolves for code-root | nothing |
-| 3 | line refused: no line for the id, more than one line, a parked box, a ticked line whose primary PR differs from `--pr`, `--keep-note` with no annotation, or an existing annotation with neither `--note` nor `--keep-note` | nothing |
+| 3 | line refused: no line for the id, more than one line, a parked box, a ticked line whose primary PR differs from `--pr`, a ticked line not in the repairable shape, `--keep-note` with no annotation, or an existing annotation with neither `--note` nor `--keep-note` | nothing |
 | 4 | ledger checkout refused: the ROADMAP's checkout is on its default branch, HEAD is detached, or no default branch resolves | nothing |
-| 5 | attempt refused before any write: a record exists, the task is not done, it has no live attempt, and no `--attempt` was given; or `--attempt` names an unknown attempt | nothing |
+| 5 | attempt refused before any write: a record exists and no attempt is eligible (see "Attempt record"). The stderr line names the task state and each attempt's state, and the way out: `--attempt <aid>` for an eligible attempt, or settle the record with `attempt-state.sh` first | nothing |
 | 6 | the ROADMAP was written, then `attempt-state.sh commit-result` failed. Re-running the same command converges: the line reads UNCHANGED, and the commit is retried | ROADMAP only |
 | 7 | `<megadir>/.orchestrate/flip.lock` stayed held for 10 s | nothing |
 | 64 | usage error | nothing |
@@ -191,12 +193,13 @@ COMMITTED 40-drag-by-labels attempt=a1 ref=PR#96@0c471eb
 
 - Task id = `<sub-id>`. This matches the real store (`44-uat-pack-release-gate.task`, see `## Grounding`).
 - Ref = `PR#<N>@<sha7>`, the form the real lead already used (`winner=a1 ref=PR#96@0c471eb`).
-- The attempt to commit is resolved before any write, from `attempt-state.sh status <sub-id>`: `--attempt` if given (it must appear as an `attempt=` line); else the one `running` or `disconnected` attempt; else the `winner=` attempt when `state=done` (commit-result then prints `NOOP`); else exit 5. Unknown task: no record, so no attempt call.
+- The attempt to commit is resolved before any write, from `attempt-state.sh status <sub-id>`. An attempt is ELIGIBLE only when `commit-result` will succeed on it, per the transition tables at `attempt-state.sh:63-75`: the task is `dispatched` and the attempt is `running` or `disconnected` (commit), or the task is `done` and the attempt is the `winner=` attempt (`NOOP`). Resolution: `--attempt` if given, and it must be eligible; else the one `running` or `disconnected` attempt of a `dispatched` task; else the `winner=` attempt of a `done` task; else exit 5. So a `lost` or `superseded` attempt, a task in state `lost` or `queued`, or a non-winner attempt on a done task all refuse before the ROADMAP is touched. Unknown task: no record, so no attempt call.
 - The verb runs `attempt-state.sh` with `cwd = <code-root>`. The store therefore resolves under the code repo's git common dir, as it did when the lead dispatched from there. `ATTEMPT_REGISTRY_DIR` still overrides for tests.
 
 **Invariants**
 
 - Every refusal (exits 1, 3, 4, 5, 7, 64) leaves the ROADMAP bytes and the attempt store byte-identical.
+- Lock protocol, matching `orchestrate.sh` `_lock` / `_lock_stale` / `_unlock` (lines 336 to 393): acquire with `mkdir <megadir>/.orchestrate/flip.lock`, then write the verb's own pid (`$$`) into `flip.lock/pid` at once. While the verb runs, that pid is alive, so the driver's `_lock_stale` reads the lock as fresh and never reclaims it mid-tick. Release only a lock whose `pid` is the verb's own: move the pid file aside (never `rm`), then `rmdir`, on every exit path after acquire (an EXIT trap).
 - Only the one matched line changes. `diff` of the ROADMAP before and after shows exactly one `<` and one `>` line.
 - The verb never runs `git commit`, `git push`, `git fetch`, or `gh pr merge`.
 - The `gh pr view` statement carries a `# merged-ok: <reason>` marker (it reads one PR number the caller names), and the pinned count for `lib/mega/mega.sh` in `tests/test-shared-lookups.sh` goes from 2 to 3.
@@ -230,7 +233,7 @@ None.
 
 ## After state
 
-- [ ] `bin/mega tick 40-drag-by-labels --pr 96 ...` against a fixture writes `- [x] 40-drag-by-labels, PR #96, merged 0c471eb`, checkable by `bash tests/test-mega-tick.sh`. (Today: no verb; the lead runs `gh` and `sed` by hand.)
+- [ ] `bin/mega tick <mega-slug> 40-drag-by-labels --pr 96 --megagoals-root <fixture> --code-root <fixture>` against a fixture writes `- [x] 40-drag-by-labels, PR #96, merged 0c471eb`, checkable by `bash tests/test-mega-tick.sh`. (Today: no verb; the lead runs `gh` and `sed` by hand.)
 - [ ] A line holding a wrong sha for the same PR (`merged 2819920` for PR #37) is rewritten to gh's `281992a`. (Today: it stays wrong until someone audits it.)
 - [ ] An OPEN PR, a MERGED PR with no merge commit oid, and a PR merged into a non-default base each exit 1 with the ROADMAP unchanged. (Today: commit `3047044` shows `merged OPEN` written into a line.)
 - [ ] A ledger checkout on its default branch exits 4 with nothing written.
@@ -288,11 +291,14 @@ Each case starts from a fresh copy of the fixture ROADMAP and a fresh attempt st
 | C17 | ledger fixture on a detached HEAD | exit 4; unchanged |
 | C18 | attempt record `queued`, no live attempt, no `--attempt` | exit 5; ROADMAP unchanged |
 | C19 | no attempt record for the id | exit 0; `ATTEMPT none`; store dir has no new file |
+| C20b | while the verb holds the lock (paused through the `MEGA_TICK_TEST_PAUSE_FILE` seam: the verb waits while that file exists), source `orchestrate.sh` and call `_lock_stale` on the lock | returns 1 (fresh), and `flip.lock/pid` holds the verb's pid |
 | C20 | flip.lock dir pre-created by another pid | exit 7 after the bounded wait (the test pins the wait to under 1 s through an env knob); unchanged |
 | C21 | `SG-01` id, `--note` plus `--keep-note`, a missing or non-digit `--pr` | exit 64 each |
 | C22 | `attempt-state.sh` stubbed to fail on commit-result | exit 6; ROADMAP written; a re-run with the real script converges to exit 0 |
 | C23 | gh stub argv log | every call is `pr view <N> --json state,mergeCommit,baseRefName,headRefName` run from code-root; no `merge`, no `fetch` |
 | C24 | tick 44 with PR 106 (OPEN, oid present) | exit 1; unchanged |
+| C25 | store record for 44: task `dispatched`, `a1` `lost`, `a2` `running`; run with `--attempt a1`; then a done task with `--attempt` naming a non-winner | exit 5 each; unchanged. Without `--attempt` on the first record: exit 0, `a2` committed |
+| C26 | ticked legacy line `- [x] 47-legacy (repo), prose, PR #190 merged cb64f15 (note)`, tick with PR 190 | exit 3; unchanged |
 
 "Unchanged" means `cmp` of the ROADMAP against a pre-run copy, plus an `ls` of the attempt store dir against a pre-run listing.
 
@@ -306,7 +312,7 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 
 1. The ROADMAP sits behind a symlink (the kit's own `_meta` links to `dwarves-kit-internal`). The ledger branch check runs `git -C "$(dirname <roadmap>)"`, which resolves the link target's repo; the test covers a symlinked megagoals root.
 2. Ledger and code are the same repo (VimMotion) or two repos (kit-modularity: ROADMAP in ops-toolkit, PRs in dwarves-kit). The branch check reads the ROADMAP's checkout; the default-branch check for the PR base reads code-root. The test uses two separate fixture repos.
-3. gh prints a hint to stderr on `pr view` (seen in the PR 102 sample). The verb parses stdout JSON only and drops stderr.
+3. gh can print a multi-line hint to stderr on `pr view` (seen in the PR 102 sample). The verb parses stdout JSON only and drops stderr; `## Grounding` shows the stdout-only read is the bare JSON object.
 4. A rebase merge or a squash merge: gh's `mergeCommit.oid` is still the commit on the base branch, so it is taken as is.
 5. The line ends with trailing whitespace (`merged OPEN ` in commit `3047044`). The rewrite drops it, because the new line is built and never edited in place.
 6. The ROADMAP has CRLF line ends. Out of scope; every ROADMAP in the estate is LF. The verb refuses (exit 3, no line matches) instead of writing a mixed file.
@@ -318,7 +324,7 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 |---|---|---|
 | gh unavailable or unauthenticated | `gh` exits nonzero or prints no JSON | exit 1, nothing written; rerun once gh works |
 | gh API shape change (field renamed) | `jq` yields empty `state` or `oid` | treated as not MERGED, exit 1; fail closed, never a sha-less tick |
-| Lock left by a crashed run | `flip.lock` exists for 10 s | exit 7 naming the lock path and its pid; the operator removes a dead lock. The verb never reclaims a lock it does not own |
+| Lock left by a crashed run | `flip.lock` exists for 10 s | exit 7 naming the lock path and its recorded pid; the next driver `_lock` reclaims a dead holder, or the operator does. The verb never reclaims a lock it does not own. A tick that crashes after acquire leaves its own dead pid, which the driver's `_lock_stale` reclaims |
 | Concurrent driver flip of the same file | the driver holds `flip.lock` | the verb waits, then re-reads the line under the lock |
 | Attempt store write fails after the ROADMAP write | `commit-result` nonzero | exit 6; re-running converges (the line reads UNCHANGED, the commit is retried) |
 | Wrong `--pr` for the sub-goal | the line already records another PR | exit 3 for a ticked line. An open line has no PR to compare; the operator's `--pr` is trusted, and the AUDIT line shows the head branch for a human check |
@@ -342,11 +348,11 @@ bash tests/test-mega-tick.sh && bash tests/test-mega-box.sh && bash tests/test-s
 ## Decision Log
 
 - DEC-001: the sha comes only from gh's `mergeCommit.oid`. Both incidents were a sha typed or copied by hand. Rejected: a `--sha` argument, and reading the sha from local git.
-- DEC-002: the verb never reads `mergeable`. That field was `UNKNOWN` in the `merged OPEN` incident, and merge status is answered by `state` plus `mergeCommit`. Rejected: waiting for `mergeable` to settle.
+- DEC-002: the verb never reads `mergeable`. By the lead's account that field read `UNKNOWN` in the `merged OPEN` incident, and merge status is answered by `state` plus `mergeCommit`. Rejected: waiting for `mergeable` to settle.
 - DEC-003: an existing annotation is kept only with `--keep-note`, and a ticked line that carries one refuses (exit 3) when neither `--note` nor `--keep-note` is given. The item said an annotation is kept "only when passed", and dropping a long fix-forward history in silence (line 07) loses data. Rejected: always keep it, which breaks the item's rule; and always drop it, which loses data.
 - DEC-004: an absent attempt record is not an error (`ATTEMPT none`, exit 0). Not every run dispatches through `attempt-state.sh`, and the kit's own git dir has no `kit-attempts/` store at all. A record that exists but cannot be committed refuses before any write (exit 5). Rejected: always requiring a record, which would block human-merged sub-goals that were never dispatched.
 - DEC-005: the ledger branch check refuses (exit 4) where `default-branch-warn.sh` only warns. The item asks for a refusal: a tick on the default branch is a commit that cannot land through a PR. The resolver `kit_default_branch_here` is reused; only the policy differs. A detached HEAD or an unresolved default also refuses (fail closed).
-- DEC-006: the lock is `orchestrate.sh flip`'s own `<megadir>/.orchestrate/flip.lock`, taken with plain `mkdir`, a bounded 10 s wait, and no stale reclaim. Sharing the path keeps a running driver's flip and a lead's tick from interleaving. Rejected: sourcing all of `orchestrate.sh` for `_lock`, and extracting `_lock` into a shared file, which is a refactor of the driver outside this item.
+- DEC-006: the lock is `orchestrate.sh flip`'s own `<megadir>/.orchestrate/flip.lock`, taken with plain `mkdir` plus the pid file (the protocol in Invariants), a bounded 10 s wait, and no stale reclaim by the verb itself. Sharing the path keeps a running driver's flip and a lead's tick from interleaving. Rejected: sourcing all of `orchestrate.sh` for `_lock`, and extracting `_lock` into a shared file, which is a refactor of the driver outside this item.
 - DEC-007: a ticked line whose primary PR equals `--pr` is rewritten (the repair path). This is what fixes the `2819920` and `merged OPEN` lines. An open line's PR field is not compared, because open lines carry `PR #` with no number.
 - DEC-008: exit codes are distinct per refusal class (1, 3, 4, 5, 6, 7) so each negative control asserts its own code, not just "nonzero".
 
@@ -376,6 +382,23 @@ $ gh pr view 102 --json state,mergeCommit,baseRefName,mergeable
 ```
 $ gh pr list -R cli/cli --state closed --limit 40 --json number,state,mergeCommit,baseRefName | jq -c '[.[]|select(.state=="CLOSED")][0]'
 {"baseRefName":"trunk","mergeCommit":null,"number":15158,"state":"CLOSED"}
+```
+
+**gh streams: stdout alone is the bare JSON** (same PR, stderr dropped):
+
+```
+$ gh pr view 102 --json state,mergeCommit,baseRefName 2>/dev/null
+{"baseRefName":"develop","mergeCommit":null,"state":"OPEN"}
+```
+
+**gh PR shape, missing PR** (grounds the PR 105 stub: nonzero exit, nothing on stdout):
+
+```
+$ gh pr view 99999 --json state; echo rc=$?
+GraphQL: Could not resolve to a PullRequest with the number of 99999. (repository.pullRequest)
+rc=1
+$ gh pr view 99999 --json state 2>/dev/null | wc -c
+       0
 ```
 
 **gh PR shape, MERGED with a null mergeCommit**: not sampled; no such PR was found. The verb treats it as fail closed (exit 1), and C6 covers it with a stub.
@@ -456,6 +479,9 @@ Each trace: the mutation to the new code, the fixture it reads, the path it then
 | NC13 | write before taking the lock | lock dir pre-created by the test | the write proceeds under another holder | C20 expects exit 7 and `cmp` equal; gets 0 |
 | NC14 | write the box as a literal `- [x]` | none (static lint) | the section 14 scan of `lib/mega` hits the new line | `tests/test-mega-box.sh` "no reader hardcodes the box grammar" fails |
 | NC15 | omit the `# merged-ok:` marker on `gh pr view` | none (static lint) | `PAT_MERGED` hits an unmarked statement | `tests/test-shared-lookups.sh` reports `UNMARKED merged lib/mega/mega.sh` |
+| NC16 | accept any `--attempt` that appears in `status` | C25 record: `a1` `lost` | the ROADMAP is written, then `commit-result` hits the illegal `lost -> committed` move and exits 6, on every re-run | C25 expects exit 5 and `cmp` equal; gets 6 and a changed file |
+| NC17 | drop the repairable-shape check on ticked lines | C26 legacy line with prose | the line is rewritten and its `(repo), prose` and note are lost | C26 expects exit 3; gets 0 |
+| NC18 | omit the pid write after `mkdir` | a driver `_lock` racing the tick, simulated by calling `_lock_stale` on the held lock with `FLIP_LOCK_STALE_SECS=0` | an absent pid reads stale past the timeout, so the driver reclaims a live tick's lock | C20b: while the verb holds the lock (paused through a test seam), `_lock_stale` must return 1 (fresh); it returns 0 |
 
 ## Open questions
 
