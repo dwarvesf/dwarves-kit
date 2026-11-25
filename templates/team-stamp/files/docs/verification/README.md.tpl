@@ -85,4 +85,4 @@ For a stateful change (a deploy, data, a migration, a secret), add a "Rollback" 
 
 ## Limits of a proof
 
-A proof is a reader's check, not a lock. A person who merges from the GitHub site passes everything, on a plan without branch protection, and a teammate trusts the folder once before the Claude Code hook loads. [`docs/TEAM-WORKFLOW.md`](../TEAM-WORKFLOW.md) lists both limits.
+A proof is a reader's check, not a lock. A person who merges from the GitHub site passes everything, on a plan without branch protection, and the Claude Code hook is advice with teeth, not a wall. [`docs/TEAM-WORKFLOW.md`](../TEAM-WORKFLOW.md) lists both limits.

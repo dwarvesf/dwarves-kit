@@ -19,7 +19,7 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/test-stamp-rules.XXXXXX")" || exit 1
 KIT_PATTERN='\.claude/dwarves-kit|CLAUDE_PLUGIN_ROOT|KIT_ROOT|lib/gate/|/bin/(gate|classify|wrap|board)([^A-Za-z0-9_-]|$)|/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+'
 KIT_URL='https://github.com/dwarvesf/dwarves-kit'
 LIMIT='A person who merges from the GitHub site passes everything, on a plan without branch protection.'
-TRUST='A teammate trusts the folder once before the hook loads.'
+TRUST='Claude Code uses a hook from `.claude/settings.json` even in a folder not yet trusted'
 EM="$(printf '\342\200\224')"; EN="$(printf '\342\200\223')"
 
 newrepo() { local d; d="$(mktemp -d "$WORK/r.XXXXXX")" && git -C "$d" init -q 2>/dev/null && echo "$d"; }

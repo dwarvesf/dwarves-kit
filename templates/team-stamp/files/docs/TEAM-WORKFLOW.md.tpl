@@ -116,7 +116,7 @@ After the board file changes, whoever merged it runs `bash scripts/issues-from-r
 
 GitHub cannot enforce any of this without branch protection. A person who merges from the GitHub site passes everything, on a plan without branch protection.
 
-Two machines back the rules instead: a Claude Code hook for the agents that run in it, and the CI check `pr-shape` for everyone. The hook is advice with teeth, not a wall. A teammate trusts the folder once before the hook loads. Until then only CI binds. Agents other than Claude Code meet only the CI check.
+Two machines back the rules instead: a Claude Code hook for the agents that run in it, and the CI check `pr-shape` for everyone. The hook is advice with teeth, not a wall. Claude Code uses a hook from `.claude/settings.json` even in a folder not yet trusted (only a parent folder trusted, or a `claude -p` run), so a teammate needs no extra step. Agents other than Claude Code meet only the CI check.
 
 The rule: [Limits](../AGENTS.md#limits).
 

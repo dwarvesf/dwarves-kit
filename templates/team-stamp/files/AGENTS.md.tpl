@@ -7,7 +7,7 @@ This file is the repo's instruction file for every coding agent and every teamma
 
 ## Commands
 
-Run `bash scripts/check.sh` before every push. It runs the same checks as CI, with the same inputs: the owners check and the PR shape check. Run each command from the repo root.
+Run `bash scripts/check.sh` before every push. It runs the same checks as CI, with the same inputs: the owners check, the PR shape check and every script test. Run each command from the repo root.
 
 | Task | Run | When |
 |---|---|---|
@@ -18,7 +18,7 @@ Run `bash scripts/check.sh` before every push. It runs the same checks as CI, wi
 | Owners | `bash scripts/check-owners.sh` | a new script, workflow or job |
 | Work queue | `bash scripts/issues-from-rows.sh` for a dry run, then `--apply` | after the board file changes |
 | Team digest | `bash scripts/team-digest.sh` | in place of a stand-up |
-| Release notes | `bash scripts/release-notes.sh` (run it with no argument for usage) | when you cut a release |
+| Release notes | `bash scripts/release-notes.sh Unreleased` (`--help` for usage) | when you cut a release |
 | Lessons | `bash scripts/agent-lessons.sh` | before work a lesson may cover |
 | Language tests | the repo's own build and test commands: add a row here for each | the paths each one covers |
 
@@ -92,7 +92,7 @@ The merge guard checks only the paths in that table. For every other door, the `
 ### Limits
 - GitHub cannot enforce any of this without branch protection. A person who merges from the GitHub site passes everything, on a plan without branch protection.
 - Two machines back the rules instead: a Claude Code hook (`.claude/settings.json`, `scripts/agent-guard.sh`) for agents that run in Claude Code, and the CI check `pr-shape` for everyone. The hook blocks a bare `gh pr merge`, a push to `{{DEFAULT_BRANCH}}` and a commit on `{{DEFAULT_BRANCH}}`, and prints the fix. It is advice with teeth, not a wall: see the lesson "Guards match command text".
-- A teammate trusts the folder once before the hook loads. Until then only CI binds.
+- Claude Code uses a hook from `.claude/settings.json` even in a folder not yet trusted (only a parent folder trusted, or a `claude -p` run), so a teammate needs no extra step.
 - Agents other than Claude Code get no hook: CI is their stop.
 
 ## Never

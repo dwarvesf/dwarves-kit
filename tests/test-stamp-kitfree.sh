@@ -74,7 +74,7 @@ for t in "$REPO"/scripts/test-*.sh; do
        "$WORK/bin/bash" "$t" >"$WORK/t.out" 2>&1; then
     ok "kit-free run: ${t#"$REPO"/}"
   else
-    no "kit-free run: ${t#"$REPO"/}"; tail -n 15 "$WORK/t.out" | sed 's/^/    /'
+    no "kit-free run: ${t#"$REPO"/}"; { grep -iE "FAIL|not ok" "$WORK/t.out" | head -n 10; tail -n 3 "$WORK/t.out"; } | sed 's/^/    /'
   fi
 done
 [ "$ran" -gt 0 ] || ok "no generated scripts/test-*.sh in this group"

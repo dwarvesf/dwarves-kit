@@ -53,6 +53,7 @@ bash scripts/check.sh
 ```
 
 - It runs the same checks as CI with the same inputs. A red check prints the rule and a `Fix:` line. Do what the fix line says, commit, rerun.
+- With no PR open yet, check.sh reads the title from the first commit and an empty body, so a body rule fails. Give it the PR text: `bash scripts/check.sh --title '<type(scope): subject>' --body 'Closes #<n>'`.
 - Run your own language tests as well; the stamp ships none.
 
 ## 6. Open the PR
