@@ -48,8 +48,8 @@ wired=0
 for f in commands/execute.md commands/ship.md commands/verify.md agents/task-verifier.md; do
   grep -qF 'bin/test-affected' "$KIT/$f" || { fail "C1: $f does not name the affected selection (bin/test-affected)"; wired=1; }
 done
-for f in commands/execute.md commands/ship.md commands/verify.md agents/task-verifier.md agents/recheck-verifier.md lib/gate/known-failures.sh; do
-  grep -qE 'test\.suite|known-failures\.sh suite' "$KIT/$f" && { fail "C1: $f still reads a full-suite knob"; wired=1; }
+for f in commands/execute.md commands/ship.md commands/verify.md agents/task-verifier.md agents/recheck-verifier.md kit.toml lib/gate/known-failures.sh; do
+  grep -qE 'test\.suite|known-failures\.sh suite|^suite +=' "$KIT/$f" && { fail "C1: $f still reads a full-suite knob"; wired=1; }
 done
 [ "$wired" = 0 ] && pass "C1: execute, ship, verify and task-verifier run the affected selection; no test.suite knob is read"
 bash "$KF" suite "$W" "$BASE" >/dev/null 2>&1; [ $? = 64 ] && pass "C1: the suite verb is gone (usage exit 64)" || fail "C1: known-failures.sh still answers suite"

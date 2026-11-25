@@ -357,8 +357,7 @@ recheck_sample   = 5            # [impl] one run in N rechecks every end-verifie
                                  #        recheck every PASS. A full-lane run always uses 1.
                                  #        `(self-attested)` rows are always rechecked. Root-only: a project `.kit.toml` cannot lower it.
 
-[test]                          # the dev-loop test scope (commands/execute.md, verify.md, ship.md)
-suite            = "full"       # [impl] "full" (default) = run the whole suite in the dev loop. "affected" = run only the tests the change touches (bin/test-affected in this repo); the full suite runs on the schedule.
+[test]                          # test settings; the work loop always runs the affected selection (bin/test-affected)
 known_failures   = "tests/known-failures.txt"  # [impl] a tiered mega-goal's lead-committed list, one failure name per line; read with `git show <base>:<path>` (lib/gate/known-failures.sh). A path inside the repo.
 failure_line     = ""           # [impl] ERE (a TOML literal string, single quotes); capture group 1 is a failure name in a test log. Read at the base. Empty: a red run is a plain failure.
 count_line       = ""           # [impl] ERE; every numeric capture group is summed into the executed count of a run. Read at the base. Empty: a red run is a plain failure.
