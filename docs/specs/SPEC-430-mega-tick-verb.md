@@ -2,7 +2,7 @@
 
 Generated: 2026-11-25
 Status: DRAFT
-Lane: full
+Lane: normal (operator-directed; the classifier suggested full on audit-security grounds, and the spec passed a full validation, 7 of 7 reviewers)
 Depth: standard (every external shape the verb reads is sampled live in ## Grounding except a MERGED PR with a null merge commit, which no sampled repo held and a stub case covers; the code it extends is read at line level)
 Type: spec-feature
 File: `docs/specs/SPEC-430-mega-tick-verb.md`
