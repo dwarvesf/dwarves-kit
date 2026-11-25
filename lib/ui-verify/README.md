@@ -12,7 +12,7 @@ A page that needs a sign-in cannot be verified here. Write a `skip` entry for th
 
 PASS proves what the page showed the runner. A hostile page can detect an automated browser and show it something else (cloaking), and the runner cannot see that.
 
-The whole surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME`, the stdout row grammar and the `result.json` fields can change. Evolution rule: a new layer bumps `schema`, and the runner refuses a `schema` it does not know (exit 3).
+The whole surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, 130 and 143, doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME`, the stdout row grammar and the `result.json` fields can change. Evolution rule: a new layer bumps `schema`, and the runner refuses a `schema` it does not know (exit 3).
 
 ## Prerequisites
 
@@ -34,18 +34,18 @@ Where to run it: a scenario run refuses (exit 3) when the runner's own real path
 
 ## Install (an operator step)
 
-The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. The doctor prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready.
+The runner needs Playwright and one Chromium build in an install root outside the kit checkout and outside the target repo. The root comes from `UI_VERIFY_HOME`, else from `bash lib/config/data-path.sh path cache ui-verify`. The doctor prints the root, the pinned and installed versions, the pin age and the one install command, and exits 0 when the install is ready. The runner imports code from the install root, so it uses a root only when it is trusted: not inside a git work tree, owned by the current user, and not writable by group or others. Otherwise every row that would run is NO-CHECK `install root not trusted: <why>`, and the doctor prints `NOT READY: install root not trusted: <why>` (the why is `inside a git work tree`, `not owned by the current user` or `writable by group or others`). The check reads the root itself, not what is inside it.
 
 ```bash
 node <runner path> --doctor
 ```
 
-The install command it prints copies `package.json` and `package-lock.json` into the install root, runs `npm ci --ignore-scripts` there, then runs the local `playwright install chromium` with `PLAYWRIGHT_BROWSERS_PATH` set to `<install root>/browsers`. Expect about 23 MB of npm packages and about 586 MB of browsers, and about 3 minutes the first time.
+The install command it prints single-quotes every path, makes the root with `mkdir -p`, runs `chmod go-w` on it (a root made under umask 002 would otherwise be group-writable and refused), copies `package.json` and `package-lock.json` into it, runs `npm ci --ignore-scripts` there, then runs the local `playwright install chromium` with `PLAYWRIGHT_BROWSERS_PATH` set to `<install root>/browsers`. Expect about 23 MB of npm packages and about 586 MB of browsers, and about 3 minutes the first time.
 
 | Doctor exit | Meaning |
 |---|---|
 | 0 | ready (the `state:` line may add `pin older than 120 days: bump it`; that never changes the exit) |
-| 20 | Playwright is not installed in the install root |
+| 20 | Playwright is not installed in the install root, or the root is not trusted (the `state:` line says why) |
 | 21 | the installed Playwright version differs from the pin |
 | 22 | the browser is missing |
 
@@ -57,19 +57,21 @@ The install command it prints copies `package.json` and `package-lock.json` into
 node <runner path> scenario --scenario <file> --out <dir> [--step-timeout-ms N] [--scenario-timeout-ms N] [--run-budget-ms N]
 ```
 
-Each timeout flag takes a positive whole number at or below its default (step 10 s, scenario 30 s, run 300 s); a larger value is refused, never clamped. There is no flag for the URL, hosts, loopback, install root, viewports or the sandbox: every trust input rides in the scenario file. Both the scenario file and `--out` must sit outside any git work tree, and `--out` must not exist or must be empty.
+Each timeout flag takes a positive whole number at or below its default (step 10 s, scenario 30 s, run 300 s); a larger value is refused, never clamped. `--step-timeout-ms` must also be at least 500, because `expect_no_text` needs a 500 ms window (a smaller value is refused, exit 3). There is no flag for the URL, hosts, loopback, install root, viewports or the sandbox: every trust input rides in the scenario file. Both the scenario file and `--out` must sit outside any git work tree, and `--out` must not exist or must be empty.
 
 | Exit | Meaning |
 |---|---|
 | 0 | every row PASS, at least one row |
 | 1 | at least one row FAIL |
 | 2 | no FAIL and at least one NO-CHECK, or no rows (`no AC`) |
-| 3 | usage error or a guard refused; no browser started and nothing was written to `--out` |
-| 4 | internal error, or a node older than 22 |
+| 3 | usage error or a guard refused (an `--out` that cannot be created or read included); no browser started and nothing was written to `--out` |
+| 4 | internal error (an uncaught exception), or a node older than 22 |
+| 130 | SIGINT: the runner closed the browser first; no `result.json` is written |
+| 143 | SIGTERM: the runner closed the browser first; no `result.json` is written |
 
 ## Reading the result
 
-Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
+Once every guard has passed, the runner prints `ui-verify: run <run id>` on stderr, so a caller that must stop a run can find its browser by the `--kit-ui-verify=<run id>` marker on the browser's command line. On SIGTERM or SIGINT the runner closes the browser, kills any process that still carries the run id and prints `ui-verify: interrupted, browser closed` on stderr. Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
 
 ```
 ui-verify: head <sha40> scenario-sha256 <first 16 hex> preview-identity <matched|unverified|mismatch> playwright <version> run <run id>
@@ -78,7 +80,14 @@ row <id> [neg] | <PASS|FAIL|NO-CHECK> | <reason> | <evidence names>
 observed <id> [neg]: <sanitized text>
 ```
 
-In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO-CHECK` row always carries a reason and never counts as `PASS`. The top-level `verdict` is `PASS` only when there is at least one row and every row is `PASS`. `observed` is page text with control, format and separator characters turned into spaces, a backtick turned into an apostrophe, a pipe turned into a slash, and a cut at 200 characters. `blocked_requests` lists the hosts the runner refused to reach, so a lead who forgot an API host can see why a page looks empty. `browser.pids` and `browser.leftover_pids` record the browser processes found by the run id the runner puts on the browser command line.
+In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO-CHECK` row always carries a reason and never counts as `PASS`. The top-level `verdict` is `PASS` only when there is at least one row and every row is `PASS`. `observed` is page text with control, format and separator characters turned into spaces, a backtick turned into an apostrophe, a pipe turned into a slash, and a cut at 200 characters. `blocked_requests` lists what the runner refused to reach, so a lead who forgot an API host can see why a page looks empty. An entry is the host, or `<host>:<port>` for an allowed host on a port the runner refused. The list holds at most 50 entries, each cut at 100 characters, and `blocked_requests_truncated` is true when a further name was dropped. `identity.seen` is sanitized like `observed`. `browser.pids` records the browser processes found by the run id the runner puts on the browser command line. After the browser closes, the runner kills any process that still carries the run id, and `browser.leftover_pids` records the ones that survived even that. `browser.env_keys` lists the environment variable names the browser got (`HOME`, `PATH`).
+
+## Residuals
+
+- Cloaking: PASS proves what the page showed the runner. A page can detect an automated browser and show it something else.
+- Another port of an allowed name: the request guards hold the port (see the allowed hosts rule below), but the browser's resolver rules carry no port and a redirect hop is not shown to the runner. A redirect from an allowed origin to another port of the same allowed name is followed, and that one request is sent. A top-level hop is then caught as NO-CHECK `redirected off an allowed host`; a sub-resource hop is not detected. A redirected POST arrives as a GET. The guards do not compare the scheme.
+- The install-root trust check reads the root, not the files inside it.
+- The browser's minimal environment and `--no-proxy-server` were checked on macOS only; a Linux host was not run.
 
 ## The scenario hash
 
@@ -154,7 +163,7 @@ Fields:
 
 - Unknown keys anywhere are refused. `schema` must be `1`. Every string is at most 200 characters.
 - `target.url` must be `https:`. `http:` is accepted only with `allow_loopback` true and a host of `127.0.0.1`, `localhost` or `[::1]` (the fixture suite does this; a real run never does).
-- `target.allow_hosts` holds 1 to 8 exact hostnames, no wildcards, and must include the URL's host. It bounds redirects and every subresource and WebSocket request. Add the API host a real preview calls.
+- `target.allow_hosts` holds 1 to 8 exact hostnames, no wildcards, and must include the URL's host. It bounds redirects and every subresource and WebSocket request. Add the API host a real preview calls. The port is held too: the host of `target.url` may use the port of `target.url`, and every other allowed host may use only the default port of the request's scheme (80 or 443). A request to an allowed host on any other port is refused and listed in `blocked_requests` as `<host>:<port>`, so a second host on a non-default port cannot be allowed in this slice.
 - `target.head_sha` is the 40 lowercase hex commit under test.
 - `ready.text` is 1 to 100 characters that only the real app renders, never a login wall.
 - `viewports` is optional: up to 4 integers from 200 to 3000, default `[390, 768, 1280]`. The height is 900 for every width.
@@ -168,9 +177,9 @@ Step verbs, the only ones accepted:
 |---|---|---|
 | `goto` | `path` (starts with exactly one `/`) | the page reaches `load` and `document.fonts.ready`; a navigation error is NO-CHECK `page did not settle` |
 | `click` | `role`, `name` | exactly one element matches `getByRole(role, { name, exact: true })` |
-| `fill` | `role`, `name`, `value` | the same locator matches exactly one element |
-| `expect_text` | `text`, optional `within: {role, name}` | `text` is a case-sensitive substring of the whitespace-collapsed `innerText` of the `within` element, else of `<body>`, polled until the step timeout |
-| `expect_no_text` | `text` | `text` is absent from `<body>` `innerText` for an unbroken 500 ms window |
+| `fill` | `role`, `name`, `value` | the same locator matches exactly one element; an action error that is not a timeout (a `fill` on a button) is FAIL `element not actionable: role=<role> name=<name>` |
+| `expect_text` | `text`, optional `within: {role, name}` | `text` is a case-sensitive substring of the whitespace-collapsed `innerText` of the `within` element, else of `<body>`, polled until the step timeout; the last part of the step (up to 1 s, at most half) is kept for the `observed` read |
+| `expect_no_text` | `text` | the page was read at least once inside an unbroken 500 ms window and `text` was absent on every read; no read in the window is NO-CHECK `page did not settle` |
 | `expect_url` | `path` | `location.pathname + location.search` equals `path`, polled until the step timeout |
 | `screenshot` | `name` (`a-z`, `0-9`, `-` only) | always; writes the PNG under `--out` |
 
@@ -179,7 +188,9 @@ Step semantics:
 - `click` and `fill`: zero matches, or more than one, after the step timeout is FAIL. `observed` is `element not found: role=<role> name=<name>` or `ambiguous: <n> matches`. A `within` element that is missing is FAIL `element not found: role=<role> name=<name>`.
 - `observed` on a failed expect is the sanitized text, cut at 200 characters, of the `within` element, else of the first `[role=alert]` or `[role=status]` element, else of `<main>`, else of `<body>`.
 - The scenario clock also caps a step in flight: a step waits at most the smallest of the step timeout, the scenario time left and the run budget left. When the scenario clock is the one that ran out, the row is NO-CHECK `scenario timeout`; when the run budget is, `run budget spent`.
+- The browser starts with `--no-proxy-server` and an environment of only `PATH` and a temporary `HOME`, so the runner's own tokens and proxy settings never reach it.
 - The browser resolves only the allowed hosts, each to the address checked at startup (`--host-resolver-rules`, recorded in `browser.args`); every other name or IP literal fails at name resolution. That is what stops a redirect to an unlisted host and a name that re-resolves to a private address. A blocked top-level hop is NO-CHECK `redirected off an allowed host`; a blocked subresource or hop changes no row status and is listed in `blocked_requests`.
+- No step runs longer than its limit. A step that fails while a top-level navigation was blocked, or after which the page URL has a host or port off the allowed set, is NO-CHECK `redirected off an allowed host`, not FAIL.
 - A FAIL scenario is retried once per scenario and viewport in a fresh context. A row that failed once and passed on the retry is `PASS` with `flaky: true`. A NO-CHECK scenario is not retried.
 - A row's status is the worst over its viewports (FAIL over NO-CHECK over PASS).
 
@@ -187,13 +198,14 @@ The twelve roles: `button`, `link`, `textbox`, `checkbox`, `radio`, `combobox`, 
 
 Refusals (exit 3, one line on stderr, nothing written to `--out`):
 
-- a usage error, an unknown argument, or a timeout flag that is not a positive whole number at or below its default
+- a usage error, an unknown argument, a timeout flag that is not a positive whole number at or below its default, or a `--step-timeout-ms` under 500
+- an `--out` that cannot be created or read (an unwritable parent included)
 - a `--scenario` path that cannot be read or is not valid JSON, or that sits inside a git work tree
 - `--out` inside a git work tree, or `--out` that exists and is not empty
 - the runner's own real path sitting inside the git work tree of the current directory
 - an unknown key, a missing required key, `schema` other than 1, a wrong type, a string over its limit, or more than 12 scenarios, 20 steps, 4 viewports or 8 hosts
 - a `target.url` that is not `https:` (or `http:` on a loopback host with `allow_loopback`), carries credentials, or has a host missing from `allow_hosts`
-- an allowed host that resolves to a loopback (without `allow_loopback`), private, link-local, shared (100.64.0.0/10, the tailnet range) or unique-local address
-- an unknown step verb, a `goto` or `expect_url` path that does not start with exactly one `/`, a role outside the twelve, a duplicate (`id`, `kind`) pair, an entry with both `steps` and `skip`, or an `identity` with both keys
+- an allowed host that resolves to a loopback (without `allow_loopback`), private, link-local, shared (100.64.0.0/10, the tailnet range), unique-local, site-local (`fec0::/10`) or IPv6 transition (`64:ff9b::/96`, `2002::/16`, `::/96`) address
+- an unknown step verb (a name like `constructor` or `__proto__` included), a `goto` or `expect_url` path that does not start with exactly one `/`, a role outside the twelve, a duplicate (`id`, `kind`) pair, an entry with both `steps` and `skip`, or an `identity` with both keys
 
 An allowed host that does not resolve at all is not a refusal: every row is NO-CHECK `preview unreachable` and the exit is 2.

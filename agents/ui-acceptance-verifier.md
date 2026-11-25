@@ -72,7 +72,7 @@ Verification record:
 - Command: `<the exact node command, with the real paths>`
 - Exit: <the real $?>
 - Output (excerpt): <the runner's counts line and row lines, plus the observed lines inside one fenced block>
-Notes: <coverage gaps you found, weak assertions, flaky rows, blocked hosts from blocked_requests>
+Notes: <coverage gaps you found, weak assertions, flaky rows, blocked hosts and `<host>:<port>` entries from blocked_requests, and whether `blocked_requests_truncated` is true>
 ```
 
 A criterion counts as met when its criterion row and every negative row with the same id are PASS and no agent-added row names it. The total is the number of distinct `AC-n` in the criteria source.
@@ -85,7 +85,7 @@ Every combination of runner result and coverage check maps to exactly one row of
 | PASS (0) | one or more (an uncovered criterion, or a head SHA, URL or hash that disagrees with the brief) | `FAIL:escalate`, `Runner result: PASS`, `Agent-added rows: <n> NO-CHECK` | The UI was not fully verified. The lead adds the scenario or fixes the brief and re-dispatches. Never SHIP-clean silently. |
 | FAIL (1), every failing row shows an observed value that contradicts its criterion, no criterion names a design call, and no NO-CHECK row exists in the runner rows | none | `FAIL:fixable` | One finding per FAIL row. The lead fixes the code, redeploys the preview and re-dispatches. Merged verdict is FIX THEN SHIP until it passes. |
 | FAIL (1) where the criterion names a design call, or a failing row whose observed value does not contradict its criterion, or FAIL together with any NO-CHECK row (from the runner or added by the agent) | any | `FAIL:escalate` | An open item for the operator. Not SHIP-clean. |
-| NO-CHECK (2), no FAIL (install absent, no AC, preview not ready, mismatch, a skip, a scenario that asserts nothing, sandbox unavailable, browser did not start, scenario timeout) | any | `FAIL:escalate`, `Runner result: NO-CHECK` | The UI was not verified. The lead fixes the cause (install, scenario, URL, redeploy) and re-dispatches, or records the gap in the report. Never SHIP-clean silently. |
+| NO-CHECK (2), no FAIL (install absent, install root not trusted, no AC, preview not ready, mismatch, a skip, a scenario that asserts nothing, sandbox unavailable, browser did not start, redirected off an allowed host, scenario timeout) | any | `FAIL:escalate`, `Runner result: NO-CHECK` | The UI was not verified. The lead fixes the cause (install, scenario, URL, redeploy) and re-dispatches, or records the gap in the report. Never SHIP-clean silently. |
 | Exit 4 (internal error) | not applicable | `FAIL:escalate`, `Runner result: NO-CHECK`, the `reason` line | The runner broke. The lead reads the reason, fixes the install or reports the runner bug, and re-dispatches. |
 | Takes precedence over rows 1 to 5: exit 3 (refused, with the stderr reason), any other exit code, or no readable `result.json` | not applicable | `FAIL:escalate`, `Runner result: NO-CHECK`, the stderr reason | The scenario or the brief was wrong, or the run died. The lead fixes it and re-dispatches. |
 
