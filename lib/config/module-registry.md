@@ -572,7 +572,7 @@ above (`ship.confirm_bump`, `ship.confirm_commit`, `ship.create_changelog`,
 naming the accessor, so `bin/config get|list|explain` silently fenced nothing for them while
 their real consumers (`commands/ship.md`, `commands/debug.md`, `commands/review-team.md`)
 already read them root-only. `tests/test-config-registry.sh` AC10 asserts this table is
-EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (excluding
+EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (plus the `opt` rows of scope `root` and the `secret` rows of `lib/adapters/*/adapter.tsv`, which `board sync` reads root-only; excluding
 `lib/config/kit-config.sh`, the accessor's own definition + self-test, whose demo calls
 exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host`,
 `gauntlet.nope` -- that are not themselves root-only rows; `lib/decide/flick.sh` also reads `ledger.location` root-only, so it is listed), `commands/`,

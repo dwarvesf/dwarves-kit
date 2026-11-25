@@ -152,3 +152,8 @@ Taken on this host after merging `origin/master` (a19ca13d), each suite alone, i
 - The comments in `sync_core.py` and `cockpit.py` lost their app words (comment text only; two cockpit comments point at "the adapter that creates cards" and "the intake adapter" until the adapters' README text names them).
 - `tests/test-sync.sh` reports 391 passed. Golden: unchanged, no delta row.
 - What phase 4 must know: `backlog_sync.py` still names `hermes` and the Notion apps in `LEGACY_APPS`, the legacy sets and the if-chain; `lib/sync/tests/test_notion_taskboard_pull.py` and `test_hermes.py` etc. still hold app words until H and I move them.
+
+## Phase 3 check: the root-only registry scan (TASK-F fallout)
+
+- `tests/test-config-registry.sh` AC10 compares the root-only table in `lib/config/module-registry.md` with the literal `kit_config_get_root` call sites. Moving Multica made the two reads dynamic (`kit_config_get_root "sync.$rkey"` in `cmd_sync`), so `sync.multica_url` and `sync.multica_token_ref` dropped out of the scan and the suite went red (59 of 60). The fix keeps the table as it is (removing the keys would stop `bin/config get` from fencing a project override of a host key) and teaches the scan one more source: every `opt` row of scope `root` and every `secret` row of `lib/adapters/*/adapter.tsv` counts as a root-only read of `sync.<key>`. Negative control: changing `multica_url` to scope `-` in the manifest gives `FAIL declared root-only keys == actual kit_config_get_root call sites` with `< sync.multica_url`; restored. The module-registry prose under "Root-only keys" names the manifest rows.
+- TASK-Q must keep that sentence true when it rewrites the `sync` row paths.
