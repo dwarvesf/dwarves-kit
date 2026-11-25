@@ -90,6 +90,8 @@ else fail "serial green: rc=$rc runs=$(runs) dispatched='$(dispatched "$D")' out
 if [ "$(grep '^suite' "$STUB_LOG" | grep -c 'cwd=.*/base$')" = 2 ] && grep -q 'level 0 complete' "$D/out.txt" && grep -q 'level 1 complete' "$D/out.txt"; then pass "serial join: each run is on the base tree in a throwaway worktree, level 0 then level 1"
 else fail "serial green: log: $(cat "$STUB_LOG") out: $(tr '\n' ' ' < "$D/out.txt")"; fi
 [ "$(git -C "$D/work" worktree list | grep -c kit-join || true)" = 0 ] && pass "serial join: no throwaway worktree is left" || fail "serial join: a worktree is left"
+jb=$(grep '^joinbase=' "$STUB_LOG" | sort -u)
+[ "$(printf '%s\n' "$jb" | grep -c .)" = 1 ] && printf '%s' "$jb" | grep -qE '^joinbase=[0-9a-f]{40}$' && pass "serial join: every level run gets the same KIT_JOIN_BASE, the base pinned before the first dispatch" || fail "serial joinbase: $jb"
 
 # ---- red: the level's merges break the suite; the next level never dispatches
 mk_case red tiered; D=$CASE_DIR

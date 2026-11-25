@@ -442,7 +442,7 @@ merge() {
     return 1
   fi
 
-  # A wave join (orchestrate.sh, [mega] verify = "tiered") ran the full suite on this exact head. A head
+  # A wave join (orchestrate.sh, [mega] verify = "tiered") ran the affected tests on this exact head. A head
   # that moved since is a different commit than the one that was joined: refuse it (exit 75, which the
   # caller reads as "rerun the join"). Compared as read, so a malformed expectation also refuses.
   if [ -n "$expect_head" ] && [ "$head" != "$expect_head" ]; then

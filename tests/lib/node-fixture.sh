@@ -23,6 +23,7 @@
 NF_STUB_SUITE='#!/usr/bin/env bash
 [ -n "${STUB_LOG:-}" ] && echo "suite $* cwd=$(pwd -P)" >> "$STUB_LOG"
 [ -n "${STUB_LOG:-}" ] && echo "env cfg=${KIT_CONFIG_ROOT:-} op=${KIT_CONFIG_OPERATOR:-} proj=${KIT_PROJECT_ROOT:-} ledger=${KIT_LEDGER_DIR:-} logdir=${DWARVES_KIT_LOG_DIR:-}" >> "$STUB_LOG"
+[ -n "${STUB_LOG:-}" ] && echo "joinbase=${KIT_JOIN_BASE:-}" >> "$STUB_LOG"
 [ -n "${STUB_SLEEP:-}" ] && sleep "$STUB_SLEEP"
 if [ "${STUB_CRASH:-0}" = 1 ]; then echo "boom: segfault"; exit 1; fi
 fails=0
