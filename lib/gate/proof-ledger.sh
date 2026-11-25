@@ -65,6 +65,8 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # The proof class names and the stateful words both classifiers share (lib/gate/proof-classes.tsv).
 # shellcheck source=lib/gate/proof-classes.sh
 source "$PROOF_LEDGER_DIR/proof-classes.sh" || exit 1
+# shellcheck source=lib/proof/digest.sh
+source "$LIB_ROOT/proof/digest.sh" || { echo "FATAL: lib/proof/digest.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/spec/spec-find.sh
 # A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
 if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
@@ -577,7 +579,7 @@ _visual_proof() {
       if ! got="$($PROOF_ASSET_FETCH "$url?kit-check=$(date +%s)" 2>/dev/null | shasum -a 256 | awk '{print $1}')"; then
         reasons="${reasons}fetch failed: $url"$'\n'; continue
       fi
-      [ "$got" = "$sha" ] && return 0
+      [ "$got" = "$(proof_digest_hex "$sha")" ] && return 0   # sha256:<hex> or the older bare hex
       reasons="${reasons}hash mismatch: $url"$'\n'
     done < <(jq -r '.assets[]? | [(.status // ""), (.url // ""), (.sha256 // ""), (.file // ""), (.bytes // "")] | join("\u001f")' "$mfile" 2>/dev/null)
   done <<< "$manifests"
