@@ -4,3 +4,6 @@
 3-engine-dry-run	unknown-app
 7-help-errors	apps-default
 7-help-errors	unknown-app
+4-sweep	sweep-help
+4-sweep	sweep-help
+4-sweep	sweep-help

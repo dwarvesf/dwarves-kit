@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-sweep-expire.sh -- the expiry leg of `board sweep`: one
+# test-board-sweep-expire.sh -- the expiry leg of `board sweep` (lib/adapters/hermes/legs/expire.sh): one
 # `board mirror-cleanup --expire-only` call per tick against the mirror's Hermes
 # store. The board command is a stub; no real hermes, board, or kanban is touched.
 #

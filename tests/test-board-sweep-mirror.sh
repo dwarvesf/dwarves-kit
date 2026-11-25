@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-sweep-mirror.sh -- the mirror leg of `board sweep` (lib/sync/sweep/board-sweep):
+# test-board-sweep-mirror.sh -- the mirror leg of `board sweep` (lib/adapters/hermes/legs/mirror.sh, run by lib/sync/sweep/board-sweep):
 # the git->Hermes kanban bridge riding every sweep tick, fed from each repo's
 # ORIGIN copy of the board rather than a stale-or-dirty checkout.
 #
@@ -21,6 +21,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SWEEP="$HERE/../lib/sync/sweep/board-sweep"
+MIRROR_LEG="$HERE/../lib/adapters/hermes/legs/mirror.sh"
 PASS=0; FAIL=0
 
 ok()  { PASS=$((PASS+1)); printf "  ok   %s\n" "$1"; }
@@ -135,7 +136,7 @@ grep -qE "^board called: mirror .* --dry-run\$" "$FAKE_CALL_LOG" && ok "mirror i
 # ---- build_origin_mirror_registry in isolation ------------------------------
 # Extract the function alone. Sourcing the whole sweep would run the sweep.
 TMP="$WORK/unit"; mkdir -p "$TMP"
-sed -n '/^build_origin_mirror_registry() {/,/^}/p' "$SWEEP" > "$TMP/fn.sh"
+sed -n '/^build_origin_mirror_registry() {/,/^}/p' "$MIRROR_LEG" > "$TMP/fn.sh"
 
 fail=0
 assert() {  # $1 label, $2 expected substring, $3 actual
@@ -216,7 +217,7 @@ assert "fetch failure records the repo name in failed_list" "broken" "$(cat "$FA
 assert_not "fetch failure never falls back to the live checkout path" "$BROKEN/_meta/BACKLOG.md" "$(cat "$OUT_REGISTRY2")"
 
 echo "case trap (a killed run still moves every temp artifact out of the repo root):"
-sed -n '/^    # BEGIN mirror-cleanup-trap/,/^    # END mirror-cleanup-trap/p' "$SWEEP" > "$TMP/trap.sh"
+sed -n '/^    # BEGIN mirror-cleanup-trap/,/^    # END mirror-cleanup-trap/p' "$MIRROR_LEG" > "$TMP/trap.sh"
 assert "trap block extracted" "trap 'mirror_cleanup; exit 143' TERM" "$(cat "$TMP/trap.sh")"
 TRAP_ROOT="$TMP/trap-fixture"; mkdir -p "$TRAP_ROOT"
 bash -c '

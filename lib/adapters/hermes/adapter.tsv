@@ -4,3 +4,9 @@ opt	hermes-home	hermes_home	-	-
 opt	hermes-board	hermes_board	-	kanban board slug (default: the instance's own current board)
 opt	hermes-assignee	hermes_assignee	-	profile name to assign every relayed task to
 opt	hermes-workspace	hermes_workspace	-	workspace for every relayed task, e.g. 'dir:/path/outbox/{id}'; `{id}` is the board id
+sweep-opt	mirror-hermes-home	MIRROR_HERMES_HOME	turn the mirror leg on, against the Hermes kanban store at D
+sweep-opt	mirror-snapshot	MIRROR_SNAPSHOT	mirror snapshot (default <repo-root>/_meta/.board-mirror-snapshot.jsonl)
+sweep-opt	expire-kinds-file	EXPIRE_KINDS_FILE	turn the expiry leg on (needs --mirror-hermes-home): archives the cards the rule list's expire blocks name (a social card in triage for 14 days), once per tick; --dry-run only reports. Observational like the mirror.
+leg	after-sync	legs/mirror.sh
+leg	after-sync	legs/expire.sh
+leg	last	legs/link-check.sh

@@ -17,6 +17,10 @@
 #   AC9  --poster wires digest -> post -> mark: one payload per cluster, change-only
 #   AC10 --dry-run plans: sync --dry-run, no publish, no real state write, no post
 #   AC11 --name labels the start/end lines
+#   AC12 legs: an adapter's legs run as children under the sweep's own bash with the SWEEP_* env,
+#        in phase order (after-sync, the digests, last); a leg whose option is empty prints nothing;
+#        a leg that exits non-zero prints one line, records the mirror failure and never flips the rc;
+#        with no adapter and no leg flag the sweep runs its syncs and ends rc=0
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -219,6 +223,65 @@ echo "case name (--name labels the start and end lines):"
 reset
 out="$(run_sweep --name nightly 2>&1)"
 grep -q "nightly: start" <<<"$out" && grep -q "nightly: end rc=0" <<<"$out" && ok "custom label" || bad "label not applied: $out"
+
+echo "case legs (an adapter's legs: children under the sweep's own bash, the SWEEP_* env, phase order):"
+ADIR="$WORK/adapters"; mkdir -p "$ADIR/fx/legs"
+printf 'sweep-opt\tfx-flag\tFX_FLAG\tfixture flag, VALUE reaches the legs\nleg\tafter-sync\tlegs/first.sh\nleg\tlast\tlegs/tail.sh\nleg\tafter-sync\tlegs/second.sh\n' > "$ADIR/fx/adapter.tsv"
+cat > "$ADIR/fx/legs/first.sh" <<'LEG'
+echo "  first leg: name=$SWEEP_NAME boards=$SWEEP_BOARDS root=$SWEEP_REPO_ROOT dry=$SWEEP_DRY_RUN cmd=$(basename "$SWEEP_BOARD_CMD") hb=$(basename "$SWEEP_HEALTH_BIN") kitlib=$(basename "$KIT_LIB") fx=[$FX_FLAG] bash=${BASH_VERSION%%.*} stdin=[$(cat 2>/dev/null)]"
+echo "  first leg state: $SWEEP_HEALTH_STATE"
+LEG
+printf 'echo "  second leg, gated by [${FX_FLAG:-}]"\n[ -n "${FX_FLAG:-}" ] || exit 0\necho "  second leg ran"\n' > "$ADIR/fx/legs/second.sh"
+printf 'echo "  tail leg"\n' > "$ADIR/fx/legs/tail.sh"
+run_fx() { ( export KIT_ADAPTERS_DIR="$ADIR"; run_sweep "$@" ); }
+reset
+printf '  + spoke     AB-7 · from alpha\n' > "$WORK/out/r-alpha.out"
+out="$(run_fx --poster "$WORK/poster" --cluster-map "team=crew,solo=pers" --fx-flag val1 --name legs 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "the sweep ends rc=0" || bad "exit $rc: $out"
+grep -qF "  first leg: name=legs boards=$WORK/boards.txt root=" <<<"$out" && ok "a leg sees SWEEP_NAME and SWEEP_BOARDS" || bad "first leg env: $(grep 'first leg' <<<"$out")"
+grep -q "dry=0 cmd=board hb=board-health kitlib=lib fx=\[val1\]" <<<"$out" && ok "SWEEP_DRY_RUN, SWEEP_BOARD_CMD, SWEEP_HEALTH_BIN, KIT_LIB and the sweep-opt value reach the leg" || bad "leg env: $(grep 'first leg:' <<<"$out")"
+grep -q "stdin=\[\]" <<<"$out" && ok "a leg's stdin is empty (it cannot eat the registry)" || bad "leg stdin: $(grep 'first leg:' <<<"$out")"
+grep -qF "first leg state: $WORK/" <<<"$out" && ok "SWEEP_HEALTH_STATE is a path" || bad "no health state path"
+grep -q "second leg ran" <<<"$out" && ok "a leg whose option is given runs" || bad "second leg did not run"
+l_sync="$(grep -n '  gamma rc=0' <<<"$out" | cut -d: -f1)"; l_first="$(grep -n 'first leg:' <<<"$out" | cut -d: -f1)"
+l_second="$(grep -n 'second leg ran' <<<"$out" | cut -d: -f1)"; l_post="$(grep -n 'digest: team posted' <<<"$out" | cut -d: -f1)"; l_tail="$(grep -n 'tail leg' <<<"$out" | cut -d: -f1)"
+[ -n "$l_sync" ] && [ -n "$l_post" ] && [ "$l_sync" -lt "$l_first" ] && [ "$l_first" -lt "$l_second" ] && [ "$l_second" -lt "$l_post" ] && [ "$l_post" -lt "$l_tail" ] \
+  && ok "order: per-repo syncs, after-sync legs in manifest order, digests, last legs" || bad "order wrong: sync=$l_sync first=$l_first second=$l_second post=$l_post tail=$l_tail"
+out="$(run_fx 2>&1)"
+grep -q "second leg, gated by \[\]" <<<"$out" && ! grep -q "second leg ran" <<<"$out" && ok "an empty sweep-opt value is passed as empty" || bad "gating: $(grep 'second leg' <<<"$out")"
+reset
+out="$(run_fx --dry-run 2>&1)"
+grep -q "dry=1" <<<"$out" && ok "--dry-run reaches the legs as SWEEP_DRY_RUN=1" || bad "dry-run env: $(grep 'first leg:' <<<"$out")"
+[ "$(grep -c 'FX_FLAG' <<<"$(grep -h 'FX_FLAG' "$WORK/calls.log" 2>/dev/null)")" -eq 0 ] && ok "the sweep-opt variable never reaches a sync child" || bad "FX_FLAG leaked into a sync"
+
+echo "case leg-crash (a leg that exits non-zero: one line, the mirror failure is recorded, the rc is unchanged):"
+CDIR="$WORK/adapters-crash"; mkdir -p "$CDIR/cx/legs"
+printf 'leg\tafter-sync\tlegs/mirror.sh\nleg\tafter-sync\tlegs/other.sh\nleg\tafter-sync\tlegs/after.sh\n' > "$CDIR/cx/adapter.tsv"
+printf 'echo "  mirror leg started"\nexit 7\n' > "$CDIR/cx/legs/mirror.sh"
+printf 'echo "  other leg started"\nexit 5\n' > "$CDIR/cx/legs/other.sh"
+printf 'echo "  after leg ran"\n' > "$CDIR/cx/legs/after.sh"
+reset
+HS="$WORK/crash-health.json"; rm -f "$HS"
+out="$( ( export KIT_ADAPTERS_DIR="$CDIR"; run_sweep --health-state-file "$HS" --on-clean "$WORK/hook-clean" ) 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "a crashing leg never changes the sweep's exit code" || bad "exit $rc"
+grep -qxF "  leg mirror exited 7 (non-fatal)" <<<"$out" && ok "the non-fatal line names the leg and its rc" || bad "no mirror line: $out"
+grep -qxF "  leg other exited 5 (non-fatal)" <<<"$out" && ok "any leg gets the line" || bad "no other line: $out"
+grep -q "after leg ran" <<<"$out" && ok "the next leg still runs" || bad "the legs after a crash did not run"
+[ "$(jq -r '.mirror.rc' "$HS" 2>/dev/null)" = "7" ] && ok "the mirror failure is recorded for the digest (mirror.rc=7)" || bad "health state: $(cat "$HS" 2>/dev/null)"
+[ "$(jq -r '.other // "none"' "$HS" 2>/dev/null)" = "none" ] && ok "only the leg named mirror is recorded" || bad "other leg recorded: $(cat "$HS")"
+grep -q "on-clean ran" "$WORK/calls.log" && ok "on-clean is gated on the syncs only, as before" || bad "on-clean held by a leg failure"
+
+echo "case no-adapter (an empty adapter directory: the syncs run, no leg, rc 0; a leg flag is unknown):"
+EDIR="$WORK/adapters-empty"; mkdir -p "$EDIR"
+reset
+out="$( ( export KIT_ADAPTERS_DIR="$EDIR"; run_sweep ) 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q "board-sweep: end rc=0" <<<"$out" && ok "no adapter, no leg flag: the sweep ends rc=0" || bad "exit $rc: $out"
+[ "$(grep -c '^board called.*sync' "$WORK/calls.log")" -eq 3 ] && ok "the three syncs ran" || bad "syncs: $(grep -c 'sync' "$WORK/calls.log")"
+out="$( ( export KIT_ADAPTERS_DIR="$EDIR"; run_sweep --mirror-hermes-home /x ) 2>&1)"; rc=$?
+[ "$rc" -eq 64 ] && grep -q "unknown arg: --mirror-hermes-home" <<<"$out" && ok "a leg flag with no adapter is an unknown arg (64)" || bad "exit $rc: $out"
+out="$( ( export KIT_ADAPTERS_DIR="$EDIR"; "$SWEEP" --help ) 2>&1)"
+grep -q "Usage: board sweep" <<<"$out" && ! grep -q "Adapter flags" <<<"$out" && ok "--help prints the usage and no adapter flag" || bad "help with no adapter: $out"
+grep -qiE 'hermes|notion|reminders|multica' "$SWEEP" && bad "board-sweep names an app" || ok "board-sweep names no app (code, comments, help)"
 
 echo "case usage (bad invocations):"
 HOME="$WORK" "$SWEEP" >/dev/null 2>&1; [ $? -eq 64 ] && ok "no --registry -> 64" || bad "no --registry did not exit 64"
