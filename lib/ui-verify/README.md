@@ -12,11 +12,11 @@ A page that needs a sign-in cannot be verified here. Write a `skip` entry for th
 
 PASS proves what the page showed the runner. A hostile page can detect an automated browser and show it something else (cloaking), and the runner cannot see that.
 
-The whole surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, 130 and 143, doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME`, the stdout row grammar and the `result.json` fields can change. Evolution rule: a new layer bumps `schema`, and the runner refuses a `schema` it does not know (exit 3).
+The whole surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, 129, 130 and 143, doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME`, the stdout row grammar and the `result.json` fields can change. Evolution rule: a new layer bumps `schema`, and the runner refuses a `schema` it does not know (exit 3).
 
 ## Prerequisites
 
-- Node 22 or newer. An older node makes the runner exit 4, and the doctor prints the node version it found.
+- Node 22 or newer. An older node makes the runner exit 4 with `internal error: node <version> is too old` on stderr; `--doctor` stops the same way, before it prints anything.
 - Playwright and one Chromium build in the install root (next section).
 - A preview URL for the head commit under test. The lead reads it from the pull request (the preview comment or the deployments list) and writes it into `target.url`. The runner does not look for it.
 
@@ -65,14 +65,14 @@ Each timeout flag takes a positive whole number at or below its default (step 10
 | 1 | at least one row FAIL |
 | 2 | no FAIL and at least one NO-CHECK, or no rows (`no AC`) |
 | 3 | usage error or a guard refused (an `--out` that cannot be created or read included); no browser started and nothing was written to `--out` |
-| 4 | internal error (an uncaught exception), or a node older than 22 |
+| 4 | internal error (an uncaught exception), or a node older than 22. When `--out` is usable, `result.json` holds `verdict` `NO-CHECK`, `rows: []` and a `reason` that starts `internal error:` |
 | 129 | SIGHUP: the runner closed the browser first; no `result.json` is written |
 | 130 | SIGINT: the runner closed the browser first; no `result.json` is written |
 | 143 | SIGTERM: the runner closed the browser first; no `result.json` is written |
 
 ## Reading the result
 
-Once every guard has passed, the runner prints `ui-verify: run <run id>` on stderr, so a caller that must stop a run can find its browser by the `--kit-ui-verify=<run id>` marker on the browser's command line. On SIGTERM, SIGINT or SIGHUP the runner closes the browser, kills any process that still carries the run id and a path under `<install root>/browsers` on its command line (a process that holds only the run id is left alone), removes the browser's temporary home and prints `ui-verify: interrupted, browser closed` on stderr. Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
+Once every guard has passed, the runner prints `ui-verify: run <run id>` on stderr, so a caller that must stop a run can find its browser by the `--kit-ui-verify=<run id>` marker on the browser's command line. On SIGTERM, SIGINT or SIGHUP the runner closes the browser, kills any process that still carries the run id and a path under `<install root>/browsers` on its command line (a process that holds only the run id is left alone), removes the browser's temporary home and prints `ui-verify: interrupted, browser closed` on stderr (`ui-verify: interrupted, no browser was running` when none had started). Evidence lives only under `--out`: `result.json` and one screenshot per `screenshot` step, named `ac-<n>[-neg]-<width>-<name>.png`. Nothing is uploaded or committed. The same facts print on stdout:
 
 ```
 ui-verify: head <sha40> scenario-sha256 <first 16 hex> preview-identity <matched|unverified|mismatch> playwright <version> run <run id>
@@ -81,7 +81,7 @@ row <id> [neg] | <PASS|FAIL|NO-CHECK> | <reason> | <evidence names>
 observed <id> [neg]: <sanitized text>
 ```
 
-In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO-CHECK` row always carries a reason and never counts as `PASS`. The top-level `verdict` is `PASS` only when there is at least one row and every row is `PASS`. `observed` is page text with control, format and separator characters turned into spaces, a backtick turned into an apostrophe, a pipe turned into a slash, and a cut at 200 characters. `blocked_requests` lists what the runner refused to reach, so a lead who forgot an API host can see why a page looks empty. An entry is the host, or `<host>:<port>` for an allowed host on a port the runner refused. The list holds at most 50 entries, each cut at 100 characters, and `blocked_requests_truncated` is true when a further name was dropped. `identity.seen` is sanitized like `observed`. `browser.pids` records the browser processes found by the run id the runner puts on the browser command line. After the browser closes, the runner kills any process that still carries the run id, and `browser.leftover_pids` records the ones that survived even that. `browser.env_keys` lists the environment variable names the browser got (`HOME`, `PATH`).
+In `result.json`, each row has a `status` of `PASS`, `FAIL` or `NO-CHECK`. A `NO-CHECK` row always carries a reason and never counts as `PASS`. The top-level `verdict` is `PASS` only when there is at least one row and every row is `PASS`. `observed` is page text with control, format and separator characters turned into spaces, a backtick turned into an apostrophe, a pipe turned into a slash, and a cut at 200 characters. `blocked_requests` lists what the runner refused to reach, so a lead who forgot an API host can see why a page looks empty. An entry is an object, `{"host": ..., "count": ...}`: `host` is the host name, or `<host>:<port>` for an allowed host on a port the runner refused, and `count` is how many requests to it were refused. The list holds at most 50 entries, each cut at 100 characters, and `blocked_requests_truncated` is true when a further name was dropped. `identity.seen` is sanitized like `observed`. `browser.pids` records the browser processes found by the run id the runner puts on the browser command line. After the browser closes, the runner kills any process that still carries the run id, and `browser.leftover_pids` records the ones that survived even that. `browser.env_keys` lists the environment variable names the browser got (`HOME`, `PATH`).
 
 ## Residuals
 
@@ -103,7 +103,7 @@ The result is the first 16 hex characters of the file's SHA-256 (`sha256sum` giv
 
 ## Preview identity
 
-The runner can tell which build a preview serves only if the app says so. The app sends its build id in a response header on the document at `target.url` (name the header in `identity.header`) or in a `<meta name>` tag (name it in `identity.meta`). The value must be the commit SHA, 7 to 40 hex characters (the runner trims it and ignores case). The runner compares it with `head_sha`: `matched` when `head_sha` starts with it, `mismatch` when it does not (every row is then NO-CHECK `preview is not the head`).
+The runner can tell which build a preview serves only if the app says so. The app sends its build id in a response header on the document at `target.url` (name the header in `identity.header`) or in a `<meta name>` tag (name it in `identity.meta`). The value must be the commit SHA, 7 to 40 hex characters (the runner trims it and ignores case). The runner compares it with `head_sha`: `matched` when `head_sha` starts with it, `mismatch` when it does not (every row that would run is then NO-CHECK `preview is not the head`; a `skip` row and a row that asserts nothing keep their own reason).
 
 Anything else is `unverified`: no `identity` key, no such header or meta, or a value that is not 7 to 40 hex characters (a UUID, a semver). The rows still run, and a stale preview can pass. The stdout line and the agent's report print `unverified` so a reader sees the gap, and nothing else flags it. A plain Cloudflare preview exposes no build id, so expect `unverified` there until the app adds a header or meta tag.
 
@@ -210,4 +210,4 @@ Refusals (exit 3, one line on stderr, nothing written to `--out`):
 - an allowed host that resolves to a loopback (without `allow_loopback`), private, link-local, shared (100.64.0.0/10, the tailnet range), unique-local, site-local (`fec0::/10`) or IPv6 transition, Teredo or discard (`64:ff9b::/96`, `64:ff9b:1::/48`, `2001::/32`, `2002::/16`, `100::/64`, `::/96`) address
 - an unknown step verb (a name like `constructor` or `__proto__` included), a `goto` or `expect_url` path that does not start with exactly one `/`, a role outside the twelve, a duplicate (`id`, `kind`) pair, an entry with both `steps` and `skip`, or an `identity` with both keys
 
-An allowed host that does not resolve at all is not a refusal: every row is NO-CHECK `preview unreachable` and the exit is 2.
+An allowed host that does not resolve at all is not a refusal: every row that would run is NO-CHECK `preview unreachable` (a `skip` row and a row that asserts nothing keep their own reason) and the exit is 2.
