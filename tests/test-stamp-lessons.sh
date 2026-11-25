@@ -92,7 +92,8 @@ expect "the index is under 8,000 characters ($(chars "$TPL/files/.claude/memory/
 expect "the index lists exactly five notes" bash -c "[ \$(grep -c '^- \[' '$TPL/files/.claude/memory/MEMORY.md') -eq 5 ]"
 G="$TPL/files/.claude/memory/guards-match-command-text.md"
 expect "the guard note lists known misses" grep -q '^Known misses:' "$G"
-expect "the guard note names a variable-built command and gh api" bash -c "grep -qF '\$g pr merge' '$G' && grep -qF 'gh api' '$G'"
+expect "the guard note names the variable-built command and the gh api merge" bash -c "grep -q 'variables' '$G' && grep -qF 'gh api' '$G'"
+expect "the guard note stays under 1,200 characters" [ "$(chars "$G")" -lt 1200 ]
 expect "the guard note points at the guard test for the probe rows" grep -qF 'scripts/test-agent-guard.sh' "$G"
 
 # 5. hygiene of the group's files

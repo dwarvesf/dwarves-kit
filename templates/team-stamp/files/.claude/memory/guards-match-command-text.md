@@ -5,7 +5,7 @@ description: The agent hook matches the text of a command, so a variable or a sc
 
 `scripts/agent-guard.sh` is text matching on the command line, not a shell parser. It guards Claude Code only: other agents get no hook.
 
-Known misses: a command built from variables (`g=gh; $g pr merge 7`), a script file that runs git or gh itself, the merge call made through `gh api` (a path ending in `/merge`), and a push made outside the agent's shell. Weak spots: a wrapper before the command (`env -i`, `timeout 5`) and `git push --all` or `--mirror`. `scripts/test-agent-guard.sh` holds one row per probe and is the truth for which of these the guard blocks today.
+Known misses: a command built from variables, functions, aliases or command substitution; a script, make target or tool that runs git or gh itself; a push set up through a git alias or config; a merge from the GitHub site or any client other than gh; a `gh api` merge that does not spell the method PUT as a word; a commit made by an editor or a GUI. `scripts/test-agent-guard.sh` holds one row per probe and shows what the guard blocks today.
 
 **Why:** the hook says the fix at the moment of the mistake. It is not a wall. CI job `pr-shape` and `scripts/pr-merge.sh` are the checks that bind.
 
