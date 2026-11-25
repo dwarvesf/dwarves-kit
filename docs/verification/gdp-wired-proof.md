@@ -103,6 +103,13 @@ Result: RED as expected
 
 Every bridge is also its own negative control: each area kept the bash as found as a variant, and the bridge showed the committed code agreeing with that broken variant and diverging from the fixed rule before the fix (counts per fix in `lib/rules/*/FINDINGS.md`).
 
+## Rollback
+
+- Revert the two commits on this branch (`git revert`): every bash fix is local to its file, and no ledger, board, queue or registry format changed, so state written before or after the change reads the same either way.
+- The one new store is `$(git rev-parse --git-common-dir)/kit-verify-loop/<rid>.json`, written only by `bin/verify-loop`. After a revert nothing reads it; delete the directory or leave it.
+- `install.sh` step 1c-rules only runs `npm ci` in `lib/rules`; a reverted install leaves an unused `lib/rules/node_modules` that the next install removes with `lib/`.
+- The fixes refuse more than before (the safety-gate bypasses, a quoted `["merge"]`, overlapping Touches, a takeover claim). If one refuses something it should not, revert that file alone; its pre-fix behavior is kept as the named variant in `lib/rules/<area>/` and documented in that area's `FINDINGS.md`.
+
 ## Reproduce
 
 ```
