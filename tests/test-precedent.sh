@@ -281,6 +281,14 @@ FIX
 A nested memory note carrying the unique term iotaunique.
 FIX
 
+  # A long note (a reference card): its only match sits past the first 8 KB, so the note
+  # reader must read the whole note, as the body_flat docstring promises.
+  {
+    printf -- '---\nname: kappa\ndescription: A long reference card.\n---\n\n# kappa\n\n'
+    i=0; while [ "$i" -lt 200 ]; do printf 'Filler line %s of a long reference card body.\n' "$i"; i=$((i+1)); done
+    printf 'The last line carries the unique term kappadeepterm.\n'
+  } > "$FIX_MEMORY/kappa.md"
+
   # ~-expansion case (TASK-003): a second `repo` registry row under $HOME, distinct from
   # $FIX_REPO. "zorbington" is a unique word this row's own scripts/ dir carries, so a hit
   # here proves the `~` row actually got scanned.
@@ -884,6 +892,14 @@ if { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | grep -q 'proj-a/memo
   assert "nested */memory/*.md registry row: the one-level-down note surfaces" 0
 else
   assert "nested */memory/*.md registry row: the one-level-down note surfaces" 1
+fi
+
+# A memory note longer than 8 KB: a term past the old head-read cap still matches.
+OUT="$("$PRECEDENT_BIN" find kappadeepterm --surface inventory 2>&1)"
+if { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | grep -q 'kappa.md'; then
+  assert "long memory note: a term past the first 8 KB still matches" 0
+else
+  assert "long memory note: a term past the first 8 KB still matches" 1
 fi
 
 # ---------------------------------------------------------------------------

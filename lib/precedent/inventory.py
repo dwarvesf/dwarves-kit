@@ -311,8 +311,9 @@ def note_frontmatter(fp: str):
     """(stem, desc, body_flat) for a memory note: desc = frontmatter description, or the
     first non-blank body line when there is none; body_flat = the whole body, whitespace
     flattened, so a fact buried a few lines in (not just the title line) still surfaces in
-    the displayed hit line and passes through redaction. None on read failure."""
-    text = read_head(fp)
+    the displayed hit line and passes through redaction. None on read failure. Read up to
+    64 KB: a reference card runs past the 8 KB default, and its match can sit at the end."""
+    text = read_head(fp, 65536)
     if text is None:
         return None
     fm, body = split_frontmatter(text)
