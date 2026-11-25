@@ -5,7 +5,7 @@ entitlement sets (the signed-key row, ID-426, is dropped), and the FG-01 busines
 `docs/briefs/DECISION-BRIEF-kit-monetization.md`, which owns pricing/model decisions; this file
 owns the FEATURE->TIER->MODULE mapping). Status column: shipped (exists today) / queued (board
 row) / planned (catalog, parked) / dropped (board row dropped, not being built). Statuses follow
-`_meta/BACKLOG.md`.
+the maintainers' private board.
 
 Two hard principles: **safety is never paywalled**, and **raw telemetry is always free** (the
 loop cannot run without it; plain local files, the user's forever). Paid tiers sell the

@@ -1,6 +1,6 @@
 # History
 
-The public release tree carries the kit, its design record and its living docs. The old internal history records were removed from it.
+The public release tree carries the kit, its design record and its living docs. The old internal history records were removed from the tree.
 
 ## What was removed
 
@@ -22,7 +22,7 @@ Dated working records that nothing reads at runtime:
 
 ## Read an old file
 
-The public history was squashed into one commit for the release. The full pre-squash history, every old tag (including `history/2026-10-27`) and every removed file live in the private `dwarvesf/dwarves-kit-internal` repo, at tag `history/master-pre-squash`. Maintainers with access read an old file there:
+One release commit removed these files from the tree; it did not rewrite the git history. The private `dwarvesf/dwarves-kit-internal` repo keeps a copy of the pre-release history at tag `history/master-pre-squash`, with the old tags (including `history/2026-10-27`). Maintainers with access read an old file there:
 
 ```
 git clone git@github.com:dwarvesf/dwarves-kit-internal.git

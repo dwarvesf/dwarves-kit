@@ -5,7 +5,7 @@
 # the live endpoint, so we prove the exact bytes offline before any POST.
 #
 # Test [1] computes the expected signature with an INDEPENDENT reimplementation
-# of tools/vps-mon/worker/src/hmac.ts::computeSignature (msg =
+# of worker/src/hmac.ts::computeSignature (vps-mon repo) (msg =
 # `${ts}\n${host}\n${sha256hex(body)}`, key = secret string's UTF-8 bytes,
 # output "sha256="+hex) and asserts session-report's own sign_request produces
 # the identical value. Two independent code paths agreeing == the scheme is
