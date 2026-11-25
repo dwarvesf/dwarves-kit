@@ -460,7 +460,8 @@ out="$(PATH="$TMPD/nosleep:$PATH" GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_ope
   GH_STUB_PR_113_3="{\"number\":113,\"statusCheckRollup\":$ZC_GREEN}" \
   GH_STUB_PR_113_4="$(zc_json 113 CLEAN "$PD_RED")" \
   "$WRAP" merge --apply --with-ci --pr 113 "$TMPD/clone-scan-main" 2>&1)"; rc=$?
-chk "merge --with-ci pending, then red once the wait ends: exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
+chk "merge --with-ci pending, then red once the wait ends: exits 4" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_has "merge --with-ci pending, then red once the wait ends: names the re-gate after the wait" "$out" "SKIP #113 zero checks: checks are pending or failing after the check wait"
 chk_no "merge --with-ci pending, then red once the wait ends: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
@@ -502,6 +503,22 @@ chk_has "merge --with-ci dry run, pending: names the wait --apply would make" "$
 chk "merge --with-ci dry run, pending: no wait" \
   "$([ "$(cat "$GH_STUB_CALLS.view-117" 2>/dev/null || echo 0)" -le 2 ]; echo $?)"
 
+echo "--- merge --with-ci called from apply's autoland carry: no second wait"
+# The carry stage waits for the PR's checks itself, up to the same bound, before it calls
+# cmd_merge in-process; the merge's own pending wait would double it. A stand-in function of the
+# carry's name is the caller, and the test asserts the real one still exists.
+: > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
+out="$(env PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CI_ON_MERGE=1 GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 120)" \
+  "GH_STUB_PR_120=$(zc_json 120 UNSTABLE "$PD_PEND_RUN")" \
+  bash -c 'source "$1" help >/dev/null; declare -F _autoland_carry >/dev/null || { echo "NO_CARRY_FN: wrap-carry.sh lost _autoland_carry"; exit 9; }; _autoland_carry() { ( cmd_merge --apply --pr 120 "$2" ); }; _autoland_carry x "$2"' _ \
+  "$KIT_DIR/lib/wrap/wrap.sh" "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --with-ci from the carry, pending: exits 4 with the PR left open" "$([ "$rc" -eq 4 ]; echo $?)"
+chk_no "merge --with-ci from the carry, pending: no second wait" "$out" "waiting for the pending checks"
+chk_no "merge --with-ci from the carry, pending: the stand-in found the real caller" "$out" "NO_CARRY_FN"
+chk "merge --with-ci from the carry, pending: no read past the draft check and the gate's own" \
+  "$([ "$(cat "$GH_STUB_CALLS.view-120" 2>/dev/null || echo 0)" -le 2 ]; echo $?)"
+chk_no "merge --with-ci from the carry, pending: never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
 echo "--- merge --with-ci, bare form: a pending PR is waited for when nothing else is eligible"
 # Reads of the bare form: 1 the gate's read (pending), then the wait's reads, then the settled one.
 : > "$GH_STUB_CALLS"; rm -f "$GH_STUB_CALLS".*
@@ -519,7 +536,7 @@ chk_has "merge --with-ci bare, pending: merged once the checks read green" "$out
 out="$(PATH="$TMPD/nosleep:$PATH" KIT_WRAP_CARRY_CHECKS_SECS=40 GH_STUB_LABELS='[]' GH_STUB_OPEN_PRS="$(zc_open 119)" \
   GH_STUB_PR_119="$(zc_json 119 UNSTABLE "$PD_PEND_RUN")" \
   "$WRAP" merge --apply --with-ci "$TMPD/clone-scan-main" 2>&1)"; rc=$?
-chk "merge --with-ci bare, still pending: exits 4, not merged and nothing failed" "$([ "$rc" -eq 4 ]; echo $?)"
+chk "merge --with-ci bare, still pending: exits 0, the bare sweep's nothing-to-merge code" "$rc"
 chk_has "merge --with-ci bare, still pending: says it ran out, with the seconds waited" "$out" \
   "SKIP #119: checks still pending after 40s; left open"
 mv "$TMPD/clone-scan-main/.github" "$TMPD/pw-wf-discard"

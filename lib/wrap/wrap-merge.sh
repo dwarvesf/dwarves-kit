@@ -970,7 +970,7 @@ _merge_pending_only() {
 # mergeability and sets PW_DETAIL for the caller to re-gate. Returns 0 to re-gate; 2 when the
 # head moved during the wait (the same refusal the label wait makes); WRAP_MERGE_NOT_MERGED_RC
 # (4) when the checks were still pending as the bound ran out: nothing failed and the PR stays
-# open, the code `apply`'s autoland carry already reads as "left open for step 3".
+# open. The caller turns that into its own skip code.
 _merge_pending_wait() {
   local url="$1" n="$2" detail="$3" head_oid new_head
   head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
@@ -991,6 +991,15 @@ _merge_pending_wait() {
   return 0
 }
 
+# _merge_in_carry -- 0 when `apply`'s autoland carry is the caller. That stage lands its carry
+# branch through this verb in-process, waits for the PR's checks itself, keeps the checkout's
+# stray lines as dirty files, and pulls on its own stage, so the verb neither waits again nor
+# pulls there.
+_merge_in_carry() {
+  case " ${FUNCNAME[*]} " in *" _autoland_carry "*) return 0 ;; esac
+  return 1
+}
+
 # _merge_pull_checkout <repo> <default> -- the fast-forward `merge --apply` owes the checkout
 # it was handed. The merge is server-side, so the checkout stayed behind origin until a later
 # `apply` pulled it. Same guard shape and messages as `land`'s closing pull: skipped under
@@ -998,12 +1007,10 @@ _merge_pending_wait() {
 # default branch, ff-only through `_land_ff_pull` so a dirty merge=union file is carried and
 # nothing is stashed or reset. Advisory like land's: every outcome prints one line naming the
 # command that finishes the job, and none changes the merge's exit code. Silent when `apply`'s
-# autoland carry is the caller: that stage lands its carry branch through this verb in-process,
-# keeps the checkout's stray lines as dirty files, and pulls on its own stage, so a pull here
-# would move the files it is carrying.
+# autoland carry is the caller (_merge_in_carry): a pull there would move the files it carries.
 _merge_pull_checkout() {
   local repo="$1" def="$2" cur hint
-  case " ${FUNCNAME[*]} " in *" _autoland_carry "*) return 0 ;; esac
+  _merge_in_carry && return 0
   hint="run: wrap apply --apply --pull-only ${repo}"
   cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
   if [ "$NO_PULL" = 1 ]; then
@@ -1164,7 +1171,7 @@ cmd_merge() {
     # Under `--with-ci` a check still running is a reason to wait, not to skip: queue the PR
     # for the wait below (a label-armed head already waited in its own prepare step).
     pend=""
-    if [ "${verdict%% *}" = "WAIT" ] && _ci_on_merge && [ "$ci_armed" != "$n" ] && _merge_pending_only "$detail"; then
+    if [ "${verdict%% *}" = "WAIT" ] && _ci_on_merge && [ "$ci_armed" != "$n" ] && ! _merge_in_carry && _merge_pending_only "$detail"; then
       pend=1; pend_list="${pend_list} ${n}"
     fi
     if [ "$verdict" = "OK" ]; then
@@ -1187,6 +1194,9 @@ cmd_merge() {
     local pn
     for pn in $pend_list; do
       _merge_pending_wait "$url" "$pn" "$(cat "${jsondir}/pr-${pn}.json" 2>/dev/null)"; prc=$?
+      # A wait that ran out is a skip: the call's own not-merged code, 4 under --pr and 0 for
+      # the bare sweep, as for any other PR the gate leaves open. A moved head stays 2.
+      if [ "$prc" -eq "$WRAP_MERGE_NOT_MERGED_RC" ]; then rm -rf "$jsondir"; return "$skip_rc"; fi
       if [ "$prc" -ne 0 ]; then rm -rf "$jsondir"; return "$prc"; fi
       detail="$PW_DETAIL"
       printf '%s' "$detail" > "${jsondir}/pr-${pn}.json"
