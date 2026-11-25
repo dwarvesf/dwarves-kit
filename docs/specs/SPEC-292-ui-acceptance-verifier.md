@@ -143,7 +143,7 @@ See `## Picture`. The trust boundary sits between the runner and the preview hos
 - The install root resolves through the kit's one data-path resolver, `lib/config/data-path.sh` (`kit_data_path <kind> <name>`; its README says it is the only place a runtime data path is spelled, and `lib/gate/boundary-lint.sh` fails on any other file that spells one). A new entry `cache ui-verify`, with its own env var `UI_VERIFY_HOME`, holds the pinned install. The Node runner gets the path by spawning `bash <kit>/lib/config/data-path.sh path cache ui-verify`, which already honours the entry's env var first and `KIT_DATA_ROOT` after. The entry's legacy path is a path that never exists, which the resolver reads as "no legacy data" (confirmed by reading `_kit_data_resolve`).
 - The runner imports code from the install root, so it uses a root only when nobody else could have written it. A root inside a git work tree, not owned by the current user, or writable by group or others is refused: every row that would run is NO-CHECK `install root not trusted: <inside a git work tree | not owned by the current user | writable by group or others>`, and `--doctor` prints `NOT READY: install root not trusted: <why>` and exits 20 (no new doctor code). The check reads the root's own owner and mode, not its children. On a host with umask 002 a root made by `mkdir -p` is group-writable, so the install command that `--doctor` prints runs `chmod go-w` on the root right after the `mkdir`.
 - The browser cache lives inside the install root (`PLAYWRIGHT_BROWSERS_PATH=<root>/browsers`), not in the shared per-user Playwright cache, so a removal PR can name one directory and another process cannot change the revision under the kit.
-- The surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, 130 and 143; doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME` and the `cache ui-verify` path, the stdout row grammar and the `result.json` fields. The runner refuses unknown keys and any `schema` other than 1, so a later layer must bump `schema`; that is the evolution rule, and `lib/ui-verify/README.md` states both. See DEC-39.
+- The surface is provisional until one consumer repo has run it: `schema: 1`, the exit codes (runner 0 to 4, 129, 130 and 143; doctor 20 to 22), the doctor output lines, `UI_VERIFY_HOME` and the `cache ui-verify` path, the stdout row grammar and the `result.json` fields. The runner refuses unknown keys and any `schema` other than 1, so a later layer must bump `schema`; that is the evolution rule, and `lib/ui-verify/README.md` states both. See DEC-39.
 - A PASS proves what the page showed the runner. A hostile page can detect an automated browser and show it something else (cloaking), and nothing in this slice detects that. It is a residual, stated in the README, the agent file and `## Failure modes`.
 
 ### Philosophy alignment
@@ -256,7 +256,7 @@ The three timeout flags can only lower the defaults (step 10 s, scenario 30 s, r
 
 Clocks: browser launch has its own cap of 60 s (NO-CHECK `browser did not start`). Preflight runs up to three attempts, each bounded by the step timeout. The run budget covers the scenarios only: its clock starts when the first scenario starts, and a step in flight waits at most the smallest of the step timeout, the scenario time left and the budget left (see DEC-31). `duration_ms` in `result.json` is measured from browser launch. A scenario or step that runs out of budget ends NO-CHECK `run budget spent`. Only time inside a step counts against the scenario clock and the run budget; browser launch, context and page creation, screenshot writing and the leftover scan do not.
 
-Run id and signals: once every guard has passed (before the install check) the runner prints `ui-verify: run <run id>` on stderr; the stdout head line is unchanged. SIGTERM, SIGINT and SIGHUP close the browser, kill any process that still carries the run id and a path under the install root's `browsers` directory, remove the browser's temporary home, print `ui-verify: interrupted, browser closed` on stderr and exit 143, 130 and 129. No `result.json` is written for an interrupted run, and a failure that the closing browser raises is not an internal error. After a normal close the runner also kills any process that carries the run id and that browser path (SIGKILL) and records the survivors in `browser.leftover_pids`.
+Run id and signals: once every guard has passed (before the install check) the runner prints `ui-verify: run <run id>` on stderr; the stdout head line is unchanged. SIGTERM, SIGINT and SIGHUP close the browser, kill any process that still carries the run id and a path under the install root's `browsers` directory, remove the browser's temporary home, print `ui-verify: interrupted, browser closed` on stderr (`ui-verify: interrupted, no browser was running` when none had started) and exit 143, 130 and 129. No `result.json` is written for an interrupted run, and a failure that the closing browser raises is not an internal error. After a normal close the runner also kills any process that carries the run id and that browser path (SIGKILL) and records the survivors in `browser.leftover_pids`.
 
 #### Exit codes
 
@@ -647,7 +647,7 @@ Mutations that change runner code (the runner-code controls of AC-3, AC-4, AC-6,
 16. A scenario has steps but no `expect_*` step: its row is NO-CHECK `scenario asserts nothing`, the other scenarios still run, and the merged verdict is not SHIP-clean. The lead adds an expect or a `skip`.
 17. A Linux host without user namespaces cannot start the sandbox: every row is NO-CHECK `browser sandbox unavailable`. There is no flag to run unsandboxed; the lead runs the leg on a host that supports it. The same row applies when the scan finds no browser process carrying the run id.
 18. The install root was made with `mkdir -p` under umask 002, so it is group-writable: every row that would run is NO-CHECK `install root not trusted: writable by group or others`, and `--doctor` says so and exits 20. The lead runs `chmod go-w` on the root (the printed install command already does) and re-dispatches.
-19. The operator, a timeout or a closed terminal sends SIGTERM, SIGINT or SIGHUP to the runner: it closes the browser, kills any process that still carries the run id and a path under the install root's `browsers` directory, removes the browser's temporary home, prints `ui-verify: interrupted, browser closed` and exits 143, 130 or 129. No `result.json` exists for that run, so the agent maps it as the last row of the table.
+19. The operator, a timeout or a closed terminal sends SIGTERM, SIGINT or SIGHUP to the runner: it closes the browser, kills any process that still carries the run id and a path under the install root's `browsers` directory, removes the browser's temporary home, prints `ui-verify: interrupted, browser closed` (or `ui-verify: interrupted, no browser was running` when none had started) and exits 143, 130 or 129. No `result.json` exists for that run, so the agent maps it as the last row of the table.
 20. A lead passes `--step-timeout-ms` below 500: the runner refuses it (exit 3), because `expect_no_text` needs a 500 ms window. A page that cannot be read during that window gives NO-CHECK `page did not settle`, never PASS.
 21. A directory above the install root is group- or world-writable and not sticky (a home directory made under umask 002, say), or `node_modules/playwright` is: every row that would run is NO-CHECK `install root not trusted: a parent directory is writable by group or others and is not sticky` (or `node_modules/playwright is writable by group or others`), and `--doctor` says so and exits 20. A sticky directory such as `/tmp`, and root-owned 755 system directories such as `/`, `/Users`, `/private` and `/var/folders`, are not refused. The lead runs `chmod go-w` on the directory and re-dispatches.
 
@@ -824,3 +824,139 @@ Dry traces for the negative controls (the mutation, what the fixture reads, the 
 ## Open questions
 
 None.
+
+## Review
+
+A five-leg battery ran at `605ce752`: the acceptance verifier, then the security, architecture and test-coverage lenses, then the advisor. Fixes were applied in three passes (the runner, the suite, the docs and spec sync). A scoped security re-review then ran at `86ed439a`, and its items were applied in a last pass (the runner, suite, spec, README, agent file and proof file). That last pass was verified by the suite (`469 passed, 0 failed, 0 skipped`, recorded in `docs/verification/ui-acceptance-verifier.md`) and was not re-reviewed.
+
+The legs raised 61 findings. Four findings were raised by two or three lenses, so there are 55 distinct findings: 49 fixed, 4 documented as residual (S5, S12, C16 and L6), and 2 by design (V6 and A7). None is rejected or missing from the record; the S5 tightening is deferred to 292b. Duplicates: `expect_no_text` passing without a read (S2, R1, C2); the live record absent from the branch (C1, A2, R7); an unknown or missing case name passing the suite (V1, C20); the skip path on a real node never run (V5, C19). The Decision Log entries named below are DEC-30 to DEC-64.
+
+### Verification
+
+Verdict PASS at `605ce752`. Command: `bash tests/test-ui-acceptance-verifier.sh`, exit 0. Recap line quoted: `test-ui-acceptance-verifier: 251 passed, 0 failed, 0 skipped`. The leg also re-ran case `offsite-request-aborted` alone (`13 passed, 0 failed, 0 skipped`, the second listener saw `{"hits":0,"upgrades":0}`). AC-1 to AC-13 and AC-15 to AC-17 PASS; AC-14 NOT-RUN-HERE (the live dispatch, written after the fix passes). The leg found weak checks in the suite itself:
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| V1 | medium | a missing case function or an unknown case name adds no FAIL and the suite exits 0 | fixed: case `suite-harness` (unknown and function-less case names fail) |
+| V2 | medium | `rows.every(...)` has no `rows.length>0` guard, so an empty row set passes | fixed: the `rows_all` helper requires a non-empty row set |
+| V3 | low | an empty `RUN_ID` makes the `pgrep` check near-vacuous | fixed: `suite-harness` holds the empty-run-id guard |
+| V4 | low | `[ $? -ne 0 ]` controls and line 503 pass on any error | fixed: refusal checks take the expected reason text; four `check "... $(cmd)" $?` checks that could never fail were repaired |
+| V5 | low | no suite pass for a not-ready doctor (the AC-9 SKIP path) | fixed: `suite-harness` runs a real node on an empty install root and reads the SKIP lines, the skip count and `UI_VERIFY_REQUIRE=1` |
+| V6 | low | runner mutations (pin removal, `chromiumSandbox: false`, wrapper removal) are hand-run only | by design: DEC-26, recorded in the proof file |
+
+### Security
+
+No CRITICAL finding. Browser behavior in this lens was reasoned from Playwright 1.65.1 source, not run.
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| S1 | medium | route and WebSocket guards compare host only, so an allowed host on another port is reachable | fixed: `fix(ui-verify): compare host and port in the request guards`, DEC-40, DEC-41, case `offsite-request-aborted`. The same-host redirect part is documented as residual (see Residuals) |
+| S2 | medium | `expect_no_text` passes without reading the page | fixed: `fix(ui-verify): make expect_no_text read the page and bound each step`, DEC-42, case `rows-and-planted-bug` |
+| S3 | low-medium | `blocked_requests` is unbounded and unsanitized; `identity.seen` is raw | fixed: capped at 50 entries of 100 characters, sanitized, `blocked_requests_truncated` added (DEC-48, case `offsite-request-aborted`) |
+| S4 | low | a prototype-named step verb crashes the runner with exit 4 | fixed: `fix(ui-verify): refuse own-property verbs, untrusted roots and IPv6 gaps`, DEC-47, case `guard-refusals` |
+| S5 | high by impact | the grant glob `Bash(node */lib/ui-verify/run.mjs*)` also matches inline and planted node | documented as residual: DEC-6, DEC-64 and the Failure modes row on the grant. The mechanical tightening (a shim grant or an anchoring PreToolUse hook) is deferred to a later slice, 292b |
+| S6 | low | the agent file says "no way to create a file" but `--out` makes a directory and writes evidence | fixed: `docs(ui-verify): label the first slice and state its residuals` rewords the agent file; DEC-64 |
+| S7 | low | no `--no-proxy-server` and the browser inherits the whole environment | fixed: `fix(ui-verify): contain the browser process and close it on a signal`, DEC-49, case `browser-sandbox` |
+| S8 | low | the install root is trusted without a check | fixed: `fix(ui-verify): refuse own-property verbs, untrusted roots and IPv6 gaps`, DEC-50, case `doctor-and-skip` (widened by DEC-58) |
+| S9 | low | the private IPv6 list misses `64:ff9b::/96`, `2002::/16`, `::/96`, `fec0::/10` | fixed: DEC-52, case `guard-refusals` (table-driven over every range) |
+| S10 | low | leftover browser pids are recorded, not killed | fixed: `fix(ui-verify): contain the browser process and close it on a signal`, DEC-55, case `leftover-browser-killed` |
+| S11 | low | the doctor's printed install command interpolates the root unescaped | fixed: DEC-51, `fix(ui-verify): make the printed install command chmod the root`, case `doctor-and-skip` |
+| S12 | low | a hostile page can detect automation (cloaking), so PASS proves what the bot saw | documented as residual: DEC-39, the Failure modes row on cloaking, README Residuals |
+
+### Architecture
+
+Score 6/10. The runner follows the Interfaces closely and the agent's verdict table matches the spec's table. The 1,028-line runner is mostly spec-driven and was not split.
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| R1 | high | `expect_no_text` can PASS without reading the page | fixed: same finding as S2 and C2 |
+| R2 | high | a `fill` on a non-fillable element ends the run with exit 4, not a FAIL row | fixed: `fix(ui-verify): make expect_no_text read the page and bound each step`, DEC-43 |
+| R3 | medium | `--step-timeout-ms` under 500 makes `expect_no_text` FAIL with an empty `observed` | fixed: DEC-45, `--step-timeout-ms` under 500 is exit 3, case `guard-refusals` |
+| R4 | medium | a step can overrun its own clock | fixed in code: DEC-44. No deterministic case shows it (only wall time does), so no case goes red |
+| R5 | medium | a click that navigates off the allowed list is judged FAIL | fixed: `fix(ui-verify): compare host and port in the request guards`, DEC-41, case `offsite-request-aborted` |
+| R6 | medium | the config registry row `UI_VERIFY_HOME` names a module that does not exist | fixed: the row now says `lib/ui-verify` is not a declared module and names its proof (`docs(ui-verify): label the first slice and state its residuals`) |
+| R7 | medium | README cites `docs/verification/ui-acceptance-verifier.md`, which is not in the diff | fixed: the record was written (`docs(ui-verify): record the live dispatches and the proof of done`); same root as C1 and A2 |
+| R8 | low | dead code, README "below" versus "equal to", the agent's "BEFORE the run", `identity.seen`, unreadable `--out`, budget checked after a context opens | fixed: dead code removed and `--out` is exit 3 (DEC-46, F1 notes); README says "at or below"; the "BEFORE the run" wording is gone. Simplifications 1, 3 and 5 of the report were not applied (lead decision: not in this round) |
+
+### Test coverage
+
+The suite was honest (no assertion on a constant) but left runner behaviors unconstrained. bash 3.2 was clean.
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| C1 | high | row 47 and AC-14 have no check; the live record is absent | fixed: case `live-record` with its own controls; the record exists since `docs(ui-verify): record the live dispatches and the proof of done` |
+| C2 | high | `expect_no_text` can only pass; its fail branch is never fed present text | fixed: same finding as S2; case `rows-and-planted-bug` |
+| C3 | high | an `expect_url` mismatch is never tried | fixed: case `step-behaviors` |
+| C4 | high | a `skip` row is never asserted | fixed: case `no-browser-rows` |
+| C5 | high | the `--no-sandbox` branch is covered only by a hand mutation | fixed: case `browser-sandbox` (a wrapping `ps` stub adds the flag; exit 2, every row NO-CHECK) |
+| C6 | high | the retry and `flaky: true` path is untested | fixed: case `step-behaviors` (a `/flaky` fixture path) |
+| C7 | medium | refusals pass for the wrong reason; a stale `mutate` passes vacuously | fixed: refusal checks take the expected reason text; `mutate` fails when its search text is absent |
+| C8 | medium | the `internal-error` control is stale because of two handlers | fixed: DEC-56; the control is a runner copy with no `uncaughtException` listener |
+| C9 | medium | branches with no case: `fill`, not actionable, ambiguous, default viewports, `identity.meta`, preflight final redirect, FAIL beside NO-CHECK | fixed: cases `step-behaviors`, `offsite-request-aborted`, `identity-and-readiness`, `rows-and-planted-bug` (F2 notes) |
+| C10 | medium | the output contract (head line, `counts` line, `row` format) is unpinned | fixed: case `rows-and-planted-bug` asserts the counts line and the row lines |
+| C11 | medium | Playwright load and launch failures are untested | fixed: case `no-browser-rows` with a fake install |
+| C12 | medium | private-range coverage is thin (6 of 14 ranges) | fixed: case `guard-refusals`, table-driven over both edges of every range plus the address just outside |
+| C13 | medium | bad flag values, a duplicate flag, a missing `--out`, and a token moved to another agent-file section have no case | fixed: cases `guard-refusals` and `agent-file-tokens` |
+| C14 | medium | preflight and step ceilings are too tight under load | fixed: every browser case takes `STEP_MS`; the hang case takes `HANG_SCENARIO_MS` (F2 notes) |
+| C15 | medium | `leftover_pids` and the `duration_ms` bound depend on fixed waits | fixed: `duration_ms` is an inclusive outer ceiling; the budget rows are the bound check |
+| C16 | low | `nonexistent.invalid` relies on the host resolver | documented as residual: a comment in the suite names a resolver that answers for unresolvable names |
+| C17 | medium | a timeout kill leaves an orphan browser; the run id prints only at the end | fixed: DEC-53, DEC-54; cases `sigterm-closes-browser` and `signal-during-launch` |
+| C18 | low | the doctor reruns for every browser case | fixed: one doctor run per suite run, case `suite-harness` |
+| C19 | medium | the SKIP path on a real node with a missing browser is never run | fixed: same finding as V5; case `suite-harness` |
+| C20 | medium | an unknown case name exits 0 | fixed: same finding as V1; case `suite-harness` |
+
+### Advisor
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| A1 | medium | the first slice is not labelled and the deferred layers are not listed | fixed: `docs(ui-verify): label the first slice and state its residuals` (CHANGELOG, agent description, battery sentence, MANUAL row, README) |
+| A2 | medium | the agent has no live proof; README cites a file that does not exist | fixed: same finding as C1 and R7; `docs(ui-verify): record the live dispatches and the proof of done` |
+| A3 | medium | a lead cannot finish the loop from the docs (hash command, runner path, Node 22, preview URL, build id) | fixed: README now covers prerequisites, the runner path, the scenario hash and preview identity, with `unverified` stated plainly |
+| A4 | medium | the PHILOSOPHY record overclaims and loosened a clause | fixed: the clause restored and the record says no consumer has run it (`docs/reference/PHILOSOPHY.md`, `commands/kit-health.md`) |
+| A5 | low | the stable surface is unmarked and no evolution rule exists | fixed: DEC-39 marks the surface provisional and states the rule (a new layer bumps `schema`; an unknown `schema` is refused) |
+| A6 | low | upkeep has no owner and `kit-health` does not run the doctor | fixed: README names the kit maintainers; `commands/kit-health.md` check 13 prints the pin age |
+| A7 | low | `FEATURES.md` credits this spec to unrelated rows (`devops-triage`, `system-design`, `spec-depth`) | by design: the generator credits a spec to every feature it names, and other specs show the same; the rows stay as generated |
+
+### Re-review
+
+Scoped security re-review at `86ed439a`: FIX THEN SHIP, no CRITICAL or HIGH, nothing exploitable now. It confirmed the first-round fixes for the port gap, `expect_no_text` and the sanitizer, and found these:
+
+| id | severity | finding | disposition |
+|---|---|---|---|
+| M1 | medium | the redirect residual is understated: a 307 or 308 keeps the method and body, and hops are chained | fixed: `docs(ui-verify): state redirect and worker residuals exactly`, DEC-63; case `observed-residuals` records a 307 POST arriving as a POST with its body. "Chromium follows up to 20 hops" was not measured and is not claimed |
+| M2 | medium | the grant residual omits its consequence and trigger; the description still says read-only | fixed: `docs(ui-verify): state redirect and worker residuals exactly`, DEC-64 (agent file and Design paragraph) |
+| L1 | low | `Object.hasOwn(STEP_SHAPES, ["goto"])` coerces an array | fixed: `fix(ui-verify): tighten install trust, process kill and signals`, DEC-57, case `guard-refusals` |
+| L2 | low | the install-root check reads only the root directory | fixed: same commit, DEC-58, case `doctor-and-skip` |
+| L3 | low | the run-id kill is not anchored to the install root | fixed: same commit, DEC-59, case `leftover-browser-killed` |
+| L4 | low | `2001::/32`, `64:ff9b:1::/48`, `100::/64` are not listed | fixed: same commit, DEC-60, case `guard-refusals` |
+| L5 | low | SIGHUP is lost and a signal exit leaves the temporary home | fixed: same commit, DEC-61, case `sigterm-closes-browser` |
+| L6 | low | a WebSocket from a worker may skip the guard | documented as residual: DEC-62, README Residuals, Failure modes row; case `observed-residuals` records the observation (the listener counted the upgrade) |
+
+### Residuals accepted in this slice
+
+- Tool grant glob: `Bash(node */lib/ui-verify/run.mjs*)` also matches `node -e`, `--import`, `--require`, a trailing `$(...)` or redirection, and a planted file at a matching path. A matching command runs arbitrary code as the user, with file write and network access; hostile page text read in `observed` is the trigger. The own-path check catches only an honest mistake. The tightening (a shim grant or an anchoring PreToolUse hook) is deferred to 292b.
+- Redirect chain: the resolver rules carry no port and a redirect hop is not shown to the route handler, so a chain of hops from an allowed origin to another port of the same allowed host is followed. A 307 or 308 keeps the method and the body (observed: a JSON POST arrived as a POST with its body). It matters when `allow_loopback` is on. A top-level hop is caught afterwards as NO-CHECK `redirected off an allowed host`; a sub-resource hop is not detected.
+- WebSocket from a worker: Playwright routes WebSockets with an init script that a worker does not run, and it has no context-level hook for workers. A worker can open a socket to another port of the allowed host (observed: the upgrade was counted). The resolver pin holds it to the allowed host's checked address; frames are not inspected. The runner does not block workers.
+- Cloaking: PASS proves what the page showed the runner, not what a person would see.
+- The scheme is not compared by the request guards.
+- DNS rebinding is proven by the launch arguments in `browser.args` only; the suite has no controllable DNS, so rebinding itself is not exercised. The pin holds one address per host and covers Chromium's resolver only.
+- Linux was not run: the minimal browser environment, `--no-proxy-server` and the install-root parent rule were observed on macOS only.
+
+### TODOs
+
+- A redirect chain of more than one hop has no case; the spec pins one hop.
+- Linux was not run. A home directory made group-writable and non-sticky under umask 002 would be refused as a parent directory there.
+- The run-budget-before-context fix and the step-never-exceeds-limit fix (R4) have no case that goes red; only wall time shows them.
+- The three IPv6 ranges added in the last pass were mutated as two groups (`2001::/32` with `64:ff9b:1::/48`, then `100::/64`), not one by one.
+- The last fix pass was not re-reviewed; its proof is the suite and the hand mutations in the proof file.
+- Run one real consumer repo through the leg before any later slice (292b to 292e), as DEC-11 and DEC-39 require.
+- Tighten the tool grant (292b) so the glob no longer spans node flags and planted files.
+
+### Scores
+
+- Security: not scored by the lens
+- Architecture: 6/10 (first review, before the fix passes)
+- Test coverage: not scored by the lens
+- Combined: not scored by the lens
+
+### Verdict: FIX THEN SHIP
