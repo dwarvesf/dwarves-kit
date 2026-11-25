@@ -326,6 +326,10 @@ case_guard_refusals() {
   [ "$RC" = 3 ]; check "refused: a timeout flag above its default (exit $RC)" $?
   out=$(next_out); run_runner "$CWD" "$BASE" "$out" --step-timeout-ms 2000 --scenario-timeout-ms 5000 --run-budget-ms 5000
   { [ "$RC" = 0 ] || [ "$RC" = 2 ]; }; check "control: timeout flags below their defaults pass the guards (exit $RC)" $?
+  out=$(next_out); run_runner "$CWD" "$BASE" "$out" --step-timeout-ms 499
+  [ "$RC" = 3 ] && out_empty "$out"; check "refused: a step timeout under 500 ms, which would leave expect_no_text no window (exit $RC)" $?
+  out=$(next_out); run_runner "$CWD" "$BASE" "$out" --step-timeout-ms 500
+  { [ "$RC" = 0 ] || [ "$RC" = 2 ]; }; check "control: a step timeout of 500 ms passes the guards (exit $RC)" $?
 
   refused "13 scenarios" "$ENTRY_JS;s.scenarios=[];for(var i=1;i<=13;i++)s.scenarios.push(entry(i))"
   passes_guards "12 scenarios" "$ENTRY_JS;s.scenarios=[];for(var i=1;i<=12;i++)s.scenarios.push(entry(i))"
@@ -471,12 +475,12 @@ case_fixture_serves() {
   echo "--- fixture-serves"
   need_node fixture-serves || return 0
   local page code count file
-  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/otherport.html tests/fixtures/ui-verify/many.html tests/fixtures/ui-verify/wall.html; do
+  for file in tests/fixtures/ui-verify/serve.mjs tests/fixtures/ui-verify/index.html tests/fixtures/ui-verify/hostile.html tests/fixtures/ui-verify/offsite.html tests/fixtures/ui-verify/otherport.html tests/fixtures/ui-verify/many.html tests/fixtures/ui-verify/nobody.html tests/fixtures/ui-verify/wall.html; do
     [ -s "$KIT_DIR/$file" ]; check "fixture file exists: $file" $?
   done
   if ! start_fixture; then no "the fixture server printed a port line and a port2 line"; stop_fixture; return 0; fi
   case "$FIX_PORT$FIX_PORT2" in *[!0-9]*|"") no "port and port2 are numbers ($FIX_PORT, $FIX_PORT2)" ;; *) ok "the server prints a port line and a port2 line" ;; esac
-  for page in index.html hostile.html offsite.html otherport.html many.html wall.html; do
+  for page in index.html hostile.html offsite.html otherport.html many.html nobody.html wall.html; do
     code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/$page"); [ "$code" = 200 ]; check "$page answers 200 (got $code)" $?
   done
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/"); [ "$code" = 200 ]; check "/ answers 200" $?
@@ -504,7 +508,7 @@ case_fixture_serves() {
   stop_fixture
 
   local copy="$T/fixcopy"
-  mkdir -p "$copy"; cp "$FIXDIR/serve.mjs" "$FIXDIR/index.html" "$FIXDIR/hostile.html" "$FIXDIR/offsite.html" "$FIXDIR/otherport.html" "$FIXDIR/many.html" "$copy/"
+  mkdir -p "$copy"; cp "$FIXDIR/serve.mjs" "$FIXDIR/index.html" "$FIXDIR/hostile.html" "$FIXDIR/offsite.html" "$FIXDIR/otherport.html" "$FIXDIR/many.html" "$FIXDIR/nobody.html" "$copy/"
   FIX_SRC="$copy"
   if start_fixture; then
     code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$FIX_PORT/wall.html"); [ "$code" = 404 ]; check "control: a fixture copy without wall.html answers 404 for it (got $code)" $?
@@ -604,6 +608,14 @@ case_rows_and_planted_bug() {
   [ "$(row_line "$out/result.json")" = "AC-1=FAIL/false,AC-2=FAIL/false,AC-3=PASS/false" ]; check "both missing-element rows are FAIL, never NO-CHECK; the real button passes ($(row_line "$out/result.json"))" $?
   [ "$(jget "$out/result.json" 'j.rows[0].observed')" = "element not found: role=button name=Nope" ]; check "click observed is 'element not found: role=button name=Nope'" $?
   [ "$(jget "$out/result.json" 'j.rows[1].observed')" = "element not found: role=dialog name=Ghost" ]; check "within observed is 'element not found: role=dialog name=Ghost'" $?
+
+  bscenario "$f" "/" 's.scenarios=[{id:"AC-1",kind:"negative",steps:[{do:"goto",path:"/"},{do:"click",role:"button",name:"Save"},{do:"expect_text",text:"Saved"},{do:"expect_no_text",text:"Saved"}]},{id:"AC-2",kind:"criterion",steps:[{do:"goto",path:"/"},{do:"fill",role:"button",name:"Save",value:"x"},{do:"expect_text",text:"x"}]},{id:"AC-3",kind:"negative",steps:[{do:"goto",path:"/nobody.html"},{do:"expect_no_text",text:"Saved"}]},{id:"AC-4",kind:"negative",steps:[{do:"goto",path:"/"},{do:"expect_no_text",text:"Nothing like this"}]}]'
+  out=$(next_out); run_runner "$CWD" "$f" "$out" --step-timeout-ms 2000
+  [ "$RC" = 1 ]; check "text that is present under expect_no_text, a fill on a button and an unreadable page exit 1 (exit $RC)" $?
+  [ "$(jget "$out/result.json" 'j.rows[0].status+"|"+(j.rows[0].observed.indexOf("Saved")>=0)')" = "FAIL|true" ]; check "expect_no_text on present text is FAIL and observed holds the text" $?
+  [ "$(jget "$out/result.json" 'j.rows[1].status+"|"+j.rows[1].observed.indexOf("element not actionable:")')" = "FAIL|0" ]; check "a fill on a button is a FAIL row whose observed starts 'element not actionable:', not exit 4" $?
+  [ "$(jget "$out/result.json" 'j.rows[2].status+"|"+j.rows[2].reason')" = "NO-CHECK|page did not settle" ]; check "expect_no_text on a page with no body to read is NO-CHECK 'page did not settle', never PASS" $?
+  [ "$(jget "$out/result.json" 'j.rows[3].status')" = PASS ]; check "control: expect_no_text on text that is absent passes" $?
   end_browser
 }
 
