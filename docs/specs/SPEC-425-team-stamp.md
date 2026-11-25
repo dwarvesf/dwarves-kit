@@ -266,7 +266,7 @@ Cost note: the probe is Sonnet, cap 3 rounds, per `commands/gauntlet.md`.
 - [x] Editing any generated file and re-running leaves the edit and prints `edited (left alone)`. (Today: n/a.)
 - [x] `grep -rEn` for the kit-path patterns over a stamped repo returns only line 1 of `AGENTS.md` and the one public URL; every generated test passes with the kit absent from `PATH` and `HOME`. (Today: the adopt pointer sends an agent to `~/.claude/dwarves-kit/AGENTS.md`.)
 - [x] A bare `gh pr merge` fed to `scripts/agent-guard.sh` exits 2 with `Fix: bash scripts/pr-merge.sh --wait <n>`. (Today: the kit's `hooks/safety-gate.sh` has no bare-merge block and is plugin-bound.)
-- [x] The generated workflow has `runs-on: [self-hosted]` and no GitHub-hosted runner label, and `actionlint` accepts it when installed (not installed on the build host, so not run there). (Today: none generated.)
+- [x] The generated workflow has `runs-on: [self-hosted]` and no GitHub-hosted runner label, and `actionlint` accepts it (exit 0 on the rendered workflow). (Today: none generated.)
 - [ ] A recorded gauntlet run under `docs/verification/gauntlet/` ends SOLID for the card above.
 - [x] `docs/reference/FEATURES.md` lists `stamp`.
 - [ ] `bash tests/run-all.sh --changed origin/master` is green (the lead runs it).

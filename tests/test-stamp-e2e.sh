@@ -41,6 +41,12 @@ git -C "$S" config user.name tester; git -C "$S" config user.email tester@exampl
 bash lib/stamp.sh "${VALUES[@]}" "$S" >/dev/null 2>&1
 expect "the non-default stamp exits 0" [ -f "$S/.claude/team-stamp.lock" ]
 
+if command -v actionlint >/dev/null 2>&1; then
+  expect "actionlint accepts the rendered workflow" bash -c "cd '$S' && actionlint .github/workflows/ci.yml"
+else
+  ok "actionlint not installed: skipped"
+fi
+expect "the workflow runs on [self-hosted] and names no hosted runner" bash -c "grep -q 'runs-on: \\[self-hosted\\]' '$S/.github/workflows/ci.yml' && ! grep -Eq 'ubuntu-|macos-|windows-' '$S/.github/workflows/ci.yml'"
 # AC1: the file set equals the manifest, the lock, and the spec's table
 awk '$1=="file"{print $2}' "$S/.claude/team-stamp.lock" | LC_ALL=C sort > "$WORK/lock.txt"
 expect "the lock lists exactly the manifest targets" cmp -s "$WORK/manifest.txt" "$WORK/lock.txt"
