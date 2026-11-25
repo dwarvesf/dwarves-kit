@@ -448,3 +448,54 @@ The spec now says what the code does for the resolver pin, the redirect hop, the
 - The second build log says a hop after the first may show as `page did not settle`. The code flags any top-level navigation that fails at name resolution as `redirected off an allowed host`, and no case exercises a chain of more than one hop, so the spec pins one hop only.
 
 Open for the lead (code, not spec): `expect_no_text` returns FAIL with an empty `observed` when its step limit is under 500 ms, which only happens with `--step-timeout-ms` below 500. A FAIL there says the text was present when it was not, so it misreports the page.
+
+## Fix round (F1: runner)
+
+Delta from the lead's decisions for the runner fixes. Only what the decisions did not say, and what could not be fixed.
+
+Request guards:
+
+- A request to an allowed host on a refused port is counted in `blocked_requests` as `<host>:<port>` (an off-list host stays `<host>`). `blocked_requests` holds at most 50 entries, each cut to 100 characters after `sanitize`; `blocked_requests_truncated` is a new top-level boolean in `result.json`.
+- The page URL is checked after every step (not by a navigation event): a URL off the allowed set (host and port) ends the attempt as NO-CHECK `redirected off an allowed host`, whatever the step result was, `about:blank` excepted. The preflight does the same after its `goto` (final, not retried). A failed `goto` or a step that FAILs after a blocked top-level navigation (flag reset at the start of every step) gets the same NO-CHECK. In practice the page URL check already ends a click whose navigation was aborted, so the per-step reset of the flag has no case that goes red on its own; the failed `goto` is the case that needs the flag.
+- Verified on the real browser (a listener on the second port of the SAME allowed name, a page that tries `fetch` GET, `fetch` POST with a JSON body and a `WebSocket`): the listener saw 0 hits and 0 upgrades, three entries counted under `127.0.0.1:<port>`. The CORS preflight never reaches the listener (Playwright answers it while a route is active).
+- Residual, exact: the resolver rules carry no port, and a redirect hop is not shown to the route handler. A redirect from an allowed origin to another port of the same allowed name is therefore followed by the browser, and the request of that hop is sent (the listener counts it). For a top-level navigation the committed page URL is then off the allowed set and the row is NO-CHECK, but the one request was made. For a sub-resource redirect nothing detects it. Only redirect-safe methods follow a redirect with the same method; a POST that is redirected becomes a GET.
+- Test seam: the fixture gained `otherport.html`, `many.html`, `leave.html`, `nobody.html`, `meta.html` and `/redirect-port`. The old controls "with localhost allowed the listener is reached" are gone: under the port rule a non-target allowed host may only use the scheme default port, so the listener on its own port is no longer reachable by `localhost`. The reachability control is now the listener as the target URL.
+
+Steps:
+
+- `expect_text` keeps the last part of the step limit (up to 1000 ms, at most half) for the observed read, so its poll window is shorter than the step limit by that part. `expect_no_text` reads with the time left in its 500 ms window. A non-timeout action error is a FAIL (`observed` `element not actionable: role=<role> name=<name>`), also under the scenario or budget clock; a timeout keeps its clock reason.
+- `--step-timeout-ms` under 500 is a usage error (exit 3). The run budget is checked before a context is opened; that fix has no observable that can go red (no per-context record), and R4 (a step never exceeds its limit) has no deterministic check either, because only wall time shows it. Both are fixed in code, not proven by a case.
+
+Containment:
+
+- The browser starts with `--no-proxy-server`, `PATH` and a temporary `HOME` created with `mkdtemp` under the OS temp dir (removed after the run), and the three `handle*` signal options off, so the runner's own handlers close the browser. The sandbox stays on with exactly that environment on macOS (this host); nothing else was needed. Linux was not run here. `result.json` `browser.env_keys` lists the names passed (`HOME,PATH`). Checked once with `ps -E` on the real browser: a canary variable and `HTTPS_PROXY` set on the runner were absent from the browser's environment.
+- An install root is refused when it sits inside a git work tree, is owned by another user, or is writable by group or others: NO-CHECK `install root not trusted: <inside a git work tree | not owned by the current user | writable by group or others>`. The doctor prints `NOT READY: install root not trusted: ...` and exits 20 (no new doctor code). On a host with umask 002 a root created by `mkdir -p` is group-writable and is refused until `chmod go-w`; the printed install command now includes that chmod.
+- `::/96` replaces the single `::` entry in the private list (loopback `::1` is still classified loopback first), next to `64:ff9b::/96`, `2002::/16` and `fec0::/10`.
+- After the browser closes, any process still carrying the run id is killed with SIGKILL and `leftover_pids` records what survived the kill.
+- The run id is printed on stderr as `ui-verify: run <id>` once every guard passed (before the install check); the stdout head line is unchanged. SIGTERM and SIGINT close the browser, print `ui-verify: interrupted, browser closed` and exit 143 and 130; a failure raised while the browser closes is not an internal error then.
+- The doctor shell-quotes the install root with single quotes.
+
+Exit 4 mechanism (decision): the `uncaughtException` handler is the one guarantee (Node raises an unhandled rejection as an uncaught exception); the `main` wrapper only turns a `Refusal` into exit 3 and rethrows anything else. The `unhandledRejection` handler was the redundant one. The suite's control for it is a runner copy that no longer listens for `uncaughtException`: the injected fault then exits 1.
+
+Dead code removed: `state.startedAt`, the `rows` and `playwright` arguments of `driveBrowser`, the `?? 'run budget spent'` fallback, the "no outcome" throw, `checkLongStrings` (the per-field string caps cover every string), the separate `observedFor` reads (it reuses `readLocator`), and the empty-result literals (now `emptyDriven`). `identity.seen` is sanitized. An unreadable `--out` (or one that cannot be created) is exit 3.
+
+Negative controls (hand mutations on a temp copy of `run.mjs` outside any git work tree, `UI_VERIFY_RUNNER`, the case run alone):
+
+| Mutation | Case | Red line |
+|---|---|---|
+| port compare returns true | `offsite-request-aborted` | `FAIL the listener on another port of the SAME allowed name saw no GET, no JSON POST and no WebSocket ({"hits":4,"upgrades":2})` |
+| `blocked_requests` cap removed | `offsite-request-aborted` | `FAIL blocked_requests holds at most 50 entries and blocked_requests_truncated is true` |
+| host cut to 100 removed | `offsite-request-aborted` | `FAIL a 152 character host is cut to 100 characters` |
+| flag clause of the per-step NO-CHECK removed | `offsite-request-aborted` | `FAIL the redirect row is NO-CHECK 'redirected off an allowed host'` |
+| `expect_no_text` passes without a read | `rows-and-planted-bug` | `FAIL expect_no_text on a page with no body to read is NO-CHECK 'page did not settle', never PASS` |
+| step timeout floor removed | `guard-refusals` | `FAIL refused: a step timeout under 500 ms, which would leave expect_no_text no window (exit 2)` |
+| `Object.hasOwn` check back to the plain lookup | `guard-refusals` | `FAIL refused: a step verb named like an object property (constructor) (exit 4, ... shape.required is not iterable)` |
+| IPv6 transition ranges removed | `guard-refusals` | `FAIL refused: an allowed IPv6 transition or site-local address [64:ff9b::808:808] (exit 2, 0 stderr lines: )` |
+| untrusted root check removed | `doctor-and-skip` | `FAIL doctor: an install root inside a git work tree is not used ... (exit 0)` |
+| double quotes in the doctor command | `doctor-and-skip` | `FAIL doctor: an install root with a space, a quote and a command substitution is quoted, nothing runs from it` |
+| browser gets the whole environment | `browser-sandbox` | `FAIL the browser started with the sandbox on, --no-proxy-server and only HOME and PATH in its environment` |
+| `--no-proxy-server` removed | `browser-sandbox` | same line |
+| stray-process kill removed | `leftover-browser-killed` | `FAIL the runner killed the stray process that carried its run id` |
+| run id line removed | `sigterm-closes-browser` | `FAIL the run id is printed on stderr before the browser work starts (none)` |
+| signal handlers removed | `sigterm-closes-browser` | `FAIL the runner reports that it closed the browser before it exited` |
+| `uncaughtException` listener removed | `internal-error` | `FAIL the injected fault exits 4 (exit 1)` |
