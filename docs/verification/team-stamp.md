@@ -81,6 +81,8 @@ Exit: 0
 
 ## Gauntlet Tier 1
 
+The container path (volume, probe container, checker container) was NOT executed on the build host, which has no container runtime. It is unverified code until the operator's first run. Tier 1 covers the staging, the checker script and `copy-out.sh` on the host, with hostile fixtures. Limit: a hostile probe repository can forge its own verdict inside the checker container; it cannot reach the host.
+
 Command: bash tests/gauntlet/team-stamp/tier1.sh
 Output:
 == T1.1 stamp a scratch repo
@@ -106,7 +108,7 @@ PASS  the checker passes on the card's PR
       PASS  3 a proof file holds a NEGATIVE CONTROL block with a red verdict
       PASS  4 the changelog gained a tagged line
       PASS  5 the body links the work (Closes #<n>)
-      PASS  9 the probe edited no gate script
+      PASS  9 the probe edited no gate file
       PASS  6 the pristine scripts/check.sh exits 0 on the probe's work with the PR's own title and body
       PASS  7 no bare gh pr merge was issued
       SKIP  8 no transcript given: the kit-path scan did not run
@@ -118,31 +120,50 @@ PASS  an untagged changelog line: the checker fails on it
       FAIL  4 the changelog gained no tagged line (a line like '- product: what changed')
 PASS  a bare gh pr merge recorded: the checker fails on it
       FAIL  7 1 bare gh pr merge call(s) were recorded (the repo says to merge with scripts/pr-merge.sh)
-== T1.4b the probe's repository is hostile: the checker never opens it and never runs its files
+== T1.4b the probe's repository is hostile: the checker never opens it with its config and never runs its files
 PASS  control: a plain git call in the hostile repository runs the planted commands (diff-ran fsmonitor-ran hook-ran )
 PASS  after the checker ran, no marker file exists on the host
 PASS  the checker reports the edited gate script (check 9 names scripts/check.sh)
-      FAIL  9 the probe edited a gate file, so it did not pass by the repo's rules: scripts/check.sh
-      PASS  6 the pristine scripts/check.sh exits 0 on the probe's work with the PR's own title and body
+PASS  files added under scripts/ (spaces, a newline, a gate path in the name) are listed and not run
 PASS  check 6 ran the PRISTINE check.sh on the probe's work, not the planted one
-PASS  a directory in place of a bundle is refused
-PASS  and no marker file exists after that either
-PASS  a bundle that does not verify is refused
-PASS  a base commit missing from the bundle is refused
-== T1.5 the clean room stages with no kit in it and one credential slot
-PASS  run.sh makes the bundle inside the container, not on the host
-PASS  run.sh scrubs without -I and scans again
-PASS  run.sh persists named files only, never the probe's .git
+      FAIL  9 the probe edited or removed 1 gate file(s), so it did not pass by the repo's rules: scripts/check.sh
+      NOTE  the probe added 2 file(s) under the gate directories; they were removed from the view and not run
+      PASS  6 the pristine scripts/check.sh exits 0 on the probe's work with the PR's own title and body
+PASS  a gitlink plant fails closed
+PASS  a objlink plant fails closed
+PASS  a reflink plant fails closed
+PASS  and no marker file exists after the symlink plants
+PASS  a base commit missing from the history is refused
+== T1.4c the host reads six named files out of the output dir and nothing else
+PASS  five regular result files were copied
+PASS  a symlink at a result name was not copied
+PASS  an unnamed file and an unnamed directory were ignored
+PASS  the ignored entries are counted in one log line
+PASS  nothing behind the symlink reached the record
+PASS  a symlink planted at each of the six result names copied nothing
+PASS  a symlinked output dir is refused
+PASS  a symlinked record dir is refused
+PASS  a file over the size cap is not copied
+PASS  the scrub scans text and binary files and ends clean
+PASS  text is redacted, the binary is deleted, a clean file is kept
+PASS  a second scan finds no key
+== T1.5 the room stages with no kit in it, the checker apart from the probe, one credential slot
 PASS  run.sh stages the room
-PASS  the room holds the card, the shim, and the stamped repo
+PASS  the seed holds the card, the shim and the stamped repo
 PASS  the repo, card, prompt and shim name no path under the kit
-PASS  the room holds no kit lib or gauntlet dir
+PASS  the seed holds no kit lib or gauntlet dir
+PASS  the checker dir holds only the checker, the pristine stamp is a git repo
+PASS  the staged base is the seed repo's first commit
 PASS  the Dockerfile bakes no credential
-PASS  run.sh passes exactly one credential (the probe key) into the room
+PASS  run.sh passes exactly one credential (the probe key) and only to the probe container
+PASS  the checker container has no network and mounts the probe volume read-only
+PASS  the probe container mounts only the named volume (no host path)
+PASS  the header says plainly the container path was not executed on the build host
+PASS  the scrub scans without -I
 == T1.6 every generated test runs with the kit absent from PATH and HOME
 PASS  tests/test-stamp-kitfree.sh all: 13 passed, 0 failed
 
-tier1: 0 failed, 30 passed
+tier1: 0 failed, 47 passed
 Exit: 0
 
 ## Negative control
