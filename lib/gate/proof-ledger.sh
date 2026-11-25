@@ -65,11 +65,13 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 # The proof class names and the stateful words both classifiers share (lib/gate/proof-classes.tsv).
 # shellcheck source=lib/gate/proof-classes.sh
 source "$PROOF_LEDGER_DIR/proof-classes.sh" || exit 1
+# shellcheck source=lib/proof/digest.sh
+source "$LIB_ROOT/proof/digest.sh" || { echo "FATAL: lib/proof/digest.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/spec/spec-find.sh
 # A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
 if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
-  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
-  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
 fi
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
@@ -416,7 +418,7 @@ _negctl_required() {
     full) kit_config_tracked_clean "$root/.kit.toml" && mode=full ;;
   esac
   [ "$mode" = full ] || { echo yes; return 0; }
-  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")"
+  [ -z "$slug" ] || spec="$(spec_for_slug "$root" "$slug")" # spec-active-ok: the enforcement name pick, the answer spec_active returns by default
   if [ -n "${spec:-}" ]; then
     lane="$(grep -m1 -iE '^(\*\*)?Lane(\*\*)?:' "$spec" 2>/dev/null | sed -E 's/^(\*\*)?[Ll]ane(\*\*)?:(\*\*)?[[:space:]]*//; s/[[:space:]].*$//')"
     [ "$lane" = full ] && { echo yes; return 0; }
@@ -577,7 +579,7 @@ _visual_proof() {
       if ! got="$($PROOF_ASSET_FETCH "$url?kit-check=$(date +%s)" 2>/dev/null | shasum -a 256 | awk '{print $1}')"; then
         reasons="${reasons}fetch failed: $url"$'\n'; continue
       fi
-      [ "$got" = "$sha" ] && return 0
+      [ "$got" = "$(proof_digest_hex "$sha")" ] && return 0   # sha256:<hex> or the older bare hex
       reasons="${reasons}hash mismatch: $url"$'\n'
     done < <(jq -r '.assets[]? | [(.status // ""), (.url // ""), (.sha256 // ""), (.file // ""), (.bytes // "")] | join("\u001f")' "$mfile" 2>/dev/null)
   done <<< "$manifests"

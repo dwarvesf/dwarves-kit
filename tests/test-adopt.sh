@@ -543,6 +543,59 @@ else
   no "current pointer printed something about AGENTS.md or changed"
 fi
 
+# T4d: the pointer's generic rules apply only where the repo states none of its own. A team repo
+# with its own rule section (a CLAUDE.md folded under the pointer) must never read an unconditional
+# "stop and ask" above its own rules. yields_ok: line-1 marker, then the defaults heading, then the
+# precedence sentence, then the stop-and-ask default, then the repo's own rule section, in that order.
+yields_ok() {
+  local f="$1" h p s r
+  head -n 1 "$f" | grep -qF 'kit:agents-pointer' || return 1
+  grep -q '^Rules that hold without it' "$f" && return 1
+  h="$(grep -n '^## Kit defaults (apply only where this repo states no rule of its own)$' "$f" | head -n 1 | cut -d: -f1)"
+  p="$(grep -n 'wins over the matching default' "$f" | head -n 1 | cut -d: -f1)"
+  s="$(grep -n 'Stop and ask a human before' "$f" | head -n 1 | cut -d: -f1)"
+  r="$(grep -n '^## Team rules$' "$f" | head -n 1 | cut -d: -f1)"
+  [ -n "$h" ] && [ -n "$p" ] && [ -n "$s" ] && [ -n "$r" ] && [ "$h" -lt "$p" ] && [ "$p" -lt "$s" ] && [ "$s" -lt "$r" ]
+}
+P4D="$(newrepo)"
+printf '# Repo\n\n## Team rules\nAn interface change needs no human sign-off; one reviewer on the PR is enough.\n' > "$P4D/CLAUDE.md"; cp "$P4D/CLAUDE.md" "$P4D/CLAUDE.orig"
+bash lib/adopt.sh --single-source "$P4D" >/dev/null
+if yields_ok "$P4D/AGENTS.md" && fold_ok "$P4D" "$P4D/CLAUDE.orig"; then
+  ok "pointer over a repo's own rule section: defaults scoped to repos with no rule of their own, own rules kept below"
+else
+  no "pointer over a repo's own rule section is not scoped as a default"
+fi
+
+# T4e: a repo that holds the previous pointer (unconditional rules) is recognised by hash: a notice
+# plus a swap only on --refresh --swap-agents; the same file with an edit is left alone.
+P4E="$(newrepo)"
+cat > "$P4E/AGENTS.md" <<'OLDPTR'
+<!-- kit:agents-pointer v1 -->
+# AGENTS.md
+
+This repo uses dwarves-kit. Full contract, advisory (nothing forces you to read it, read it before your first task): ~/.claude/dwarves-kit/AGENTS.md or https://github.com/dwarvesf/dwarves-kit/blob/master/AGENTS.md
+
+Rules that hold without it:
+1. Size the work: tiny, normal or full. Full when it touches auth, authz, hooks, data model, data loss, audit or security, an external provider, an API contract, or a migration.
+2. A change to behavior or state needs a recorded proof of done under docs/verification/ before you push.
+3. Work on a branch and open a PR. Never push to main.
+4. Stop and ask a human before: an architecture or interface change, which file is canonical, weakening a test or guardrail, a lighter lane, secrets or access.
+
+No kit on this machine: the rules still apply, nothing enforces them. Ask a human to install it: clone https://github.com/dwarvesf/dwarves-kit, review install.sh, then run it (never pipe it to a shell)
+OLDPTR
+P4F="$(newrepo)"; cp "$P4E/AGENTS.md" "$P4F/AGENTS.md"; printf 'TEAM-EDIT\n' >> "$P4F/AGENTS.md"; cp "$P4F/AGENTS.md" "$P4F/AGENTS.before"
+O4e1="$(bash lib/adopt.sh --refresh "$P4E" 2>&1)"
+cp "$P4E/AGENTS.md" "$P4E/AGENTS.before"
+bash lib/adopt.sh --refresh --swap-agents "$P4E" >/dev/null; bash lib/adopt.sh --refresh --swap-agents "$P4F" >/dev/null
+if echo "$O4e1" | grep -qF 'old kit copy, run --refresh --swap-agents to replace' && cmp -s "$P4E/AGENTS.md" "$POINTER" \
+  && cmp -s "$P4F/AGENTS.md" "$P4F/AGENTS.before" && ! cmp -s "$P4E/AGENTS.before" "$POINTER"; then
+  ok "previous pointer is a known old copy: swapped only on request, an edited one is left alone"
+else
+  no "previous pointer migration"
+fi
+# the current pointer's hash is in the known list, so a later template change still recognises it
+grep -q "^$(sha_of "$POINTER") " "$KNOWN" && ok "known list holds the current pointer hash" || no "known list lacks the current pointer hash (run lib/adopt/known-hashes.sh)"
+
 # T4c / AC-4: drift is counted against the MATCHED template.
 P5="$(newrepo)"; bash lib/adopt.sh "$P5" >/dev/null; printf 'EDIT-ONE\nEDIT-TWO\n' >> "$P5/AGENTS.md"
 n5="$(dcount "$POINTER" "$P5/AGENTS.md")"

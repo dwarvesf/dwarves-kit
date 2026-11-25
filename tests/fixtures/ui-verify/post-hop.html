@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post hop page</title>
+</head>
+<body>
+<main>
+  <h1>Post hop page</h1>
+  <p role="status" id="state"></p>
+</main>
+<script>
+  fetch('/redirect-307', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"hop":1}'
+  }).then(function () {}, function () {}).then(function () {
+    document.getElementById('state').textContent = 'hop done';
+  });
+</script>
+</body>
+</html>

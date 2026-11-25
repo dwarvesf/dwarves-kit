@@ -27,18 +27,16 @@ case "$FILE" in
     exit 0 ;;
 esac
 
-# Resolve what to check the new file against (the union rule, reconciled with the unified spec-location
-# decision): the UNION of all open specs in docs/specs/ (lib/spec/states.tsv, class not terminal; a
-# spec with no Status header counts as open), a file in ANY active design is "known"; else .gsd/.
-# Grepping the union (not a single spec) avoids a false-positive storm while more
-# than one spec is open. Without lib/ every spec counts as open.
-SPEC_STATUS_SH="${BASH_SOURCE[0]%/*}/../lib/spec/spec-status.sh"
-SPEC_LIST=$(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true)
-if [ -f "$SPEC_STATUS_SH" ]; then
-  # shellcheck disable=SC2086 # spec paths never contain spaces
-  SPEC_SRCS=$(bash "$SPEC_STATUS_SH" live --none live $SPEC_LIST 2>/dev/null | paste -sd ' ' - || true)
-else
-  SPEC_SRCS=$(printf '%s\n' "$SPEC_LIST" | paste -sd ' ' - || true)
+# Resolve what to check the new file against (the union rule): the UNION of every open spec in the
+# repo's docs/specs/ (spec_active --set: lib/spec/states.tsv, class not terminal; a spec with no
+# Status header counts as open), so a file in ANY active design is "known"; else .gsd/. Grepping
+# the union (not a single spec) avoids a false-positive storm while more than one spec is open.
+# Without lib/ no spec is resolved.
+SPEC_SRCS=""
+SPEC_ACTIVE_SH="${BASH_SOURCE[0]%/*}/../lib/spec/spec-active.sh"
+if [ -r "$SPEC_ACTIVE_SH" ] && . "$SPEC_ACTIVE_SH" 2>/dev/null; then
+  SPEC_SRCS=$(spec_active --set "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" 2>/dev/null | awk -F'\t' '{ printf "%s%s", sep, $2; sep = " " }' || true)
+  SPEC_SRCS="${SPEC_SRCS//"$(pwd -P)"\//}"
 fi
 [ -z "$SPEC_SRCS" ] && [ -d ".gsd" ] && SPEC_SRCS=".gsd"
 [ -z "$SPEC_SRCS" ] && exit 0

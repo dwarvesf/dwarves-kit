@@ -168,10 +168,10 @@ case "$out" in *"spec:ambiguous(SPEC-001,SPEC-002,SPEC-003,SPEC-004)"*) pass "co
 pick() {  # pick <repo> <hook> <regex>
   ( cd "$1" && echo '{"session_id":"t"}' | bash "$KIT_DIR/hooks/$2" 2>/dev/null; cat .claude/backups/*.md 2>/dev/null ) | grep -oE "$3" | head -1
 }
-got="$(pick "$R" pre-compact-backup.sh 'Spec: docs/specs/SPEC-[0-9]+')"
-[ "$got" = "Spec: docs/specs/SPEC-004" ] && pass "pre-compact-backup: active spec = highest live (004)" || fail "pre-compact-backup picked: $got"
-got="$(pick "$R" post-compact-reinject.sh 'SPEC: docs/specs/SPEC-[0-9]+')"
-[ "$got" = "SPEC: docs/specs/SPEC-004" ] && pass "post-compact-reinject: active spec = highest live (004)" || fail "post-compact-reinject picked: $got"
+got="$(pick "$R" pre-compact-backup.sh 'Spec: ambiguous \([^)]*\)')"
+[ "$got" = "Spec: ambiguous (SPEC-001, SPEC-002, SPEC-003, SPEC-004)" ] && pass "pre-compact-backup: live = 001 002 003 004, branch matches none, so ambiguous" || fail "pre-compact-backup picked: $got"
+got="$(pick "$R" post-compact-reinject.sh 'SPEC: ambiguous \([^)]*\)')"
+[ "$got" = "SPEC: ambiguous (SPEC-001, SPEC-002, SPEC-003, SPEC-004)" ] && pass "post-compact-reinject: live = 001 002 003 004, branch matches none, so ambiguous" || fail "post-compact-reinject picked: $got"
 
 dg() {  # dg <repo> <file>: prints the drift warning, if any
   echo "{\"tool_input\":{\"file_path\":\"$2\"}}" | ( cd "$1" && bash "$KIT_DIR/hooks/spec-drift-guard.sh" 2>/dev/null )
@@ -200,12 +200,12 @@ printf '**Status:** Draft (revision 2)\n' > "$R1/docs/specs/SPEC-001-x.md"
 out="$(cd "$R1" && bash "$KIT_DIR/hooks/context-readiness.sh" 2>/dev/null)"
 case "$out" in *"spec:DRAFT"*"spec is DRAFT"*) pass "context-readiness: a bold decorated Draft reads as DRAFT and suggests validation" ;; *) fail "context-readiness draft: $(printf '%s' "$out" | head -c 300)" ;; esac
 
-# ---- 7b. NONE: each reader keeps the behavior it had for a spec with no header ----
+# ---- 7b. NONE: a spec with no header is open for every reader ----
 RN="$TMP/repo-none"; mkrepo "$RN"
 write "$RN" 'Status: SHIPPED' da01/fa01.go SPEC-001-shipped
 printf '# T\nno header, uses dfa02/fa02.go\n' > "$RN/docs/specs/SPEC-002-headerless.md"
 out="$(cd "$RN" && bash "$KIT_DIR/hooks/context-readiness.sh" 2>/dev/null)"
-case "$out" in *"no spec found"*) pass "context-readiness: NONE is not live" ;; *) fail "context-readiness treated a header-less spec as live" ;; esac
+case "$out" in *"spec:NONE"*) pass "context-readiness: NONE is live" ;; *) fail "context-readiness treated a header-less spec as closed: $(printf '%s' "$out" | head -c 200)" ;; esac
 got="$(pick "$RN" pre-compact-backup.sh 'Spec: docs/specs/SPEC-[0-9]+')"
 [ "$got" = "Spec: docs/specs/SPEC-002" ] && pass "pre-compact-backup: NONE is live" || fail "pre-compact-backup NONE: $got"
 got="$(pick "$RN" post-compact-reinject.sh 'SPEC: docs/specs/SPEC-[0-9]+')"

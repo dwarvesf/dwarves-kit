@@ -12,5 +12,7 @@ Spec registry tools: find spec files, show them in one table, reserve the next f
 
 **Layout**
 - `spec-find.sh`: sourced resolver that maps a repo or slug to spec files. Other kit scripts source it. It has no verb.
+- `spec-active.sh`: the one answer to "which spec is active", sourced (`spec_active`) or run as `bash lib/spec/spec-active.sh [--live|--set] (--slug S|--branch B) <root>`. It prints `<kind><TAB><path>` with kind `name`, `live`, `branch` or `ambiguous`; exit 0 one resolved, 1 none, 2 ambiguous. Default mode is the status-blind name pick the ship gate and validate-round use. `--live` is the session pick (root `docs/specs` only, no `find`) the compaction, readiness and drift hooks use. `tests/test-shared-lookups.sh` fails when a caller keeps a private copy; the only exemptions are per-line `spec-active-ok: <reason>` markers pinned in that test.
+- `spec-index.sh` lists specs; it picks none, and enumerates through `spec_files`.
 
 **Tests**: root suites `tests/test-spec-*.sh`, plus `tests/test-meta-spec-depth.sh` and `tests/test-whole-spec-dispatch.sh`. Run `bash tests/run-all.sh --only spec`.

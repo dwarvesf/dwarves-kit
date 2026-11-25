@@ -86,6 +86,9 @@ _kit_data_lookup() {
     cache:context-hints)
       _KD_LEGACY="$h/.claude/dwarves-kit/state/context-hints"; _KD_ENV=CONTEXT_HINTS_STATE
       _KD_NOTE="context hints: per-session timers" ;;
+    cache:ui-verify)
+      _KD_ENV=UI_VERIFY_HOME
+      _KD_NOTE="ui-verify: the pinned Playwright install and its browser (npm install and browsers together)" ;;
     cache:update-notice)
       _KD_LEGACY="$h/.claude/dwarves-kit/state/update-notice"; _KD_ENV=KIT_UPDATE_STATE_DIR
       _KD_NOTE="update notice: the latest version seen and when" ;;
@@ -112,7 +115,7 @@ kit_data_entries() {
   printf '%s\n' \
     "state harvest" "state intake-sweep" "state backlog-sync" "state intel" "state hermes-links.json" \
     "state skill-proposals" "state skill-curator" "state money-gate.log" \
-    "cache backlog-stage" "cache context-hints" "cache update-notice" "cache context-budget" \
+    "cache backlog-stage" "cache context-hints" "cache update-notice" "cache context-budget" "cache ui-verify" \
     "config tool-policy.json" "config board.json" "config harvest-sweep"
 }
 

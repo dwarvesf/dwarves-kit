@@ -19,6 +19,7 @@ Layered by design: the spine installs unconditionally. It is the hooks that guar
 | `quiz_gate` | `/kit:quiz-gate` (the understanding-gate nudge) | hookless (command) |
 | `weekend_batch` | the debt-paydown reader/closer (`bin/reflect debt`; engine `lib/reflect/weekend-batch.sh`, renamed from `learn`), invoked by a consumer's own skill or directly | hookless (lib) |
 | `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
+| `proof_capture` | `proof-capture` on PATH (visual proof capture: `run page` makes a PNG with a headless Chromium-family browser, `run tape` makes a GIF with `vhs`; `lib/proof-capture/`, a directory that also runs with no kit file). `$DWARVES_KIT/bin/proof-capture` works with the module off; the toggle only decides the PATH shim | hookless (CLI) |
 | `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | hook |
 | `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI alias over context-kit's `ctx` engine verbs (`lib/prose-rag/`) | hook + CLI |
 | `sync` | `board sync` two-way spoke mirror (BACKLOG.md ⇄ Apple Reminders / Notion / Hermes kanban; engine `lib/sync/`, per-repo `.kit.toml [sync]` config), inert without `[sync] sources` | hookless (lib) |

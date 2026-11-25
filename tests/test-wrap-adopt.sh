@@ -442,6 +442,24 @@ out="$(GH_STUB_MERGED_chore_kit_adopt="[{\"number\":7,\"headRefOid\":\"$tip31\",
   "$WRAP" adopt "$C31" 2>&1)"
 chk_has "31: every merged PR named" "$out" "merged #7 #8; read $WT31P"
 
+echo "=== adopt: the merged-PR read honours origin's tip and the default base (31b) ==="
+C31B="$(adopt_leftover 31b)"
+WT31BP="$(cd "$C31B/.claude/worktrees/kit-adopt" && pwd -P)"
+otip31b="$(git -C "$C31B" rev-parse origin/chore/kit-adopt)"
+git -C "$WT31BP" commit -q --allow-empty -m "chore: a commit made after the push"
+tip31b="$(git -C "$WT31BP" rev-parse HEAD)"
+chk "31b: the worktree tip is past origin's tracking tip" "$([ "$tip31b" != "$otip31b" ]; echo $?)"
+out="$(GH_STUB_MERGED_chore_kit_adopt="[{\"number\":7,\"headRefOid\":\"$otip31b\",\"baseRefName\":\"main\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]" \
+  "$WRAP" adopt "$C31B" 2>&1)"
+chk_has "31b: a PR at origin's tracking tip counts as merged" "$out" "merged #7; read $WT31BP"
+chk_no "31b: and prints no resume:" "$out" "resume:"
+out="$(GH_STUB_MERGED_chore_kit_adopt="[{\"number\":7,\"headRefOid\":\"$tip31b\",\"baseRefName\":\"develop\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]" \
+  "$WRAP" adopt "$C31B" 2>&1)"
+chk_no "31b: a PR merged into another base is not a merge of this branch" "$out" "merged #7"
+out="$(GH_STUB_MERGED_chore_kit_adopt="[{\"number\":7,\"headRefOid\":\"$tip31b\",\"baseRefName\":\"main\",\"mergedAt\":null}]" \
+  "$WRAP" adopt "$C31B" 2>&1)"
+chk_no "31b: a PR with no mergedAt is not merged" "$out" "merged #7"
+
 echo "=== adopt: an ignored adoption path refuses (32) ==="
 C32A="$(adopt_clone c32a)"
 printf '.claude/\n' > "$C32A/.gitignore"

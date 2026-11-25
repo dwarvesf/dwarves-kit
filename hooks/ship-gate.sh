@@ -689,15 +689,25 @@ if [ -f "$ROOT/lib/codex/repin.sh" ] && [ -f "$ROOT/hooks/codex-hooks.json" ] &&
   fi
 fi
 
-# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_for_slug is the
-# pick validate-round also binds to (root docs/specs, then co-located */docs/specs). A stale
-# install without spec-find.sh keeps the old root-only glob, so the hook never breaks on it.
+# Resolve the spec for this slug; fail open if there is no spec-driven run. spec_active is the
+# one lookup (default mode: the name pick validate-round also binds to, status-blind, root
+# docs/specs then co-located */docs/specs); only its `name` line is a pick here, and the `name<TAB>`
+# prefix is stripped rather than split on, so a repo path that holds a TAB survives. An install
+# that has spec-find.sh but no spec-active.sh keeps the pick master makes (spec_for_slug); one
+# with neither keeps the root-only glob, so the hook never breaks on a partial update.
 SPEC=""
+SACTIVE="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-active.sh"
 SFIND="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/spec/spec-find.sh"
-if [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
-  SPEC=$(spec_for_slug "$ROOT" "$SLUG")
+if [ -r "$SACTIVE" ] && source "$SACTIVE" 2>/dev/null; then
+  SPEC=$(spec_active --slug "$SLUG" "$ROOT" 2>/dev/null | awk 'index($0, "name\t") == 1 { print substr($0, 6); exit }')
+  # an answer emptier than master's is never taken: spec_for_slug, when defined, is the same pick as before
+  if [ -z "$SPEC" ] && type spec_for_slug >/dev/null 2>&1; then
+    SPEC=$(spec_for_slug "$ROOT" "$SLUG") # spec-active-ok: spec_active answered nothing, the enforcement name pick as on master
+  fi
+elif [ -r "$SFIND" ] && source "$SFIND" 2>/dev/null; then
+  SPEC=$(spec_for_slug "$ROOT" "$SLUG") # spec-active-ok: spec-find.sh without spec-active.sh, the enforcement name pick as before
 else
-  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
+  SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true) # spec-active-ok: stale-install fallback
 fi
 # Build-ran advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is

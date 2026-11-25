@@ -208,6 +208,15 @@
 #                                                               its cards by age; --expire-only runs
 #                                                               just that. Forwards to
 #                                                               lib/board/board-mirror-cleanup.py.
+#   board.sh state-check --all [--strict] | --staged | --fix [--repo-root <dir>] [--states-file <path>]
+#                                                               check the state values a repo stores in
+#                                                               its own registry (default <repo>/_meta/states.toml):
+#                                                               --all reports, --strict exits 1 on undeclared
+#                                                               values or drift; --staged blocks NEW drift at
+#                                                               commit (ALLOW_STATE_CHANGE="<reason>" lets one
+#                                                               through); --fix rewrites drifted projection
+#                                                               tokens. Exit 0 clean, 1 blocked, 2 internal
+#                                                               error. Forwards to lib/board/state_check.py.
 #   board.sh health run --registry <path> [--poster <cmd>] [--dry-run] [--force] ...
 #   board.sh health record --repo <name> --rc <n>               the periodic board health digest per
 #                                                               cluster (open, stale, archived since
@@ -262,6 +271,7 @@ BOARD_RUN_SH="$BOARD_DIR/board-run.sh"
 BOARD_SWEEP_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep"                  # lib/sync/sweep/
 BOARD_SWEEP_VERIFY_SH="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-sweep-verify"
 BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/board-mirror-cleanup.py"
+BOARD_STATE_CHECK_PY="$BOARD_DIR/state_check.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
 BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
@@ -1217,6 +1227,7 @@ main() {
       if [ "${1:-}" = "verify" ]; then shift; exec bash "$BOARD_SWEEP_VERIFY_SH" "$@"; fi
       exec bash "$BOARD_SWEEP_SH" "$@" ;;
     mirror-cleanup) shift; exec python3 "$BOARD_MIRROR_CLEANUP_PY" "$@" ;;
+    state-check) shift; exec python3 "$BOARD_STATE_CHECK_PY" "$@" ;;
     health) shift; exec python3 "$BOARD_HEALTH_PY" "$@" ;;
     brief) shift; exec python3 "$BOARD_BRIEF_PY" "$@" ;;
     hermes) shift; exec python3 "$BOARD_HERMES_PY" "$@" ;;

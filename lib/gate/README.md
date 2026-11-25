@@ -38,7 +38,7 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate proof-ledger` | `proof-ledger.sh` | The proof-of-done gate. Classifies the branch diff, demands a matching fresh proof. | **yes** (`check` exit 1) |
 | `gate dispatch` | `dispatch-gate.sh` | Disjointness gate for `/kit:dispatch`. Two goals run in parallel only if their `## Touches` globs are provably disjoint. Also the drift guard. | **yes** (serializes / exit 1 on drift) |
 | `gate policy` | `gate-policy.sh` | The `[gate]` on/off reader (opt-in: on only when the key resolves to `true`). `enabled <key> [root]` exits 0 when a gate is on for that project. Hooks call it instead of reading config. | no |
-| `gate proof` | `proof-gate.sh` | Classifier, not a gate. `class`, `requirement`, `classes`: task description to proof class + the artifact that work-type owes. `contract "<task>"`: what that work-type owes. `skeleton <slug>`: a fillable `docs/verification/<slug>.md` on stdout. `coverage <spec> [proof.md ...]`: which spec criteria a proof covers. | no |
+| `gate proof` | `proof-gate.sh` | Classifier, not a gate. `class`, `requirement`, `classes`: task description to proof class + the artifact that work-type owes. `contract "<task>"`: what that work-type owes (with `[proof] visual` on it adds a `visual:` line and, for a ui page or a tui task when the proof-capture module is present, a `capture:` line naming the command that makes the artifact). `skeleton <slug>`: a fillable `docs/verification/<slug>.md` on stdout. `coverage <spec> [proof.md ...]`: which spec criteria a proof covers. | no |
 | `gate redteam` | `redteam-gate.sh` | Records one rung-4 redteam round (GATE, TOKENS and OUTCOME lines in one call) so the rung-4 cost is measurable. Missing `cost=` is rejected. | no (rc 64 on bad arguments) |
 | `gate quiz` | `quiz-gate.sh` | The star-tap NUDGE. Builds 5 diff-grounded questions, routes through the `understand.teach` seam. | no (nudge only) |
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
@@ -235,6 +235,10 @@ branch too. `adopt` seeds the block with the values that resolved at adopt time 
 the kit default), each key explained in a comment; delete a line to follow the operator setting
 again. The proof classifier treats a `.kit.toml`-only diff as inert, whatever key it touches:
 harness config owes no proof-of-done. Proof: `tests/test-gate-opt-out.sh`, `tests/test-gate-opt-in.sh`.
+
+## The merged check
+
+`branch-merged.sh` is sourced, not a verb. `branch_merged [--need any|pr] [--tip SHA] [--prs-json FILE] [--numbers] <repo> <default> <gh state> <branch>` is the one answer to "has this branch reached the default branch". It prints one line, `SAFE ancestor|absorbed|squash <phrase>`, `LEAVE tip <sha>`, `LEAVE base <name>`, `LEAVE none <phrase>` or `LEAVE nogh <note>`; callers branch on the first two words. Default rungs: ancestor of `origin/<default>`, absorbed content, a same-repo merged PR at the exact tip. `--need pr` keeps only the PR rung (`wt.sh close`, the origin sweep, adopt, carry); a gh failure, a fork PR, a PR into another base or a tip past the PR head is always LEAVE. `wrap scan`, `apply`, `land`, `adopt`, `carry`, the origin sweep and `lib/goal/wt.sh close` call it. The checks that read one PR number the script just merged, the up-to-date direction (`is-ancestor origin/<default> HEAD`) and the `git cherry` and patch-id reads are different questions and carry `merged-ok: <reason>` markers; `tests/test-shared-lookups.sh` pins the list.
 
 ## Specs and decisions
 
