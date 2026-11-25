@@ -28,8 +28,8 @@ def brief_decisions(health, cluster, first_cluster):
     now. Returns [(sort key, text)]; the brief wraps each text in its own item."""
     links = health.get("hermes_links")
     if links is None:
-        import sweep_modules
-        links = sweep_modules.load("board-hermes").check_links()
+        import link
+        links = link.check_links()
     return [((6, 0), f"kit skills on `{lk.get('label') or lk.get('profile')}` are stale: re-run `board hermes link`")
             for lk in links
             if lk.get("stale") and (lk.get("cluster") or first_cluster) == cluster]

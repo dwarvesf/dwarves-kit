@@ -200,8 +200,8 @@ real reader consumes it today (all rows below are, except where noted).
 | BACKLOG_FILE | env-only | `$BACKLOG_DIR/../../_meta/BACKLOG.md` | [impl] | board | Override which `BACKLOG.md` the CLI reads/writes. |
 | BACKLOG_ID_RE | env-only | `[A-Z]+-[0-9]+` | [impl] | board | Regex for what counts as a backlog item ID. |
 | KIT_BOARDS_REGISTRY | env-only | `<repo-root>/_meta/boards.txt` | [impl] | board | Override the boards registry every reader uses: `board all|queue|mirror|status|writeback`, `board-mirror-cleanup.py`, `lib/mega/runs-dashboard.py`, `lib/reflect/propose.py` (its `LEARN_PROPOSE_COCKPIT` still wins). Beats the repo-root default, loses to `--registry`. |
-| DWARVES_BOARD_CONFIG | env-only | `config data path config board.json` (read only when the file exists) | [impl] | board | `lib/sync/sweep/board-health` and `board-hermes`: JSON file that supplies `board health run` and `board brief run` flags. `--config FILE` beats it; command-line flags come after and win. A bad file is a usage error. |
-| DWARVES_HERMES_LINKS | env-only | `config data path state hermes-links.json` | [impl] | board | `lib/sync/sweep/board-hermes`: path of the file `board hermes link` records each Hermes profile link in (profile, cluster rail, hub, boards, skills digest). |
+| DWARVES_BOARD_CONFIG | env-only | `config data path config board.json` (read only when the file exists) | [impl] | board | `lib/sync/sweep/board-health` and `lib/adapters/hermes/link.py`: JSON file that supplies `board health run` and `board brief run` flags. `--config FILE` beats it; command-line flags come after and win. A bad file is a usage error. |
+| DWARVES_HERMES_LINKS | env-only | `config data path state hermes-links.json` | [impl] | board | `lib/adapters/hermes/link.py`: path of the file `board hermes link` records each Hermes profile link in (profile, cluster rail, hub, boards, skills digest). |
 
 ### sync (two-way spoke mirror, `board sync` -> `lib/sync/backlog_sync.py`)
 

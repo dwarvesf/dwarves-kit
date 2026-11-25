@@ -274,7 +274,7 @@ BOARD_MIRROR_CLEANUP_PY="$BOARD_DIR/../adapters/hermes/board-mirror-cleanup.py"
 BOARD_STATE_CHECK_PY="$BOARD_DIR/state_check.py"
 BOARD_HEALTH_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-health"
 BOARD_BRIEF_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-brief"
-BOARD_HERMES_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/sweep/board-hermes"
+BOARD_HERMES_PY="$BOARD_DIR/../adapters/hermes/link.py"
 KIT_LIB="$(cd "$BOARD_DIR/.." && pwd)"  # lib/, one level up from lib/board/; script-local, never read from the environment
 export KIT_LIB
 # shellcheck source=board-lib.sh

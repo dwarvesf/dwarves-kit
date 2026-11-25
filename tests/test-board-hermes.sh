@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-hermes.sh -- lib/sync/sweep/board-hermes: `board hermes link` and `check`,
+# test-board-hermes.sh -- lib/adapters/hermes/link.py: `board hermes link` and `check`,
 # the sweep leg that records link drift, and the brief's decision line for a stale link.
 #
 # Hermes homes are scratch dirs under a scratch HOME; `hermes`, `sudo`, and the board
@@ -25,7 +25,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-HERMES_PY="$HERE/../lib/sync/sweep/board-hermes"
+HERMES_PY="$HERE/../lib/adapters/hermes/link.py"
 BRIEF="$HERE/../lib/sync/sweep/board-brief"
 SWEEP="$HERE/../lib/sync/sweep/board-sweep"
 BOARD="$HERE/../bin/board"

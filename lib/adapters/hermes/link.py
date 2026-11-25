@@ -54,8 +54,9 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parents[1] / "config"))
+KIT_LIB = HERE.parents[1]  # lib/, from this file's own location
+sys.path.insert(0, str(KIT_LIB / "sync" / "sweep"))
+sys.path.insert(0, str(KIT_LIB / "config"))
 import kit_data  # noqa: E402
 import sweep_modules  # noqa: E402
 
