@@ -487,6 +487,8 @@ untrusted_case() {
     */dr-nm) fake_install "$home" "$pin" with-browser; chmod 775 "$home/node_modules" ;;
     */dr-deepfile) fake_install "$home" "$pin" with-browser; mkdir -p "$home/node_modules/playwright-core/lib"; printf 'x\n' > "$home/node_modules/playwright-core/lib/deep.js"; chmod 664 "$home/node_modules/playwright-core/lib/deep.js" ;;
     */dr-link) fake_install "$home" "$pin" with-browser; mkdir -p "$T/dr-outside"; ln -s "$T/dr-outside" "$home/node_modules/escape" ;;
+    */dr-dangling) fake_install "$home" "$pin" with-browser; ln -s "$home/node_modules/not-there" "$home/node_modules/dangling" ;;
+    */dr-elsewhere) fake_install "$home" "$pin" with-browser; mkdir -p "$home/elsewhere"; printf 'x\n' > "$home/elsewhere/code.js"; ln -s "$home/elsewhere/code.js" "$home/node_modules/aside.js" ;;
     */dr-core) fake_install "$home" "$pin" with-browser; mkdir -p "$home/node_modules/playwright-core"; chmod 775 "$home/node_modules/playwright-core" ;;
   esac
   doctor "$home"
@@ -566,10 +568,12 @@ case_doctor_and_skip() {
   untrusted_case "an install root whose node_modules is group-writable" "$T/dr-nm" 'node_modules is writable by group or others' "$pin"
   untrusted_case "an install root whose node_modules/playwright-core is group-writable" "$T/dr-core" 'node_modules/playwright-core is writable by group or others' "$pin"
   untrusted_case "an install root with one group-writable file deep inside node_modules/playwright-core/lib" "$T/dr-deepfile" 'node_modules/playwright-core/lib/deep.js is writable by group or others' "$pin"
-  untrusted_case "an install root with a link inside node_modules that points outside the root" "$T/dr-link" 'node_modules/escape is a link that leaves the install root' "$pin"
-  home="$T/dr-linkok"; fake_install "$home" "$pin" with-browser; ln -s ../playwright "$home/node_modules/inside"
+  untrusted_case "an install root with a link inside node_modules that points outside the root" "$T/dr-link" 'node_modules/escape is a link that leaves node_modules' "$pin"
+  untrusted_case "an install root with a dangling link inside node_modules" "$T/dr-dangling" 'node_modules/dangling is a link that cannot be resolved' "$pin"
+  untrusted_case "an install root with a link inside node_modules to a file under the root but outside node_modules" "$T/dr-elsewhere" 'node_modules/aside.js is a link that leaves node_modules' "$pin"
+  home="$T/dr-linkok"; fake_install "$home" "$pin" with-browser; ln -s playwright "$home/node_modules/inside"
   doctor "$home"
-  [ "$RC" = 0 ]; check "control: a link inside node_modules that stays inside the root does not refuse the install root (exit $RC)" $?
+  [ "$RC" = 0 ]; check "control: a link inside node_modules that resolves inside node_modules does not refuse the install root (exit $RC)" $?
   import_time_check "$pin"
   home="$T/dr-sticky/root"; fake_install "$home" "$pin" with-browser; chmod 1777 "$(dirname "$home")"
   doctor "$home"
