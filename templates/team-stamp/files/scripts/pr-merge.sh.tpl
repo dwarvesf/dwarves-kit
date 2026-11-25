@@ -45,6 +45,19 @@ usage() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
+# Text from gh (check names, file paths, logins, error lines) is chosen by whoever wrote the PR.
+# clean <text>: every character outside A-Za-z0-9._/@- , comma and space becomes ?, a newline
+# included, so that text cannot forge a second line or carry an escape sequence.
+clean() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
+# is_safe <text>: succeeds only for a non-empty value of A-Za-z0-9._/@- that does not start with -.
+# Only such a value is ever put into a "Fix:" command; the PR number is checked to be digits.
+is_safe() {
+    case "$1" in
+    '' | -* | *[!A-Za-z0-9._/@-]*) return 1 ;;
+    esac
+    return 0
+}
+
 # fail <exit code> <rule> <fix>: the two-line refusal for a usage error.
 fail() {
     printf 'pr-merge: %s\nFix: %s\n' "$2" "$3" >&2
@@ -72,7 +85,7 @@ while [ $# -gt 0 ]; do
         limit_set=1
         shift
         ;;
-    -*) fail 2 "unknown option $1" "bash scripts/pr-merge.sh --help" ;;
+    -*) fail 2 "unknown option $(clean "$1")" "bash scripts/pr-merge.sh --help" ;;
     *)
         [ -z "$number" ] || fail 2 "one PR number only" "bash scripts/pr-merge.sh --wait <number>"
         number="$1"
@@ -96,9 +109,11 @@ fi
 # pending on PENDING or EXPECTED, failing otherwise. An approval counts when it is
 # the reviewer's latest decision (comments do not change it) and the reviewer is
 # not the author. `ambiguous=` lists the check names whose entries come from more
-# than one producer (workflow name plus kind).
+# than one producer (workflow name plus kind). Every string that comes back has its
+# control characters (a newline, an escape) replaced by ?, so one value is one line.
 # shellcheck disable=SC2016
 JQ='
+def ctl: if type == "string" then gsub("[\\x00-\\x1f\\x7f]"; "?") else . end;
 def cls:
   if .__typename == "StatusContext" then
     (if .state == "SUCCESS" then "ok"
@@ -107,7 +122,7 @@ def cls:
   elif .status != "COMPLETED" then "pending"
   elif (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED") then "ok"
   else "failing" end;
-def nm: (.name // .context);
+def nm: ((.name // .context) | ctl);
 def rank: if cls == "ok" then 0 elif cls == "pending" then 1 else 2 end;
 def started: (.startedAt // .createdAt // "");
 def stamp:
@@ -119,15 +134,15 @@ def producer: ((.workflowName // "") + "|" + (.__typename // ""));
 | ($all | newest) as $checks
 | .author.login as $author
 | "draft=\(.isDraft)",
-  "mergeable=\(.mergeable)",
+  "mergeable=\(.mergeable | tostring | ctl)",
   "failing=\([$checks[] | select(cls == "failing") | nm] | join(","))",
   "ambiguous=\([$all | group_by(nm)[] | select((map(producer) | unique | length) > 1) | .[0] | nm] | join(","))",
   "pending=\([$checks[] | select(cls == "pending") | nm] | join(","))",
-  "author=\(.author.login)",
-  "head=\(.headRefOid // "")",
+  "author=\(.author.login | ctl)",
+  "head=\((.headRefOid // "") | ctl)",
   "changes_passed=\([$checks[] | select(.name == "changes" and .status == "COMPLETED" and .conclusion == "SUCCESS")] | length)",
-  "approvals=\([(.reviews // []) | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | group_by(.author.login)[] | sort_by(.submittedAt) | last | select(.state == "APPROVED" and .author.login != $author) | .author.login] | join(","))",
-  ((.files // [])[] | "file=\(.path)")
+  "approvals=\([(.reviews // []) | map(select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | group_by(.author.login)[] | sort_by(.submittedAt) | last | select(.state == "APPROVED" and .author.login != $author) | .author.login | ctl] | join(","))",
+  ((.files // [])[] | "file=\(.path | ctl)")
 '
 
 draft="" mergeable="" failing="" pending="" ambiguous="" changes_passed=0 approvals="" author="" head=""
@@ -177,7 +192,7 @@ $out
 EOF
     # gh may cap the file list. With a door list set, a PR that long counts as touching a door.
     if [ "$nfiles" -ge 100 ] && [ "${#DOORS[@]}" -gt 0 ]; then
-        doors="${doors:+$doors, }(100 or more files)"
+        doors="${doors:+$doors, }100 or more files"
     fi
 }
 
@@ -193,19 +208,19 @@ wait_for_checks() {
     while [ "$draft" != "true" ]; do
         if [ -z "$pending" ]; then
             if [ "$changes_passed" -eq 0 ] && [ -z "$failing" ]; then
-                pending="(checks not registered yet)"
+                pending="checks not registered yet"
             elif [ "$mergeable" = "UNKNOWN" ] && [ -z "$failing" ]; then
-                pending="(mergeability UNKNOWN)"
+                pending="mergeability UNKNOWN"
             else
                 break
             fi
         fi
         if [ $((SECONDS - start)) -ge "$limit" ]; then
-            printf 'pr-merge: timed out after %ss waiting on #%s, still pending: %s (a run with no runner stays queued; scripts/check.sh is the local check)\nFix: gh run list --limit 10\n' "$limit" "$number" "$pending" >&2
+            printf 'pr-merge: timed out after %ss waiting on #%s, still pending: %s (a run with no runner stays queued; scripts/check.sh is the local check)\nFix: gh run list --limit 10\n' "$limit" "$number" "$(clean "$pending")" >&2
             exit 1
         fi
         commas="${pending//[^,]/}"
-        echo "pr-merge: waiting on $((${#commas} + 1)) pending check(s) of #$number ($((SECONDS - start))s of ${limit}s): $pending" >&2
+        echo "pr-merge: waiting on $((${#commas} + 1)) pending check(s) of #$number ($((SECONDS - start))s of ${limit}s): $(clean "$pending")" >&2
         sleep "$interval"
         load || exit 1
     done
@@ -220,40 +235,48 @@ refuse() {
 
 # The one judgment, for the PR that load just read. It fills refusals and merges nothing.
 judge() {
-    local author_lc approver_lc approvals_lc reviewer wait_fix
+    local author_lc approver_lc approvals_lc wait_fix conflict_fix reviewer_fix
     refusals=""
     wait_fix="bash scripts/pr-merge.sh --wait $number"
 
     [ "$draft" != "true" ] || refuse "the PR is a draft" "gh pr ready $number"
-    [ -z "$failing" ] || refuse "failing check: $failing" "gh pr checks $number"
-    [ -z "$pending" ] || refuse "pending check: $pending" "$wait_fix"
-    [ -z "$ambiguous" ] || refuse "check reported by more than one workflow or app (a PR may add a workflow that emits the same name): $ambiguous" "gh pr checks $number"
+    [ -z "$failing" ] || refuse "failing check: $(clean "$failing")" "gh pr checks $number"
+    [ -z "$pending" ] || refuse "pending check: $(clean "$pending")" "$wait_fix"
+    [ -z "$ambiguous" ] || refuse "check reported by more than one workflow or app (a PR may add a workflow that emits the same name): $(clean "$ambiguous")" "gh pr checks $number"
     [ "$changes_passed" -ge 1 ] || refuse "the changes job has not passed, so CI has not run" "$wait_fix"
     case "$mergeable" in
     MERGEABLE) ;;
-    CONFLICTING) refuse "merge conflicts with the base branch" "gh pr checkout $number && git fetch origin && git merge origin/$DEFAULT_BRANCH && git push" ;;
-    *) refuse "mergeability is $mergeable, try again in a minute" "$wait_fix" ;;
+    CONFLICTING)
+        conflict_fix="merge the default branch into the PR branch by hand, then push"
+        if is_safe "$DEFAULT_BRANCH"; then
+            conflict_fix="gh pr checkout $number && git fetch origin && git merge origin/$DEFAULT_BRANCH && git push"
+        fi
+        refuse "merge conflicts with the base branch" "$conflict_fix"
+        ;;
+    *) refuse "mergeability is $(clean "$mergeable"), try again in a minute" "$wait_fix" ;;
     esac
 
     if [ -n "$doors" ]; then
         author_lc="$(lower "$author")"
         approver_lc="$(lower "$APPROVER")"
         approvals_lc="$(lower "$approvals")"
-        reviewer="<login of a person other than the author>"
-        if [ -n "$APPROVER" ] && [ "$approver_lc" != "$author_lc" ]; then
-            reviewer="$APPROVER"
+        reviewer_fix="ask a person other than the author to approve PR $number, then run $wait_fix"
+        if [ -n "$APPROVER" ] && [ "$approver_lc" != "$author_lc" ] && is_safe "$APPROVER"; then
+            reviewer_fix="gh pr edit $number --add-reviewer $APPROVER"
         fi
         if [ -z "$approvals" ]; then
-            refuse "touches a door path ($doors) and has no approving review from someone other than its author" "gh pr edit $number --add-reviewer $reviewer"
+            refuse "touches a door path ($(clean "$doors")) and has no approving review from someone other than its author" "$reviewer_fix"
         elif [ -n "$APPROVER" ] && [ "$approver_lc" != "$author_lc" ]; then
             case ",$approvals_lc," in
             *",$approver_lc,"*) ;;
-            *) refuse "touches a door path ($doors): needs an approving review from $APPROVER" "gh pr edit $number --add-reviewer $APPROVER" ;;
+            *) refuse "touches a door path ($(clean "$doors")): needs an approving review from $(clean "$APPROVER")" "$reviewer_fix" ;;
             esac
         fi
     fi
 
-    [ -n "$head" ] || refuse "gh did not report the head commit, so the merge cannot be pinned" "gh pr view $number --json headRefOid"
+    if ! is_safe "$head"; then
+        refuse "gh did not report a usable head commit, so the merge cannot be pinned" "gh pr view $number --json headRefOid"
+    fi
     return 0
 }
 
@@ -277,9 +300,9 @@ if [ "$dry" -eq 1 ]; then
     echo "pr-merge: #$number would merge (dry run, nothing merged)"
     exit 0
 fi
-echo "pr-merge: #$number is clear, merging head $head"
+echo "pr-merge: #$number is clear, merging head $(clean "$head")"
 if ! merge_out="$(gh pr merge "$number" --squash --delete-branch --match-head-commit "$head" 2>&1)"; then
-    printf 'pr-merge: refused #%s: gh did not merge head %s: %s\nFix: %s\n' "$number" "$head" "$(printf '%s\n' "$merge_out" | sed -n 1p)" "bash scripts/pr-merge.sh --wait $number" >&2
+    printf 'pr-merge: refused #%s: gh did not merge head %s: %s\nFix: %s\n' "$number" "$(clean "$head")" "$(clean "$(printf '%s\n' "$merge_out" | sed -n 1p)")" "bash scripts/pr-merge.sh --wait $number" >&2
     exit 1
 fi
-[ -z "$merge_out" ] || printf '%s\n' "$merge_out"
+[ -z "$merge_out" ] || printf 'pr-merge: gh said: %s\n' "$(clean "$(printf '%s\n' "$merge_out" | sed -n 1p)")"

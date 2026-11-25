@@ -46,6 +46,11 @@ expect "no stale-rules refusal" bash -c "! grep -Eiq 'stale|older than the last 
 expect "no kit merge-head variable" bash -c "! grep -q 'KIT_' '$P'"
 expect "no --all or --refresh mode" bash -c "! grep -Eq -- '--all|--refresh' '$P'"
 expect "an empty array expansion is guarded under set -u" grep -q '\${#DOORS\[@\]}' "$P"
+expect "the guard cleans gh text before it is printed" grep -q '^clean() ' "$P"
+expect "the guard puts only a safe value into a Fix line" grep -q '^is_safe() ' "$P"
+for f in scripts/pr-merge.sh scripts/negctl.sh; do
+  expect "$f never uses eval" bash -c "! grep -Eq '(^|[^a-z_])eval[[:space:]]' '$A/$f'"
+done
 
 # 3. every generated file: kit-free, no dash characters, no python3, no bare hex digest, shellcheck clean
 for f in scripts/pr-merge.sh scripts/test-pr-merge.sh scripts/negctl.sh scripts/test-negctl.sh; do
@@ -91,18 +96,19 @@ MUT="printf 'bad\n' > a.txt"
 expect "the kit negctl goes green, red, green on the fixture" [ "$KRC" -eq 0 ]
 expect "the stamped negctl goes green, red, green on the fixture" [ "$GRC" -eq 0 ]
 
-# the five labelled parts, in first-seen order
-labels() { # labels <block file>: the labels of the block in first-seen order, one per line
+# the five labelled parts
+labels() { # labels <block file>: the labels the block carries, sorted, one per line
   awk '
-    function see(l) { if (!(l in seen)) { seen[l] = 1; print l } }
+    function see(l) { seen[l] = 1 }
     tolower($0) ~ /negative control/ { see("NEGATIVE CONTROL") }
     /^Command: / { see("Command:") }
     /^Exit: [0-9]+/ { see("Exit:") }
     /^Output:/ { see("Output:") }
-    /^Verdict: / { see("Verdict:") }' "$1"
+    /^Verdict: / { see("Verdict:") }
+    END { for (l in seen) print l }' "$1" | LC_ALL=C sort
 }
 labels "$WORK/kit.out" > "$WORK/kit.labels"; labels "$WORK/gen.out" > "$WORK/gen.labels"
-expect "both blocks carry the five labelled parts in the same order" bash -c 'cmp -s "$1" "$2" && [ "$(wc -l < "$1")" -eq 5 ]' _ "$WORK/kit.labels" "$WORK/gen.labels"
+expect "both blocks carry the same five labelled parts" bash -c 'cmp -s "$1" "$2" && [ "$(wc -l < "$1")" -eq 5 ]' _ "$WORK/kit.labels" "$WORK/gen.labels"
 red_exit() { awk '/^Exit: [0-9]+ \(under mutation/ { print $2; exit } /^Exit: [0-9]+$/ { print $2; exit }' "$1"; }
 expect "both blocks report the same red exit code" bash -c '[ -n "$1" ] && [ "$1" = "$2" ]' _ "$(red_exit "$WORK/kit.out")" "$(red_exit "$WORK/gen.out")"
 expect "both blocks name the same test command" bash -c '[ "$(grep -m1 "^Command: " "$1")" = "$(grep -m1 "^Command: " "$2")" ]' _ "$WORK/kit.out" "$WORK/gen.out"

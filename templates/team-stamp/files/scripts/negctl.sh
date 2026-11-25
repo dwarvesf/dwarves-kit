@@ -22,8 +22,15 @@
 #   6. run the test: it must exit 0 again
 # A trap restores on any exit, Ctrl-C included. Progress goes to stderr. A refusal
 # ends stderr with exactly two lines: the rule, then a "Fix:" line. On success
-# stdout holds the proof block: NEGATIVE CONTROL, Command, Exit, Output (the last
-# 15 lines of the red run), Verdict.
+# stdout holds the proof block: NEGATIVE CONTROL, Command, Output (the last
+# 15 lines of the red run), Exit, Verdict.
+#
+# The test command and the mutate command are the operator's own arguments and run through
+# bash -c by design. Nothing else reaches a shell: a file name from the tree is only ever passed
+# quoted after "--", and test output is only printed, with control characters removed and
+# every line indented (so it cannot pass for a refusal). Text from the tree or from test output
+# that is echoed into a rule line has every character outside A-Za-z0-9._/@- , comma and space
+# replaced by ?.
 #
 # The mutation must edit tracked files. A tracked file the mutation adds to git
 # cannot be restored by checkout: it is named and left in place.
@@ -37,11 +44,19 @@ usage() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
-# refuse <exit code> <rule> <fix>: two lines on stderr, then leave (the trap restores).
+# refuse <exit code> <rule> <fix>: restore any break first, so nothing prints after the pair,
+# then print two lines on stderr and leave.
+armed=0
 refuse() {
+    [ "$armed" -eq 0 ] || restore
     printf 'negctl: %s\nFix: %s\n' "$2" "$3" >&2
     exit "$1"
 }
+
+# clean <text>: every character outside A-Za-z0-9._/@- , comma and space becomes ?.
+clean() { printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._/@ ,-' '?'; }
+# plain <file>: the file with control characters (an escape, a carriage return) removed.
+plain() { LC_ALL=C tr -d '\000-\010\013-\037\177' <"$1"; }
 
 use_fix='bash scripts/negctl.sh "<test command>" "<mutate command>"'
 
@@ -73,11 +88,12 @@ child=""
 mutating=0
 created_known=0
 restore_failed=0
+stuck_said=0
 rc=0
 
 tracked_changes() { git -c core.quotepath=off diff HEAD --no-renames --name-only; }
 untracked_files() { git -c core.quotepath=off ls-files --others --exclude-standard | LC_ALL=C sort; }
-show_tail() { tail -n 15 "$out" | sed 's/^/    /' >&2; }
+show_tail() { plain "$out" | tail -n 15 | sed 's/^/    /' >&2; }
 
 # The test runs as a background job in its own process group, so a signal to
 # negctl can stop the whole test tree before the restore starts.
@@ -118,7 +134,7 @@ red_load_error() {
         ;;
     esac
     if line="$(grep -aE -m1 "$load_re" "$clean")"; then
-        printf '%s\n' "$line" | sed 's/^[[:space:]]*//' | cut -c1-100
+        printf '%s\n' "$line" | sed 's/^[[:space:]]*//' | cut -c1-100 | LC_ALL=C tr -c 'A-Za-z0-9._/@ \n,-' '?'
         return 0
     fi
     return 1
@@ -148,12 +164,14 @@ $(tracked_changes)
 EOF
     if [ "${#to_restore[@]}" -gt 0 ]; then
         git checkout -q HEAD -- "${to_restore[@]}" || {
-            echo "negctl: git checkout failed for: ${to_restore[*]}" >&2
+            [ "$stuck_said" -eq 1 ] || echo "negctl: git checkout failed for: $(clean "${to_restore[*]}")" >&2
+            stuck_said=1
             restore_failed=1
         }
     fi
     if [ "${#stuck[@]}" -gt 0 ]; then
-        echo "negctl: not in HEAD, left in place: ${stuck[*]}" >&2
+        [ "$stuck_said" -eq 1 ] || echo "negctl: not in HEAD, left in place: $(clean "${stuck[*]}")" >&2
+        stuck_said=1
         restore_failed=1
     fi
     if [ "$mutating" -eq 1 ] && [ "$created_known" -eq 0 ]; then
@@ -190,6 +208,7 @@ trap cleanup EXIT
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
+armed=1
 
 echo "negctl: 1/4 test before the change" >&2
 run_test
@@ -209,14 +228,14 @@ untracked_files >"$work/after"
 LC_ALL=C comm -13 "$work/before" "$work/after" >"$created"
 created_known=1
 if [ "$mutate_rc" -ne 0 ]; then
-    tail -n 15 "$work/mutate-out" | sed 's/^/    /' >&2
+    plain "$work/mutate-out" | tail -n 15 | sed 's/^/    /' >&2
     refuse 1 "the mutate command failed with exit $mutate_rc; restored" "$mutate_cmd"
 fi
 changed="$(tracked_changes)"
 if [ -z "$changed" ]; then
     refuse 1 "the mutation changed no tracked file; restored" "git ls-files"
 fi
-changed_line="$(printf '%s\n' "$changed" | paste -sd, - | sed 's/,/, /g')"
+changed_line="$(printf '%s\n' "$changed" | LC_ALL=C tr -c 'A-Za-z0-9._/@ \n-' '?' | paste -sd, - | sed 's/,/, /g')"
 
 echo "negctl: 2/4 test with the break in place (changed: $changed_line)" >&2
 run_test
@@ -230,7 +249,7 @@ if load_line="$(red_load_error "$red_rc")"; then
     refuse 1 "REFUSED, the red run is a load or syntax error, not a failing assertion ($load_line); restored" "$use_fix"
 fi
 if [ -s "$out" ]; then
-    tail -n 15 "$out" >"$work/red-tail"
+    plain "$out" | tail -n 15 >"$work/red-tail"
 else
     echo "<no output>" >"$work/red-tail"
 fi
@@ -252,11 +271,11 @@ if [ "$restore_failed" -ne 0 ]; then
     refuse 1 "the tree is not restored" "git status --short"
 fi
 
-echo "NEGATIVE CONTROL"
+echo "NEGATIVE CONTROL: broke $changed_line"
 echo "Command: $test_cmd"
-echo "Exit: $red_rc"
 echo "Output:"
 cat "$work/red-tail"
+echo "Exit: $red_rc"
 echo "Verdict: RED, as expected"
 echo
 echo "Broke: $mutate_cmd (changed: $changed_line). Restored with git checkout; the tree is clean. The test was green before (exit 0) and is green again (exit 0)."

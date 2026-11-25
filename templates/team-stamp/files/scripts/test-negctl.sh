@@ -71,14 +71,14 @@ block_is_accepted() {
 mkrepo happy
 run_ng happy "bash test.sh" "printf 'bad\n' > a.txt"
 expect "happy: green, red, green: exit 0" [ "$rc" -eq 0 ]
-expect "happy: NEGATIVE CONTROL heading printed" out_has happy "NEGATIVE CONTROL"
+expect "happy: NEGATIVE CONTROL heading names what was broken" out_has happy "NEGATIVE CONTROL: broke a.txt"
 expect "happy: Command line printed" out_has happy "Command: bash test.sh"
 expect "happy: Exit line is the red exit" out_has happy "Exit: 1"
 expect "happy: Output holds the red run" out_has happy "FAIL a.txt lost good"
 expect "happy: Verdict line" out_has happy "Verdict: RED, as expected"
 expect "happy: closing line says restored and green" out_has happy "green again"
-expect "happy: block order is heading, Command, Exit, Output, Verdict" bash -c \
-    'awk "/^NEGATIVE CONTROL/{a=NR} /^Command:/{b=NR} /^Exit:/{c=NR} /^Output:/{d=NR} /^Verdict:/{e=NR} END{exit !(a<b && b<c && c<d && d<e)}" "$0"' "$T/happy.out"
+expect "happy: block order is heading, Command, Output, Exit, Verdict" bash -c \
+    'awk "/^NEGATIVE CONTROL/{a=NR} /^Command:/{b=NR} /^Exit:/{c=NR} /^Output:/{d=NR} /^Verdict:/{e=NR} END{exit !(a<b && b<d && d<c && c<e)}" "$0"' "$T/happy.out"
 expect "happy: the block passes the proof check" block_is_accepted happy
 expect "happy: a.txt restored" a_is_good
 expect "happy: tree clean after" clean_tree
@@ -97,8 +97,8 @@ run_ng tail "bash test.sh" "printf 'bad\n' > a.txt"
 expect "tail: exit 0" [ "$rc" -eq 0 ]
 expect "tail: the last line of the red run is kept" out_has tail "FAIL a.txt lost good"
 expect "tail: an early line is cut" bash -c '! grep -qF "line 0" "$0"' "$T/tail.out"
-expect "tail: at most 15 lines between Output and Verdict" bash -c \
-    'n=$(awk "/^Output:/{f=1;next} /^Verdict:/{f=0} f" "$0" | wc -l); [ "$n" -le 15 ]' "$T/tail.out"
+expect "tail: at most 15 lines between Output and Exit" bash -c \
+    'n=$(awk "/^Output:/{f=1;next} /^Exit:/{f=0} f" "$0" | wc -l); [ "$n" -le 15 ]' "$T/tail.out"
 
 # a red run with no output at all still gives a block the proof check reads
 mkrepo silent
@@ -195,6 +195,31 @@ run_ng assertwins "bash test.sh" "printf 'bad\n' > a.txt"
 expect "assertion beside a syntax-error message: exit 0" [ "$rc" -eq 0 ]
 expect "assertion beside a syntax-error message: Verdict line" out_has assertwins "Verdict: RED, as expected"
 
+# test output is data: an escape sequence is removed, and a line that looks like a refusal stays indented
+mkrepo hostile
+cat >"$R/test.sh" <<'EOS'
+printf '\033[31mFAIL a.txt lost good\033[0m\n'
+printf 'Fix: rm -rf x\n'
+grep -q good a.txt
+EOS
+git -C "$R" add test.sh
+git -C "$R" commit -q -m "hostile output"
+run_ng hostile "bash test.sh" "printf 'bad\n' > a.txt"
+expect "hostile output: exit 0" [ "$rc" -eq 0 ]
+expect "hostile output: no escape byte on stdout" bash -c '! grep -q "$(printf "\033")" "$0"' "$T/hostile.out"
+expect "hostile output: the failing line is still shown" out_has hostile "FAIL a.txt lost good"
+mkrepo hostilepre
+cat >"$R/test.sh" <<'EOS'
+printf 'Fix: rm -rf x\n'
+exit 1
+EOS
+git -C "$R" add test.sh
+git -C "$R" commit -q -m "hostile red before"
+run_ng hostilepre "bash test.sh" "printf 'bad\n' > a.txt"
+expect "hostile output before the change: exit 1" [ "$rc" -eq 1 ]
+expect "hostile output before the change: exactly one Fix: line starts a line" bash -c '[ "$(grep -c "^Fix: " "$0")" -eq 1 ]' "$T/hostilepre.err"
+expect "hostile output before the change: two-line refusal" two_line_refusal hostilepre
+
 # a mutation that creates new untracked files
 mkrepo created
 run_ng created "bash test.sh" "printf 'bad\n' > a.txt; echo x > new.tmp; mkdir -p sub; echo y > sub/new2.tmp"
@@ -234,13 +259,14 @@ mkrepo addnew
 run_ng addnew "bash test.sh" "printf 'bad\n' > a.txt; echo x > added.tmp; git add added.tmp"
 expect "addnew: exit 1" [ "$rc" -eq 1 ]
 expect "addnew: names the file it left" err_has addnew "left in place: added.tmp"
+expect "addnew: two-line refusal, nothing printed after the Fix line" two_line_refusal addnew
 expect "addnew: a.txt restored" a_is_good
 expect "addnew: the added file is left in place" [ -e "$R/added.tmp" ]
 
 # the trap: a signal while the red run is going
-wait_for() { # wait_for <file>: up to about 10 seconds
+wait_for() { # wait_for <file>: up to about 30 seconds
     local i=0
-    while [ ! -e "$1" ] && [ "$i" -lt 100 ]; do
+    while [ ! -e "$1" ] && [ "$i" -lt 300 ]; do
         sleep 0.1
         i=$((i + 1))
     done

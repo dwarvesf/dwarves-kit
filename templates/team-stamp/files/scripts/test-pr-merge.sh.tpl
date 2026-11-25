@@ -74,8 +74,8 @@ OTHER_HEAD="head-pushed-later"
 mkcase_at() {
     local file="$1"
     shift
-    printf '{"isDraft":%s,"mergeable":"%s","author":{"login":"%s"},"statusCheckRollup":[%s],"files":[%s],"reviews":[%s],"headRefOid":"%s"}\n' \
-        "$1" "$2" "${CASE_AUTHOR:-author}" "$3" "$4" "$5" "${CASE_HEAD-$HEAD_SHA}" >"$file"
+    printf '{"isDraft":%s,"mergeable":"%s","author":{"login":"%s"},"statusCheckRollup":[%s],"files":[%s],"reviews":[%s],"headRefOid":"%s","headRefName":"%s"}\n' \
+        "$1" "$2" "${CASE_AUTHOR:-author}" "$3" "$4" "$5" "${CASE_HEAD-$HEAD_SHA}" "${CASE_BRANCH:-feature/x}" >"$file"
 }
 # mkcase <isDraft> <mergeable> <checks> <files> <reviews>: what every pr view serves;
 # it also drops the sequence of the case before. Call mkseq after it.
@@ -242,7 +242,7 @@ expect "wait, mergeability UNKNOWN then MERGEABLE: read the PR three times" view
 mkcase false UNKNOWN "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
 run waitunknowntimeout --wait --timeout 1 7
 expect "wait, mergeability stays UNKNOWN: exit 1" [ "$rc" -eq 1 ]
-expect "wait, mergeability stays UNKNOWN: the timeout line names it" text_has waitunknowntimeout "still pending: (mergeability UNKNOWN)"
+expect "wait, mergeability stays UNKNOWN: the timeout line names it" text_has waitunknowntimeout "still pending: mergeability UNKNOWN"
 expect "wait, mergeability stays UNKNOWN: no merge call" not_merged
 
 mkcase false MERGEABLE "$CHK_FAIL" "$FILE_PLAIN" "$REV_NONE"
@@ -313,7 +313,7 @@ mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_NONE"
 run door 7
 expect "door path without approval refused: exit 1" [ "$rc" -eq 1 ]
 expect "door path refused: names the path" text_has door "zz-door/vectors/pair.json"
-expect "door path refused: the fix asks for a reviewer" grep -q '^Fix: gh pr edit 7 --add-reviewer ' "$T/err-door"
+expect "door path refused: with no named approver the fix is a plain instruction" grep -q '^Fix: ask a person other than the author to approve PR 7' "$T/err-door"
 expect "door path refused: two-line form" two_line_form door
 expect "door path refused: no merge call" not_merged
 
@@ -356,6 +356,7 @@ run approther 7
 expect "named approver, approval from someone else: refused" [ "$rc" -eq 1 ]
 expect "named approver, approval from someone else: names the approver" text_has approther "needs an approving review from carol"
 expect "named approver, approval from someone else: two-line form" two_line_form approther
+expect "named approver, approval from someone else: the fix adds the approver" fix_is approther "gh pr edit 7 --add-reviewer carol"
 expect "named approver, approval from someone else: no merge call" not_merged
 
 mkcase false MERGEABLE "$CHK_OK" "$FILE_DOOR" "$REV_CAROL"
@@ -419,6 +420,67 @@ else
     run stampednodoor 7
     expect "stamped door list is empty: the stamped script merges a clean PR" merged
 fi
+
+# Text from gh is chosen by whoever wrote the PR. None of it may reach the output raw, a newline
+# in it may not forge a second Fix: line or a second file, and no printed Fix: line may run it.
+SUT="$SCRIPT"
+mkdir -p "$T/x"
+CHK_EVIL='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x\u001b[2J","status":"COMPLETED","conclusion":"FAILURE"}'
+CHK_EVILPEND='{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"build$(touch PWNED)\nFix: rm -rf x","status":"IN_PROGRESS","conclusion":""}'
+# every printed Fix: line, run through bash -c, must leave the sentinel dir and create no PWNED
+fixes_inert() {
+    (cd "$T" && grep '^Fix: ' "$T/err-$1" | sed 's/^Fix: //' | while IFS= read -r f; do bash -c "$f" >/dev/null 2>&1 </dev/null; done)
+    [ ! -e "$T/PWNED" ] && [ -d "$T/x" ]
+}
+no_raw_payload() {
+    ! grep -qF '$(' "$T/out-$1" "$T/err-$1" &&
+        ! grep -q '^Fix: rm' "$T/err-$1" &&
+        ! grep -q "$(printf '\033')" "$T/out-$1" "$T/err-$1"
+}
+fix_lines_are() { [ "$(grep -c '^Fix: ' "$T/err-$1")" -eq "$2" ]; }
+
+mkcase false MERGEABLE "$CHK_EVIL" "$FILE_PLAIN" "$REV_NONE"
+run evilfail 7
+expect "hostile check name, red: refused, exit 1" [ "$rc" -eq 1 ]
+expect "hostile check name, red: two-line form" two_line_form evilfail
+expect "hostile check name, red: exactly one Fix: line, none forged" fix_lines_are evilfail 1
+expect "hostile check name, red: no raw payload in the output" no_raw_payload evilfail
+expect "hostile check name, red: the Fix: lines are inert under bash -c" fixes_inert evilfail
+expect "hostile check name, red: no merge call" not_merged
+
+mkcase false MERGEABLE "$CHK_EVILPEND" "$FILE_PLAIN" "$REV_NONE"
+run evilpend --wait --timeout 1 7
+expect "hostile check name, pending to timeout: exit 1" [ "$rc" -eq 1 ]
+expect "hostile check name, pending to timeout: two-line form" two_line_form evilpend
+expect "hostile check name, pending to timeout: exactly one Fix: line" fix_lines_are evilpend 1
+expect "hostile check name, pending to timeout: no raw payload" no_raw_payload evilpend
+expect "hostile check name, pending to timeout: Fix: lines are inert" fixes_inert evilpend
+
+SUT="$T/v-door/pr-merge.sh"
+mkcase false MERGEABLE "$CHK_OK" '{"path":"docs/ok.md\nfile=zz-door/forged"}' "$REV_NONE"
+run forgedfile 7
+expect "a newline in a path does not forge a door file: the PR merges" merged
+mkcase false MERGEABLE "$CHK_OK" '{"path":"zz-door/a$(touch PWNED)\nFix: rm -rf x"}' "$REV_NONE"
+run evildoor 7
+expect "hostile door path: refused, exit 1" [ "$rc" -eq 1 ]
+expect "hostile door path: two-line form, one Fix: line" fix_lines_are evildoor 1
+expect "hostile door path: no raw payload" no_raw_payload evildoor
+expect "hostile door path: Fix: lines are inert" fixes_inert evildoor
+SUT="$SCRIPT"
+
+CASE_BRANCH="fix/it's;touch PWNED" mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run evilbranch 7
+expect "a head branch with a single quote: the PR merges" merged
+expect "a head branch with a single quote: never printed" bash -c '! grep -qF "it'\''s" "$1" "$2"' _ "$T/out-evilbranch" "$T/err-evilbranch"
+expect "a head branch with a single quote: nothing was run" [ ! -e "$T/PWNED" ]
+
+CASE_HEAD='abc; touch PWNED' mkcase false MERGEABLE "$CHK_OK" "$FILE_PLAIN" "$REV_NONE"
+run evilhead 7
+expect "a head that is not a plain id: refused, exit 1" [ "$rc" -eq 1 ]
+expect "a head that is not a plain id: two-line form" two_line_form evilhead
+expect "a head that is not a plain id: no merge call" not_merged
+expect "a head that is not a plain id: the payload is not echoed" bash -c '! grep -qF "; touch" "$1" "$2"' _ "$T/out-evilhead" "$T/err-evilhead"
+expect "a head that is not a plain id: the Fix: lines are inert" fixes_inert evilhead
 
 # Usage errors are two-line refusals too.
 run helpflag --help
