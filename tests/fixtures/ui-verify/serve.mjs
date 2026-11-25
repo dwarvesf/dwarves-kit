@@ -9,7 +9,9 @@
 // /flaky?key=K answers "Error 500" on its first hit for that key and "Saved" on every later one.
 // /worker.html starts a dedicated worker (/worker.js) that opens a WebSocket to the second listener by the allowed
 // host name; /post-hop.html POSTs a JSON body to /redirect-307, which answers 307 to the second listener by the
-// allowed host name on its other port.
+// allowed host name on its other port. /late-hop.html shows its text at once and POSTs to /redirect-307-slow, which
+// waits 800 ms and then answers like /redirect-307, so the hop arrives after the page has said everything it will say.
+// /shared-worker.html starts a SharedWorker (/shared-worker.js) that fetches /redirect-307 by the allowed host name.
 // Second listener: GET /count answers {"hits":N,"upgrades":N} and is not itself counted; GET /seen answers
 // {"requests":[{"method":M,"body":B}]} for every counted plain hit, in order, and is not itself counted.
 import { createHash } from 'node:crypto';
@@ -19,7 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html', '/nobody.html': 'nobody.html', '/meta.html': 'meta.html', '/worker.html': 'worker.html', '/post-hop.html': 'post-hop.html' };
+const PAGES = { '/': 'index.html', '/index.html': 'index.html', '/hostile.html': 'hostile.html', '/offsite.html': 'offsite.html', '/wall.html': 'wall.html', '/otherport.html': 'otherport.html', '/leave.html': 'leave.html', '/many.html': 'many.html', '/nobody.html': 'nobody.html', '/meta.html': 'meta.html', '/worker.html': 'worker.html', '/post-hop.html': 'post-hop.html', '/late-hop.html': 'late-hop.html', '/shared-worker.html': 'shared-worker.html' };
 const args = process.argv.slice(2);
 const buildSha = args[0] === '--build-sha' ? args[1] : '';
 
@@ -54,9 +56,16 @@ const main = http.createServer((req, res) => {
     res.end(readFileSync(path.join(HERE, 'worker.js'), 'utf8'));
     return;
   }
-  if (pathname === '/redirect-307') {
-    res.writeHead(307, { location: `http://127.0.0.1:${port2}/hop`, 'cache-control': 'no-store' });
-    res.end();
+  if (pathname === '/shared-worker.js') {
+    res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(readFileSync(path.join(HERE, 'shared-worker.js'), 'utf8'));
+    return;
+  }
+  if (pathname === '/redirect-307' || pathname === '/redirect-307-slow') {
+    setTimeout(() => {
+      res.writeHead(307, { location: `http://127.0.0.1:${port2}/hop`, 'cache-control': 'no-store' });
+      res.end();
+    }, pathname === '/redirect-307-slow' ? 800 : 0);
     return;
   }
   if (pathname === '/redirect' || pathname === '/redirect-ok' || pathname === '/redirect-port') {

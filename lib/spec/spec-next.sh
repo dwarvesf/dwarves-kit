@@ -66,8 +66,8 @@ fi
 # shellcheck source=lib/spec/spec-find.sh
 # A stale install without spec-find.sh keeps the root-only lookup (mirrors hooks/ship-gate.sh).
 if ! source "$LIB_ROOT/spec/spec-find.sh" 2>/dev/null; then
-  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; }
-  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; }
+  spec_files() { ls "$1"/docs/specs/SPEC-*.md 2>/dev/null; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
+  spec_for_slug() { [ -n "$2" ] || return 0; ls "$1"/docs/specs/SPEC-*-"$2".md 2>/dev/null | head -1 || true; return 0; } # spec-active-ok: stale-install fallback, the shared lookup is missing from an old install
 fi
 if command -v kit_resolve_log_dir >/dev/null 2>&1; then
   RES_DIR="$(kit_resolve_log_dir)"
@@ -102,7 +102,7 @@ _scan_numbers() {
     wts="$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')" || wts=""
     [ -n "$wts" ] || wts="$ROOT"
     while IFS= read -r wt; do
-      ls "$wt/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true
+      ls "$wt/docs/specs" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true # spec-active-ok: numbering scan of another worktree, picks no spec
       spec_files "$wt" | sed 's|.*/||' | grep -oE '^SPEC-[0-9]+' || true
     done <<< "$wts"
     git -C "$ROOT" branch -a --format='%(refname:short)' 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true

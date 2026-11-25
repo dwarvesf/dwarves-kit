@@ -87,7 +87,7 @@ _checks_secs_for() {
   KIT_WRAP_CARRY_CHECKS_SECS="$v"
 }
 _autoland_carry() {
-  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip verdict open cnt n title created out rc waited=0 pending
+  local repo="$1" def="$2" branch="$3" want="$4" ghs url tip verdict sibling open cnt n title created out rc waited=0 pending
   ghs="$(_gh_state)"
   if [ "$ghs" != "ok" ]; then
     echo "     SKIP land ${branch}: $(_gh_note "$ghs")"
@@ -98,10 +98,9 @@ _autoland_carry() {
   [ -n "$tip" ] || { echo "     SKIP land ${branch}: not on origin"; return 1; }
   [ "$tip" = "$want" ] || { echo "     SKIP land ${branch}: origin moved to $(_short "$tip"), not the checked $(_short "$want")"; return 1; }
   # A squash-fallback replacement on <branch>-squash that merged landed this branch too.
-  verdict="$(_squash_verdict "$(_squash_json "$url" "$branch")" "$tip" "$def")"
-  if [ "${verdict%% *}" = SAFE ] \
-     || [ "$(_squash_json "$url" "${branch}-squash" | jq -r --arg d "$def" \
-           '[.[] | select(.mergedAt != null and .baseRefName == $d)] | length' 2>/dev/null)" -gt 0 ] 2>/dev/null; then
+  verdict="$(branch_merged --need pr --tip "$tip" "$repo" "$def" "$ghs" "$branch")"
+  sibling="$(_squash_json "$url" "${branch}-squash" | jq -r --arg d "$def" '[.[] | select(.mergedAt != null and .baseRefName == $d)] | length' 2>/dev/null)" # merged-ok: asks whether a replacement PR exists for the sibling head, not whether this branch landed; it only skips opening a duplicate PR
+  if [ "${verdict%% *}" = SAFE ] || { [ -n "$sibling" ] && [ "$sibling" -gt 0 ] 2>/dev/null; }; then
     echo "     origin/${branch} already merged"; return 0
   fi
   open="$(gh pr list --repo "$url" --head "$branch" --state open --json number,isDraft,isCrossRepository,author 2>/dev/null \
@@ -300,7 +299,7 @@ _carry_stray_commits() {
   gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
   cd_="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   if [ -z "$gd" ] || [ "$gd" != "$cd_" ]; then echo "     SKIP stray commits: not the main checkout"; return 0; fi
-  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: counts the stray commits on the default branch; the move that follows is gated by the origin-holds-HEAD check
   if ! [ "$ahead" -gt 0 ] 2>/dev/null; then echo "     none"; return 0; fi
   if [ "$(kit_config_get_root wrap.carry_stray_lines true)" != "true" ]; then
     echo "     ${ahead} stray commits on ${def} stay local (wrap.carry_stray_lines=false)"; return 0
@@ -325,9 +324,9 @@ _carry_stray_commits() {
 
   # A carry PR that squash-merged put the commits' whole change on origin as one commit, and
   # the branch sweeps then deleted the carry branch. Pushing again would open a duplicate.
-  pid="$(git -C "$repo" diff "$fork" "$head" | git patch-id --stable | cut -d' ' -f1)"
+  pid="$(git -C "$repo" diff "$fork" "$head" | git patch-id --stable | cut -d' ' -f1)" # merged-ok: asks whether these stray commits on the LOCAL default branch already landed on origin/<default> under other hashes (patch equivalence), not whether a branch is merged; it guards `reset --keep` of that local branch, so a wrong yes would drop commits that exist nowhere else; the commits stay reachable from the reflog until it expires, and the move is also gated by the origin-holds-HEAD check
   [ -n "$pid" ] && landed="$(git -C "$repo" log -p --no-merges "${fork}..origin/${def}" \
-    | git patch-id --stable | awk -v p="$pid" '$1 == p { print $2; exit }')"
+    | git patch-id --stable | awk -v p="$pid" '$1 == p { print $2; exit }')" # merged-ok: the second half of the patch-id check above (same guard of `reset --keep`, same reflog recovery)
 
   if [ "$APPLY" != 1 ]; then
     if [ -n "$landed" ]; then

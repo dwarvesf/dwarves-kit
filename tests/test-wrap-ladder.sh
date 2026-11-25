@@ -3,7 +3,7 @@
 # the default branch" with a machine code plus a phrase, and scan, apply, carry and land act on
 # the code alone. A kit copy with the phrases reworded proves no caller reads them.
 # Shares the harness in tests/lib/wrap-stub.sh (gh stub, fixtures, chk).
-# modules under test: lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-land.sh
+# modules under test: lib/gate/branch-merged.sh lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-land.sh
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$KIT_DIR/tests/lib/wrap-stub.sh"
 
@@ -31,29 +31,29 @@ git clone -q --bare "$ABW" "$TMPD/lad-abs-bare"
 ABC="$TMPD/lad-abs-clone"; git clone -q "$TMPD/lad-abs-bare" "$ABC"; gitc "$ABC"
 git -C "$ABC" branch -q absorbed origin/absorbed
 
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok merged-ancestor)"
+out="$(lad "$LIB" branch_merged "$LAD" main ok merged-ancestor)"
 chk "ancestor: SAFE ancestor plus its phrase" "$([ "$out" = "SAFE ancestor ancestor of origin/main" ]; echo $?)"
-out="$(lad "$LIB" _merge_ladder "$ABC" main ok absorbed)"
+out="$(lad "$LIB" branch_merged "$ABC" main ok absorbed)"
 chk "absorbed: SAFE absorbed plus its phrase" "$([ "$out" = "SAFE absorbed content already on origin/main" ]; echo $?)"
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok squash-ok)"
+out="$(lad "$LIB" branch_merged "$LAD" main ok squash-ok)"
 chk "squash: SAFE squash plus its phrase" "$([ "$out" = "SAFE squash squash-merged per gh" ]; echo $?)"
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok squash-stale)"
+out="$(lad "$LIB" branch_merged "$LAD" main ok squash-stale)"
 chk "merged from another tip: LEAVE tip plus the PR head sha" \
   "$([ "$out" = "LEAVE tip 1111111111111111111111111111111111111111" ]; echo $?)"
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok stacked-child)"
+out="$(lad "$LIB" branch_merged "$LAD" main ok stacked-child)"
 chk "merged into another base: LEAVE base plus its name" "$([ "$out" = "LEAVE base feat/parent" ]; echo $?)"
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok wt-dirty)"
+out="$(lad "$LIB" branch_merged "$LAD" main ok wt-dirty)"
 chk "no merged PR: LEAVE none" "$([ "${out%% none *}" = "LEAVE" ] && [ "${out#LEAVE none }" != "$out" ]; echo $?)"
-out="$(GH_STUB_UNAUTH=1 lad "$LIB" _merge_ladder "$LAD" main unauthenticated wt-dirty)"
+out="$(GH_STUB_UNAUTH=1 lad "$LIB" branch_merged "$LAD" main unauthenticated wt-dirty)"
 chk "gh not ok: LEAVE nogh plus the gh note" "$([ "$out" = "LEAVE nogh (gh unauthenticated)" ]; echo $?)"
-out="$(GH_STUB_UNAUTH=1 lad "$LIB" _merge_ladder "$LAD" main unauthenticated merged-ancestor)"
+out="$(GH_STUB_UNAUTH=1 lad "$LIB" branch_merged "$LAD" main unauthenticated merged-ancestor)"
 chk "gh not ok: an ancestor is still SAFE" "$([ "${out%% ancestor *}" = "SAFE" ]; echo $?)"
-out="$(GH_STUB_UNAUTH=1 lad "$LIB" _merge_ladder "$ABC" main unauthenticated absorbed)"
+out="$(GH_STUB_UNAUTH=1 lad "$LIB" branch_merged "$ABC" main unauthenticated absorbed)"
 chk "gh not ok: absorbed content is still SAFE" "$([ "${out%% absorbed *}" = "SAFE" ]; echo $?)"
 LAD_TIP="$(git -C "$LAD" rev-parse squash-ok)"
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok squash-ok "$LAD_TIP")"
+out="$(lad "$LIB" branch_merged --tip "$LAD_TIP" "$LAD" main ok squash-ok)"
 chk "an explicit tip is judged in place of the branch ref" "$([ "${out%% squash *}" = "SAFE" ]; echo $?)"
-out="$(lad "$LIB" _merge_ladder "$LAD" main ok squash-ok "$(git -C "$LAD" rev-parse wt-dirty)")"
+out="$(lad "$LIB" branch_merged --tip "$(git -C "$LAD" rev-parse wt-dirty)" "$LAD" main ok squash-ok)"
 chk "an explicit tip that no PR merged is not the branch's proof" "$([ "${out%% *}" = "LEAVE" ]; echo $?)"
 out="$(lad "$LIB" _squash_verdict "$GH_STUB_MERGED_squash_ok" "$LAD_TIP" main)"
 chk "the squash rung speaks the ladder grammar" "$([ "$out" = "SAFE squash squash-merged per gh" ]; echo $?)"
@@ -65,7 +65,7 @@ echo "=== callers: a reworded kit acts exactly as the real one ==="
 # ===========================================================================
 reword_ladder || { echo "FAIL: reword_ladder" >&2; exit 1; }
 RLIB="${WRAP_LADDER_REWORDED%/bin/wrap}/lib/wrap/wrap.sh"
-out="$(lad "$RLIB" _merge_ladder "$LAD" main ok merged-ancestor)"
+out="$(lad "$RLIB" branch_merged "$LAD" main ok merged-ancestor)"
 chk "the reworded kit changes the phrase" "$([ "$out" = "SAFE ancestor reachable from origin/main" ]; echo $?)"
 
 echo "--- scan labels branches by code, in either kit"
@@ -113,7 +113,7 @@ build_land ladanc
 LWT_A="$(cd "$TMPD/ld-repo-ladanc/wt" && pwd -P)"
 out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=44 GH_STUB_LAND_REPO="$LWT_A" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ladanc" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main bash -c \
-  'f="$1"; w="$2"; set --; source "$f"; _merge_ladder() { printf "SAFE ancestor carries no known word\n"; }; cmd_land "$w"' \
+  'f="$1"; w="$2"; set --; source "$f"; branch_merged() { printf "SAFE ancestor carries no known word\n"; }; cmd_land "$w"' \
   _ "$LIB" "$LWT_A" 2>&1)"
 chk_no "land: an ancestor code never prints already landed, whatever its phrase" "$out" "already landed"
 chk_has "land: it takes the unchanged path and opens the PR" "$out" "opened PR #44"
@@ -123,7 +123,7 @@ LWT_B="$(cd "$TMPD/ld-repo-ladabs/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_LAND_REPO="$LWT_B" GH_STUB_LAND_REMOTE="$TMPD/ld-bare-ladabs" \
   GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main bash -c \
-  'f="$1"; w="$2"; set --; source "$f"; _merge_ladder() { printf "SAFE absorbed nothing like the old words\n"; }; cmd_land "$w"' \
+  'f="$1"; w="$2"; set --; source "$f"; branch_merged() { printf "SAFE absorbed nothing like the old words\n"; }; cmd_land "$w"' \
   _ "$LIB" "$LWT_B" 2>&1)"; rc=$?
 chk "land: an absorbed code exits 0" "$rc"
 chk_has "land: it reports the ladder's phrase" "$out" "already landed: nothing like the old words; nothing to push, no PR opened"

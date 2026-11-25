@@ -51,7 +51,7 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    `bin/proof-asset put <slug> <file>` (it prints the `![name](url)` line to paste; the image goes
    to the owner's R2 bucket and expires after 90 days, never into git), a committed tracked image,
    or, with `assets = "local"` in a tracked `.kit.toml`, a cached local copy. Offline, `put`
-   queues the upload and `wrap land` flushes it. `proof-gate.sh contract "<task>"` names the
+   queues the upload and `wrap land` flushes it. The committed manifest `docs/verification/<slug>/assets.json` records each digest as `sha256:<hex>`; the gate also reads the bare hex an older `put` wrote. `proof-gate.sh contract "<task>"` names the
    artifact each task type owes (SPEC-385). Off by default: nothing changes until a repo or the
    operator file turns it on.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the
@@ -93,11 +93,13 @@ Three rules make the requirement honest rather than decorative:
 3. **Say so when there is no capture.** A headless change writes "headless, no visible surface"
    in place of a capture. Silence reads as an omission; the honest label reads as a decision.
 
-**The producer is the visual-proof module (kit board ID-395), not this document.** That module
-owns recording, framing, and the reproduce script. Until it lands, a hand-recorded capture that
-meets the three rules above satisfies the contract. This section states the contract; it is not
-enforced by a gate yet, so treat it as the standard a reviewer holds you to, not as a blocker
-that fires automatically.
+**The producer is the proof-capture module (`lib/proof-capture/`, run as `$DWARVES_KIT/bin/proof-capture`), not this document.**
+It makes one PNG from a page (`run page`) or one GIF from a terminal tape (`run tape`), headless,
+on a throwaway profile; `proof-gate.sh contract` names the command in its `capture:` line when
+`[proof] visual` is on. It does not click through a flow, a report or a generated file: for those,
+a hand-recorded capture that meets the three rules above satisfies the contract. This section
+states the contract; the image rules in `proof-ledger.sh check` enforce it only where
+`[proof] visual` is on, so treat it as the standard a reviewer holds you to everywhere else.
 
 **Where the captures end up being read:** `mega runs` renders every RUN_REPORT, proof-of-done,
 and verification run across the registered estate into ONE static HTML page of run cards, with

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Late hop page</title>
+</head>
+<body>
+<main>
+  <h1>Late hop page</h1>
+  <p role="status">late page</p>
+</main>
+<script>
+  fetch('/redirect-307-slow', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"late":1}'
+  }).then(function () {}, function () {});
+</script>
+</body>
+</html>

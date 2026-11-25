@@ -30,6 +30,8 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 SPEC_DIR_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/spec/spec-find.sh
+. "$SPEC_DIR_HERE/spec-find.sh"
 
 # Pull the title cheaply from a spec file (first `# ` heading wins).
 _title() {
@@ -64,7 +66,7 @@ list_specs() {
   local f num ns title status
   # Emit "namespace<TAB>NNN<TAB>row" per spec, sort by namespace then local number,
   # then walk the sorted stream printing a header per new namespace.
-  find "$ROOT" -type f -path '*/docs/specs/SPEC-*.md' -not -path '*/.git/*' 2>/dev/null \
+  spec_files "$ROOT" \
     | while IFS= read -r f; do
         num="$(basename "$f" | grep -oE 'SPEC-[0-9]+' | head -1)"
         [ -n "$num" ] || continue

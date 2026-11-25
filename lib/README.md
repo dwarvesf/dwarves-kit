@@ -36,7 +36,8 @@ Every `lib/` directory has one row.
 | [`money-gate/`](money-gate/README.md) | The `money_gate` module: a PreToolUse guard that asks before a money-touching edit lands in a repo you named financial. |
 | [`plugin-check/`](plugin-check/README.md) | Read-only freshness lens over the installed Claude Code plugins. Entry: `bin/plugin-check`. |
 | [`precedent/`](precedent/README.md) | "Have we done this before?": the records and inventory surfaces. Entry: `bin/precedent`. |
-| [`proof/`](proof/README.md) | `asset.sh`, the proof-asset pipeline behind `bin/proof-asset`. |
+| [`proof/`](proof/README.md) | `asset.sh`, the proof-asset pipeline behind `bin/proof-asset`, and `digest.sh`, the manifest digest parser. |
+| [`proof-capture/`](proof-capture/README.md) | The `proof_capture` module: makes one PNG from a page or one GIF from a terminal tape for visual proof; a standalone directory. Entry: `bin/proof-capture`. |
 | [`prose-rag/`](prose-rag/README.md) | The `prose_rag` module: local semantic search over your own prose corpus, for prompt injection. Entry: `bin/prose-rag`. |
 | [`queue/`](queue/README.md) | The overnight queue launcher, the non-LLM orchestrator (`orchestrate.sh`, one fresh session per sub-goal), harness and Orca backends. Entry: `bin/queue`. |
 | [`reflect/`](reflect/README.md) | The Reflect stage: reads what the harness recorded, proposes work into staging, drains and promotes it. Entry: `bin/reflect`. |

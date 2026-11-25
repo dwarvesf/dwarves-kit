@@ -1,0 +1,409 @@
+#!/usr/bin/env bash
+# proof-capture: write one image or GIF file for visual proof. Standalone: argv in, one file out.
+#   proof-capture run page <src> <out.png> [--width N] [--height N] [--wait MS] [--deadline S]
+#   proof-capture run tape <file.tape> <out.gif> [--deadline S]
+# The contract (IN, OUT, EXIT) is in ../README.md. Exit: 0 written, 1 capture failed, 64 bad input, 69 dependency missing.
+# Until every dependency check has run, only shell builtins are used, so the entry can run with an empty PATH.
+set -u
+
+usage_fail() { printf 'proof-capture: %s\n' "$1" >&2; exit 64; }
+
+usage_text() {
+  printf '%s\n' \
+    'usage: proof-capture run page <src> <out.png> [--width N] [--height N] [--wait MS] [--deadline S]' \
+    '       proof-capture run tape <file.tape> <out.gif> [--deadline S]' >&2
+  exit 64
+}
+
+# num_ok <value> <min> <max>: plain digits only, sets NUM to the decimal value.
+num_ok() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#1}" -le 6 ] || return 1
+  NUM=$((10#$1))
+  [ "$NUM" -ge "$2" ] && [ "$NUM" -le "$3" ]
+}
+
+# ---- arguments ------------------------------------------------------------------------------
+[ $# -ge 1 ] || usage_text
+[ "$1" = run ] || usage_fail "unknown verb: $1 (the only verb is run)"
+shift
+[ $# -ge 1 ] || usage_fail "missing kind: run page | run tape"
+KIND=$1
+shift
+case "$KIND" in
+  page|tape) ;;
+  *) usage_fail "unknown kind: $KIND (use page or tape)" ;;
+esac
+
+POS1=""; POS2=""; NPOS=0
+WIDTH=1280; HEIGHT=800; WAIT_MS=""; DEADLINE_FLAG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --width|--height|--wait|--deadline)
+      FLAG=$1
+      [ $# -ge 2 ] || usage_fail "$FLAG needs a value"
+      VAL=$2
+      shift 2
+      case "$FLAG" in
+        --deadline)
+          num_ok "$VAL" 1 600 || usage_fail "--deadline must be an integer from 1 to 600: $VAL"
+          DEADLINE_FLAG=$NUM ;;
+        --width|--height|--wait)
+          [ "$KIND" = page ] || usage_fail "$FLAG applies to run page only"
+          case "$FLAG" in
+            --width)  num_ok "$VAL" 1 10000 || usage_fail "--width must be an integer from 1 to 10000: $VAL"; WIDTH=$NUM ;;
+            --height) num_ok "$VAL" 1 10000 || usage_fail "--height must be an integer from 1 to 10000: $VAL"; HEIGHT=$NUM ;;
+            --wait)   num_ok "$VAL" 1 120000 || usage_fail "--wait must be an integer from 1 to 120000: $VAL"; WAIT_MS=$NUM ;;
+          esac ;;
+      esac ;;
+    -*) usage_fail "unknown flag, or a path starting with '-': $1" ;;
+    *)
+      NPOS=$((NPOS + 1))
+      case "$NPOS" in
+        1) POS1=$1 ;;
+        2) POS2=$1 ;;
+        *) usage_fail "too many arguments: $1" ;;
+      esac
+      shift ;;
+  esac
+done
+[ "$NPOS" -eq 2 ] || usage_fail "run $KIND needs an input and an output path"
+
+if [ "$KIND" = page ]; then DEADLINE=45; else DEADLINE=120; fi
+if [ -n "${PROOF_CAPTURE_DEADLINE:-}" ]; then
+  num_ok "$PROOF_CAPTURE_DEADLINE" 1 600 || usage_fail "PROOF_CAPTURE_DEADLINE must be an integer from 1 to 600: $PROOF_CAPTURE_DEADLINE"
+  DEADLINE=$NUM
+fi
+[ -z "$DEADLINE_FLAG" ] || DEADLINE=$DEADLINE_FLAG
+
+# ---- input ------------------------------------------------------------------------------------
+# pct_encode <path>: sets ENCODED. Percent first, then space, hash, question mark.
+pct_encode() {
+  local s=$1 pct='%' hash='#' q='?'
+  s=${s//"$pct"/%25}
+  s=${s// /%20}
+  s=${s//"$hash"/%23}
+  s=${s//"$q"/%3F}
+  ENCODED=$s
+}
+
+abs_path() {
+  case "$1" in
+    /*) ABS=$1 ;;
+    ./*) ABS="$PWD/${1#./}" ;;
+    *) ABS="$PWD/$1" ;;
+  esac
+}
+
+URL=""; TAPE_ABS=""
+if [ "$KIND" = page ]; then
+  case "$POS1" in
+    http://*|https://*|file://*) URL=$POS1 ;;
+    *)
+      SCHEME=${POS1%%:*}
+      if [ "$SCHEME" != "$POS1" ]; then
+        case "$SCHEME" in
+          ''|[!A-Za-z]*|*[!A-Za-z0-9+.-]*) ;;
+          *) usage_fail "refusing the scheme '$SCHEME:' (use a file path, http://, https:// or file://)" ;;
+        esac
+      fi
+      [ -f "$POS1" ] || usage_fail "input file not found: $POS1"
+      abs_path "$POS1"
+      pct_encode "$ABS"
+      URL="file://$ENCODED" ;;
+  esac
+else
+  [ -f "$POS1" ] || usage_fail "tape file not found: $POS1"
+  abs_path "$POS1"
+  TAPE_ABS=$ABS
+fi
+
+OUT=$POS2
+case "$OUT" in
+  */*) OUTDIR=${OUT%/*}; [ -n "$OUTDIR" ] || OUTDIR=/ ;;
+  *) OUTDIR=. ;;
+esac
+
+# out_refusal: succeeds, with the message in REFUSAL, when <out> or <outdir> is not safe to write through. It runs at
+# the start and again in finish, because the final copy and rename can come up to the deadline later.
+out_refusal() {
+  REFUSAL=""
+  if [ -L "$OUT" ]; then REFUSAL="refusing a symlink: $OUT"
+  elif [ -d "$OUT" ]; then REFUSAL="output path is a directory: $OUT"
+  elif [ -L "$OUTDIR" ]; then REFUSAL="refusing a symlink: $OUTDIR"
+  elif [ -e "$OUTDIR" ] && [ ! -d "$OUTDIR" ]; then REFUSAL="output directory is not a directory: $OUTDIR"
+  fi
+  [ -n "$REFUSAL" ]
+}
+case "$OUT" in
+  */) usage_fail "output path ends with a slash: $OUT" ;;
+esac
+if out_refusal; then usage_fail "$REFUSAL"; fi
+
+# ---- dependencies (still builtins only) ---------------------------------------------------------
+# try_candidate <item>: an absolute path or a command name; sets FOUND to an executable path.
+try_candidate() {
+  local item=$1 found
+  FOUND=""
+  case "$item" in
+    '') return 1 ;;
+    */*) found=$item ;;
+    *) found=$(command -v "$item" 2>/dev/null) || return 1 ;;
+  esac
+  case "$found" in /*) ;; *) return 1 ;; esac
+  [ -f "$found" ] && [ -x "$found" ] || return 1
+  FOUND=$found
+  return 0
+}
+
+# env_executable <value>: a value with a slash is a path to an executable file; a bare name is looked up on PATH.
+# Sets FOUND to the path that will run, so the file that was checked is the file that runs.
+env_executable() {
+  FOUND=""
+  case "$1" in
+    */*) [ -f "$1" ] && [ -x "$1" ] || return 1; FOUND=$1; return 0 ;;
+    *) try_candidate "$1" ;;
+  esac
+}
+
+resolve_browser() {
+  local list rest item
+  BROWSER=""
+  if [ -n "${PROOF_CAPTURE_BROWSER:-}" ]; then
+    if env_executable "$PROOF_CAPTURE_BROWSER"; then
+      BROWSER=$FOUND
+      return 0
+    fi
+    printf 'proof-capture: PROOF_CAPTURE_BROWSER is not an executable file: %s\n' "$PROOF_CAPTURE_BROWSER" >&2
+    exit 69
+  fi
+  if [ -n "${PROOF_CAPTURE_BROWSER_CANDIDATES:-}" ]; then
+    list=$PROOF_CAPTURE_BROWSER_CANDIDATES
+  else
+    list="google-chrome:chromium:chromium-browser:microsoft-edge:/Applications/Google Chrome.app/Contents/MacOS/Google Chrome:/Applications/Chromium.app/Contents/MacOS/Chromium:/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+  fi
+  rest="$list:"
+  while [ -n "$rest" ]; do
+    item=${rest%%:*}
+    rest=${rest#*:}
+    if try_candidate "$item"; then BROWSER=$FOUND; return 0; fi
+  done
+  printf 'proof-capture: no Chromium-family browser found; install Chrome, Chromium or Edge, or set PROOF_CAPTURE_BROWSER=<path>\n' >&2
+  exit 69
+}
+
+resolve_vhs() {
+  VHS=""
+  if [ -n "${PROOF_CAPTURE_VHS:-}" ]; then
+    if env_executable "$PROOF_CAPTURE_VHS"; then
+      VHS=$FOUND
+      return 0
+    fi
+    printf 'proof-capture: PROOF_CAPTURE_VHS is not an executable file: %s\n' "$PROOF_CAPTURE_VHS" >&2
+    exit 69
+  fi
+  if try_candidate vhs; then VHS=$FOUND; return 0; fi
+  printf 'proof-capture: vhs not found; install it (brew install vhs) or set PROOF_CAPTURE_VHS=<path>\n' >&2
+  exit 69
+}
+
+if [ "$KIND" = page ]; then resolve_browser; else resolve_vhs; fi
+
+# ---- everything below may call external commands ----------------------------------------------
+
+WORK=""; PARTIAL=""; PROFILE=""; CPID=""; WDPID=""; FINAL_TMP=""
+REAPING=0; REAP_DONE=0; INTR=0; NOGROUP=0; LAUNCHED=0; WROTE=0
+
+# remove_work: rm -rf only on the directory this run made with mktemp -d, and only by its name.
+remove_work() {
+  case "$WORK" in
+    */proof-capture.*) rm -rf "$WORK" ;;
+  esac
+  WORK=""
+}
+
+# is_pid <value>: a number greater than 1, so a group signal can never reach the caller's own group or every process.
+is_pid() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -gt 1 ]
+}
+
+# group_alive <pid>: the process group whose id is <pid> still has a member.
+group_alive() { is_pid "$1" && kill -0 -- "-$1" 2>/dev/null; }
+
+# reap [interrupt]: end the child's own group, then the watchdog, then remove what this run made.
+# Signals go only to the group of a pid this run recorded, never by name. One reap runs at a time: while it runs
+# the trap only sets INTR, and the wait below reads it and goes straight to KILL.
+reap() {
+  local c w pp i=0 tend dowait=1
+  [ "$REAPING" = 0 ] && [ "$REAP_DONE" = 0 ] || return 0
+  REAPING=1
+  c=$CPID
+  w=$WDPID
+  if [ -z "$c" ] && [ "$LAUNCHED" = 1 ]; then
+    # A signal landed between the launch and "CPID=$!": the child exists and $! names it. $! is unbound until the
+    # first background job, and bash 3.2 errors on that even with a default, so unset checking is off for one line.
+    set +u; c=$!; set -u
+  fi
+  if is_pid "$c"; then
+    if [ "$NOGROUP" = 1 ]; then
+      # No own group: signal the one pid, and only while it is still this tool's child (a reused pid is not).
+      pp=$(ps -o ppid= -p "$c" 2>/dev/null)
+      pp=${pp//[[:space:]]/}
+      if [ "$pp" = "$$" ]; then kill -KILL "$c" 2>/dev/null; else dowait=0; fi
+    else
+      if [ "${1:-}" != interrupt ] && group_alive "$c"; then
+        kill -TERM -- "-$c" 2>/dev/null
+        tend=$((SECONDS + 3))
+        while group_alive "$c" && [ "$INTR" = 0 ] && [ "$i" -lt 20 ] && [ "$SECONDS" -lt "$tend" ]; do
+          sleep 0.1
+          i=$((i + 1))
+        done
+      fi
+      if group_alive "$c"; then kill -KILL -- "-$c" 2>/dev/null; fi
+    fi
+  fi
+  if group_alive "$w"; then kill -KILL -- "-$w" 2>/dev/null; fi
+  if is_pid "$c" && [ "$dowait" = 1 ]; then { wait "$c"; } 2>/dev/null; fi
+  if is_pid "$w"; then { wait "$w"; } 2>/dev/null; fi
+  [ -z "$FINAL_TMP" ] || rm -f "$FINAL_TMP"
+  remove_work
+  CPID=""; WDPID=""
+  REAPING=0
+  REAP_DONE=1
+  return 0
+}
+
+# A signal after the rename (WROTE=1) cannot undo the write: the run finishes and reports success.
+on_signal() {
+  INTR=1
+  [ "$REAPING" = 0 ] || return 0
+  [ "$WROTE" = 0 ] || return 0
+  trap '' PIPE
+  reap interrupt
+  printf 'proof-capture: interrupted\n' >&3
+  exit 1
+}
+exec 3>&2
+trap on_signal INT TERM HUP QUIT USR1 USR2 ALRM PIPE
+trap reap EXIT
+
+# fail: end the child and remove what this run made first, then say why. A closed stderr cannot stop the cleanup.
+fail() { local m=$1; reap; trap '' PIPE; printf 'proof-capture: %s\n' "$m" >&3; exit 1; }
+
+# file_size <file>: bytes, digits only.
+file_size() { local n; n=$(wc -c <"$1" 2>/dev/null); echo "${n//[[:space:]]/}"; }
+
+# hex_head <file> <n> and hex_tail <file> <n>: lowercase hex, no spaces.
+hex_head() { local h; h=$(od -An -tx1 -N "$2" "$1" 2>/dev/null); echo "${h//[[:space:]]/}"; }
+hex_tail() { local h; h=$(tail -c "$2" "$1" 2>/dev/null | od -An -tx1 2>/dev/null); echo "${h//[[:space:]]/}"; }
+
+# artifact_valid <kind> <file>: PNG magic and IEND trailer (page), or GIF magic and trailer byte (tape); not empty.
+artifact_valid() {
+  [ -s "$2" ] || return 1
+  case "$1" in
+    page)
+      [ "$(hex_head "$2" 8)" = 89504e470d0a1a0a ] && [ "$(hex_tail "$2" 12)" = 0000000049454e44ae426082 ]
+      ;;
+    tape)
+      [ "$(hex_head "$2" 4)" = 47494638 ] && [ "$(hex_tail "$2" 1)" = 3b ]
+      ;;
+  esac
+}
+
+# artifact_stable <kind> <file>: valid, and the same size on two reads 0.3 s apart.
+artifact_stable() {
+  local s1 s2
+  artifact_valid "$1" "$2" || return 1
+  s1=$(file_size "$2")
+  sleep 0.3
+  s2=$(file_size "$2")
+  [ "$s1" = "$s2" ] && artifact_valid "$1" "$2"
+}
+
+# finish: copy the valid partial next to <out> under an exclusive temp name, rename it onto <out>, reap, report.
+# The symlink and directory checks repeat before each step that writes, because the run can be minutes old.
+case "$(uname 2>/dev/null)" in
+  Darwin|FreeBSD|OpenBSD|NetBSD) MV_ARGS=-fh ;;
+  *) MV_ARGS=-fT ;;
+esac
+finish() {
+  local n
+  mkdir -p "$OUTDIR" 2>/dev/null || fail "cannot create the output directory"
+  if out_refusal; then fail "$REFUSAL"; fi
+  FINAL_TMP=$(mktemp "$OUTDIR/.proof-capture.XXXXXX" 2>/dev/null) || { FINAL_TMP=""; fail "cannot write next to the output path"; }
+  cp "$PARTIAL" "$FINAL_TMP" 2>/dev/null || fail "cannot copy the artifact"
+  if out_refusal; then fail "$REFUSAL"; fi
+  mv $MV_ARGS "$FINAL_TMP" "$OUT" 2>/dev/null || fail "cannot write the output path"
+  WROTE=1
+  FINAL_TMP=""
+  n=$(file_size "$OUT")
+  reap
+  printf 'proof-capture: wrote %s (%s bytes)\n' "$OUT" "$n"
+  exit 0
+}
+
+# capture_run <command...>: start the child in its own process group, check that, start the watchdog, poll for a
+# valid artifact until the deadline. Job control (set -m) makes the group id equal to the child's pid.
+capture_run() {
+  local end pg wd_end vrc
+  wd_end=$((SECONDS + DEADLINE + 5))
+  LAUNCHED=1
+  {
+    set -m
+    "$@" </dev/null >/dev/null 2>&1 3>&- &
+    CPID=$!
+    # The watchdog runs in its own group and ends the child's group at the deadline plus 5 s even if this tool is
+    # killed. It starts right after the child, so the unprotected window is these two forks. It acts only while it
+    # has just seen the group exist.
+    if is_pid "$CPID"; then
+      (
+        while kill -0 -- "-$CPID" 2>/dev/null && [ "$SECONDS" -lt "$wd_end" ]; do sleep 1; done
+        if kill -0 -- "-$CPID" 2>/dev/null; then kill -KILL -- "-$CPID" 2>/dev/null; fi
+      ) </dev/null >/dev/null 2>&1 3>&- &
+      WDPID=$!
+    fi
+    set +m
+  } 2>/dev/null
+  pg=$(ps -o pgid= -p "$CPID" 2>/dev/null)
+  pg=${pg//[[:space:]]/}
+  if [ -n "$pg" ] && [ "$pg" != "$CPID" ]; then
+    NOGROUP=1
+    fail "cannot isolate the browser process group"
+  fi
+  end=$((SECONDS + DEADLINE))
+  while :; do
+    if [ "$KIND" = page ] && [ -s "$PARTIAL" ] && artifact_stable page "$PARTIAL"; then finish; fi
+    if ! kill -0 "$CPID" 2>/dev/null; then
+      if [ "$KIND" = tape ]; then
+        # vhs only counts as done when it exited 0 and left a valid GIF.
+        { wait "$CPID"; } 2>/dev/null
+        vrc=$?
+        [ "$vrc" = 0 ] || fail "vhs exited with status $vrc"
+        artifact_stable tape "$PARTIAL" && finish
+        fail "vhs exited without a valid artifact"
+      fi
+      artifact_valid page "$PARTIAL" && finish
+      fail "the browser exited without a valid artifact"
+    fi
+    [ "$SECONDS" -lt "$end" ] || fail "no valid artifact within ${DEADLINE}s"
+    sleep 0.2
+  done
+}
+
+BASE=${TMPDIR:-/tmp}
+BASE=${BASE%/}
+WORK=$(mktemp -d "$BASE/proof-capture.XXXXXX" 2>/dev/null) || { WORK=""; fail "cannot create a work directory under $BASE"; }
+PROFILE="$WORK/profile"
+
+if [ "$KIND" = page ]; then
+  PARTIAL="$WORK/partial.png"
+  set -- --headless=new --disable-gpu --no-first-run --disable-sync --disable-extensions --hide-scrollbars \
+    --use-mock-keychain --password-store=basic "--user-data-dir=$PROFILE" "--window-size=$WIDTH,$HEIGHT"
+  [ -z "$WAIT_MS" ] || set -- "$@" "--virtual-time-budget=$WAIT_MS"
+  set -- "$@" "--screenshot=$PARTIAL" "$URL"
+  capture_run "$BROWSER" "$@"
+else
+  PARTIAL="$WORK/partial.gif"
+  capture_run "$VHS" -o "$PARTIAL" "$TAPE_ABS"
+fi

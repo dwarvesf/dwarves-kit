@@ -114,6 +114,14 @@ manifest "$D" uploaded "$URL" "$SHA"
 printf '![shot](%s)\n' "$URL" | proof_ok "$D"
 if fetch_ok "$D" "$IMG" c3; then pass "case 3: verified uploaded asset passes"; else fail "case 3 (BLOCKED, want ACCEPT): $(gate "$D")"; fi
 
+echo "=== case 3b: the same entry with the digest recorded as sha256:<hex> -> passes; case 3 above is the old bare shape ==="
+D="$(new_repo c3b)"; visual_on "$D"; ui_diff "$D"
+manifest "$D" uploaded "$URL" "sha256:$SHA"
+printf '![shot](%s)\n' "$URL" | proof_ok "$D"
+if fetch_ok "$D" "$IMG" c3b; then pass "case 3b: sha256:<hex> digest verifies"; else fail "case 3b (BLOCKED, want ACCEPT): $(gate "$D")"; fi
+printf '#!/bin/sh\nprintf "different-bytes"\n' > "$TMPD/fetch-bad3b"; chmod +x "$TMPD/fetch-bad3b"
+if PROOF_ASSET_FETCH="$TMPD/fetch-bad3b" gate "$D" >/dev/null 2>&1; then fail "case 3b: sha256:<hex> with different bytes ACCEPTED"; else pass "case 3b: sha256:<hex> with different bytes blocked"; fi
+
 echo "=== case 4: R3a entry, fetched bytes differ -> BLOCKED 'hash mismatch' ==="
 D="$(new_repo c4)"; visual_on "$D"; ui_diff "$D"
 manifest "$D" uploaded "$URL" "$SHA"

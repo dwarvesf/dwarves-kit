@@ -1,10 +1,14 @@
 # wrap-common.sh -- helpers and run-state shared by every wrap verb; sourced by lib/wrap/wrap.sh.
 
+# The merged-check helpers (branch_merged, _absorbed, _squash_*, _origin_url, _gh_state, _gh_note) live in one file
+# that wt.sh and the hooks can source without the wrap library.
+# shellcheck source=lib/gate/branch-merged.sh
+source "${BASH_SOURCE[0]%/*}/../gate/branch-merged.sh" || { echo "FATAL: lib/gate/branch-merged.sh missing or unreadable" >&2; exit 1; }
+
 # --------------------------------------------------------------------------- helpers
 
 _is_repo() { [ -e "$1/.git" ] || git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
 
-_origin_url() { git -C "$1" remote get-url origin 2>/dev/null; }
 
 _ref_exists() { git -C "$1" show-ref --verify --quiet "$2"; }
 
@@ -38,19 +42,6 @@ _reject_packed() {
   return 64
 }
 
-# _gh_state -- ok | unavailable | unauthenticated. Read once per verb run.
-_gh_state() {
-  command -v gh >/dev/null 2>&1 || { printf 'unavailable\n'; return 0; }
-  gh auth status >/dev/null 2>&1 || { printf 'unauthenticated\n'; return 0; }
-  printf 'ok\n'
-}
-
-_gh_note() {
-  case "$1" in
-    unavailable)     printf '(gh unavailable)\n' ;;
-    unauthenticated) printf '(gh unauthenticated)\n' ;;
-  esac
-}
 
 # _gh_merge_transient -- reads a captured `gh pr merge` error on stdin; exit 0
 # when the text reads transient (worth a retry), 1 for a real refusal. The
@@ -278,61 +269,6 @@ _open_own_prs() {
                                           == ($me | ascii_downcase))]' 2>/dev/null
 }
 
-# _squash_json <repo-url> <branch> -- the merged-PR list gh reports for that head.
-_squash_json() {
-  gh pr list --repo "$1" --head "$2" --state merged --json headRefOid,baseRefName,mergedAt 2>/dev/null
-}
-
-# The merge-proof grammar. The ladder and its squash rung print ONE line, `<code> <reason> <detail>`:
-#   SAFE ancestor <phrase>   the tip is an ancestor of origin/<default>
-#   SAFE absorbed <phrase>   every path the branch changed is byte-identical on origin/<default>
-#   SAFE squash <phrase>     a merged PR into the default branch has this exact tip
-#   LEAVE tip <sha>          merged into the default branch, but from another tip (sha = PR head)
-#   LEAVE base <name>        merged into another branch
-#   LEAVE none <phrase>      no merged PR for this head (also the answer for unusable JSON)
-#   LEAVE nogh <gh note>     the squash rung could not run: gh is not ok
-# A caller branches on the first two words and prints the detail, never the other way round.
-# The detail of a LEAVE tip or base is data (a sha, a branch name); every other detail is a
-# phrase a caller may print or reword, and none may match on it.
-
-# _squash_verdict <json> <local tip> <default branch> -- the gh rung of the ladder, one line of the
-# grammar above (SAFE squash, LEAVE tip, LEAVE base or LEAVE none).
-_squash_verdict() {
-  local json="$1" tip="$2" def="$3" out
-  out="$(printf '%s' "$json" | jq -r --arg tip "$tip" --arg def "$def" '
-    [.[] | select(.mergedAt != null)] as $m
-    | if ($m | length) == 0 then "LEAVE none no merged PR found for this head"
-      elif ([$m[] | select(.baseRefName == $def and .headRefOid == $tip)] | length) > 0
-        then "SAFE squash squash-merged per gh"
-      elif ([$m[] | select(.baseRefName == $def)] | length) > 0
-        then "LEAVE tip " + ([$m[] | select(.baseRefName == $def)][0].headRefOid)
-      else "LEAVE base " + ($m[0].baseRefName) end' 2>/dev/null)"
-  [ -n "$out" ] || out="LEAVE none no merged PR found for this head"
-  printf '%s\n' "$out"
-}
-
-# _merge_ladder <repo> <default branch> <gh state> <branch> [tip] -- has <branch> already reached
-# origin/<default>? One line of the grammar above, always exit 0. The rungs run in order: a plain
-# ancestor, absorbed content, the gh squash proof. <tip> defaults to the local branch tip; a caller
-# that already read and guarded a tip passes it, so the proof judges that exact commit.
-# Full refs and the sha only: a bare name resolves a same-named tag first, and a tag or local
-# branch called origin/<def> beats the remote-tracking ref. Either once proved an unlanded
-# worktree branch "merged".
-_merge_ladder() {
-  local repo="$1" def="$2" ghs="$3" b="$4" tip="${5:-}" json
-  [ -n "$tip" ] || tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
-  if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
-    printf 'SAFE ancestor ancestor of origin/%s\n' "$def"; return 0
-  fi
-  if _absorbed "$repo" "$def" "$tip"; then
-    printf 'SAFE absorbed content already on origin/%s\n' "$def"; return 0
-  fi
-  if [ "$ghs" != "ok" ]; then
-    printf 'LEAVE nogh %s\n' "$(_gh_note "$ghs")"; return 0
-  fi
-  json="$(_squash_json "$(_origin_url "$repo")" "$b")"
-  _squash_verdict "$json" "$tip" "$def"
-}
 
 # --------------------------------------------------------------------------- apply
 

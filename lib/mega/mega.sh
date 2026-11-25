@@ -207,7 +207,7 @@ _sub_branch() {
 # CLAIM-UNVERIFIED signal for a [x] row (the roadmap cites a PR that can't be confirmed).
 _pr_state() {
   local pr="$1"
-  "$GH_BIN" pr view "$pr" --json state -q '.state' 2>/dev/null || true
+  "$GH_BIN" pr view "$pr" --json state -q '.state' 2>/dev/null || true # merged-ok: report only, prints one PR number's state and deletes nothing
 }
 
 # _commit_count <code-root> <base> <branch> -- commits on <branch> not on <base>. Tries the
@@ -220,7 +220,7 @@ _commit_count() {
     return
   fi
   if "$GIT_BIN" -C "$root" rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null 2>&1; then
-    "$GIT_BIN" -C "$root" rev-list --count "$base..origin/$branch" 2>/dev/null || true
+    "$GIT_BIN" -C "$root" rev-list --count "$base..origin/$branch" 2>/dev/null || true # merged-ok: commit count for the mega status report, deletes nothing
   fi
 }
 
