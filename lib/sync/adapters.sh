@@ -14,7 +14,7 @@ if [ -n "${_KIT_ADAPTERS_SH:-}" ]; then return 0; fi
 _KIT_ADAPTERS_SH=1
 
 # The verbs core owns: the board.sh main() labels that are not adapter verbs, and the backlog.sh verbs.
-CORE_VERBS="all queue sync publish sweep init capture promote normalize run work health brief help board next get row set dedupe dedupe-all lint add states machine state-check"
+CORE_VERBS="all queue sync publish sweep init capture promote normalize run work health brief help priority board next get row set dedupe dedupe-all lint add states machine state-check"
 # The flags core owns, so a manifest cannot shadow one (the engine's argparse, then board-sweep's case list).
 ADAPTERS_ENGINE_FLAGS="apps surfaces sources backlog archive-file state-root dry-run filter scope-exit-cap allow-scope-exit allow-flips allow-archived-closes help"
 ADAPTERS_SWEEP_FLAGS="registry name board-cmd extra-board repo-arg sync-token-repo preflight poster on-clean cluster-map crit-prefix field-cap health health-force health-every-days health-stale-days health-kanban health-line health-quiet health-hub health-board health-faults-only health-triage-open health-triage-days health-state-file state-file repo-root dry-run help"
@@ -115,7 +115,10 @@ FNR == 1 {
   if (line ~ /^[ \t]*$/ || substr(line, 1, 1) == "#") next
   n = split(line, f, "\t")
   kind = f[1]
-  if (!(kind in lo)) next
+  if (!(kind in lo)) {
+    printf "adapters: %s:%d: unknown row kind '%s' (ignored)\n", cur_file, FNR, kind > "/dev/stderr"
+    next
+  }
   nf = n - 1
   if (nf < lo[kind] || (hi[kind] >= 0 && nf > hi[kind]))
     fail_at(cur_file, FNR, kind " needs " (lo[kind] == hi[kind] ? "" : "at least ") lo[kind] " fields")

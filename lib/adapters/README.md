@@ -93,7 +93,7 @@ write the adapter directory.
   to a core verb are load errors (the lists live in `lib/sync/adapters.sh`).
 - An adapter with a `secret` row declares no `opt` of scope `-` whose key ends `_url`, `_host`, `_endpoint` or `_target`,
   so a project file cannot point a root-resolved secret at a host of its choice.
-- An unknown row kind is ignored with one warning from the Python loader. A known kind with a bad field is an error.
+- An unknown row kind is ignored with one warning from each reader (the Python loader and the bash reader print the same line to stderr; the bash reader scans on every call, so a long run can repeat it). A known kind with a bad field is an error.
 
 A manifest error is global: one bad manifest stops every run that loads the registry. A broken `adapter.py` fails only
 the runs that name it.

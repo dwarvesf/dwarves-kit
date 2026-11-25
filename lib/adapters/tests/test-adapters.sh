@@ -213,12 +213,16 @@ mk "$W/good" a 'opt\tflag-a\tkey_a\t-\thelp\n'
 [ "$(sh_run bash "$W/good" adapters_rows opt | wc -l | tr -d ' ')" = 1 ] && [ -n "$(py_run "$W/good" rows opt)" ] \
   && ok "the same row with the fault fixed loads in both readers" || bad "a valid row did not load"
 
-# an unknown kind: the loader warns once and loads the rest; the bash reader stays silent
+# an unknown kind: both readers warn with the same line and load the rest
 mk "$W/unknown" a 'mystery\tx\napp\tx\ttwo-way\n'
 perr="$(py_run "$W/unknown" rows app 2>&1 >/dev/null)"
 has "an unknown row kind warns from the Python loader" "$perr" "unknown row kind 'mystery' (ignored)"
 eq "the rest of that adapter still loads (python)" "$(py_run "$W/unknown" rows app 2>/dev/null | awk -F'\t' '{print $2}')" "x"
-eq "the bash reader loads it silently" "$(sh_run bash "$W/unknown" adapters_rows app 2>&1 | awk -F'\t' '{print $2}')" "x"
+eq "the bash reader loads the rest too" "$(sh_run bash "$W/unknown" adapters_rows app 2>/dev/null | awk -F'\t' '{print $2}')" "x"
+for shell in bash /bin/bash; do
+  serr="$(sh_run "$shell" "$W/unknown" adapters_rows app 2>&1 >/dev/null)"
+  eq "the bash reader gives the same unknown row kind warning as the loader ($shell)" "$serr" "$perr"
+done
 
 echo "=== the directory ==="
 for shell in bash /bin/bash; do
@@ -298,12 +302,18 @@ echo "=== the frozen core lists ==="
 main_labels="$(awk '/^main\(\) \{/{m=1;next} m && /^}/{m=0} m && /^    [-a-z|]+\)/{sub(/^    /,""); sub(/\).*/,""); print}' "$KIT/lib/board/board.sh" | tr '|' '\n' | grep -E '^[a-z][a-z-]*$')"
 usage_line="$(grep -m1 'usage: backlog.sh {' "$KIT/lib/board/backlog.sh")"
 backlog_verbs="$(printf '%s' "$usage_line" | sed 's/.*usage: backlog.sh {//; s/}.*//' | tr '|' '\n' | awk '{print $1}')"
-expected="$(printf '%s\n%s\n' "$main_labels" "$backlog_verbs" | sort -u | tr '\n' ' ')"
+# plus the words cmd_board_single answers itself before it hands over to backlog.sh (`priority`)
+single_words="$(awk '/^cmd_board_single\(\)/{m=1} m && /^}/{m=0} m' "$KIT/lib/board/board.sh" | grep -oE '"\$\{args\[0\]\}" = "[a-z][a-z-]*"' | sed 's/.*= "//; s/"$//')"
+expected="$(printf '%s\n%s\n%s\n' "$main_labels" "$backlog_verbs" "$single_words" | sort -u | tr '\n' ' ')"
 actual="$(bash -c '. "$0"; printf "%s\n" $CORE_VERBS' "$SH" | sort -u | tr '\n' ' ')"
 eq "CORE_VERBS equals the main() labels and the backlog.sh verbs (minus the adapter verbs)" "$actual" "$expected"
 cp "$SH" "$W/adapters-mut.sh"; sed -i.bak 's/^CORE_VERBS="all /CORE_VERBS="/' "$W/adapters-mut.sh"
 mut="$(bash -c '. "$0"; printf "%s\n" $CORE_VERBS' "$W/adapters-mut.sh" | sort -u | tr '\n' ' ')"
 [ "$mut" != "$expected" ] && ok "negative control: dropping a verb from CORE_VERBS breaks the equality" || bad "a dropped core verb still compared equal"
+case " $expected " in *" priority "*) ok "the expected core words include priority (answered by cmd_board_single)" ;; *) bad "priority is missing from the expected core words" ;; esac
+sed -i.bak 's/ help priority board / help board /' "$W/adapters-mut.sh"
+mut="$(bash -c '. "$0"; printf "%s\n" $CORE_VERBS' "$W/adapters-mut.sh" | sort -u | tr '\n' ' ')"
+[ "$mut" != "$expected" ] && ok "negative control: dropping priority from CORE_VERBS breaks the equality" || bad "a dropped priority still compared equal"
 engine_core="$(grep -oE 'add_argument\([^)]*' "$KIT/lib/sync/backlog_sync.py" | grep -oE '"--[a-z][a-z-]*"' | tr -d '"' | sed 's/^--//' | grep -vE '^(list|notion-|github-repo|hermes-|multica-)' | sort -u | tr '\n' ' ')"
 want_engine="$(bash -c '. "$0"; printf "%s\n" $ADAPTERS_ENGINE_FLAGS' "$SH" | grep -vx help | sort -u | tr '\n' ' ')"
 eq "ADAPTERS_ENGINE_FLAGS equals the engine flags that stay core" "$engine_core" "$want_engine"
