@@ -115,9 +115,10 @@
 set -euo pipefail
 
 BW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT_LIB="$(cd "$BW_DIR/../.." && pwd)"  # lib/, two levels up; derived from this file, never read from the environment
 BOARD_MIRROR_SH="$BW_DIR/board-mirror.sh"
-BACKLOG_SH="$BW_DIR/backlog.sh"
-[ -f "$BOARD_MIRROR_SH" ] || { echo "board-writeback: lib/board/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
+BACKLOG_SH="$KIT_LIB/board/backlog.sh"
+[ -f "$BOARD_MIRROR_SH" ] || { echo "board-writeback: board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
 [ -f "$BACKLOG_SH" ]      || { echo "board-writeback: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$BOARD_MIRROR_SH"
@@ -126,8 +127,8 @@ GH_BIN="${GH_BIN:-gh}"
 
 # Legal backlog.sh states, read ONCE here from the declared machine (lib/board/states.tsv, the
 # file backlog.sh reads) rather than per row in the diff loop below.
-LEGAL_STATES="$(awk -F'\t' '!/^#/ && NF >= 2 { print $1 }' "$BW_DIR/states.tsv" | paste -sd ' ' -)"
-[ -n "$LEGAL_STATES" ] || { echo "FATAL: $BW_DIR/states.tsv missing or empty" >&2; exit 1; }
+LEGAL_STATES="$(awk -F'\t' '!/^#/ && NF >= 2 { print $1 }' "$KIT_LIB/board/states.tsv" | paste -sd ' ' -)"
+[ -n "$LEGAL_STATES" ] || { echo "FATAL: $KIT_LIB/board/states.tsv missing or empty" >&2; exit 1; }
 _is_legal_state() {
   case " $LEGAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }

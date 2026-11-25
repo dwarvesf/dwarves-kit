@@ -3,8 +3,8 @@
 The file name is historic: it began as the Python port of the `board mirror`
 bridge (extract + keyed diff, dry-run only). That port had no consumer and a
 second implementation of the same job, so it was removed; `board mirror`,
-`status`, and `writeback` run one engine, lib/board/board-mirror.sh and
-board-writeback.sh. What remains is what live callers import:
+`status`, and `writeback` run one engine, board-mirror.sh and
+board-writeback.sh (in the mirror adapter's directory under lib/adapters/). What remains is what live callers import:
 
   * the untrusted-content markers (`mark_untrusted_*`, `unmark_untrusted_*`),
     byte-identical to board-mirror.sh `MIRROR_UNTRUSTED_*`, used by the

@@ -301,6 +301,26 @@ sweep_flags="$(awk '/^while \[ \$# -gt 0 \]; do case/{m=1;next} m && /^esac; don
 want_sweep="$(bash -c '. "$0"; printf "%s\n" $ADAPTERS_SWEEP_FLAGS' "$SH" | sort -u | tr '\n' ' ')"
 eq "ADAPTERS_SWEEP_FLAGS equals the sweep flags that stay core" "$sweep_flags" "$want_sweep"
 
+echo "=== the moved bridge scripts derive KIT_LIB from their own location ==="
+# A decoy lib/ holds a mega/box.sh and a board/parse-board.sh that write a marker if anything sources them; an
+# inherited KIT_LIB that names it, or a path that does not exist, must change nothing.
+mkdir -p "$W/decoy/mega" "$W/decoy/board"
+printf 'touch "%s/decoy-used"\n' "$W" | tee "$W/decoy/mega/box.sh" > "$W/decoy/board/parse-board.sh"
+HERMES_DIR="$KIT/lib/adapters/hermes"
+for kl in /nonexistent "$W/decoy"; do
+  want_hash="$(env -u KIT_LIB bash "$HERMES_DIR/board-mirror.sh" row-hash r ID-1 t n queued 2>&1)"
+  eq "board-mirror.sh ignores KIT_LIB=$(basename "$kl")" "$(KIT_LIB="$kl" bash "$HERMES_DIR/board-mirror.sh" row-hash r ID-1 t n queued 2>&1)" "$want_hash"
+  eq "board-writeback.sh ignores KIT_LIB=$(basename "$kl")" "$(KIT_LIB="$kl" bash "$HERMES_DIR/board-writeback.sh" reverse-native triage 2>&1)" "$(env -u KIT_LIB bash "$HERMES_DIR/board-writeback.sh" reverse-native triage 2>&1)"
+  KIT_LIB="$kl" "$PY" "$HERMES_DIR/board-mirror-cleanup.py" --help >/dev/null 2>&1 && ok "board-mirror-cleanup.py runs with KIT_LIB=$(basename "$kl")" || bad "board-mirror-cleanup.py failed with KIT_LIB=$(basename "$kl")"
+done
+[ ! -e "$W/decoy-used" ] && ok "the decoy lib was never sourced" || bad "a moved script sourced the inherited KIT_LIB"
+# negative control: a temp copy that trusts the environment must source the decoy
+mkdir -p "$W/mut/lib/adapters"; cp -R "$KIT/lib/board" "$KIT/lib/mega" "$W/mut/lib/"; cp -R "$HERMES_DIR" "$W/mut/lib/adapters/"
+sed -i.bak 's|^KIT_LIB="$(cd "$BM_DIR/../.." \&\& pwd)"|KIT_LIB="${KIT_LIB:-$(cd "$BM_DIR/../.." \&\& pwd)}"|' "$W/mut/lib/adapters/hermes/board-mirror.sh"
+KIT_LIB="$W/decoy" bash "$W/mut/lib/adapters/hermes/board-mirror.sh" row-hash r ID-1 t n queued >/dev/null 2>&1
+[ -e "$W/decoy-used" ] && ok "negative control: a script that trusts KIT_LIB sources the decoy" || bad "the decoy control did not fire"
+command rm -f "$W/decoy-used"
+
 echo "=== the pytest roots ==="
 uv run --no-project --with pytest -- pytest "$KIT/lib/adapters/tests" -q > "$W/pytest.out" 2>&1; prc=$?
 if [ "$prc" -eq 0 ] || [ "$prc" -eq 5 ]; then ok "pytest lib/adapters/tests: exit $prc (5 means no tests yet)"

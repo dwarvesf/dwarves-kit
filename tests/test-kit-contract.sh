@@ -71,7 +71,7 @@ module_home() {  # module_home <module> -> its dir, or "" for "documented elsewh
   case "$1" in
     quiz-gate)      echo "lib/gate" ;;        # lib/gate/quiz-gate.sh
     weekend-batch)  echo "lib/reflect" ;;     # lib/reflect/weekend-batch.sh (renamed from lib/learn by ADR-0036)
-    bridge)         echo "lib/board" ;;       # lib/board/board-mirror.sh + board-writeback.sh
+    bridge)         echo "lib/board" ;;       # lib/adapters/hermes/board-mirror.sh + board-writeback.sh; the home stays lib/board (board.sh)
     worktree)       echo "lib/worktree-provision" ;;
     advisor)        echo "" ;;                # an AGENT (agents/advisor.md), not a lib module
     *)              for d in "lib/$1" "lib/${1//-/_}"; do [ -d "$d" ] && { echo "$d"; return; }; done

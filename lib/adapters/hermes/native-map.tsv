@@ -1,6 +1,6 @@
 # Board row status -> Hermes card native state: the one declaration of the mirror's forward map.
-# Read by lib/board/board-mirror.sh (`_target_native`) and lib/board/board-mirror-cleanup.py (the state-drift check).
-# Beside lib/board/states.tsv, which owns the row states; tests/test-board-states.sh fails when a state here is
+# Read by board-mirror.sh (`_target_native`) and board-mirror-cleanup.py (the state-drift check), both beside this file.
+# lib/board/states.tsv owns the row states; tests/test-board-states.sh fails when a state here is
 # undeclared there or when either reader hardcodes the map again.
 #
 # Columns are TAB-separated: state, native.

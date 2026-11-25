@@ -43,7 +43,7 @@ got="$(bash "$BL" states | paste -sd ' ' -)"
 [ "$got" = "$want_all" ] && pass "backlog.sh states = table" || fail "backlog.sh states: $got"
 got="$(bash "$BL" states --class active | paste -sd ' ' -)"
 [ "$got" = "$want_active" ] && pass "backlog.sh states --class active = table" || fail "backlog.sh --class active: $got"
-got="$(bash -c 'source "$1" >/dev/null 2>&1; printf %s "$LEGAL_STATES"' _ "$KIT_DIR/lib/board/board-writeback.sh")"
+got="$(bash -c 'source "$1" >/dev/null 2>&1; printf %s "$LEGAL_STATES"' _ "$KIT_DIR/lib/adapters/hermes/board-writeback.sh")"
 [ "$got" = "$want_all" ] && pass "board-writeback LEGAL_STATES = table" || fail "board-writeback LEGAL_STATES: $got"
 
 py="$(cd "$KIT_DIR/lib/sync" && python3 -c '
@@ -159,7 +159,7 @@ bash "$BL" states --class bogus >/dev/null 2>&1; rc=$?
 [ "$rc" = 64 ] && pass "states --class bogus exits 64" || fail "states --class bogus rc=$rc"
 
 # ---- 8. the row-to-card map is declared once (native-map.tsv); the mirror and the cleanup derive from it ----
-NM="$KIT_DIR/lib/board/native-map.tsv"
+NM="$KIT_DIR/lib/adapters/hermes/native-map.tsv"
 nm_rows() { awk -F'\t' '!/^#/ && NF' "$NM"; }
 known_states=" $want_all "
 bad="$(nm_rows | awk -F'\t' -v known="$known_states" '
@@ -169,26 +169,26 @@ bad="$(nm_rows | awk -F'\t' -v known="$known_states" '
   seen[$1]++ { print $1 ": declared twice" }')"
 [ -z "$bad" ] && pass "native-map.tsv rows are well-formed and name declared states" || fail "native-map.tsv malformed: $bad"
 
-mirror_map="$(for s in $want_all bogus; do printf '%s=%s\n' "$s" "$(bash -c 'source "$1"; _target_native "$2"' _ "$KIT_DIR/lib/board/board-mirror.sh" "$s")"; done)"
+mirror_map="$(for s in $want_all bogus; do printf '%s=%s\n' "$s" "$(bash -c 'source "$1"; _target_native "$2"' _ "$KIT_DIR/lib/adapters/hermes/board-mirror.sh" "$s")"; done)"
 want_map="$(for s in $want_all bogus; do printf '%s=%s\n' "$s" "$(nm_rows | awk -F'\t' -v s="$s" '$1 == s { print $2 }')"; done)"
 [ "$mirror_map" = "$want_map" ] && pass "board-mirror _target_native = native-map.tsv" || fail "mirror map differs:
 $mirror_map"
 
 cl="$(python3 - "$KIT_DIR" <<'PY'
 import importlib.util, sys
-s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/board/board-mirror-cleanup.py")
+s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/adapters/hermes/board-mirror-cleanup.py")
 m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 print("\n".join(f"{k}={v}" for k, v in m.ACTIVE_TARGET.items()))
 PY
 )"
 [ "$cl" = "$(nm_rows | awk -F'\t' '{ print $1 "=" $2 }')" ] && pass "board-mirror-cleanup ACTIVE_TARGET = native-map.tsv" || fail "cleanup map differs: $cl"
 
-mkdir -p "$TMP/kit2/lib"; cp -R "$KIT_DIR/lib/board" "$KIT_DIR/lib/mega" "$TMP/kit2/lib/"
-printf 'reviewing\tready\n' >> "$TMP/kit2/lib/board/native-map.tsv"
-got="$(bash -c 'source "$1"; _target_native reviewing' _ "$TMP/kit2/lib/board/board-mirror.sh")"
+mkdir -p "$TMP/kit2/lib/adapters"; cp -R "$KIT_DIR/lib/board" "$KIT_DIR/lib/mega" "$TMP/kit2/lib/"; cp -R "$KIT_DIR/lib/adapters/hermes" "$TMP/kit2/lib/adapters/"
+printf 'reviewing\tready\n' >> "$TMP/kit2/lib/adapters/hermes/native-map.tsv"
+got="$(bash -c 'source "$1"; _target_native reviewing' _ "$TMP/kit2/lib/adapters/hermes/board-mirror.sh")"
 gotpy="$(python3 -c '
 import importlib.util, sys
-s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/board/board-mirror-cleanup.py")
+s = importlib.util.spec_from_file_location("bmc", sys.argv[1] + "/lib/adapters/hermes/board-mirror-cleanup.py")
 m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 print(m.ACTIVE_TARGET.get("reviewing"))' "$TMP/kit2")"
 [ "$got" = ready ] && [ "$gotpy" = ready ] && pass "an added map row reaches bash and python with no other edit" || fail "added map row not derived: bash=$got py=$gotpy"

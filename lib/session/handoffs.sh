@@ -144,7 +144,7 @@ _row_status() { # <id>
 
 # Closed = the board's terminal states plus the archive words. The terminal states are
 # read from the declared machine (lib/board/states.tsv, class terminal, one awk as in
-# lib/board/board-writeback.sh); `done` and `resolved` are not board states, they are
+# lib/adapters/hermes/board-writeback.sh); `done` and `resolved` are not board states, they are
 # the words an archived row may carry (the split lib/sync/sync_core.py calls
 # ARCHIVED_CLOSED). Read once per scan by _load_board into BOARD_CLOSED.
 HANDOFFS_ARCHIVE_WORDS="done resolved"

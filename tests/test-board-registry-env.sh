@@ -17,7 +17,7 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOARD="$KIT_DIR/lib/board/board.sh"
-CLEANUP="$KIT_DIR/lib/board/board-mirror-cleanup.py"
+CLEANUP="$KIT_DIR/lib/adapters/hermes/board-mirror-cleanup.py"
 PROPOSE="$KIT_DIR/lib/reflect/propose.py"
 
 PASS=0; FAIL=0

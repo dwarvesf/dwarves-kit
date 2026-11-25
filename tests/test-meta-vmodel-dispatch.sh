@@ -441,15 +441,15 @@ fi
 # both mirror and status dispatch cases to it, and the doc-impact map (MANUAL + architecture.md)
 # mentions the new lib file. A drop on any leg means the bridge is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board/board-mirror.sh" ] \
+if [ -x "$KIT_DIR/lib/adapters/hermes/board-mirror.sh" ] \
    && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
    && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board-mirror.sh' "$STRUCTURE_DOC" \
+   && grep -qF 'lib/adapters/hermes/board-mirror.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/reference/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
+  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/adapters/hermes/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/board/board-mirror.sh executable, board.sh mirror/status dispatch, MANUAL + architecture.md mentions (SPEC-147)"
+  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/adapters/hermes/board-mirror.sh executable, board.sh mirror/status dispatch, MANUAL + architecture.md mentions (SPEC-147)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -458,14 +458,14 @@ fi
 # (MANUAL + architecture.md) mentions the new lib file. A drop on any leg means the writeback
 # leg is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board/board-writeback.sh" ] \
+if [ -x "$KIT_DIR/lib/adapters/hermes/board-writeback.sh" ] \
    && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
-   && grep -qF 'lib/board/board-writeback.sh' "$STRUCTURE_DOC" \
+   && grep -qF 'lib/adapters/hermes/board-writeback.sh' "$STRUCTURE_DOC" \
    && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/reference/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
+  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/adapters/hermes/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/board/board-writeback.sh executable, board.sh writeback dispatch, MANUAL + architecture.md mentions (SPEC-149)"
+  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/adapters/hermes/board-writeback.sh executable, board.sh writeback dispatch, MANUAL + architecture.md mentions (SPEC-149)"
   FAIL=$((FAIL + 1))
 fi
 

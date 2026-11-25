@@ -115,11 +115,12 @@
 set -euo pipefail
 
 BM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PARSE_BOARD_SH="$BM_DIR/parse-board.sh"
+KIT_LIB="$(cd "$BM_DIR/../.." && pwd)"  # lib/, two levels up; derived from this file, never read from the environment
+PARSE_BOARD_SH="$KIT_LIB/board/parse-board.sh"
 NATIVE_MAP="$BM_DIR/native-map.tsv"
 [ -r "$NATIVE_MAP" ] || { echo "FATAL: $NATIVE_MAP missing or unreadable" >&2; exit 1; }
-# shellcheck source=../mega/box.sh
-. "$BM_DIR/../mega/box.sh" || exit 1
+# shellcheck source=../../mega/box.sh
+. "$KIT_LIB/mega/box.sh" || exit 1
 [ -f "$PARSE_BOARD_SH" ] || { echo "board-mirror: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$PARSE_BOARD_SH"

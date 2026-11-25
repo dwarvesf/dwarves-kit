@@ -65,7 +65,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-# The row-state -> card-state map is declared once, in lib/board/native-map.tsv; board-mirror.sh reads the
+# The row-state -> card-state map is declared once, in native-map.tsv beside this file; board-mirror.sh reads the
 # same file (`_target_native`). A state with no line there is not mirrored.
 NATIVE_MAP_FILE = Path(__file__).resolve().parent / "native-map.tsv"
 
@@ -89,7 +89,7 @@ ACTIVE_TARGET = load_native_map()
 def _load_box():
     """Import lib/mega/box.py: the ROADMAP box grammar is declared once, in lib/mega/box.tsv."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("mega_box", Path(__file__).resolve().parent.parent / "mega" / "box.py")
+    spec = importlib.util.spec_from_file_location("mega_box", Path(__file__).resolve().parents[2] / "mega" / "box.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
