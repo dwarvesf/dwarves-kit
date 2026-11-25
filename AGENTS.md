@@ -230,6 +230,18 @@ runtime. Full adoption model + rationale: `docs/reference/PHILOSOPHY.md` and `RE
 
 ---
 
+## The learning boundary
+
+This kit owns the first row; the other rows are the kits it hands off to. The decision behind the split is ADR-0036 in dwarves-kit.
+
+| Kit | Learner or plane | What it owns | The seam it fills |
+|---|---|---|---|
+| dwarves-kit | the process plane: the system changes | gates, ledgers, the landing step, `reflect`, and the understanding gate (the DEBT record, the nudge, `explain` and `quiz-gate` as entry points that gather the material) | none; it declares the seams the other two fill |
+| learning-kit | a human learning: paying an understanding debt, or studying outside material | the `understand` teacher, the `study` lane, the one concept ledger and its flush | `understand.teach`, `wrap.after` |
+| context-kit | the knowledge tree a human and an agent share | writing knowledge into the tree and the tree's page contract | `knowledge.root` |
+
+---
+
 ## How a goal is composed (for `commands/assign.md`)
 
 The goal-crafter projects these four zones into a six-section `/goal`. The mapping
