@@ -226,7 +226,13 @@ case "$sub" in
         exit 0 ;;
       create)
         # `land` reads the number off the printed URL, so the stub answers with one.
-        printf '%s\n' "https://github.com/o/r/pull/${GH_STUB_CREATE_NUM:-42}"
+        # GH_STUB_CREATE_HINT=after prints the hint block newer gh versions add after the URL;
+        # GH_STUB_CREATE_HINT=only prints the block and no URL.
+        [ "${GH_STUB_CREATE_HINT:-}" = only ] || printf '%s\n' "https://github.com/o/r/pull/${GH_STUB_CREATE_NUM:-42}"
+        if [ -n "${GH_STUB_CREATE_HINT:-}" ]; then
+          printf '%s\n' "" "hint: if you need to wait for this pull request to be merged, run:" \
+            "hint:" "hint:   gh event listen --type pull_request --repo o/r" "hint:"
+        fi
         exit "${GH_STUB_CREATE_RC:-0}" ;;
       ready)
         # `merge --pr N` marks a targeted draft ready. Nothing to print; real gh is silent too.

@@ -83,6 +83,24 @@ _ship_gate_check() {
   return 0
 }
 
+# _pr_url_from_create <captured gh pr create output> -- the LAST line that is a GitHub PR URL
+# (`https://<host>/<owner>/<repo>/pull/<digits>`, trailing whitespace allowed). gh prints the URL
+# and, on newer versions, a hint block after it, so the last line is not the URL. Callers read the
+# number as `${url##*/}`. Prints nothing and returns 1 when no line is a PR URL.
+_pr_url_from_create() {
+  local line num url=""
+  while IFS= read -r line; do
+    line="${line%"${line##*[![:space:]]}"}"
+    case "$line" in
+      https://*/*/*/pull/*[0-9])
+        num="${line##*/pull/}"
+        case "$num" in ''|*[!0-9]*) ;; *) url="$line" ;; esac ;;
+    esac
+  done <<<"$1"
+  [ -n "$url" ] || return 1
+  printf '%s\n' "$url"
+}
+
 # _gh_merge_retry <pr> <repo-url> <head-oid> -- `gh pr merge` behind a bounded
 # transient-error retry: WRAP_MERGE_RETRY_MAX attempts (default 3) with
 # attempt * WRAP_MERGE_RETRY_SLEEP seconds of backoff (default 5). A real
