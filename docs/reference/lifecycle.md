@@ -123,7 +123,7 @@ Stages are metadata, not directories: each module keeps its name and install uni
 | Stage | Modules / subsystems |
 |---|---|
 | Shape (Specify) | `spec`, `classify`, `precedent`, `intake`, `goal`, `board` (input side), `sync` (spoke intake; outward mirror is its Watch side) |
-| Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate` |
+| Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate`, `proof_capture` |
 | Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror) |
 | Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet`, `wrap` |
 | Reflect | `reflect` (was `learn`), `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending an amendment of the stage taxonomy decision) |
