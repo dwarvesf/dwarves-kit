@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   CARD.md       the card
 #   PROMPT.md     the probe framing
 WORKDIR /work
-RUN git config --global user.email probe@gauntlet.invalid \
+RUN git config --global user.email probe@example.invalid \
  && git config --global user.name "Gauntlet Probe" \
  && git config --global init.defaultBranch main
 

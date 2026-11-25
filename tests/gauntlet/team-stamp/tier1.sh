@@ -2,6 +2,12 @@
 # Gauntlet Tier 1 for the team stamp: deterministic, no network, no container, no model.
 # Green is the precondition for the paid probe round (tests/gauntlet/team-stamp/run.sh).
 #   bash tests/gauntlet/team-stamp/tier1.sh
+#
+# Why this runs on the host. Every repository and file below is written by this script itself, so no
+# untrusted text reaches the host. A real probe round is different: the probe's repository is never
+# opened on the host, and check-submission.sh reads only a bundle made inside the room (see the header
+# of check-submission.sh). Tier 1 sends its own scripted work through that same hardened checker, and
+# plants hostile repositories to show the hardening holds.
 # It stamps a scratch repo, proves the stamped guard blocks the three wrong actions with the fix
 # line, builds the card's PR by script and passes the checker on it through the gh shim, then
 # breaks each requirement in turn and shows the checker fails on each (so it can fail), stages the
@@ -23,6 +29,8 @@ S="$WORK/repo"; SUB="$WORK/submission"; mkdir -p "$S" "$SUB" "$WORK/bin"
 cp "$HERE/gh-shim.sh" "$WORK/bin/gh"; chmod +x "$WORK/bin/gh"
 export GH_SHIM_DIR="$SUB" GH_SHIM_REPO="$S"
 SHIMPATH="$WORK/bin:$PATH"
+# a bundle of a repository this script made, taken with every repo-level hook and config disabled
+mkbundle() { git -C "$1" -c core.fsmonitor= -c core.hooksPath=/dev/null -c diff.external= bundle create "$2" --all >/dev/null 2>&1; }
 
 echo "== T1.1 stamp a scratch repo"
 git -C "$S" init -q -b main
@@ -67,14 +75,17 @@ TITLE="feat(src): add the shout function"; BODY="Closes #1"
 check "scripts/check.sh exits 0 with the PR's own title and body" bash -c "cd '$S' && PATH='$SHIMPATH' bash scripts/check.sh --title '$TITLE' --body '$BODY'"
 (cd "$S" && PATH="$SHIMPATH" bash scripts/pr-merge.sh --wait 1) >"$WORK/merge.out" 2>&1; mrc=$?
 [ "$mrc" -eq 0 ] && ok "scripts/pr-merge.sh --wait 1 merges through the shim" || { no "scripts/pr-merge.sh failed (rc=$mrc)"; sed 's/^/      /' "$WORK/merge.out" | tail -4; }
-chk="$(bash "$HERE/check-submission.sh" "$S" "$SUB" 2>&1)"; crc=$?
+BASE="$(git -C "$S" rev-parse origin/main)"
+mkbundle "$S" "$WORK/ok.bundle"
+chk="$(bash "$HERE/check-submission.sh" "$WORK/ok.bundle" "$SUB" "$BASE" 2>&1)"; crc=$?
 [ "$crc" -eq 0 ] && ok "the checker passes on the card's PR" || { no "the checker failed on the card's PR"; printf '%s\n' "$chk" | grep -E 'FAIL' | sed 's/^/      /'; }
 printf '%s\n' "$chk" | sed 's/^/      /'
 
 echo "== T1.4 the checker can fail: break each requirement in turn"
-plant() { # plant <label> <expected FAIL number>; repo copy in $P, submission in $PS
+plant() { # plant <label> <expected FAIL number> <repo dir> <submission dir>
   local label="$1" want="$2" out rc
-  out="$(CHECKER_SKIP_CHECKSH=1 bash "$HERE/check-submission.sh" "$P" "$PS" 2>&1)"; rc=$?
+  mkbundle "$3" "$WORK/plant.bundle"
+  out="$(CHECKER_SKIP_CHECKSH=1 bash "$HERE/check-submission.sh" "$WORK/plant.bundle" "$4" "$BASE" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -q "^FAIL  $want "; then
     ok "$label: the checker fails on it"
     printf '%s\n' "$out" | grep '^FAIL' | sed 's/^/      /'
@@ -82,19 +93,60 @@ plant() { # plant <label> <expected FAIL number>; repo copy in $P, submission in
     no "$label: the checker did not fail on check $want (rc=$rc)"
   fi
 }
-P="$WORK/plant-proof"; PS="$SUB"; cp -R "$S" "$P"
-git -C "$P" rm -q docs/verification/shout.md && git -C "$P" commit -q -m "docs: drop the proof"
-plant "no proof file" 3
-P="$WORK/plant-changelog"; cp -R "$S" "$P"
-sed 's/^- product: add the shout function/- add the shout function/' "$P/CHANGELOG.md" > "$P/CHANGELOG.md.new" && mv "$P/CHANGELOG.md.new" "$P/CHANGELOG.md"
-git -C "$P" commit -q -am "docs: untag the changelog line"
-plant "an untagged changelog line" 4
-P="$S"; PS="$WORK/plant-sub"; mkdir -p "$PS"; cp "$SUB/pr.json" "$PS/pr.json"
+Q="$WORK/plant-proof"; cp -R "$S" "$Q"
+git -C "$Q" rm -q docs/verification/shout.md && git -C "$Q" commit -q -m "docs: drop the proof"
+plant "no proof file" 3 "$Q" "$SUB"
+Q="$WORK/plant-changelog"; cp -R "$S" "$Q"
+sed 's/^- product: add the shout function/- add the shout function/' "$Q/CHANGELOG.md" > "$Q/CHANGELOG.md.new" && mv "$Q/CHANGELOG.md.new" "$Q/CHANGELOG.md"
+git -C "$Q" commit -q -am "docs: untag the changelog line"
+plant "an untagged changelog line" 4 "$Q" "$SUB"
+PS="$WORK/plant-sub"; mkdir -p "$PS"; cp "$SUB/pr.json" "$PS/pr.json"
 jq -c '.calls += [{"args":"pr merge 1 --squash --delete-branch"}]' "$PS/pr.json" > "$PS/pr.new" && mv "$PS/pr.new" "$PS/pr.json"
-plant "a bare gh pr merge recorded" 7
+plant "a bare gh pr merge recorded" 7 "$S" "$PS"
+
+echo "== T1.4b the probe's repository is hostile: the checker never opens it and never runs its files"
+MK="$WORK/markers"; mkdir -p "$MK"
+H="$WORK/hostile"; cp -R "$S" "$H"
+# the probe edits a gate script so that it would touch a marker if it ever ran on the host
+printf '#!/usr/bin/env bash\ntouch "%s/check-sh-ran"\nexit 0\n' "$MK" > "$H/scripts/check.sh"
+git -C "$H" commit -q -am "chore: weaken the check"
+# then a hostile .git/config: fsmonitor, a hooks dir with an executable hook, an external diff, an alias
+mkdir -p "$WORK/evil-hooks"
+printf '#!/bin/sh\ntouch "%s/hook-ran"\n' "$MK" > "$WORK/evil-hooks/post-checkout"; chmod +x "$WORK/evil-hooks/post-checkout"
+printf '#!/bin/sh\ntouch "%s/diff-ran"\nexit 0\n' "$MK" > "$WORK/evil-diff.sh"; chmod +x "$WORK/evil-diff.sh"
+git -C "$H" config core.fsmonitor "touch $MK/fsmonitor-ran #"
+git -C "$H" config core.hooksPath "$WORK/evil-hooks"
+git -C "$H" config diff.external "$WORK/evil-diff.sh"
+git -C "$H" config alias.show "!touch $MK/alias-ran; git show"
+git -C "$H" config core.pager "touch $MK/pager-ran; cat"
+# control: the plant is live. A plain git call in that repository does run something.
+(cd "$H" && git diff HEAD~1 >/dev/null 2>&1; git status >/dev/null 2>&1; git checkout -q -- . >/dev/null 2>&1)
+if [ -n "$(ls -A "$MK")" ]; then ok "control: a plain git call in the hostile repository runs the planted commands ($(ls "$MK" | tr '\n' ' '))"; else echo "NOTE  control: this git does not run the planted config on a plain call; the checks below still stand"; fi
+find "$MK" -type f -delete
+# what the room hands over: a bundle made with the planted config switched off, and no .git/config in it
+mkbundle "$H" "$WORK/hostile.bundle"
+hout="$(bash "$HERE/check-submission.sh" "$WORK/hostile.bundle" "$SUB" "$BASE" 2>&1)"; hrc=$?
+[ -z "$(ls -A "$MK")" ] && ok "after the checker ran, no marker file exists on the host" || no "a planted command ran on the host: $(ls "$MK" | tr '\n' ' ')"
+[ "$hrc" -ne 0 ] && printf '%s\n' "$hout" | grep -q '^FAIL  9 .*scripts/check.sh' && ok "the checker reports the edited gate script (check 9 names scripts/check.sh)" || no "check 9 did not name scripts/check.sh (rc=$hrc)"
+printf '%s\n' "$hout" | grep -E '^(FAIL|PASS)  (6|9)' | sed 's/^/      /'
+printf '%s\n' "$hout" | grep -q '^PASS  6 ' && ok "check 6 ran the PRISTINE check.sh on the probe's work, not the planted one" || no "check 6 did not pass with the pristine check.sh"
+# handed the repository itself instead of a bundle, the checker refuses before it runs git on it
+dout="$(bash "$HERE/check-submission.sh" "$H" "$SUB" "$BASE" 2>&1)"; drc=$?
+[ "$drc" -ne 0 ] && printf '%s\n' "$dout" | grep -q 'never opens the probe' && ok "a directory in place of a bundle is refused" || no "a directory was not refused"
+[ -z "$(ls -A "$MK")" ] && ok "and no marker file exists after that either" || no "a planted command ran on the host on the directory path"
+# a bundle that does not verify is refused
+printf 'not a bundle' > "$WORK/junk.bundle"
+jout="$(bash "$HERE/check-submission.sh" "$WORK/junk.bundle" "$SUB" "$BASE" 2>&1)"; jrc=$?
+[ "$jrc" -ne 0 ] && printf '%s\n' "$jout" | grep -q '^FAIL  0 the bundle does not verify' && ok "a bundle that does not verify is refused" || no "a junk bundle was accepted"
+# a base the probe's history does not hold is refused
+bad="$(bash "$HERE/check-submission.sh" "$WORK/ok.bundle" "$SUB" "$(printf '1%.0s' $(seq 1 40))" 2>&1)"; brc=$?
+[ "$brc" -ne 0 ] && printf '%s\n' "$bad" | grep -q 'base commit is not in the probe' && ok "a base commit missing from the bundle is refused" || no "a missing base was accepted"
 
 echo "== T1.5 the clean room stages with no kit in it and one credential slot"
 st="$(GAUNTLET_STAGE_ONLY=1 GAUNTLET_STAGE_DIR="$WORK" bash "$HERE/run.sh" 2>&1 | sed -n 's/^STAGE=//p')"
+check "run.sh makes the bundle inside the container, not on the host" bash -c "grep -q 'bundle create /work/submission/repo.bundle' '$HERE/run.sh' && ! grep -q 'git -C \"\$WORK/repo\" bundle' '$HERE/run.sh'"
+check "run.sh scrubs without -I and scans again" bash -c "! grep -q 'grep -rlIF' '$HERE/run.sh' && grep -c 'ANTHROPIC_API_KEY' '$HERE/run.sh' >/dev/null && grep -q 'SCRUB FAILED' '$HERE/run.sh'"
+check "run.sh persists named files only, never the probe's .git" bash -c "! grep -qE 'cp -R .*WORK' '$HERE/run.sh'"
 if [ -n "$st" ] && [ -d "$st/work/repo" ]; then
   ok "run.sh stages the room"
   check "the room holds the card, the shim, and the stamped repo" bash -c "[ -f '$st/work/CARD.md' ] && [ -x '$st/work/bin/gh' ] && [ -f '$st/work/repo/AGENTS.md' ] && [ -x '$st/work/repo/scripts/pr-merge.sh' ]"

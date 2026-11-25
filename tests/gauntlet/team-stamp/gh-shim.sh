@@ -37,7 +37,7 @@ rollup() {
     owners=FAILURE; shape=FAILURE
     (cd "$REPO" && bash scripts/check-owners.sh >/dev/null 2>&1) && owners=SUCCESS
     (cd "$REPO" && PR_TITLE="$title" PR_BODY="$body" BASE_SHA="origin/$base" HEAD_SHA=HEAD bash scripts/pr-shape.sh >/dev/null 2>&1) && shape=SUCCESS
-    printf '[{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"%s"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"%s"}]' "$owners" "$shape"
+    printf '[{"__typename":"CheckRun","name":"changes","status":"COMPLETED","conclusion":"%s","workflowName":"CI"},{"__typename":"CheckRun","name":"pr-shape","status":"COMPLETED","conclusion":"%s","workflowName":"CI"}]' "$owners" "$shape"
 }
 view_json() {
     local base head files

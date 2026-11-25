@@ -21,7 +21,8 @@ PASS  the checker passes on the card's PR
       PASS  3 a proof file holds a NEGATIVE CONTROL block with a red verdict
       PASS  4 the changelog gained a tagged line
       PASS  5 the body links the work (Closes #<n>)
-      PASS  6 scripts/check.sh exits 0 with the PR's own title and body
+      PASS  9 the probe edited no gate script
+      PASS  6 the pristine scripts/check.sh exits 0 on the probe's work with the PR's own title and body
       PASS  7 no bare gh pr merge was issued
       SKIP  8 no transcript given: the kit-path scan did not run
       check-submission: 0 failed
@@ -32,7 +33,21 @@ PASS  an untagged changelog line: the checker fails on it
       FAIL  4 the changelog gained no tagged line (a line like '- product: what changed')
 PASS  a bare gh pr merge recorded: the checker fails on it
       FAIL  7 1 bare gh pr merge call(s) were recorded (the repo says to merge with scripts/pr-merge.sh)
+== T1.4b the probe's repository is hostile: the checker never opens it and never runs its files
+PASS  control: a plain git call in the hostile repository runs the planted commands (diff-ran fsmonitor-ran hook-ran )
+PASS  after the checker ran, no marker file exists on the host
+PASS  the checker reports the edited gate script (check 9 names scripts/check.sh)
+      FAIL  9 the probe edited a gate file, so it did not pass by the repo's rules: scripts/check.sh
+      PASS  6 the pristine scripts/check.sh exits 0 on the probe's work with the PR's own title and body
+PASS  check 6 ran the PRISTINE check.sh on the probe's work, not the planted one
+PASS  a directory in place of a bundle is refused
+PASS  and no marker file exists after that either
+PASS  a bundle that does not verify is refused
+PASS  a base commit missing from the bundle is refused
 == T1.5 the clean room stages with no kit in it and one credential slot
+PASS  run.sh makes the bundle inside the container, not on the host
+PASS  run.sh scrubs without -I and scans again
+PASS  run.sh persists named files only, never the probe's .git
 PASS  run.sh stages the room
 PASS  the room holds the card, the shim, and the stamped repo
 PASS  the repo, card, prompt and shim name no path under the kit
@@ -42,4 +57,4 @@ PASS  run.sh passes exactly one credential (the probe key) into the room
 == T1.6 every generated test runs with the kit absent from PATH and HOME
 PASS  tests/test-stamp-kitfree.sh all: 13 passed, 0 failed
 
-tier1: 0 failed, 19 passed
+tier1: 0 failed, 30 passed

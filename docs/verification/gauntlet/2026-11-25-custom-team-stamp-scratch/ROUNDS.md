@@ -19,7 +19,7 @@ State of this record: Tier 1 ran and is green. Tier 2 (the paid clean-room probe
 
 | Round | Tier 1 | Tier 2 | K | Max severity | Checker |
 |---|---|---|---|---|---|
-| 1 | GREEN (19 checks, 2026-11-25) | NOT RUN | n/a | n/a | not run on a probe's work |
+| 1 | GREEN (30 checks, 2026-11-25) | NOT RUN | n/a | n/a | not run on a probe's work |
 
 Tier 2: NOT RUN. Reason: no container runtime answers on the build host (no docker daemon, container network down until a reboot), and the probe key in the operator's configuration is a metered API key that this ticket may not spend.
 
@@ -30,6 +30,7 @@ Tier 2: NOT RUN. Reason: no container runtime answers on the build host (no dock
 - The checker fails each planted break: no proof file (check 3), an untagged changelog line (check 4), a recorded bare merge (check 7).
 - The room stages from committed state with no kit path in the repo, the card or the shim, and passes one credential (the probe key).
 - Every generated `scripts/test-*.sh` passes with the kit absent from `PATH` and `HOME`.
+- The checker never opens the probe's repository: given a hostile repository (a `core.fsmonitor`, a `core.hooksPath` with an executable hook, a `diff.external`, an alias, and an edited `scripts/check.sh` that would touch a marker), no marker exists on the host afterwards, check 9 names the edited gate script, and check 6 passes with the pristine `check.sh`. A directory in place of a bundle, a bundle that does not verify and a base missing from the history are each refused.
 
 ## Not shown
 
@@ -40,6 +41,10 @@ ANTHROPIC_API_KEY=<capped probe key> RUN_OUT=docs/verification/gauntlet/<date>-c
 ```
 
 Then run the engine over the result (`/kit:gauntlet`, preset custom, with the inputs above) and record the verdict here.
+
+## Key
+
+No probe key was used. After a campaign the operator rotates or revokes the probe key.
 
 ## Evidence
 
