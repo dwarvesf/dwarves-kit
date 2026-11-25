@@ -198,11 +198,107 @@ exit=2
 ```
 Exit: 0
 
+## Review round 2
+
+Three rows from the second security review: a base name continued on the next line (HIGH), a glob that still holds braces, and a tool list that missed commands the floor runs.
+
+Command: `LANE_CLASSIFY_LIB=<libs of 680166ba> SHIP_RULES_LIB=<same> bash tests/test-ceremony-fits-diff.sh floor-workflow-base-name-continues floor-workflow-base-glob-braces floor-tools-missing-prints-a-hit`
+Output:
+```
+FAIL floor-workflow-base-name-continues:  [job-name-plain-continues => ''] [job-name-continues-unrelated-new-name => ''] [workflow-name-continues => ''] [continuation-after-a-comment-line => ''] [continuation-after-a-blank-line => '']
+FAIL floor-workflow-base-glob-braces:  [brace-inside-an-expression-string => ''] [stray-closing-braces => ''] [nested-opening => '']
+FAIL floor-tools-missing-prints-a-hit:  [without head => ''] [without cut => ''] [without cmp => 'full ci: .github/workflows/new.yml'] [without mktemp => 'full tools-missing: tmpdir'] [without cp => ''] [without mv => ''] [without rm => ''] [without cat => ''] [without sort => ''] [without paste => ''] [without dirname => ''] [without basename => ''] [without env => '']
+```
+Exit: 1
+
+| Review row | Test row | Red before | Green after |
+|---|---|---|---|
+| 1 name continues on a deeper line | `floor-workflow-base-name-continues` | yes | yes |
+| 2 glob keeps braces | `floor-workflow-base-glob-braces` | yes | yes |
+| 3 tools list | `floor-tools-missing-prints-a-hit` | yes (head, cut, cmp, cp, mv, rm, cat, sort, paste, basename) | yes |
+
+Command: `bash tests/test-ceremony-fits-diff.sh`
+Output:
+```
+PASS class-docs-tree-any-extension-is-inert
+PASS class-code-under-docs-keeps-its-class
+PASS class-docs-subject-words-ignored
+PASS class-markdown-anywhere-is-inert
+PASS class-other-files-keep-class
+PASS class-docs-plus-code-follows-code
+PASS check-docs-tree-owes-no-proof
+PASS floor-docs-never-hit
+PASS floor-code-under-docs-or-doc-named-still-hits
+PASS floor-docs-beside-real-hard-path-still-hit
+PASS floor-comment-only-edit-is-not-a-hit
+PASS floor-comment-removal-is-not-a-hit
+PASS floor-code-change-is-a-hit
+PASS floor-cannot-decide-keeps-the-floor
+PASS floor-new-comment-only-file-is-not-a-hit
+PASS floor-skips-comment-only-then-names-the-real-hit
+PASS floor-cap-keeps-the-floor-on-a-flood
+PASS floor-hash-that-is-not-a-comment-keeps-the-floor
+PASS floor-secret-pattern-beats-first-kind
+PASS floor-nul-byte-keeps-the-floor
+PASS floor-readme-exec-is-code
+PASS floor-blanking-keeps-line-numbers-aligned
+PASS floor-exempt-notice-survives-drops
+PASS floor-data-loss-still-hits-in-comments
+PASS ship-rule-floor-follows-the-diff
+PASS floor-additive-workflow-is-sized
+PASS ship-rule-floor-sizes-workflow-add
+PASS sized-workflow-still-owes-proof
+PASS floor-hook-behavior-change-keeps-full
+PASS floor-workflow-mixed-diffs-keep-full
+PASS floor-workflow-existing-workflow-keeps-full
+PASS floor-workflow-escapes-keep-full
+PASS floor-workflow-on-block-tricks-keep-full
+PASS floor-workflow-name-tricks-keep-full
+PASS floor-workflow-reuse-and-privilege-keep-full
+PASS floor-workflow-read-failures-keep-full
+PASS floor-workflow-collision-read-points
+PASS floor-workflow-block-scalar-cannot-smuggle
+PASS floor-workflow-odd-path-keeps-full
+PASS floor-workflow-odd-file-keeps-full
+PASS floor-workflow-grammar-refusals
+PASS floor-workflow-data-loss-line-keeps-full
+PASS floor-code-to-comment-keeps-full
+PASS floor-comment-edit-is-sized-and-logged
+PASS floor-config-key-flip-keeps-full
+PASS sized-notices-relay-and-cap
+PASS floor-sized-flood-keeps-floor
+PASS floor-workflow-base-expression-names
+PASS floor-workflow-base-workflow-run-anywhere
+PASS floor-workflow-base-unclassifiable-keeps-full
+PASS floor-workflow-replaced-objects-keep-full
+PASS floor-workflow-byte-count-must-be-digits
+PASS floor-tools-missing-prints-a-hit
+PASS floor-workflow-action-allowlist
+PASS floor-workflow-single-fault-rows
+PASS floor-workflow-base-name-continues
+PASS floor-workflow-base-glob-braces
+PASS rule-a-checks-are-load-bearing
+```
+Exit: 0
+
+Mutation lines for the new rows (rows go red with their checks off):
+```
+MUT R1: FAIL floor-workflow-base-expression-names:  [expression-suffix => ''] [expression-suffix-job-name => ''] [matrix-include-bare-expression => ''] [bare-expression-matches-any
+MUT R2: FAIL floor-workflow-base-workflow-run-anywhere:  [workflow-run-one-line-list => ''] [workflow-run-scalar => ''] [workflow-run-unrelated-new-name => ''] [workflow-run-in-a-c
+MUT R3: FAIL floor-workflow-base-unclassifiable-keeps-full:  [quoted-job-key => ''] [single-quoted-job-key => ''] [empty-name => ''] [anchored-name => ''] [alias-name => ''] [flow-
+MUT R4: FAIL floor-workflow-replaced-objects-keep-full:  [replaced-blob-hides-write-permission => '']
+MUT R5: FAIL floor-workflow-byte-count-must-be-digits:  [wc-prints-garbage => ''] [wc-prints-nothing => '']
+MUT R6: FAIL floor-tools-missing-prints-a-hit:  [without git => ''] [without awk => ''] [without sed => ''] [without tr => ''] [without grep => ''] [without wc => 'full ci: .github
+MUT R7: FAIL floor-workflow-action-allowlist:  [actions/cache => ''] [actions/upload-artifact => ''] [actions/github-script => ''] [actions/download-artifact => '']
+MUT R8: FAIL floor-workflow-base-name-continues:  [job-name-plain-continues => ''] [job-name-continues-unrelated-new-name => ''] [workflow-name-continues => ''] [continuation-after
+MUT R9: FAIL floor-workflow-base-glob-braces:  [brace-inside-an-expression-string => ''] [stray-closing-braces => ''] [nested-opening => '']
+```
+
 ## NEGATIVE CONTROL
 
-Re-run after the review round, one command per call under the ticket lock.
+Re-run after review round 2.
 
-(a) Remove the whole Rule A drop; the "one workflow file passes" rows go red.
+(a) Remove the whole Rule A drop.
 
 ## Negative control (negctl)
 Command: bash tests/test-ceremony-fits-diff.sh floor-additive-workflow-is-sized ship-rule-floor-sizes-workflow-add
@@ -220,35 +316,37 @@ Output:
   (no spec found for 'rid-1'; a hard-path diff owes the full lane's gates with or without one)
       gap: validate
   Run the missing gate(s), or log an explicit override (recorded for audit):
-    bash "/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.p8FtcS/ledger.sh" override rid-1 <phase> "<reason>" log=2026-11-25T00:31:06Z | BLOCKED | ship-gate | rid-1 (hard-path ci)
+    bash "/var/folders/dr/n3x74rr93kvfjf1873pyjvp80000gn/T//kit.XVKXjH/ledger.sh" override rid-1 <phase> "<reason>" log=2026-11-25T01:30:55Z | BLOCKED | ship-gate | rid-1 (hard-path ci)
 
 Restore: git checkout HEAD -- lib/classify/lane-classify.sh
 Exit: 0 (green after restore)
 Verdict: PASS
 
-(b) Remove the grammar and base-classification checks so any new workflow sizes; the bypass rows go red.
+(b) Remove the grammar and base-classification checks.
 
 ## Negative control (negctl)
-Command: bash tests/test-ceremony-fits-diff.sh floor-workflow-grammar-refusals floor-workflow-on-block-tricks-keep-full floor-workflow-base-unclassifiable-keeps-full
+Command: bash tests/test-ceremony-fits-diff.sh floor-workflow-grammar-refusals floor-workflow-on-block-tricks-keep-full floor-workflow-base-unclassifiable-keeps-full floor-workflow-base-name-continues
 Exit: 0 (green before mutation)
 Output:
   PASS floor-workflow-grammar-refusals
   PASS floor-workflow-on-block-tricks-keep-full
   PASS floor-workflow-base-unclassifiable-keeps-full
+  PASS floor-workflow-base-name-continues
 
-Mutation: sed -i.bak -E '/# chk:([A-Za-z0-9]+ )*(G|R3|F2)( [A-Za-z0-9]+)*$/s/(bad|unsafe)\(/ign(/; /# chk:([A-Za-z0-9]+ )*(G|R3|F2)( [A-Za-z0-9]+)*$/s/return 1/true/' lib/classify/lane-classify.sh; mv lib/classify/lane-classify.sh.bak /private/tmp/claude-501/-Users-tieubao--orca-bots-personal/2ae980b7-b8d1-428d-ae0a-b527c4058063/scratchpad/lc.bak3
+Mutation: sed -i.bak -E '/# chk:([A-Za-z0-9]+ )*(G|R3|R8|F2)( [A-Za-z0-9]+)*$/s/(bad|unsafe)\(/ign(/; /# chk:([A-Za-z0-9]+ )*(G|R3|R8|F2)( [A-Za-z0-9]+)*$/s/return 1/true/' lib/classify/lane-classify.sh; mv lib/classify/lane-classify.sh.bak /private/tmp/claude-501/-Users-tieubao--orca-bots-personal/2ae980b7-b8d1-428d-ae0a-b527c4058063/scratchpad/lc.bak3
 Changed: lib/classify/lane-classify.sh
 Exit: 1 (under mutation, RED expected)
 Output:
   FAIL floor-workflow-grammar-refusals:  [if-key => ''] [step-env => ''] [job-needs => ''] [job-strategy => ''] [continue-on-error => ''] [job-permissions => ''] [write-all => ''] [contents-write => ''] [extra-permission => ''] [no-permissions => ''] [other-brace => ''] [secrets-in-run => ''] [anchor => ''] [tag => ''] [merge-key => ''] [percent-directive => ''] [run-colon => ''] [run-comment => ''] [run-flow => ''] [run-and-uses => ''] [duplicate-run => ''] [duplicate-name => ''] [runs-on-flow-other => ''] [boolean-name => ''] [job-without-steps => ''] [quoted-list-item => ''] [odd-indent => '']
   FAIL floor-workflow-on-block-tricks-keep-full:  [complex-key => ''] [pr-target => ''] [schedule => ''] [workflow-run => ''] [alias-on => ''] [flow-on => ''] [inline-on => ''] [second-document => ''] [filter-under-dispatch => '']
   FAIL floor-workflow-base-unclassifiable-keeps-full:  [quoted-job-key => ''] [single-quoted-job-key => ''] [folded-name => ''] [literal-name => ''] [empty-name => ''] [anchored-name => ''] [alias-name => ''] [flow-job-map => ''] [anchored-job => ''] [inline-jobs => ''] [job-key-with-dot => ''] [job-level-uses => ''] [complex-key => ''] [merge-key => ''] [tab-in-base => ''] [document-marker => ''] [flow-document => ''] [quoted-workflow-name-with-escape => ''] [unclassified-top-level => '']
+  FAIL floor-workflow-base-name-continues:  [job-name-plain-continues => ''] [job-name-continues-unrelated-new-name => ''] [workflow-name-continues => ''] [continuation-after-a-comment-line => ''] [continuation-after-a-blank-line => '']
 
 Restore: git checkout HEAD -- lib/classify/lane-classify.sh
 Exit: 0 (green after restore)
 Verdict: PASS
 
-(c) Remove the audit line; its rows go red.
+(c) Remove the audit line.
 
 ## Negative control (negctl)
 Command: bash tests/test-ceremony-fits-diff.sh floor-additive-workflow-is-sized floor-comment-edit-is-sized-and-logged
@@ -296,6 +394,7 @@ Verdict: PASS
 | 22 | `floor-sized-flood-keeps-floor` | PASS |
 | 23 | `rule-a-checks-are-load-bearing` | PASS |
 | 24 to 31 | the eight review-round cases listed above | PASS |
+| 33, 34 | `floor-workflow-base-name-continues`, `floor-workflow-base-glob-braces` | PASS |
 | 32 | regression | see "Regression" |
 
 ## Regression

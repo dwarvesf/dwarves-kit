@@ -24,3 +24,8 @@ Spec: `docs/specs/SPEC-424-lane-gate-diff-size.md`. Only deltas from the spec.
 - Mutation ids added: R1 to R7, PERM, PIN, EMPTY, MODE, EXTRA. R1, R4, R6 and R7 use a custom sed because their check is not a `bad(` or `return 1` line. The single-fault rows are matched by label (`WANT`).
 - Red-before for the new cases was taken from the libs of the previous commit: every new rule row failed there, the single-fault rows are red only under their mutation.
 - Not changed: the hook's own base follows `origin/main` (a local rewind of that ref still sizes, as before).
+
+## Review round 2 delta
+- `_WF_BASECHECK` tracks the indent of the last `name:` line it read (`pend`); the next non-blank, non-comment line deeper than that keeps the floor. A glob that still holds `}}` or `${{` keeps the floor.
+- `_floor_tools_ok` lists git awk sed tr grep wc head cut cmp mktemp cp mv rm cat sort paste basename env, read from the floor path's functions (floor, the _floor_* helpers, Rule A, the exemption and extras readers, the config readers). `dirname` is left out on purpose: the script runs it while loading, before the verb starts.
+- Row `job-name-continues-with-expression` is not red on the previous build: its new job key still collided with the base name; the first two continuation rows carry the red-before. The mutation case still turns the whole case red.
