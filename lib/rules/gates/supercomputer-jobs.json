@@ -1,0 +1,235 @@
+[
+ {
+  "name": "bridge-lane-gate-check",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only lane-gate-check",
+  "env": {
+   "BRIDGE_N": "60"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-lane-effective",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only lane-effective",
+  "env": {
+   "BRIDGE_N": "80"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-record-batch",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only record-batch",
+  "env": {
+   "BRIDGE_N": "150"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-inherit",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only inherit",
+  "env": {
+   "BRIDGE_N": "150"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-validate-round",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only validate-round",
+  "env": {
+   "BRIDGE_N": "60"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-spec-verdict",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only spec-verdict",
+  "env": {
+   "BRIDGE_N": "80"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-gate-policy",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only gate-policy",
+  "env": {},
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-fixture-email",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only fixture-email",
+  "env": {
+   "BRIDGE_N": "80"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-large-spec",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only large-spec",
+  "env": {
+   "BRIDGE_FRAC": "1"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-ship-gate",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only ship-gate",
+  "env": {
+   "BRIDGE_N": "150"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-proof-check",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only proof-check",
+  "env": {},
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-proof-classify",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only proof-classify",
+  "env": {
+   "BRIDGE_N": "200"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-negctl",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only negctl",
+  "env": {
+   "BRIDGE_FULL": "1"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-known-failures",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only known-failures",
+  "env": {
+   "BRIDGE_N": "300"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-recheck-sample",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only recheck-sample",
+  "env": {
+   "BRIDGE_N": "200"
+  },
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-redteam-round",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only redteam-round",
+  "env": {},
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-quiz-tap",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only quiz-tap",
+  "env": {},
+  "timeout": 1800
+ },
+ {
+  "name": "bridge-premerge",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --bridges-only --only premerge",
+  "env": {},
+  "timeout": 1800
+ },
+ {
+  "name": "proofs",
+  "cwd": "lib/rules",
+  "cmd": "npm install --no-audit --no-fund >/dev/null 2>&1 && node gates/prove.ts --no-bridges",
+  "timeout": 1200
+ },
+ {
+  "name": "test-lane-effective",
+  "cmd": "bash tests/test-lane-effective.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-lane-effective.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-lane-effective.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-gate-ledger-amend",
+  "cmd": "bash tests/test-gate-ledger-amend.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-gate-ledger-amend.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-gate-ledger-amend.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ship-gate-impl-notes",
+  "cmd": "bash tests/test-ship-gate-impl-notes.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-impl-notes.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-impl-notes.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-whole-spec-dispatch",
+  "cmd": "bash tests/test-whole-spec-dispatch.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-whole-spec-dispatch.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-whole-spec-dispatch.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ship-gate-review-verdict",
+  "cmd": "bash tests/test-ship-gate-review-verdict.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-review-verdict.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-review-verdict.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ledger-durability",
+  "cmd": "bash tests/test-ledger-durability.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ledger-durability.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ledger-durability.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-gate-opt-out",
+  "cmd": "bash tests/test-gate-opt-out.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-gate-opt-out.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-gate-opt-out.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-gate-opt-in",
+  "cmd": "bash tests/test-gate-opt-in.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-gate-opt-in.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-gate-opt-in.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ship-gate-fail-closed",
+  "cmd": "bash tests/test-ship-gate-fail-closed.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-fail-closed.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-fail-closed.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ship-gate-refs-block",
+  "cmd": "bash tests/test-ship-gate-refs-block.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-refs-block.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ship-gate-refs-block.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ceremony-fits-diff",
+  "cmd": "bash tests/test-ceremony-fits-diff.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ceremony-fits-diff.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ceremony-fits-diff.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-gate-outcome",
+  "cmd": "bash tests/test-gate-outcome.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-gate-outcome.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-gate-outcome.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-gate-ledger-override-via",
+  "cmd": "bash tests/test-gate-ledger-override-via.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-gate-ledger-override-via.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-gate-ledger-override-via.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-ledger-substrate",
+  "cmd": "bash tests/test-ledger-substrate.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-ledger-substrate.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-ledger-substrate.sh.out; exit $rc",
+  "timeout": 1800
+ },
+ {
+  "name": "test-quiz-gate",
+  "cmd": "bash tests/test-quiz-gate.sh > $SUPERCOMPUTER_OUTPUT_DIR/test-quiz-gate.sh.out 2>&1; rc=$?; tail -5 $SUPERCOMPUTER_OUTPUT_DIR/test-quiz-gate.sh.out; exit $rc",
+  "timeout": 1800
+ }
+]

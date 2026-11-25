@@ -108,11 +108,21 @@ case "$rc" in
   *) die "awk failed ($rc) reading $spec" ;;
 esac
 
+# The log's place is checked before the spec moves: a log that cannot be written would otherwise
+# leave the task checked off with no entry behind it.
+if [ -n "$log" ]; then
+  mkdir -p "$(dirname "$log")" 2>/dev/null || die "cannot create the directory of --verify-log $log"
+  if [ -e "$log" ]; then
+    { [ -f "$log" ] && [ -w "$log" ]; } || die "--verify-log $log is not a writable file"
+  else
+    [ -w "$(dirname "$log")" ] || die "cannot write --verify-log $log"
+  fi
+fi
+
 mv -f "$tmp" "$spec"
 echo "spec-task-done: checked $id in $spec"
 
 [ -n "$log" ] || exit 0
-mkdir -p "$(dirname "$log")"
 [ -f "$log" ] || printf '# Verification log\n' > "$log"
 # Captured output can itself hold a ``` line; a longer fence keeps it from closing early.
 fence='```'; case "$excerpt" in *'```'*) fence='````' ;; esac

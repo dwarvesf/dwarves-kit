@@ -332,7 +332,7 @@ def joined($g; $b; $origin; $item; $inprog; $dus; $extra):
       else (([$gcode[0].branches[] | select(.name == $m.branch)] | .[0]) // null) as $b
         | if $b == null then empty else joined($gcode[0]; $b; "mega"; $m.item; true; false; []) end
       end ] as $mi
-| ($bi | map(select(.item != null))) + $mi as $named
+| (($bi | map(select(.item != null))) + $mi) as $named   # parenthesized: jq 1.7 binds `+ $mi as $named | ...` as `+ ($mi as ...)`
 | ($named | map(.worktree | select(. != null))) as $joined
 | def wtitem($g; $w):
     ($w.branch // "") as $bn

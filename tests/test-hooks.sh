@@ -544,6 +544,18 @@ assert_exit "blocks git reset --hard" 2 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"kubectl delete pod web-1"}}')
 assert_exit "blocks kubectl delete" 2 $RC
 
+# gdp-wired bridge (lib/rules/hooks/safety-gate.bridge.ts): commands the parse used to lose.
+assert_exit "G1: a quoted env value does not hide rm -rf" 2 "$(q_hook 'FOO="a b" rm -rf src')"
+assert_exit "G2: GIT_SSH_COMMAND with blanks does not hide a force push" 2 "$(q_hook 'GIT_SSH_COMMAND="ssh -i k" git push -f origin feat/x')"
+assert_exit "G3: git -c with a quoted value does not hide push --force" 2 "$(q_hook 'git -c user.name="A B" push --force origin feat/x')"
+assert_exit "G4: find -exec rm by a full path blocks" 2 "$(q_hook 'find src -exec /opt/homebrew/bin/rm -f {} +')"
+assert_exit "G5: a tag pushed onto refs/heads/main blocks" 2 "$(q_hook 'git push origin refs/tags/v1:refs/heads/main')"
+assert_exit "G6: --branches (git's --all) blocks" 2 "$(q_hook 'git push --branches origin')"
+assert_exit "G7: --mirr, an abbreviation git accepts, blocks" 2 "$(q_hook 'git push --mirr origin')"
+assert_exit "G8: git reset --har (abbreviated --hard) blocks" 2 "$(q_hook 'git reset --har HEAD~1')"
+assert_exit "G9: kubectl -v 6 delete blocks" 2 "$(q_hook 'kubectl -v 6 delete pod x')"
+assert_exit "G10: an env value with blanks before a safe command is allowed" 0 "$(q_hook 'MSG="a b" git status')"
+
 # ============================================================
 echo ""
 echo "=== anti-rationalization.sh ==="
@@ -575,6 +587,13 @@ assert_exit "allows 'for now, this should' (v1.1 fix)" 0 $RC
 
 RC=$(run_hook anti-rationalization.sh '{"stop_hook_active":true,"assistant_response":"left as an exercise"}')
 assert_exit "respects stop_hook_active guard" 0 $RC
+
+# Claude Code's Stop payload names the final message last_assistant_message (gdp-wired bridge,
+# lib/rules/hooks/anti-rationalization.bridge.ts): the hook must read it, not only assistant_response.
+RC=$(run_hook anti-rationalization.sh '{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"This can be addressed in a follow-up PR."}')
+assert_exit "blocks an excuse in Claude Code's last_assistant_message" 2 $RC
+RC=$(run_hook anti-rationalization.sh '{"hook_event_name":"Stop","stop_hook_active":true,"last_assistant_message":"This can be addressed in a follow-up PR."}')
+assert_exit "last_assistant_message: stop_hook_active still prevents the loop" 0 $RC
 
 RC=$(run_hook anti-rationalization.sh '{"stop_hook_active":false,"assistant_response":"All tasks complete. Tests passing. Ready for review."}')
 assert_exit "allows clean completion" 0 $RC
@@ -738,6 +757,13 @@ assert_exit "allows amend --no-edit" 0 $RC
 
 RC=$(run_hook commit-format.sh '{"tool_input":{"command":"ls -la"}}')
 assert_exit "ignores non-commit commands" 0 $RC
+
+# The heredoc form Claude Code writes: the subject is the body's first line (gdp-wired bridge,
+# lib/rules/hooks/commit-format.bridge.ts), not the $(cat <<'EOF' line.
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"$(cat <<'"'"'EOF'"'"'\nfeat(gate): read the heredoc subject\n\nBody.\nEOF\n)\""}}')
+assert_exit "allows a Conventional subject in a heredoc message" 0 $RC
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"$(cat <<'"'"'EOF'"'"'\nupdated stuff\nEOF\n)\""}}')
+assert_exit "blocks a non-conventional subject in a heredoc message" 2 $RC
 
 # ============================================================
 echo ""
@@ -1373,6 +1399,16 @@ MEM3=$(_slop_mem); assert_output_contains "slop-mem: content change re-flags" "b
 rm -rf "$MEM_DIR" "$MEM_MARK"
 rm -rf "$SCAN_DIR" "$NOGIT" "$SCAN_MARKER"
 
+# An unreadable recent source file must not end the advisory hook with awk's exit 2, which
+# Claude Code reads as a blocked Stop (gdp-wired bridge, lib/rules/hooks/advisory.bridge.ts).
+UR_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-urmark.XXXXXX") || exit 1; touch -t 202001010000 "$UR_MARK"
+UR_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-ur.XXXXXX") || exit 1; ( cd "$UR_DIR" && git init -q )
+printf 'x = 1\n' > "$UR_DIR/locked.ts"; chmod 000 "$UR_DIR/locked.ts"
+RC=0; ( cd "$UR_DIR" && echo '{"stop_hook_active":false,"session_id":"urtest"}' \
+  | DWARVES_KIT_SESSION_MARKER="$UR_MARK" bash "$KIT_DIR/hooks/slop-cleaner.sh" >/dev/null 2>&1 ) || RC=$?
+assert_exit "slop: an unreadable recent file never blocks the Stop" 0 $RC
+chmod 600 "$UR_DIR/locked.ts"; rm -rf "$UR_DIR" "$UR_MARK"
+
 # ============================================================
 echo ""
 echo "=== statusline.sh ==="
@@ -1441,6 +1477,13 @@ bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-star.md" >/dev/null 2>&1
 assert_exit "gate: a/** vs *.md -> overlap (conservative; non-prefix glob)" 1 "$?"
 bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-none.md" >/dev/null 2>&1
 assert_exit "gate: undeclared ## Touches -> REJECT (not assumed-empty)" 2 "$?"
+# A /** prefix with a `.`, `..` or empty segment, or a leading `/`, is unprovable, never disjoint (lib/rules F8:
+# `./**` vs `a/**` and `b/../a/**` vs `a/**` used to exit 0 while covering the same files).
+for g in './**' 'a/./**' 'a//**' 'b/../a/**' '/a/**'; do
+  printf '# d\n## Touches\n- `%s`\n' "$g" > "$GT/spec-dotseg.md"
+  bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-dotseg.md" >/dev/null 2>&1
+  assert_exit "gate: a/** vs $g -> overlap (a dot, empty or absolute segment is unprovable)" 1 "$?"
+done
 GATE_PLAN=$(bash "$GATE" plan "$GT/spec-a.md" "$GT/spec-b.md" "$GT/spec-asub.md" 2>/dev/null)
 assert_output_contains "gate plan: spec-asub waits on spec-a (overlap serialized)" "WAIT.*spec-asub" "$GATE_PLAN"
 
@@ -2002,6 +2045,17 @@ assert_exit "registry: release goal-a -> ok" 0 "$?"
 assert_exit "registry: release removed the record" 1 "$?"
 bash "$REG" claim goal-c normal "src-a/sub/**" >/dev/null 2>&1
 assert_exit "registry: goal-c admitted after overlapping goal-a released" 0 "$?"
+
+# Single-writer (lib/rules/goals/goal-registry.ts): a claim from another worktree on a running slug is refused,
+# never a silent takeover of that session's record; the holder may still re-claim its own slug.
+REG_WT2="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-reg-wt.XXXXXX")" || exit 1
+git -C "$REG_WT2" init -q
+( cd "$REG_WT2" && bash "$REG" claim goal-b normal "src-b/**" ) >/dev/null 2>&1
+assert_exit "registry: another worktree's claim on a running slug -> REFUSED" 1 "$?"
+assert_output_contains "registry: the refused takeover leaves the holder's record" "worktree=$(git rev-parse --show-toplevel 2>/dev/null || echo '?')" "$(cat "$GOAL_REGISTRY_DIR/goal-b.goal")"
+bash "$REG" claim goal-b normal "src-b/**" >/dev/null 2>&1
+assert_exit "registry: the holder re-claims its own slug -> ok" 0 "$?"
+rm -rf "$REG_WT2"
 
 rm -rf "$GOAL_REGISTRY_DIR"
 unset GOAL_REGISTRY_DIR

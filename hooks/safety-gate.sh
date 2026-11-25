@@ -202,8 +202,13 @@ targets_all_safe() {
   [ "$have" = 1 ]
 }
 
+# A quoted value after = (FOO="a b", git -c user.name='A B') is one word to bash. Its blanks are
+# joined before the marks go, or its second half reads as the binary and hides the command.
+QV_RE="=(\"[^\"]*[[:space:]][^\"]*\"|${SQ}[^${SQ}]*[[:space:]][^${SQ}]*${SQ})"
+
 while IFS= read -r SEG; do
   [ -n "${SEG// /}" ] || continue
+  while [[ "$SEG" =~ $QV_RE ]]; do V="${BASH_REMATCH[1]}"; SEG="${SEG/"$V"/${V//[[:space:]]/_}}"; done
   # DELETE quote marks and backslashes (keep content) so a quoted or escaped ref ("main",
   # ma\in) still reaches the token scan while rule scoping (per-segment binary) keeps prose
   # harmless: a commit -m sentence never reaches the push rule because its segment's
@@ -277,7 +282,7 @@ while IFS= read -r SEG; do
         case "$t" in
           -delete) HAS_DEL=1 ;;
           -exec|-execdir|-ok|-okdir) HAS_EXEC=1 ;;
-          rm|/bin/rm|/usr/bin/rm) if [ "$HAS_EXEC" = 1 ]; then HAS_DEL=1; fi ;;
+          rm|*/rm) if [ "$HAS_EXEC" = 1 ]; then HAS_DEL=1; fi ;;
         esac
       done
       if [ "$HAS_DEL" = 1 ]; then
@@ -309,16 +314,20 @@ while IFS= read -r SEG; do
               --force|-f*|-[!-]*f*) block "force-push" "Force push is dangerous. Use --force-with-lease if you must overwrite remote history." ;;
               --force-with-lease*|--force-if-includes) ;;
               +*) block "force-push" "Refspec force push (+ref) is --force without the lease. Use --force-with-lease." ;;
-              refs/tags/*|*:refs/tags/*) ;;
-              --mirror|--all|*\**|*\{*) block "push-all" "--mirror, --all, or a glob or brace refspec can push main/master. Push one feature branch." ;;
+              # before the tag allowance: refs/tags/v1:refs/heads/main lands on main
               main|master|*:main|*:master|refs/heads/main|refs/heads/master|*:refs/heads/main|*:refs/heads/master)
                 block "push-to-main" "Do not push directly to main/master. Create a feature branch and open a PR." ;;
+              refs/tags/*|*:refs/tags/*) ;;
+              # git takes any unique prefix of a long option (--mirr, --al, --b); --branches is --all
+              --m|--mi|--mir|--mirr|--mirro|--mirror|--al|--all|--b|--br|--bra|--bran|--branc|--branch|--branche|--branches|*\**|*\{*)
+                block "push-all" "--mirror, --all, or a glob or brace refspec can push main/master. Push one feature branch." ;;
             esac
           done
           ;;
         reset)
           for t in "$@"; do
-            [ "$t" = "--hard" ] && block "git-reset-hard" "'git reset --hard' discards uncommitted work. Use 'git stash' first, or 'git reset --keep'."
+            # git takes any unique prefix of a long option: --h, --ha, --har are --hard
+            case "$t" in --h|--ha|--har|--hard) block "git-reset-hard" "'git reset --hard' discards uncommitted work. Use 'git stash' first, or 'git reset --keep'." ;; esac
           done
           ;;
       esac
@@ -329,7 +338,7 @@ while IFS= read -r SEG; do
       for t in "$@"; do
         if [ "$SKIP_NEXT" = 1 ]; then SKIP_NEXT=0; continue; fi
         case "$t" in
-          -n|--namespace|--context|--cluster|--user|--kubeconfig|-s|--server|-l|--selector) SKIP_NEXT=1 ;;
+          -n|--namespace|--context|--cluster|--user|--kubeconfig|-s|--server|-l|--selector|-v|--v|--as|--as-group|--request-timeout|--token) SKIP_NEXT=1 ;;
           -*) ;;
           *) SUB="$t"; break ;;
         esac

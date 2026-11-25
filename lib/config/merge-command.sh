@@ -45,8 +45,8 @@
 # The reader reads one shape: `command = "..."` under a plain `[merge]` header, a double-quoted
 # value without a backslash or a `#`. The dotted form (`merge.command = ...`), an inline table
 # (`merge = { ... }`), `[[merge]]`, a triple-quoted or single-quoted value, a repeated key and a
-# `#` inside the value are all REFUSED (exit 2): the reader cannot read them, and unset would
-# mean the plain merge. An empty value is a plain "unset".
+# `#` inside the value, and a quoted table name (`["merge"]`), are all REFUSED (exit 2): the
+# reader cannot read them, and unset would mean the plain merge. An empty value is a plain "unset".
 # The value must also be one simple command: no `;` `&` `|` `<` `>` backtick `$(` or newline.
 # That denylist guards against mistakes. It is NOT a security boundary: whoever can write the
 # value can also write the script it names. The PR number is appended as the last argument.
@@ -104,11 +104,15 @@ _kit_mc_shape() {
     /^[ \t]*#/ { next }
     {
       line = $0
-      h = line; sub(/[ \t]+#.*$/, "", h); gsub(/[ \t\r]/, "", h); gsub(/"/, "", h); gsub(q, "", h)
+      # The header is read the way _kit_toml_get reads it (a comment cut at the first #); hq keeps
+      # the quotes, so a quoted table name the reader would not match is told apart below.
+      h = line; sub(/#.*$/, "", h); gsub(/[ \t\r]/, "", h); hq = h; gsub(/"/, "", h); gsub(q, "", h)
     }
     h ~ /^\[/ {
       if (h ~ /^\[\[merge/) bad()
-      if (h == "[merge]") { if (seen++) bad(); insec = 1; ncmd = 0; next }
+      # ["merge"] is [merge] in TOML, but the reader matches the bare name only and would answer
+      # "unset": refuse it rather than merge the plain way.
+      if (h == "[merge]") { if (hq != h || seen++) bad(); insec = 1; ncmd = 0; next }
       if (h ~ /^\[merge\./) bad()
       insec = 0; next
     }
@@ -175,7 +179,9 @@ kit_merge_command() {
   # No default-branch commit to read: operator and kit-root are still read; a project key in the
   # working tree cannot be verified.
   rm -f "$tmp"
-  v="$(_kit_mc_resolve /nonexistent)"; r=$?
+  # An empty path, never a made-up one: /nonexistent is a real directory on some hosts (the home
+  # of `nobody`), and `[ -s ]` on it is true, which read as an unreadable [merge] and refused.
+  v="$(_kit_mc_resolve "")"; r=$?
   if [ "$r" -ne 1 ]; then _kit_mc_finish "$r" "$v"; return $?; fi
   if [ -n "$(_kit_toml_get "$repo/.kit.toml" merge command)" ] || ! _kit_mc_shape "$repo/.kit.toml"; then
     echo "merge command: $repo names [merge] but origin's default branch cannot be read to verify it (run git fetch); refusing to merge" >&2

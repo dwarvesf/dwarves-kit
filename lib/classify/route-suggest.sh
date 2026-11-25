@@ -42,7 +42,8 @@ fi
 # fable row falls to the `*)` passthrough and becomes its OWN "tier" under its raw model string,
 # which both inflates the >=2-tiers check and can emit a suggestion the orchestrator's allowlist
 # then rejects. The two lists have to move together.
-tier_of() { case "$1" in haiku*) echo haiku;; sonnet*) echo sonnet;; opus*) echo opus;; fable*) echo fable;; *) echo "$1";; esac; }
+# A model outside these tiers prints nothing, and its rows are skipped: it is no tier the orchestrator can route to.
+tier_of() { case "$1" in haiku*) echo haiku;; sonnet*) echo sonnet;; opus*) echo opus;; fable*) echo fable;; esac; }
 
 # For each PASSING row of this task, emit "tier<TAB>total_tokens" (cheapest arm per tier
 # is the min). A failed run is never a candidate (infinite-cost guard, 's anti-cherry-pick rule).
@@ -55,11 +56,12 @@ fi
 
 # Reduce to cheapest total_tokens per tier. A short/malformed row (no numeric total_tokens) is
 # skipped rather than crashing the `-lt` arithmetic (schema-drift / hand-edit robustness).
-declare -A MIN
+declare -A MIN=()   # set, even when every row is skipped (set -u)
 for row in "${PASSES[@]}"; do
   model="${row%%$'\t'*}"; tok="${row##*$'\t'}"
   case "$tok" in ''|*[!0-9]*) continue ;; esac   # non-numeric -> not a usable token count
   tier="$(tier_of "$model")"
+  [ -n "$tier" ] || continue                     # an unknown model is not a routable tier
   if [ -z "${MIN[$tier]:-}" ] || [ "$tok" -lt "${MIN[$tier]}" ]; then MIN[$tier]="$tok"; fi
 done
 

@@ -89,6 +89,10 @@ _ship_gate_check() {
 # refusal returns on the first try with its original exit code and output.
 WRAP_MERGE_RETRY_MAX=${WRAP_MERGE_RETRY_MAX:-3}
 WRAP_MERGE_RETRY_SLEEP=${WRAP_MERGE_RETRY_SLEEP:-5}
+# A value that is not a whole number takes the default: `[ 1 -ge five ]` is an error, the
+# error reads as false, and a transient answer would then retry without end.
+case "$WRAP_MERGE_RETRY_MAX" in ''|*[!0-9]*) WRAP_MERGE_RETRY_MAX=3 ;; esac
+case "$WRAP_MERGE_RETRY_SLEEP" in ''|*[!0-9]*) WRAP_MERGE_RETRY_SLEEP=5 ;; esac
 _gh_merge_retry() {
   local n="$1" url="$2" head_oid="$3"
   local attempt=1 out rc

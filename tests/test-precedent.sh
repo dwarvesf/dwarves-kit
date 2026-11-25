@@ -1430,6 +1430,17 @@ else
 fi
 
 echo
+# _keywords keeps "the 8 most specific" words: the 8 longest, not the first 8 alphabetically (it used to be
+# `sort -u | head -8`, which kept "able", "also", "band", ... over "authentication").
+KW_FN="$TMPDIR_T/keywords.sh"
+sed -n '/^_keywords() {/,/^}/p' "$KIT_DIR/lib/precedent/precedent.sh" > "$KW_FN"
+KW="$(bash -c "source '$KW_FN'; _keywords 'able also band cord deck authentication middleware rotation refresh sessions legacy tokens orchestration'" | tr '\n' ' ')"
+case "$KW" in
+  *authentication*middleware*) [ "$(printf '%s' "$KW" | wc -w | tr -d ' ')" -eq 8 ] && case "$KW" in *able*|*also*|*band*) R=1 ;; *) R=0 ;; esac || R=1 ;;
+  *) R=1 ;;
+esac
+assert "_keywords keeps the 8 longest keywords, not the first 8 alphabetically (got: $KW)" "$R"
+
 echo "== summary =="
 echo "  $PASS/$TOTAL passed"
 [ "$FAIL" -eq 0 ]

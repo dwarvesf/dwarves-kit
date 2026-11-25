@@ -3277,6 +3277,25 @@ cmd_run() {
     fi
     id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
 
+    # A gate sub-goal whose PR is already open is HELD: it ran, and its PR waits for a human merge. Never dispatch it
+    # a second time. A chain-stop `gate` holds only its own chain: under waves, a ready independent sub-goal the wave
+    # gate admits runs meanwhile; a held `gate!` (or nothing else ready) stops the loop.
+    if [ "$MEGA_GATE_DISPATCH" = 1 ] && { [ "$policy" = gate ] || [ "$policy" = "gate!" ]; } \
+       && [ -n "$(_sg_pr_url "$dir" "$id")" ]; then
+      local held_other=""
+      if [ "$WAVE_CAP" -ge 2 ] && [ "$policy" = gate ]; then
+        held_other=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{print $2; exit}')
+      fi
+      if [ -z "$held_other" ]; then
+        _emit_event "$dir" "$id" blocked "$policy: awaiting human merge (PR open, not dispatched again)"
+        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+        _say "[orchestrate] STOP: $id is a held $policy sub-goal; its PR is open and waits for a human merge. Merge it, then re-run."
+        return 0
+      fi
+      _say "[orchestrate] $id is held for a human merge; running the independent $held_other meanwhile."
+      id="$held_other"; policy=auto
+    fi
+
     # gate! GLOBAL-STOP on the serial path too: when the pick is a `gate!`
     # sub-goal, halt the WHOLE loop for a human, preserving the pre-wavefront global `gate` stop
     # exactly (blocked event + message + return 0). Checked BEFORE plain `gate` since they are

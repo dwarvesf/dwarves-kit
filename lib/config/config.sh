@@ -218,7 +218,10 @@ _resolve() {
   PROJ_VAL=""; PROJ_SET=0; OP_VAL=""; OP_SET=0; ROOT_VAL=""; ROOT_SET=0
   IS_ROOT_ONLY=0
   if [ "$tomlkey" != "env-only" ] && [ "$tomlkey" != "-" ]; then
-    section="${tomlkey%%.*}"; key="${tomlkey#*.}"
+    # Split at the LAST dot, as kit_config_get does: `lane.normal.phases` is section
+    # `lane.normal`, key `phases`. A first-dot split read no layer for a two-dot key and
+    # reported the registry default while every real consumer read the file.
+    section="${tomlkey%.*}"; key="${tomlkey##*.}"
     # Root-only keys never consult the project layer: a project .kit.toml rides inside an
     # untrusted PR, and a row like understand.teach names code a command runs. Same fence
     # kit_config_get_root applies; kit_config_get_root's own layer order (operator, then

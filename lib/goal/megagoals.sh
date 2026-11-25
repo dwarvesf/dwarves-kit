@@ -90,6 +90,7 @@ count_subgoals() { # <roadmap-file>
     /^## Sub-goals/ { insec=1; next }
     /^## Status/    { insec=1; next }
     insec && /^## / { insec=0 }
+    insec && /^# /  { insec=0 }   # a top-level heading ends the section too: its boxes are not sub-goals
     insec && $0 ~ dre { done++; total++; next }
     insec && $0 ~ ore { active++; total++; next }
     insec && $0 ~ pre { parked++; total++; next }

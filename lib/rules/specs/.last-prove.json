@@ -1,0 +1,489 @@
+{
+ "failed": 0,
+ "summary": {
+  "spec-status": {
+   "source": "lib/spec/spec-status.sh:_set",
+   "fixed": null,
+   "laws": 8,
+   "lawNames": [
+    "a spec with no Status: header is never touched by set",
+    "set never gives a headed spec a missing header",
+    "an alias or undeclared word is never written: set exits nonzero and the state stays",
+    "set only ever writes a canonical state",
+    "a set on a headed spec leaves it at the requested canonical state",
+    "setting the state a spec already has changes nothing and prints no notice",
+    "leaving a terminal state always prints a reopen notice",
+    "a reopen notice is printed only when a terminal spec moves"
+   ],
+   "proven": true,
+   "variants": {
+    "silent-reopen": "leaving a terminal state always prints a reopen notice @step law",
+    "writes-alias": "an alias or undeclared word is never written: set exits nonzero and the state stays @step law",
+    "touches-headerless": "a spec with no Status: header is never touched by set @step law",
+    "same-state-notice": "setting the state a spec already has changes nothing and prints no notice @step law"
+   },
+   "findings": [
+    {
+     "law": "a spec becomes SHIPPED only from APPROVED or VALIDATED (its declared next)",
+     "refuted": true,
+     "witness": {
+      "st": 6,
+      "notice": 0,
+      "refused": 1,
+      "to": 3
+     }
+    },
+    {
+     "law": "a move off the declared next path (a skip or a step back) is announced",
+     "refuted": true,
+     "witness": {
+      "st": 4,
+      "notice": 0,
+      "refused": 1,
+      "to": 0
+     }
+    }
+   ]
+  },
+  "spec-task-done": {
+   "source": "lib/spec/spec-task-done.sh:main",
+   "fixed": "the --verify-log destination is checked before the spec is renamed",
+   "laws": 7,
+   "lawNames": [
+    "a refused call changes neither the spec nor the verification log",
+    "a call that exits 0 checks exactly one line off",
+    "a task is checked off only when it has exactly one unchecked line",
+    "an id that is already checked is never checked again",
+    "a checked-off task with --verify-log always gets exactly one log entry",
+    "a log entry is written only together with the check-off",
+    "a checked line is never unchecked and no unchecked line appears"
+   ],
+   "proven": true,
+   "variants": {
+    "log-after-flip": "a refused call changes neither the spec nor the verification log @step law",
+    "flips-duplicates": "a refused call changes neither the spec nor the verification log @step law",
+    "reflips-checked": "a refused call changes neither the spec nor the verification log @step law"
+   },
+   "findings": [
+    {
+     "law": "a task is marked verified only with a recorded PASS verification log entry",
+     "refuted": true,
+     "witness": {
+      "open": 1,
+      "done": 0,
+      "logged": 0,
+      "failed": 1,
+      "valid": 1,
+      "withLog": 0,
+      "logOk": 0,
+      "pass": 0
+     }
+    }
+   ]
+  },
+  "spec-next": {
+   "source": "lib/spec/spec-next.sh:reserve",
+   "fixed": null,
+   "laws": 6,
+   "lawNames": [
+    "until a reservation expires, the last reserved number stays taken",
+    "reserve hands out a number above every number taken or reserved",
+    "two reserves with no expiry between them never hand out the same number",
+    "a reserved number reads as taken to the very next caller",
+    "next never moves the ledger or the scan",
+    "next and reserve agree: next prints what reserve would claim"
+   ],
+   "proven": true,
+   "variants": {
+    "ignores-reservations": "next and reserve agree: next prints what reserve would claim @step law",
+    "reserve-unrecorded": "until a reservation expires, the last reserved number stays taken @step"
+   },
+   "findings": [
+    {
+     "law": "a reserved number is never handed out twice",
+     "refuted": true,
+     "witness": {
+      "scan": 0,
+      "res": 0,
+      "last": 1,
+      "fresh": 0,
+      "out": 0,
+      "op": 0,
+      "k": 3
+     }
+    }
+   ]
+  },
+  "spec-active": {
+   "source": "lib/spec/spec-active.sh:spec_active",
+   "fixed": null,
+   "laws": 8,
+   "lawNames": [
+    "the --live pick is always an open spec",
+    "the --live answer is none only when no spec is open",
+    "the --live answer is ambiguous only when two or more specs are open",
+    "one open spec is always the --live pick",
+    "several open specs that neither the name nor one branch token settles are ambiguous, never guessed",
+    "a branch pick is an open spec that carries a branch token",
+    "the default (enforcement) pick is a spec whose name matches the slug",
+    "the default (enforcement) pick never depends on any spec's status"
+   ],
+   "proven": true,
+   "variants": {
+    "live-ignores-status": "the --live pick is always an open spec",
+    "ambiguous-picks-first": "several open specs that neither the name nor one branch token settles are ambiguous, never guessed"
+   },
+   "findings": [
+    {
+     "law": "when a spec named exactly for the slug exists, the name pick is that spec",
+     "refuted": true,
+     "witness": {
+      "tok2": 0,
+      "tok1": 0,
+      "tok0": 0,
+      "live2": 0,
+      "live1": 0,
+      "live0": 0,
+      "glob2": 1,
+      "glob1": 1,
+      "exact0": 0,
+      "exact2": 1,
+      "exact1": 1,
+      "glob0": 1
+     }
+    }
+   ]
+  },
+  "spec-depth": {
+   "source": "lib/spec/spec-depth.sh:cmd_size,cmd_check",
+   "fixed": "a Depth line that names no valid level reads large, not standard",
+   "laws": 10,
+   "lawNames": [
+    "a small spec is normal-lane with 1 to 3 tasks",
+    "a spec that names a deeper level is never small",
+    "a Depth line that is present but names no valid level is never small",
+    "a normal-lane spec with Depth standard (or none) and 1 to 3 tasks is small",
+    "a new spec (generated on or after the cut-off, or numbered at or above it) with no Depth line fails check",
+    "a missing Generated line never grants the grace period: the number decides",
+    "an older spec with no Depth line only warns",
+    "standard combined with a deeper level fails check",
+    "standard with a non-empty Open questions section fails check",
+    "a malformed segment or a reason that only says the work matters fails check"
+   ],
+   "proven": true,
+   "variants": {
+    "malformed-is-standard": "a Depth line that is present but names no valid level is never small",
+    "date-only": "a new spec (generated on or after the cut-off, or numbered at or above it) with no Depth line fails check",
+    "standard-mixes": "standard combined with a deeper level fails check"
+   },
+   "findings": []
+  },
+  "board-set": {
+   "source": "lib/board/backlog.sh:set_state",
+   "fixed": null,
+   "laws": 9,
+   "lawNames": [
+    "set never changes how many rows carry the id",
+    "a state outside states.tsv is refused and nothing is written",
+    "an id carried by two or more rows is never written (dedupe first)",
+    "a missing row is never written",
+    "set only ever writes a declared state",
+    "a set on a single row always lands on the requested state, from any state",
+    "a move out of a terminal state is always announced as a reopen",
+    "a move back to an earlier active state is always announced",
+    "a notice is printed only for a reopen or a move back"
+   ],
+   "proven": true,
+   "variants": {
+    "silent-reopen": "a move out of a terminal state is always announced as a reopen @step law",
+    "writes-duplicates": "an id carried by two or more rows is never written (dedupe first) @step law",
+    "no-back-notice": "a move back to an earlier active state is always announced @step law"
+   },
+   "findings": [
+    {
+     "law": "a move off the declared next path is announced",
+     "refuted": true,
+     "witness": {
+      "st": 0,
+      "rows": 1,
+      "notice": 0,
+      "refused": 0,
+      "to": 5
+     }
+    }
+   ]
+  },
+  "board-dedupe": {
+   "source": "lib/board/backlog.sh:dedupe,dedupe_all",
+   "fixed": null,
+   "laws": 6,
+   "lawNames": [
+    "both verbs keep exactly one of the copies",
+    "dedupe keeps a shipped copy whenever there is one",
+    "dedupe keeps a dropped copy when there is one and none is shipped",
+    "dedupe keeps the last copy when none is shipped, dropped or parked",
+    "dedupe-all keeps a flipped (non-queued) copy over a queued one",
+    "dedupe-all keeps the first copy when every copy is still queued"
+   ],
+   "proven": true,
+   "variants": {
+    "dedupe-keeps-first": "dedupe keeps the last copy when none is shipped, dropped or parked",
+    "all-keeps-last": "dedupe-all keeps a flipped (non-queued) copy over a queued one"
+   },
+   "findings": [
+    {
+     "law": "dedupe never drops a flipped (non-queued) copy to keep a queued one",
+     "refuted": true,
+     "witness": {
+      "c0": 1,
+      "three": 0,
+      "c2": 5,
+      "c1": 0
+     }
+    },
+    {
+     "law": "dedupe and dedupe-all keep the same copy",
+     "refuted": true,
+     "witness": {
+      "three": 0,
+      "c0": 1,
+      "c2": 0,
+      "c1": 5
+     }
+    }
+   ]
+  },
+  "board-queue": {
+   "source": "lib/board/parse-board.sh:pb_queue_rows",
+   "fixed": null,
+   "laws": 7,
+   "lawNames": [
+    "an emitted pointer lies under _meta/megagoals/ or .claude/goals/ of the repo",
+    "a row claiming another repo is never emitted (cross-repo spoofing)",
+    "a pointer to a missing file is never emitted",
+    "a pointer with a .. component or an absolute path is never emitted",
+    "a token with a shell metacharacter is never emitted",
+    "only a queued row is ever emitted",
+    "a queued row whose tag passes every gate is emitted"
+   ],
+   "proven": true,
+   "variants": {
+    "trusts-repo": "a row claiming another repo is never emitted (cross-repo spoofing)",
+    "no-containment": "an emitted pointer lies under _meta/megagoals/ or .claude/goals/ of the repo",
+    "emits-dangling": "a pointer to a missing file is never emitted"
+   },
+   "findings": []
+  },
+  "board-run": {
+   "source": "lib/board/board-run.sh:main,_write_once",
+   "fixed": null,
+   "laws": 9,
+   "lawNames": [
+    "board run never writes the board",
+    "an existing roadmap file is never overwritten",
+    "an existing pointer file is never overwritten",
+    "an existing goal file is never overwritten",
+    "an existing handoff file is never overwritten",
+    "an existing decisions file is never overwritten",
+    "a run on a readable row leaves all five scaffold files in place",
+    "a missing, duplicated or item-less row writes nothing",
+    "a shipped, dropped or parked row is scaffolded anyway, with a warning"
+   ],
+   "proven": true,
+   "variants": {
+    "overwrites": "an existing roadmap file is never overwritten @step law",
+    "refuses-terminal": "a run on a readable row leaves all five scaffold files in place @step law",
+    "writes-on-bad-row": "a missing, duplicated or item-less row writes nothing @step law"
+   },
+   "findings": []
+  },
+  "board-work": {
+   "source": "lib/board/work.sh:JOIN(rung_of,agent_of,rec)",
+   "fixed": null,
+   "laws": 10,
+   "lawNames": [
+    "the rung is shipped exactly when the ledger holds a ship record",
+    "the rung is the highest phase the ledger shows ran",
+    "another ran phase never lowers the rung",
+    "a shipped row is never PARKED",
+    "a row the ledger shows shipped is never PARKED",
+    "an agent whose state is unknown is never PARKED (unknown is never idle)",
+    "PARKED needs the agent idle at least the threshold",
+    "an in-progress row whose agent sat idle past the threshold is PARKED",
+    "DONE-UNSEEN only with a ship record",
+    "a missing key always marks the row INDETERMINATE"
+   ],
+   "proven": true,
+   "variants": {
+    "parks-unknown": "an agent whose state is unknown is never PARKED (unknown is never idle)",
+    "rung-lowest-first": "the rung is shipped exactly when the ledger holds a ship record",
+    "parks-shipped-row": "a shipped row is never PARKED"
+   },
+   "findings": []
+  },
+  "state-check": {
+   "source": "lib/board/state_check.py:move_problem",
+   "fixed": "ignore_case folds the transition lookup like classify()",
+   "laws": 6,
+   "lawNames": [
+    "a newly written value is always a declared state",
+    "a legacy value is refused when newly written",
+    "a declared transition is never refused, whatever the case of the value or the registry",
+    "a move from a declared state off its declared transitions is refused",
+    "without a transitions table any declared value is accepted",
+    "a legacy or undeclared old value is grandfathered: only the new value is checked"
+   ],
+   "proven": true,
+   "variants": {
+    "case-sensitive-transitions": "a declared transition is never refused, whatever the case of the value or the registry",
+    "checks-from-legacy": "a legacy or undeclared old value is grandfathered: only the new value is checked",
+    "accepts-legacy": "a newly written value is always a declared state"
+   },
+   "findings": []
+  },
+  "intake-gate": {
+   "source": "lib/intake/intake.sh:cmd_gate,_row_kind",
+   "fixed": "`eval` must be a word for row_kind eval",
+   "laws": 6,
+   "lawNames": [
+    "the gate exits 0 exactly when some searched store holds a match",
+    "a skipped store never makes a hit",
+    "a missing store only narrows the gate: turning a store on never turns a hit into a miss",
+    "a row is labelled eval only when it records an evaluation (an [eval] tag or the word eval)",
+    "a skim row that records no evaluation is labelled skim, so it cannot close an eval",
+    "a row tagged [eval] is always labelled eval"
+   ],
+   "proven": true,
+   "variants": {
+    "substring-eval": "a row is labelled eval only when it records an evaluation (an [eval] tag or the word eval)",
+    "skip-hits": "the gate exits 0 exactly when some searched store holds a match",
+    "skim-first-ignored": "a row is labelled eval only when it records an evaluation (an [eval] tag or the word eval)"
+   },
+   "findings": []
+  },
+  "lane-classify": {
+   "source": "lib/classify/lane-classify.sh:classify_core,lane_check,escalate",
+   "fixed": null,
+   "laws": 10,
+   "lawNames": [
+    "words never pick full: the lane is full only from a hard path in --files or the configured default",
+    "a cosmetic task is tiny whatever its subject (a typo about auth is still a typo)",
+    "a backfill phrase with a hard-gate subject takes the default lane (not backfill) and a full risk",
+    "a hard-gate subject on a non-cosmetic, non-backfill task always makes the risk full",
+    "4 or more soft flags always make the risk full",
+    "the risk is never lighter than the lane",
+    "check warns only when the chosen lane is lighter than the classified one",
+    "check always warns when the chosen lane is lighter than the classified one",
+    "escalate is up-only: it escalates only to a strictly heavier lane",
+    "escalate never holds below a heavier spec lane"
+   ],
+   "proven": true,
+   "variants": {
+    "words-pick-full": "words never pick full: the lane is full only from a hard path in --files or the configured default",
+    "hard-beats-tiny": "a cosmetic task is tiny whatever its subject (a typo about auth is still a typo)",
+    "escalate-lowers": "escalate is up-only: it escalates only to a strictly heavier lane"
+   },
+   "findings": [
+    {
+     "law": "a hard path in --files always makes the risk full",
+     "refuted": true,
+     "witness": {
+      "soft": 0,
+      "current": 0,
+      "chosen": 0,
+      "def": 0,
+      "machFile": 0,
+      "bug": 0,
+      "docBoot": 0,
+      "tiny": 0,
+      "hardPath": 1,
+      "filesSet": 1,
+      "machText": 0,
+      "hardText": 0,
+      "backfill": 1
+     }
+    }
+   ]
+  },
+  "significance": {
+   "source": "lib/classify/significance-classify.sh:classify_core",
+   "fixed": null,
+   "laws": 6,
+   "lawNames": [
+    "the gate taps only when significance and worthiness are both high",
+    "a change with no significance trigger is never tapped or logged",
+    "high significance with too few worthiness triggers is logged silently, never tapped",
+    "a full-risk lane always makes the change significant",
+    "raising SIGNIFICANCE_WORTHINESS_MIN never adds a tap",
+    "another worthiness trigger never turns a tap into a log"
+   ],
+   "proven": true,
+   "variants": {
+    "taps-on-worth-alone": "the gate taps only when significance and worthiness are both high",
+    "knob-inverted": "the gate taps only when significance and worthiness are both high"
+   },
+   "findings": []
+  },
+  "task-type": {
+   "source": "lib/classify/task-type-classify.sh:task_type_classify",
+   "fixed": null,
+   "laws": 7,
+   "lawNames": [
+    "alert language is always an incident, never research or doc",
+    "absorbing mechanics into the kit is implementation (spec-feature), never an eval",
+    "eval and research win over doc: their deliverable is a report but the work is measurement or investigation",
+    "a doc about a tool is still a doc: doc wins over migration and data-tool",
+    "migration wins over data-tool and reconcile: the classifier errs strict",
+    "acting on review feedback is build work, never a review",
+    "a task no rule recognizes is a spec-feature"
+   ],
+   "proven": true,
+   "variants": {
+    "doc-before-research": "eval and research win over doc: their deliverable is a report but the work is measurement or investigation",
+    "tool-before-migration": "migration wins over data-tool and reconcile: the classifier errs strict",
+    "no-absorb-guard": "absorbing mechanics into the kit is implementation (spec-feature), never an eval"
+   },
+   "findings": []
+  },
+  "route-suggest": {
+   "source": "lib/classify/route-suggest.sh:tier_of,main",
+   "fixed": "an unknown model is no tier; MIN starts set",
+   "laws": 6,
+   "lawNames": [
+    "a suggestion names a tier the orchestrator allowlist accepts",
+    "a suggestion needs at least two allowlisted tiers measured at parity",
+    "two or more allowlisted tiers that passed always give a suggestion",
+    "the suggested tier passed",
+    "the suggested tier is the cheapest allowlisted tier that passed",
+    "a tie goes to the alphabetically-first tier"
+   ],
+   "proven": true,
+   "variants": {
+    "unknown-is-a-tier": "a suggestion names a tier the orchestrator allowlist accepts",
+    "suggests-on-one": "a suggestion needs at least two allowlisted tiers measured at parity",
+    "last-wins-ties": "a tie goes to the alphabetically-first tier"
+   },
+   "findings": []
+  },
+  "ledger-append": {
+   "source": "lib/ledger/ledger.sh:ledger_append",
+   "fixed": "a torn last line is ended first; a `..` stream is refused",
+   "laws": 6,
+   "lawNames": [
+    "an append never changes a record already written",
+    "every append leaves the stream ending on a complete line",
+    "an append adds its own record (and keeps a torn one as a record of its own)",
+    "a stream outside the ledger root is refused and nothing is written",
+    "nothing is ever written outside the ledger root",
+    "the record count never goes down"
+   ],
+   "proven": true,
+   "variants": {
+    "joins-torn-line": "an append never changes a record already written @step law",
+    "escapes-root": "a stream outside the ledger root is refused and nothing is written @step law",
+    "pre-fix": "a stream outside the ledger root is refused and nothing is written @step law"
+   },
+   "findings": []
+  }
+ }
+}

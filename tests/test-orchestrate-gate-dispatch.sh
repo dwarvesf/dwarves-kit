@@ -169,6 +169,8 @@ prompt=$(cat)
 id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
 echo "INVOKED $id" >> "$RUNLOG"
 printf '%s' "$prompt" > "$PROMPTDIR/$id.prompt"
+# A held (gate) session opens its PR during the run: the PR exists only from here on, as on GitHub.
+if printf '%s' "$prompt" | grep -q 'HELD SUB-GOAL' && [ -n "${OPEN_PR:-}" ]; then printf '%s\n' "$OPEN_PR" >> "$GH_PRS"; fi
 case "$id" in
   SG-02) : ;;   # gate sub-goal: opens a PR, never flips its own box
   *) awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' \
@@ -186,9 +188,9 @@ run_gate_fixture() {  # dir outfile [extra-env...]
 }
 
 # --- B1: default -> the gate sub-goal IS dispatched, then the loop holds on its PR ---
-printf 'feat/sg-two https://github.com/o/r/pull/42\n' > "$TMP/prs"
+: > "$TMP/prs"
 DG="$TMP/mg-gate"; mk_megagoal "$DG"
-rc=0; run_gate_fixture "$DG" "$TMP/b1.out" || rc=$?
+rc=0; run_gate_fixture "$DG" "$TMP/b1.out" OPEN_PR="feat/sg-two https://github.com/o/r/pull/42" || rc=$?
 [ "$rc" = 0 ] && pass "B1: gate dispatch exits 0 (clean human-hold)" \
   || { fail "B1: rc=$rc"; cat "$TMP/b1.out"; }
 grep -q 'INVOKED SG-02' "$TMP/runlog" \
@@ -229,10 +231,10 @@ rc=0; run_gate_fixture "$DG3" "$TMP/b3.out" MEGA_GATE_DISPATCH=0 || rc=$?
   || { fail "B3: escape hatch wrong (rc=$rc)"; cat "$TMP/b3.out"; cat "$TMP/runlog"; }
 
 # --- B4: gate! is dispatched too, then halts the whole loop ---
-printf 'feat/sg-two https://github.com/o/r/pull/77\n' > "$TMP/prs"
 DG4="$TMP/mg-gatebang"; mk_megagoal "$DG4"
 sed -i.bak 's/, gate ,/, gate! ,/' "$DG4/ROADMAP.md"
-rc=0; run_gate_fixture "$DG4" "$TMP/b4.out" || rc=$?
+: > "$TMP/prs"
+rc=0; run_gate_fixture "$DG4" "$TMP/b4.out" OPEN_PR="feat/sg-two https://github.com/o/r/pull/77" || rc=$?
 { [ "$rc" = 0 ] && grep -q 'INVOKED SG-02' "$TMP/runlog" \
   && grep -q 'STOP (gate!)' "$TMP/b4.out" && grep -q 'pull/77' "$TMP/b4.out"; } \
   && pass "B4: gate! is dispatched, then halts the whole loop with its PR URL" \
@@ -241,7 +243,6 @@ grep -q 'HELD SUB-GOAL (gate!)' "$TMP/prompts/SG-02.prompt" \
   && pass "B4: gate! prompt carries the held-PR contract" || fail "B4: gate! prompt contract missing"
 
 # --- B5: gate! under WAVE_CAP=2 is dispatched first and nothing waves alongside it ---
-printf 'feat/sg-one https://github.com/o/r/pull/88\n' > "$TMP/prs"
 DG5="$TMP/mg-gatebang-wave"; mk_megagoal "$DG5"
 cat > "$DG5/ROADMAP.md" <<'EOF'
 # Mega-goal: gate! under a wave
@@ -251,7 +252,8 @@ cat > "$DG5/ROADMAP.md" <<'EOF'
 EOF
 printf '**Branch:** feat/sg-one\nDone = halt\n\n## Touches\nlib/a/**\n' > "$DG5/goals/01-build.md"
 printf '**Branch:** feat/sg-two\nDone = wired\n\n## Touches\nlib/b/**\n' > "$DG5/goals/02-wire.md"
-rc=0; run_gate_fixture "$DG5" "$TMP/b5.out" WAVE_CAP=2 || rc=$?
+: > "$TMP/prs"
+rc=0; run_gate_fixture "$DG5" "$TMP/b5.out" WAVE_CAP=2 OPEN_PR="feat/sg-one https://github.com/o/r/pull/88" || rc=$?
 { [ "$rc" = 0 ] && grep -q 'INVOKED SG-01' "$TMP/runlog" && ! grep -q 'INVOKED SG-02' "$TMP/runlog" \
   && grep -q 'STOP (gate!)' "$TMP/b5.out"; } \
   && pass "B5: under WAVE_CAP=2 the gate! sub-goal runs and the wave quiesces around it" \
@@ -271,7 +273,7 @@ out=$(MEGA_GATE_DISPATCH=0 bash "$ORCH" run "$DG6" --dry-run 2>&1)
 # --- B7: a gate/gate! sub-goal with no **Branch:** header is refused pre-flight; auto without one runs ---
 # The hold looks the PR up by the declared branch; the wave/<id> fallback never matches the worker's
 # real branch, so the human would see "no PR" while one exists. Auto sub-goals keep the fallback.
-printf 'feat/sg-two https://github.com/o/r/pull/42\n' > "$TMP/prs"
+: > "$TMP/prs"
 DG7="$TMP/mg-gate-nobranch"; mk_megagoal "$DG7"
 printf 'Done = the deploy is wired\n' > "$DG7/goals/02-wire.md"
 rc=0; run_gate_fixture "$DG7" "$TMP/b7.out" || rc=$?
@@ -292,7 +294,8 @@ rc=0; run_gate_fixture "$DG7b" "$TMP/b7b.out" || rc=$?
   || { fail "B7: gate! without Branch not refused (rc=$rc)"; cat "$TMP/b7b.out"; cat "$TMP/runlog"; }
 
 DG7c="$TMP/mg-gate-withbranch"; mk_megagoal "$DG7c"
-rc=0; run_gate_fixture "$DG7c" "$TMP/b7c.out" || rc=$?
+: > "$TMP/prs"
+rc=0; run_gate_fixture "$DG7c" "$TMP/b7c.out" OPEN_PR="feat/sg-two https://github.com/o/r/pull/42" || rc=$?
 { [ "$rc" = 0 ] && grep -q 'INVOKED SG-02' "$TMP/runlog" && ! grep -q 'rejecting pre-flight' "$TMP/b7c.out"; } \
   && pass "B7 (regression pin): gate WITH **Branch:** still dispatches" \
   || { fail "B7: gate with Branch wrongly refused (rc=$rc)"; cat "$TMP/b7c.out"; }
@@ -303,6 +306,35 @@ rc=0; run_gate_fixture "$DG7d" "$TMP/b7d.out" || rc=$?
 { grep -q 'INVOKED SG-01' "$TMP/runlog" && ! grep -q 'gate sub-goal SG-01 has no' "$TMP/b7d.out"; } \
   && pass "B7 (regression pin): auto without **Branch:** still dispatches" \
   || { fail "B7: auto without Branch wrongly refused (rc=$rc)"; cat "$TMP/b7d.out"; }
+
+# --- B8: a HELD gate (its PR already open, waiting on the human merge) is never dispatched again on a re-run ---
+# lib/rules/goals/orchestrate-pick.ts: before, every re-run sent the held gate to a second fresh session.
+DG8="$TMP/mg-gate-rerun"; mk_megagoal "$DG8"
+: > "$TMP/prs"
+rc=0; run_gate_fixture "$DG8" "$TMP/b8a.out" OPEN_PR="feat/sg-two https://github.com/o/r/pull/42" || rc=$?
+grep -q 'INVOKED SG-02' "$TMP/runlog" && pass "B8: the first run dispatches the gate sub-goal and holds" \
+  || { fail "B8: first run did not dispatch the gate (rc=$rc)"; cat "$TMP/b8a.out"; }
+rc=0; run_gate_fixture "$DG8" "$TMP/b8b.out" || rc=$?
+{ [ "$rc" = 0 ] && ! grep -q 'INVOKED SG-02' "$TMP/runlog" && grep -q 'STOP: SG-02 is a held gate sub-goal' "$TMP/b8b.out"; } \
+  && pass "B8: the re-run holds the gate on its open PR and dispatches no second session" \
+  || { fail "B8: held gate re-dispatched (rc=$rc)"; cat "$TMP/b8b.out"; cat "$TMP/runlog"; }
+
+# --- B9: a held chain-stop gate holds only its own chain; a ready independent sub-goal runs meanwhile ---
+DG9="$TMP/mg-gate-chain"; mk_megagoal "$DG9"
+cat > "$DG9/ROADMAP.md" <<'EOF2'
+# Mega-goal: a held gate beside an independent branch
+## Sub-goals
+- [ ] SG-01 ship the risky part , gate , PR #__
+- [ ] SG-02 the independent part , auto , PR #__
+EOF2
+printf '**Branch:** feat/sg-one\nDone = shipped\n\n## Touches\nlib/a/**\n' > "$DG9/goals/01-build.md"
+printf '**Branch:** feat/sg-two\nDone = done\n\n## Touches\nlib/b/**\n' > "$DG9/goals/02-wire.md"
+printf 'feat/sg-one https://github.com/o/r/pull/90\n' > "$TMP/prs"
+rc=0; run_gate_fixture "$DG9" "$TMP/b9.out" WAVE_CAP=2 NOCLAIM_RETRIES=0 || rc=$?
+{ grep -q 'INVOKED SG-02' "$TMP/runlog" && ! grep -q 'INVOKED SG-01' "$TMP/runlog" \
+  && grep -q 'SG-01 is held for a human merge; running the independent SG-02' "$TMP/b9.out"; } \
+  && pass "B9: the held gate is not re-run and the independent sub-goal runs meanwhile" \
+  || { fail "B9: held chain-stop gate blocked the independent branch (rc=$rc)"; cat "$TMP/b9.out"; cat "$TMP/runlog"; }
 
 echo
 if [ "$fails" = 0 ]; then echo "ALL PASS"; else echo "$fails FAILED"; fi

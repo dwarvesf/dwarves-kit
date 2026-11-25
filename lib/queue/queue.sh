@@ -229,6 +229,13 @@ _beat() {  # slug
   mkdir -p "$(dirname "$f")" 2>/dev/null || true
   : > "$f"
 }
+# Take the in-flight claim: create the beat only if no conductor holds it. noclobber makes the create fail on an
+# existing file, so two conductors racing for one slug cannot both win.
+_beat_claim() {  # slug
+  local f; f=$(_run_file "$1" beat) || return 1
+  mkdir -p "$(dirname "$f")" 2>/dev/null || true
+  ( set -C; : > "$f" ) 2>/dev/null
+}
 _beat_clear() {
   local f; f=$(_run_file "$1" beat) || return 0
   rm -f "$f" "$(_run_file "$1" launch)" 2>/dev/null || true
@@ -912,6 +919,9 @@ _breaker_apply() {  # slug repo head-before verdict -> "verdict<TAB>reason"
   if [ "$np" -ge "$QUEUE_NOPROGRESS_TRIP" ] || [ "$se" -ge "$QUEUE_SAMEERROR_TRIP" ]; then
     now=$(date +%s)
     _guard_set "$slug" cooldown_until $((now + QUEUE_COOLDOWN_SECS))
+    # A trip is a stall too. An `error` row never climbs the ladder above, so without this a row that fails
+    # identically every time is cooled down and re-planned forever, and never reaches quarantine.
+    [ "$verdict" = stalled ] || _stall_bump "$slug" stalled
     printf 'error\tstagnation_detected'; return
   fi
   printf '%s\t' "$verdict"
@@ -1092,6 +1102,13 @@ cmd_run() {
 
     if [ "$dry" = 1 ]; then
       _say "[dry-run] $slug: WOULD LAUNCH (repo=$repo pointer=$pointer)"
+      continue
+    fi
+
+    # The in-flight claim, taken atomically. Another conductor may hold this slug (an overlapping watcher tick that
+    # planned it first, or a hand run beside the watcher); a second launch would kill its window and clear its beat.
+    if ! _beat_claim "$slug"; then
+      _say "[queue] $slug: a run is in flight (heartbeat present); skipping."
       continue
     fi
 

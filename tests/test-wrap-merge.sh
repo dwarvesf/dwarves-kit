@@ -118,6 +118,16 @@ chk "SPEC-300: the bound held at three merge calls" \
   "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 3 ]; echo $?)"
 chk_has "SPEC-300: the last failure still reports" "$out" "FAILED merge #8: exit 1"
 
+# A WRAP_MERGE_RETRY_MAX that is not a whole number takes the default bound of 3. Before the fix
+# `[ 1 -ge five ]` errored, the error read as false, and a lasting outage retried without end
+# (lib/rules/wrap/merge-retry.ts, law "a merge makes at most max(1, WRAP_MERGE_RETRY_MAX) gh calls").
+rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
+out="$(GH_STUB_MERGE_FAILS=9 GH_STUB_MERGE_ERR='HTTP 503 Service Unavailable' \
+  WRAP_MERGE_RETRY_MAX=five WRAP_MERGE_RETRY_SLEEP=0 "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "SPEC-300: a non-numeric WRAP_MERGE_RETRY_MAX still exits 2 on a lasting outage" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "SPEC-300: a non-numeric WRAP_MERGE_RETRY_MAX is bounded at three merge calls" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 3 ]; echo $?)"
+
 rm -f "$GH_STUB_CALLS.merge"; : > "$GH_STUB_CALLS"
 out="$(GH_STUB_MERGE_RC=1 GH_STUB_MERGE_ERR='405 Method Not Allowed' \
   WRAP_MERGE_RETRY_SLEEP=0 "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
@@ -150,6 +160,12 @@ out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","
 chk_has "merge: an empty rollup on a non-CLEAN state skips" "$out" "SKIP #9 gate case: checks are pending or failing"
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":null}')"
 chk_has "merge: a null rollup on a CLEAN state stays eligible" "$out" "eligible #9 gate case [feat/gate]"
+# A PR read with no mergeStateStatus fails closed like any state that is not clean. Before the fix
+# `(.mergeStateStatus // "CLEAN")` let it pass as CLEAN once it had green checks
+# (lib/rules/wrap/pr-gate.ts, law "a PR is OK only in a CLEAN, HAS_HOOKS or UNSTABLE merge state").
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}')"
+chk_has "merge: a missing merge state skips" "$out" "SKIP #9 gate case: merge state"
+chk_no "merge: a missing merge state is never eligible" "$out" "eligible #9 gate case"
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}')"
 chk_has "merge: an empty rollup on a CLEAN state stays eligible" "$out" "eligible #9 gate case [feat/gate]"
 out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}')"

@@ -99,6 +99,16 @@ case_table_transition() {
 }
 case_ignore_case_body_status() { new_repo; put specs/s1.md 'Title\n\nStatus: DRAFT\n\nbody\n'; expect_pass "$1"; }
 case_ignore_case_undeclared() { new_repo; put specs/s2.md 'Title\n\nStatus: bogus\n\nbody\n'; expect_block "$1" "'bogus' is not a declared state"; }
+case_ignore_case_transition_spelling() { # a registry spelled in Title case: a declared move passes, an undeclared one blocks
+  new_repo
+  printf '\n[ticket]\ncheck = true\nkind = "frontmatter"\nglob = "tickets/*.md"\nfield = "status"\nignore_case = true\nstates = ["Open", "Done"]\n\n[ticket.transitions]\nOpen = ["Done"]\nDone = []\n' >>"$repo/_meta/states.toml"
+  mkdir -p "$repo/tickets"; printf -- '---\nstatus: open\n---\nbody\n' >"$repo/tickets/t1.md"; printf -- '---\nstatus: done\n---\nbody\n' >"$repo/tickets/t2.md"
+  git -C "$repo" add -A; git -C "$repo" -c user.name=t -c user.email=t@example.com commit -q -m tickets
+  put tickets/t1.md '---\nstatus: DONE\n---\nbody\n'
+  expect_pass "$1" || return 1
+  put tickets/t2.md '---\nstatus: Open\n---\nbody\n'
+  expect_block "$1" "'done' -> 'open' is not a declared transition"
+}
 case_unparseable_store() { new_repo; put gadgets/bad/gadget.toml 'name = = "x"\nstatus = [\n'; expect_pass "$1"; }
 case_store_nested_field() { # a status inside a sub-table is not the top-level field
   new_repo; put gadgets/nest/gadget.toml 'name = "x"\n\n[meta]\nstatus = "bogus"\n'
@@ -298,6 +308,7 @@ run_rules() {
   check "table machine enforces its transitions" case_table_transition "$e"
   check "ignore_case plus body status line passes" case_ignore_case_body_status "$e"
   check "ignore_case machine still blocks an undeclared value" case_ignore_case_undeclared "$e"
+  check "ignore_case transitions fold the registry's spelling too" case_ignore_case_transition_spelling "$e"
   check "unparseable store file reads as no value" case_unparseable_store "$e"
   check "store file with extra TOML still reads its status" case_store_with_extra_toml "$e"
   check "a status inside a sub-table is not read" case_store_nested_field "$e"
@@ -386,7 +397,8 @@ mutate undeclared case_undeclared 'if kind == "undeclared":
 mutate legacy case_legacy_new 'if kind == "legacy":
         return' 'if False:
         return'
-mutate transition case_illegal_transition 'if new not in allowed:' 'if False:'
+mutate transition case_illegal_transition 'if fold(new) not in {fold(s) for s in allowed}:' 'if False:'
+mutate transition-fold case_ignore_case_transition_spelling '        fold = (lambda s: s.lower()) if m.get("ignore_case") else (lambda s: s)' '        fold = (lambda s: s)'
 mutate drift-projection case_drift_index_side 'if (f, key, got, want) not in drift(m, read_head, {path}):' 'if False:'
 mutate drift-store case_drift_store_side 'if (f, key, got, want) not in drift(m, read_head, {path}):' 'if False:'
 mutate grandfather-drift case_drift_grandfathered 'if (f, key, got, want) not in drift(m, read_head, {path}):' 'if True:'

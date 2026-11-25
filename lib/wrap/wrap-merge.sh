@@ -55,7 +55,7 @@ _pr_gate() {
                                | $c != "SUCCESS" and $c != "SKIPPED")) | length) > 0)
       then "WAIT checks are pending or failing"
     elif (.reviewDecision == "CHANGES_REQUESTED") then "SKIP changes requested"
-    elif ((.mergeStateStatus // "CLEAN") as $m
+    elif ((.mergeStateStatus // "") as $m
           | $m != "CLEAN" and $m != "HAS_HOOKS" and $m != "UNSTABLE")
       then "SKIP merge state \(.mergeStateStatus) (an unresolved thread or a blocked merge)"
     else "OK" end' 2>/dev/null

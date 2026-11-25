@@ -117,6 +117,8 @@ if want size; then
   mk s4 normal 'standard (one file)' 4;           assert_eq "4 tasks is large" large "$(sz s4)"
   mk nodepth normal '' 2;                          assert_eq "absent Depth counts as standard" small "$(sz nodepth)"
   mk res normal 'research (repo: how x wires y)' 1; assert_eq "deeper Depth is large" large "$(sz res)"
+  mk badres normal 'research (how x wires y)' 2;    assert_eq "a Depth line with no valid level is large, not standard" large "$(sz badres)"
+  mk badlvl normal 'deep (an unknown level)' 1;     assert_eq "an unknown Depth level is large" large "$(sz badlvl)"
   mk full full 'standard (one file)' 1;            assert_eq "full lane is large" large "$(sz full)"
   mk bug bug 'standard (one file)' 1;              assert_eq "bug lane is large" large "$(sz bug)"
   mk none normal 'standard (one file)' 0;          assert_eq "no countable task is large" large "$(sz none)"

@@ -38,7 +38,9 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch. test-affected.timeouts is data, not an executable: the one per-suite
 # timeout table that bin/test-affected and tests/run-all.sh both read.
-EXPECTED="activate audit board classify config flick gate goal intake learn lint mega plugin-check precedent proof-asset proof-capture prose-rag queue reflect release session skill-improve skill-review spec stats test-affected test-affected.timeouts worktree-provision wrap"
+# +verify-loop (SPEC-430): a standalone executable, not a forwarder. It steps the proven retry-loop rule
+# (lib/rules/verify-loop.ts) for /kit:execute; its DISPATCH block is below, the rule's laws in tests/test-rules.sh.
+EXPECTED="activate audit board classify config flick gate goal intake learn lint mega plugin-check precedent proof-asset proof-capture prose-rag queue reflect release session skill-improve skill-review spec stats test-affected test-affected.timeouts verify-loop worktree-provision wrap"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -157,6 +159,19 @@ if [ -x "$KIT_DIR/lib/proof-capture/bin/proof-capture" ]; then
   assert_true "proof-capture prints the module's own usage" "$(grep -q 'usage: proof-capture run page' <<<"$out"; echo $?)"
 else
   skip "proof-capture dispatch (lib/proof-capture is absent; the shim then exits 69, checked by tests/test-proof-capture-route.sh)"
+fi
+
+echo "== verify-loop: answers its own contract (SKIP without node or the gdp-wired install) =="
+if command -v node >/dev/null 2>&1 && [ -d "$KIT_DIR/lib/rules/node_modules/gdp-wired" ]; then
+  VLD="$(mktemp -d "${TMPDIR:-/tmp}/kit-vl.XXXXXX")" || exit 1
+  out="$(VERIFY_LOOP_DIR="$VLD" "$KIT_DIR/bin/verify-loop" event r1 FAIL:fixable 2>&1)"; rc=$?
+  assert_true "verify-loop event exits 0" "$rc"
+  case "$out" in *"fix cycle 1 of 2"*) ok "verify-loop prints the proven rule's next action" ;; *) bad "verify-loop event output: $out" ;; esac
+  "$KIT_DIR/bin/verify-loop" bogus >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 64 ] && ok "verify-loop refuses an unknown verb (exit 64)" || bad "verify-loop unknown verb exit $rc, want 64"
+  rm -rf "$VLD"
+else
+  skip "verify-loop dispatch (node or lib/rules/node_modules/gdp-wired is absent)"
 fi
 
 echo "== stats: forwarder reaches the uv CLI (SKIP without uv) =="

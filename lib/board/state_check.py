@@ -465,8 +465,10 @@ def move_problem(m: dict, where: str, old: str | None, new: str) -> str | None:
     if kind == "legacy":
         return f"{where}: {new!r} is a legacy value, refused when newly written"
     if old is not None and "transitions" in m and classify(m, old) == "ok":
-        allowed = m["transitions"].get(old, [])
-        if new not in allowed:
+        # Fold like classify(): under ignore_case the values arrive lowercased, the registry keeps its own spelling.
+        fold = (lambda s: s.lower()) if m.get("ignore_case") else (lambda s: s)
+        allowed = next((v for k, v in m["transitions"].items() if fold(k) == fold(old)), [])
+        if fold(new) not in {fold(s) for s in allowed}:
             return f"{where}: {old!r} -> {new!r} is not a declared transition (allowed from {old!r}: {allowed or 'none, terminal'})"
     return None
 

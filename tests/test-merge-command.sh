@@ -181,6 +181,8 @@ sub-table|[merge.extra]\ncommand = "bash scripts/pr-merge.sh"
 repeated key|[merge]\ncommand = "bash a.sh"\ncommand = "bash b.sh"
 hash inside the value|[merge]\ncommand = "bash scripts/pr-merge.sh #approved"
 escaped quote|[merge]\ncommand = "bash \\"a b\\""
+double-quoted table name (the reader matched no section and read unset)|["merge"]\ncommand = "bash scripts/pr-merge.sh"
+single-quoted table name|['merge']\ncommand = "bash scripts/pr-merge.sh"
 FORMS
 RG="$(mc_repo_toml form-good $'[merge]\ncommand = "bash scripts/pr-merge.sh"   # the one shape')"
 fo="$(kit_merge_command "$RG" 2>&1)"; rc=$?

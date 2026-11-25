@@ -19,8 +19,9 @@ INPUT=$(cat)
 STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
 [ "$STOP_ACTIVE" = "true" ] && exit 0
 
-# Get Claude's final response text
-RESPONSE=$(echo "$INPUT" | jq -r '.assistant_response // empty')
+# Get Claude's final response text. Claude Code sends it as last_assistant_message; the Codex
+# adapter (codex-hook-adapter.sh) maps its own field onto assistant_response.
+RESPONSE=$(echo "$INPUT" | jq -r '.assistant_response // .last_assistant_message // empty')
 [ -z "$RESPONSE" ] && exit 0
 
 # Off by config? `[gate] understanding_gate = false` in the project's gate config (or the

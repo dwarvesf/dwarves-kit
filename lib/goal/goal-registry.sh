@@ -147,6 +147,16 @@ reg_claim() {
   local dir; dir="$(registry_dir)" || return $?
   mkdir -p "$dir"
 
+  # Single-writer: a record another worktree wrote is that session's goal. Claiming its slug from here would
+  # overwrite it (the collision gate below skips the slug's own record), so refuse and name the holder.
+  local worktree holder
+  worktree="$(git rev-parse --show-toplevel 2>/dev/null || echo '?')"
+  holder="$(reg_get "$dir/$slug.goal" worktree)"
+  if [ -n "$holder" ] && [ "$holder" != "$worktree" ]; then
+    echo "REFUSED: goal '$slug' is already claimed by the session in '$holder'. Release it there first (goal-registry release $slug)." >&2
+    return 1
+  fi
+
   # Gate this goal's declared globs against every active registered goal.
   local collision
   collision="$(_reg_first_collision "$slug" "${globs[*]}")"
@@ -156,10 +166,9 @@ reg_claim() {
   fi
 
   # Write my record. Single-writer: only this session writes <slug>.goal.
-  local now branch worktree
+  local now branch
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-  worktree="$(git rev-parse --show-toplevel 2>/dev/null || echo '?')"
   {
     printf 'slug=%s\n' "$slug"
     printf 'lane=%s\n' "$lane"
