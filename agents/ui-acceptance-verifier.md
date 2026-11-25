@@ -102,7 +102,7 @@ Credential-shaped strings in `Output (excerpt)` and `Notes` never appear in full
 - Be precise. "AC-3 failed" is useless. "AC-3 failed: `expect_text` `Saved` not found, the page showed `Error 500`" is useful.
 - Keep your output compact. The lead merges your row set into the battery's `## Review` and needs to parse the verdict fast.
 
-Source: mirrors `agents/acceptance-verifier.md` (the three-verdict shape and the Verification record) scoped to a rendered preview; the path-scoped grant follows `agents/devops-triage.md`. The design record is `docs/specs/SPEC-292-ui-acceptance-verifier.md`.
+Source: mirrors `agents/acceptance-verifier.md` (the three-verdict shape and the Verification record) scoped to a rendered preview; the path-scoped grant follows `agents/devops-triage.md`. The design record is the ui-acceptance-verifier spec under `docs/specs/`.
 
 ## Return contract (distilled return)
 
