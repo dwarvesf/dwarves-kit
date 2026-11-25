@@ -38,7 +38,7 @@ A one-way, **insert-only** push of a repo's board rows to a foreign, team-OWNED 
 
 Status, Priority and Weight map to the team board's OWN option names via config, so the sink never mutates the team schema: it reads the schema (never PATCHes it) and validates every mapped option name exists BEFORE any create, so a typo in a map value is a hard error instead of a silently auto-created select option. `dropped` rows are skipped; a state absent from the map uses `status_default` or, if unset, is a guided error. Validation runs at preflight, so `--dry-run` surfaces config errors with zero writes, and state is checkpointed after each create so a mid-batch failure never re-pushes a page.
 
-A row whose notes already carry `notion-page:<32-hex>` (the identity marker `notion-taskboard-pull` writes on intake) is never pushed as a create, whatever its tags: the planner binds it into the state map instead (`{"rid": pid, "via": "pull-marker"}`), with no network call. The source declares the marker through its `bound_marker_re` attribute. This stops a team-approved intake row from minting a second, title-prefixed copy of the page it came from the moment triage strips its `#inbox` quarantine tag. `describe()` prints one line per adoption (`= spoke DF-412 bound to an existing remote item (pull marker), not created`).
+A row whose notes already carry `notion-page:<32-hex>` (the identity marker `notion-taskboard-pull` writes on intake) is never pushed as a create, whatever its tags: the planner (`plan_create_only`) binds it into the state map instead (`{"rid": pid, "via": "pull-marker"}`), with no network call. The source declares the marker through its `bound_marker_re` attribute. This stops a team-approved intake row from minting a second, title-prefixed copy of the page it came from the moment triage strips its `#inbox` quarantine tag. `describe()` prints one line per adoption (`= spoke DF-412 bound to an existing remote item (pull marker), not created`).
 
 ```toml
 [sync]
@@ -64,7 +64,7 @@ The mirror image of the push above. It READS the same foreign, team-OWNED Notion
 
 Pull-only by shape: the source has a `read()` and no write method, no page-create, no schema PATCH. It writes no state file, because identity lives in the board itself: each intake row carries the Notion page id in its notes cell, matched against the raw board text, so a run is a pure function of (board, query result) and safe to recompute after a lost git push.
 
-Everything the Task Board hands over is untrusted, title as much as notes. Both ride inside a per-item nonce-delimited fence (a fixed sentinel is forgeable with a doubled space or a homoglyph), and five token classes are defanged: the fence sentinel, a page id, a board id, a `#tag` (it decides which apps the row reaches), and credential shapes. Notes clip at 2000 characters and a run intakes at most 25 rows.
+Everything the Task Board hands over is untrusted, title as much as notes. Both ride inside a per-item nonce-delimited fence (a fixed sentinel is forgeable with a doubled space or a homoglyph), and five token classes are defanged: the fence sentinel, a page id, a board id (`next_id` scans the whole board text), a `#tag` (it decides which apps the row reaches), and credential shapes. Notes clip at 2000 characters and a run intakes at most 25 rows.
 
 The page body (the card's block children) never rides the board row, which must stay one line. The `body_expander` hook fetches it when another adapter creates a task from an intake row, through `ntn` (paragraph, heading, list, to-do, callout and quote text, one level of nesting, paginated), and splices it into the row's fence under `Page body:`. It clips at 8000 characters and passes the same defang and redaction as the other fields. A failed read still creates the task, and the fence says `(page body unavailable)`.
 
@@ -88,6 +88,10 @@ board sync --apps <relay app>                # 3. relay
 That order is load-bearing. Intake mints a board id and the relay keys its create on it, so the id must be published before anything keys on it; otherwise a rejected push discards the row while the relayed task survives, and the next tick mints a new id and creates a duplicate task.
 
 The `guard` hook refuses a run that names a Notion app when `notion_db` or `notion_taskboard_db` points at the intake database (ids compared with dashes stripped), since those apps write.
+
+## Live wiring
+
+Notion DB `612f123c-7476-4a78-90e2-e1465c0a0df6` ("ops-toolkit Backlog" under US Operating, Dwarves workspace, the only workspace `ntn` is logged into; move it if a personal workspace gets connected).
 
 ## Install notes
 

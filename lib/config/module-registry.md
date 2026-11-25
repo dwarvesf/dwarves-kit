@@ -41,7 +41,7 @@ toggleable modules, not to every `[modules]` line in `kit.toml`.
 | stats | Watch (Observe) | |
 | quiz_gate | Build (Execute) | |
 | weekend_batch | Reflect (Learn) | |
-| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. The `board mirror --engine sync` dry-run slice was removed (it had no caller); `lib/sync/cockpit.py` stays for the helpers `sources/hermes.py`, `sources/notion_taskboard_pull.py` and `lib/mega/runs-dashboard.py` import. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
+| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. The `board mirror --engine sync` dry-run slice was removed (it had no caller); `lib/sync/cockpit.py` stays for the helpers the adapters `lib/adapters/hermes/hermes.py` and `lib/adapters/notion/notion_taskboard_pull.py` and `lib/mega/runs-dashboard.py` import. Connectors are adapters (`lib/adapters/<name>/`, one manifest and one entry module each; SPEC-429): core `lib/board` and `lib/sync` name no app. The legacy `mirror`/`status`/`writeback` verbs + lib/adapters/hermes/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
 | money_gate | Check (Govern) | |
 | classify | Shape (Specify) | not a `modules.tsv` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
@@ -649,7 +649,7 @@ allowlist, would close this), but are named here so they are not lost:
 `NC_SKIP_WAVE_TOKENS` (`lib/queue/orchestrate.sh`), `GOAL_SPECS_DIR`
 (`lib/goal/goal-drafts.sh`), `SPEC_RESERVE_FILE` / `SPEC_RESERVE_TTL` /
 `SPEC_RESERVE_MAX_TRIES` (`lib/spec/spec-next.sh`), `SIGNIFICANCE_WORTHINESS_MIN`
-(`lib/classify/significance-classify.sh`), `HERMES_BIN` (`lib/board/board-mirror.sh`),
+(`lib/classify/significance-classify.sh`), `HERMES_BIN` (`lib/adapters/hermes/board-mirror.sh`),
 `REPO_FILTER` (`lib/reflect/weekend-batch.sh`), `OFFLOAD_MAX_TOKENS`
 (`hooks/output-offload.sh`), `KIT_WEEKLY_JOBS` (`deploy/macos/kit-weekly`; its
 predecessor `INTEL_DIR` retired with the per-job session-intel launcher,
