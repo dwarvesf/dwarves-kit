@@ -3,7 +3,8 @@
 # generated test, the named scripts, the owners check, a fixture PR through the stamped checks,
 # the scan-safe digests, and the privacy scan of the whole branch.
 #   STAMP_DENYLIST_FILE=<file, one string per line, kept outside the repo> bash tests/test-stamp-e2e.sh
-# The privacy section FAILS when STAMP_DENYLIST_FILE is unset: a run without the list proves nothing.
+# The generic leak scan always runs. The denylist scan runs when STAMP_DENYLIST_FILE is set and
+# prints one SKIP line otherwise; the release check sets it.
 # shellcheck disable=SC2054,SC2046
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -147,38 +148,42 @@ expect "without the proof and changelog commit the same PR fails" [ "$brc" -eq 1
 expect "and the refusal ends with the rule line then a Fix: line" bash -c "printf '%s\n' \"\$1\" | tail -n 2 | sed -n 2p | grep -q '^Fix: '" _ "$bad"
 
 # ---- 6. privacy: the whole branch, the fixtures, the proof ----
+# The generic leak-shape scan always runs and can always fail. The denylist scan runs when
+# STAMP_DENYLIST_FILE names a list kept outside the repo; unset, it prints one SKIP line and passes.
+base="$(git rev-parse --verify -q origin/master || true)"
+# what ships in the templates, the fixtures, the gauntlet fixtures, the proof and this ticket's records
+{ cat $(find templates/team-stamp tests/fixtures/team-stamp tests/gauntlet/team-stamp -type f 2>/dev/null)
+  [ -f docs/verification/team-stamp.md ] && cat docs/verification/team-stamp.md
+  for d in docs/verification/gauntlet/*team-stamp*; do [ -d "$d" ] && cat $(find "$d" -type f 2>/dev/null); done
+} > "$WORK/shipped.txt" 2>/dev/null
+expect "the shipped files (templates, fixtures, proof, gauntlet record) are not empty" [ -s "$WORK/shipped.txt" ]
+leak_ship="$(leaks "$WORK/shipped.txt" | cut -c1-100 | head -n 5)"
+expect "the templates, fixtures and proof have no bare hex run, home path, secret reference or email" bash -c "[ -z \"\$1\" ]" _ "$leak_ship"
+[ -z "$leak_ship" ] || printf '    %s\n' "$leak_ship"
+if [ -n "$base" ]; then
+  { git diff -U0 "$base" -- . ':!docs/reference/FEATURES.md' | grep '^+' | grep -v '^+++'
+    git log "$base"..HEAD --format='%B'
+    for f in $(git ls-files --others --exclude-standard); do cat "$f"; done
+  } > "$WORK/branch.txt" 2>/dev/null
+  leak_branch="$(hexleaks "$WORK/branch.txt" | cut -c1-100 | head -n 5)"
+  expect "the branch diff has no bare hex run" bash -c "[ -z \"\$1\" ]" _ "$leak_branch"
+  [ -z "$leak_branch" ] || printf '    %s\n' "$leak_branch"
+else
+  echo "SKIP - no origin/master to diff the branch against: the branch-diff hex scan did not run"
+fi
 if [ -z "${STAMP_DENYLIST_FILE:-}" ]; then
-  no "STAMP_DENYLIST_FILE is unset: the privacy scan cannot prove anything without the list"
+  echo "SKIP - STAMP_DENYLIST_FILE is unset: the denylist scan did not run (the release check sets it)"
 elif [ ! -f "$STAMP_DENYLIST_FILE" ]; then
   no "STAMP_DENYLIST_FILE does not name a file"
 else
-  base="$(git rev-parse --verify -q origin/master || true)"
-  if [ -z "$base" ]; then
-    no "no origin/master to diff the branch against"
-  else
-    { git diff -U0 "$base" -- . ':!docs/reference/FEATURES.md' | grep '^+' | grep -v '^+++'
-      git log "$base"..HEAD --format='%B'
-      for f in $(git ls-files --others --exclude-standard); do cat "$f"; done
-    } > "$WORK/branch.txt" 2>/dev/null
-    # what ships in the templates, the fixtures, the proof and this ticket's gauntlet record
-    { cat $(find templates/team-stamp tests/fixtures/team-stamp -type f 2>/dev/null)
-      [ -f docs/verification/team-stamp.md ] && cat docs/verification/team-stamp.md
-      for d in docs/verification/gauntlet/*team-stamp*; do [ -d "$d" ] && cat $(find "$d" -type f 2>/dev/null); done
-    } > "$WORK/shipped.txt" 2>/dev/null
-    expect "the branch diff, commit messages, fixtures and proof are not empty" [ -s "$WORK/branch.txt" ]
+  if [ -n "$base" ]; then
     hits="$(grep -cF -f "$STAMP_DENYLIST_FILE" "$WORK/branch.txt")"
     expect "no denylist string appears in the branch ($hits hits)" [ "$hits" -eq 0 ]
-    gen_hits="$(grep -rlF -f "$STAMP_DENYLIST_FILE" "$S" --exclude-dir=.git 2>/dev/null | wc -l | tr -d ' ')"
-    expect "no denylist string appears in a stamped repo ($gen_hits files)" [ "$gen_hits" -eq 0 ]
-    ship_hits="$(grep -cF -f "$STAMP_DENYLIST_FILE" "$WORK/shipped.txt")"
-    expect "no denylist string appears in the templates, fixtures, proof or gauntlet record ($ship_hits hits)" [ "$ship_hits" -eq 0 ]
-    leak_branch="$(hexleaks "$WORK/branch.txt" | cut -c1-100 | head -n 5)"
-    expect "the branch diff has no bare hex run" bash -c "[ -z \"\$1\" ]" _ "$leak_branch"
-    [ -z "$leak_branch" ] || printf '    %s\n' "$leak_branch"
-    leak_ship="$(leaks "$WORK/shipped.txt" | cut -c1-100 | head -n 5)"
-    expect "the templates, fixtures and proof have no bare hex run, home path, secret reference or email" bash -c "[ -z \"\$1\" ]" _ "$leak_ship"
-    [ -z "$leak_ship" ] || printf '    %s\n' "$leak_ship"
   fi
+  gen_hits="$(grep -rlF -f "$STAMP_DENYLIST_FILE" "$S" --exclude-dir=.git 2>/dev/null | wc -l | tr -d ' ')"
+  expect "no denylist string appears in a stamped repo ($gen_hits files)" [ "$gen_hits" -eq 0 ]
+  ship_hits="$(grep -cF -f "$STAMP_DENYLIST_FILE" "$WORK/shipped.txt")"
+  expect "no denylist string appears in the templates, fixtures, proof or gauntlet record ($ship_hits hits)" [ "$ship_hits" -eq 0 ]
 fi
 
 echo
