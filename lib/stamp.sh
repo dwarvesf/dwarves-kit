@@ -277,11 +277,14 @@ merge_json() { # merge_json i: write the merged settings JSON to $STAGE/m<i>
     echo '{}' > "$base"
   fi
   jq --slurpfile tpl "$STAGE/r$i" '
-    def addhooks($new): . as $grp | ($grp.hooks // []) as $have
-      | $grp | .hooks = ($have + [ $new[] | select(.command as $c | ($have | map(.command) | index($c)) == null) ]);
     def mergegroups($new): reduce $new[] as $g (.;
-      (map(.matcher // "") | index($g.matcher // "")) as $ix
-      | if $ix == null then . + [$g] else .[$ix] |= addhooks($g.hooks) end);
+      reduce $g.hooks[] as $h (.;
+        ($g.matcher // "") as $m
+        | (map(select((.matcher // "") == $m) | (.hooks // [])[] | (.command // "")) | index($h.command)) as $have
+        | if $have != null then .
+          else (map(.matcher // "") | index($m)) as $ix
+            | if $ix == null then . + [($g | .hooks = [$h])] else .[$ix].hooks = ((.[$ix].hooks // []) + [$h]) end
+          end));
     .hooks = ((.hooks // {}) as $h
       | reduce (($tpl[0].hooks // {}) | to_entries[]) as $e ($h; .[$e.key] = ((.[$e.key] // []) | mergegroups($e.value))))
   ' "$base" > "$STAGE/m$i" || refuse "could not merge ${TGT[i]}" "fix ${TGT[i]} by hand, then re-run"

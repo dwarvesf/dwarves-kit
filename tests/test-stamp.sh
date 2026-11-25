@@ -216,6 +216,13 @@ expect "merge keeps an unrelated event" bash -c "[ \"\$(jq -r '.hooks.Stop[0].ho
 expect "merge adds the SessionStart event" bash -c "jq -e '.hooks.SessionStart | length == 1' '$S' >/dev/null"
 before="$(cksum < "$S")"; run "$R8"
 expect "a second merge adds no duplicate" [ "$before" = "$(cksum < "$S")" ]
+R8b="$(newrepo)"; mkdir -p "$R8b/.claude"
+cat > "$R8b/.claude/settings.json" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"foreign-a.sh"}]},{"matcher":"Bash","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/scripts/hello.sh\""}]}],"SessionStart":[{"hooks":[{"type":"command","command":"foreign-b.sh"}]},{"hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/scripts/hello.sh\""}]}]}}
+EOF
+before="$(cksum < "$R8b/.claude/settings.json")"; run "$R8b" $FLAGS
+expect "our entry found in a second group of the same matcher adds nothing" [ "$before" = "$(cksum < "$R8b/.claude/settings.json")" ]
+expect "and the file reads unchanged" has "unchanged: .claude/settings.json"
 R9="$(newrepo)"; mkdir -p "$R9/.claude"; echo '{ not json' > "$R9/.claude/settings.json"
 run "$R9" $FLAGS
 expect "invalid settings.json refuses the run" [ "$RC" -eq 1 ]
