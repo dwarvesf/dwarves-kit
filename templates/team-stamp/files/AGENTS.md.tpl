@@ -74,13 +74,13 @@ A door is hard to undo after it ships: money and pricing, legal and consent text
 
 | Door setting | Value |
 |---|---|
-| Paths the merge guard checks (a comma list; blank means the guard lists no path) | {{DOOR_PATHS}} |
+| Paths the merge guard checks, added to the harness's own files below (a comma list; blank means none added) | {{DOOR_PATHS}} |
 | Who says the second yes for those paths (blank means any person other than the author) | {{DOOR_APPROVER}} |
 
-The merge guard checks only the paths in that table. For every other door, the `One-way door:` line and the reviewer are the control.
+The harness's own files are always doors: `.github/workflows/`, `scripts/`, `.claude/`, `OWNERS.md`, `AGENTS.md`, `docs/TEAM-WORKFLOW.md` and `.kit.toml`. The merge guard needs a second person's approval for any pull request that touches one of them or a path in that table. Review those changes like code that runs on every teammate's machine: a change to the hook settings (`.claude/settings.json`), the lessons index (`.claude/memory/`) or an `agent-*` script runs in every teammate's next session. For every other door, the `One-way door:` line and the reviewer are the control. The first pull request that introduces the stamp touches every door: a second person reads it, and it is merged by hand.
 
 ### Merge
-- Merge with `bash scripts/pr-merge.sh --wait <number>`, never a bare `gh pr merge`. `--wait` polls the checks until none is pending (`--timeout <seconds>`). It refuses a draft, a red or pending check, a conflict, and a change under a door path without a second person's approval. It merges the exact head it judged.
+- Merge with `bash scripts/pr-merge.sh --wait <number>`, never a bare `gh pr merge`. `--wait` polls the checks until none is pending (`--timeout <seconds>`). It refuses a draft, a red or pending check, a conflict (fix: `gh pr update-branch <number>`), a missing `changes` or `pr-shape` check from the workflow `CI`, and a change under a door path without a second person's approval given on the head it judged (an owner, member or collaborator who is not the author and not a bot). It merges the exact head it judged. It refuses to run when its own text differs from the default branch's copy: never run a pull request's copy of a script.
 - `--dry-run` prints the verdict and merges nothing.
 - Never push to `{{DEFAULT_BRANCH}}` and never commit on it.
 
@@ -91,6 +91,8 @@ The merge guard checks only the paths in that table. For every other door, the `
 
 ### Limits
 - GitHub cannot enforce any of this without branch protection. A person who merges from the GitHub site passes everything, on a plan without branch protection.
+- GitHub runs a pull request's own copy of the workflow file, so a pull request can edit `.github/workflows/ci.yml`. What binds it is the merge guard: it needs both checks from the workflow `CI`, and a change to the workflows is a door that needs a second person.
+- The CI jobs run on a self-hosted runner and the `tests` job runs the pull request's own test scripts. Use an ephemeral runner or a container job: a long-lived runner keeps what a pull request's tests write. Not for public repos. A pull request from a fork does not run on it.
 - Two machines back the rules instead: a Claude Code hook (`.claude/settings.json`, `scripts/agent-guard.sh`) for agents that run in Claude Code, and the CI check `pr-shape` for everyone. The hook blocks a bare `gh pr merge`, a push to `{{DEFAULT_BRANCH}}` and a commit on `{{DEFAULT_BRANCH}}`, and prints the fix. It is advice with teeth, not a wall: see the lesson "Guards match command text".
 - Claude Code uses a hook from `.claude/settings.json` even in a folder not yet trusted (only a parent folder trusted, or a `claude -p` run), so a teammate needs no extra step.
 - Agents other than Claude Code get no hook: CI is their stop.

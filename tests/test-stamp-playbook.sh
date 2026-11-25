@@ -91,7 +91,7 @@ expect "the default board file is read from the repo root by the real script" ba
 
 # 4. idempotence
 OUT2="$($STAMP --default-branch trunk --board-file docs/plan/BOARD.md --decision-tag needs-call "$R2" 2>&1)"
-expect "a second run prints only unchanged" bash -c '! printf "%s\n" "$1" | grep -Ev "^unchanged: " | grep -q .' _ "$OUT2"
+expect "a second run prints only unchanged" bash -c '! printf "%s\n" "$1" | grep -Ev "^(unchanged|using): " | grep -q .' _ "$OUT2"
 
 # 5. shell-clean
 if command -v shellcheck >/dev/null 2>&1; then

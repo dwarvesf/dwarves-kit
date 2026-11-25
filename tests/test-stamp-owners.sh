@@ -47,7 +47,7 @@ expect "seed: the table header names Path, Owner and Sponsor" grep -q '^| Path |
 
 # 4. idempotent, never drift-checked after the repo edits OWNERS.md
 bash lib/stamp.sh --only owners --default-branch main --owner testowner "$R1" >"$WORK/s2.out" 2>&1
-expect "second run prints only unchanged" bash -c "[ -s '$WORK/s2.out' ] && ! grep -v '^unchanged: ' '$WORK/s2.out'"
+expect "second run prints only unchanged" bash -c "[ -s '$WORK/s2.out' ] && ! grep -Ev '^(unchanged|using): ' '$WORK/s2.out'"
 printf '| `scripts/extra.sh` | Added by the repo | @someone | |\n' >>"$R1/OWNERS.md"
 bash lib/stamp.sh --only owners --check "$R1" >"$WORK/c1.out" 2>&1
 expect "--check stays clean after the repo edits OWNERS.md" [ $? -eq 0 ]

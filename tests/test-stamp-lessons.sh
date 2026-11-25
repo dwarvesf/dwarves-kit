@@ -113,7 +113,7 @@ done
 
 # 6. idempotent, and repo edits to seed files never drift
 OUT="$(bash lib/stamp.sh --only lessons "$R" 2>&1)"
-expect "a second run prints only unchanged" bash -c "! printf '%s\n' \"\$1\" | grep -vq '^unchanged: '" _ "$OUT"
+expect "a second run prints only unchanged" bash -c "! printf '%s\n' \"\$1\" | grep -Evq '^(unchanged|using): '" _ "$OUT"
 printf -- '- [Mine](mine.md): a lesson of this repo.\n' >> "$R/.claude/memory/MEMORY.md"
 printf -- '---\nname: mine\ndescription: a repo note.\n---\n\nbody\n' > "$R/.claude/memory/mine.md"
 bash lib/stamp.sh --only lessons --check "$R" >/dev/null 2>&1

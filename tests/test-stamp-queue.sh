@@ -73,7 +73,7 @@ expect "defaults: the generated test ran many cases" bash -c "[ \"\$(grep -c '^P
 
 # 6. idempotent
 bash lib/stamp.sh --only queue --default-branch main --owner testowner "$R1" >"$WORK/s2.out" 2>&1
-expect "second run prints only unchanged" bash -c "[ -s '$WORK/s2.out' ] && ! grep -v '^unchanged: ' '$WORK/s2.out'"
+expect "second run prints only unchanged" bash -c "[ -s '$WORK/s2.out' ] && ! grep -Ev '^(unchanged|using): ' '$WORK/s2.out'"
 
 # 7. stamp with non-default values
 R2="$(newrepo)"

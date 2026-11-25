@@ -60,7 +60,7 @@ expect "three product tags: dev is added last" bash -c "grep -q \"^TAGS='web,api
 
 # 4. seed-once: idempotent, never drift-checked, never overwritten
 stamp "$R1" --tags app,lib >"$WORK/s4.out" 2>&1
-expect "second run prints only unchanged" bash -c "[ -s '$WORK/s4.out' ] && ! grep -v '^unchanged: ' '$WORK/s4.out'"
+expect "second run prints only unchanged" bash -c "[ -s '$WORK/s4.out' ] && ! grep -Ev '^(unchanged|using): ' '$WORK/s4.out'"
 printf -- '- app: A first entry.\n' >>"$R1/CHANGELOG.md"
 stamp "$R1" --tags app,lib --check >"$WORK/c1.out" 2>&1
 expect "--check stays clean after the repo edits CHANGELOG.md" [ $? -eq 0 ]

@@ -18,6 +18,8 @@ installed: no file names a path under the kit, and the stamp adds no daemon and 
    bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/stamp.sh" --owner <github-login> <target>
    ```
 
+   The first pull request that introduces the stamp into a repo touches every door (the workflows, `scripts/`, `.claude/`, the rules files). A second person reads it and approves it, or the operator merges it by hand: the merge guard cannot judge its own first copy.
+
 3. Report the status lines it printed (`created`, `merged`, `unchanged`, `edited (left alone)`,
    `older stamp (run --refresh)`, `missing`) and any two-line refusal with its `Fix:` line. The
    operator reviews and commits the files; the stamp commits nothing.

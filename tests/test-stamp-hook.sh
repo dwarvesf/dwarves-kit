@@ -90,7 +90,7 @@ before="$(cksum <"$S")"
 OUT2="$($STAMP --default-branch master "$R" 2>&1)"; RC=$?
 expect "a second run exits 0" [ "$RC" -eq 0 ]
 expect "a second run leaves settings.json byte-identical" [ "$(cksum <"$S")" = "$before" ]
-expect "a second run prints only unchanged" bash -c '! printf "%s\n" "$1" | grep -Ev "^unchanged: " | grep -q .' _ "$OUT2"
+expect "a second run prints only unchanged" bash -c '! printf "%s\n" "$1" | grep -Ev "^(unchanged|using): " | grep -q .' _ "$OUT2"
 
 # 6. foreign keys and a foreign hook entry survive, in the same Bash group
 R3="$(newrepo)"
