@@ -66,7 +66,8 @@ expect "complete table: exit 0" [ "$rc" -eq 0 ]
 expect "complete table: reports the count" has full "check-owners: 3 paths, all owned"
 expect "complete table: stderr empty" [ ! -s "$T/full.err" ]
 
-# 1b. paths are compared in lower case: a script in a differently cased directory needs a row too
+# 1b. lower case decides which tracked files fall under an owned area, so a script in a differently
+# cased directory needs a row too (ownership itself matches the exact path, see 1c)
 for odd in "SCRIPTS/x.sh" "Scripts/Y.sh" ".GitHub/Workflows/ci2.yml"; do
     r="$(mkrepo)"
     # written straight into the index, so the case survives a case-insensitive filesystem
@@ -78,6 +79,67 @@ for odd in "SCRIPTS/x.sh" "Scripts/Y.sh" ".GitHub/Workflows/ci2.yml"; do
     expect "differently cased $odd with no row: exit 1" [ "$rc" -eq 1 ]
     expect "differently cased $odd with no row: names it" has "$tag.err" "no owner yet for $odd"
 done
+
+# 1c. ownership is an exact byte match. A row for scripts/deploy.sh does not own scripts/Deploy.sh, and
+# two paths that are the same name in lower case are refused. Paths go straight into the index so the
+# case and the bytes survive any filesystem.
+addpath() { # addpath <repo> <path>
+    local blob
+    blob="$(printf '%s\n' '#!/usr/bin/env bash' | git -C "$1" hash-object -w --stdin)"
+    git -C "$1" update-index --add --cacheinfo "100644,$blob,$2"
+}
+r="$(mkrepo)"
+addpath "$r" "scripts/Deploy.sh"
+write_owners "$r" "$FULL_ROWS" "| \`scripts/deploy.sh\` | Deploy | @alice | |"
+run "$r" exact
+expect "a row for scripts/deploy.sh does not own scripts/Deploy.sh: exit 1" [ "$rc" -eq 1 ]
+expect "a row for scripts/deploy.sh does not own scripts/Deploy.sh: names the tracked path" has exact.err "no owner yet for scripts/Deploy.sh"
+expect "a row for scripts/deploy.sh does not own scripts/Deploy.sh: names the case clash" has exact.err "same name in lower case"
+expect "exact match: rule then Fix" pairs_ok exact
+r="$(mkrepo)"
+addpath "$r" "scripts/Build.sh"
+write_owners "$r" "$FULL_ROWS"
+run "$r" clash
+expect "two tracked paths equal in lower case: exit 1" [ "$rc" -eq 1 ]
+expect "two tracked paths equal in lower case: names the clash" bash -c 'grep -q "same name in lower case" "$1" && grep -q "scripts/Build.sh" "$1" && grep -q "scripts/build.sh" "$1"' _ "$T/clash.err"
+r="$(mkrepo)"
+addpath "$r" "SCRIPTS/x.sh"
+mkdir -p "$r/SCRIPTS" && printf '%s\n' '#!/usr/bin/env bash' >"$r/SCRIPTS/x.sh"
+write_owners "$r" "$FULL_ROWS" "| \`SCRIPTS/x.sh\` | Cased exactly | @alice | |"
+run "$r" exactrow
+expect "SCRIPTS/x.sh with an exact row: exit 0" [ "$rc" -eq 0 ]
+r="$(mkrepo)"
+addpath "$r" "SCRIPTS/x.sh"
+write_owners "$r" "$FULL_ROWS"
+run "$r" needsrow
+expect "SCRIPTS/x.sh with no row: exit 1" [ "$rc" -eq 1 ]
+expect "SCRIPTS/x.sh needs a row: names it" has needsrow.err "no owner yet for SCRIPTS/x.sh"
+
+# 1d. a tracked name under an owned area with a byte above 0x7F, a control byte or a newline is refused,
+# never skipped; a name outside the owned areas is not this check's business
+for kind in nonascii newline control; do
+    case "$kind" in
+    nonascii) odd="$(printf 'scripts/caf\303\251.sh')" ;;
+    newline) odd="$(printf 'scripts/a\nb.sh')" ;;
+    control) odd="$(printf '.github/workflows/c\001d.yml')" ;;
+    esac
+    r="$(mkrepo)"
+    if ! addpath "$r" "$odd" 2>/dev/null; then
+        echo "NOTE  odd name ($kind): git refuses the name, case skipped"
+        continue
+    fi
+    write_owners "$r" "$FULL_ROWS"
+    run "$r" "odd-$kind"
+    expect "odd name ($kind) under an owned area: exit 1" [ "$rc" -eq 1 ]
+    expect "odd name ($kind): the refusal says no row can name it" has "odd-$kind.err" "no row can name them"
+    expect "odd name ($kind): the Fix line is a plain instruction" grep -q '^Fix: rename each with git mv' "$T/odd-$kind.err"
+    expect "odd name ($kind): rule then Fix" pairs_ok "odd-$kind"
+done
+r="$(mkrepo)"
+addpath "$r" "docs/caf$(printf '\303\251').md"
+write_owners "$r" "$FULL_ROWS"
+run "$r" oddelsewhere
+expect "a non-ASCII name outside the owned areas: exit 0" [ "$rc" -eq 0 ]
 
 # 2. a tracked script with no row
 r="$(mkrepo)"

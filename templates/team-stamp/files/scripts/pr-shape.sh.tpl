@@ -38,8 +38,8 @@
 #                 it fails when CI=true
 #   6. parity     AGENTS.md and docs/TEAM-WORKFLOW.md change together, and every AGENTS.md
 #                 heading has a link [Heading](../AGENTS.md#anchor) in docs/TEAM-WORKFLOW.md.
-#   7. case       no two paths of the head tree differ only in case (the merge guard and the owners
-#                 check compare paths in lower case)
+#   7. case       no two paths of the head tree differ only in case (the merge guard matches doors in any
+#                 casing; the owners check matches the exact path)
 #                 A body line "no-rule-mirror: <reason of 10+ characters>" waives it
 # A reason line starts at the first column of a body line. A reason that is a placeholder in
 # angle brackets does not count.
@@ -423,12 +423,25 @@ EOF
     fi
 fi
 
-# ---- 7. no two paths that differ only in case. The merge guard and the owners check compare paths in
-# lower case, and a case-insensitive checkout (macOS, Windows) can write one over the other.
-collide="$(git ls-tree -r --name-only -z "$head_sha" 2>/dev/null | tr '\0' '\n' | awk '{ k = tolower($0); if (k in seen) { if (n++ < 3) printf "%s ", $0 } else seen[k] = 1 } END { exit 0 }')"
-if [ -z "$collide" ]; then
+# ---- 7. no two paths that differ only in case. The merge guard matches doors in any casing and the
+# owners check matches the exact path; a case-insensitive checkout (macOS, Windows) can write one path
+# over the other. The tree is read NUL-delimited. A name that holds a newline cannot ride a line list
+# and is refused with the same fix.
+tree_list="" tree_odd=0
+while IFS= read -r -d '' tp; do
+    case "$tp" in
+    *$'\n'*)
+        tree_odd=$((tree_odd + 1))
+        ;;
+    *) tree_list="${tree_list}${tp}
+" ;;
+    esac
+done < <(git ls-tree -r --name-only -z "$head_sha" 2>/dev/null)
+collide="$(printf '%s' "$tree_list" | awk '{ k = tolower($0); if (k in seen) { if (seen[k] != $0 && n++ < 3) printf "%s ", $0 } else seen[k] = $0 }')"
+if [ -z "$collide" ] && [ "$tree_odd" -eq 0 ]; then
     ok "case: no two paths differ only in case"
 else
+    [ "$tree_odd" -eq 0 ] || collide="${collide}($tree_odd path(s) with a newline in the name) "
     refuse "two paths differ only in case, so one can overwrite the other on a case-insensitive checkout: $(clean "${collide% }")" \
         "git mv <one of the paths> <a name that differs in more than case>"
 fi

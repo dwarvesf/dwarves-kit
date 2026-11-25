@@ -142,7 +142,20 @@ else
 fi
 head_ref="${HEAD_SHA:-HEAD}"
 head="$(resolve "$head_ref")" || die "HEAD_SHA $(clean "$head_ref") does not resolve in this clone" "git status --short # then unset HEAD_SHA or set it to a commit"
-files="$(git -c core.quotepath=off diff --name-only "$base...$head" 2>/dev/null)"
+# The changed paths are read NUL-delimited, so a newline in a name cannot split one path into two. A path
+# that holds a newline cannot ride a line list: it is kept as a "?" line and counts as a product path.
+files="" odd_path=0
+while IFS= read -r -d '' p; do
+    case "$p" in
+    *$'\n'*)
+        odd_path=1
+        files="${files}?
+"
+        ;;
+    *) files="${files}${p}
+" ;;
+    esac
+done < <(git diff --name-only -z "$base...$head" 2>/dev/null)
 
 if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     note "uncommitted changes are not checked: PR shape reads commits, so commit first"
@@ -215,7 +228,7 @@ done
 if [ "$ran" -eq 0 ]; then ok "script tests: none in scripts/"; fi
 
 # ---- the path filter of job changes
-if grep -Eq "$self|$product_re" <<<"$files"; then
+if [ "$odd_path" -eq 1 ] || grep -Eq "$self|$product_re" <<<"$files"; then
     note "a product path or the workflow changed: CI runs the repo's own build and test jobs for it; run those commands before you push"
 fi
 

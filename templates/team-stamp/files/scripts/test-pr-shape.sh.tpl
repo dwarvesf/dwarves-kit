@@ -621,7 +621,7 @@ finish
 run pabsent "docs: change the rules" ""
 expect "one rule file absent at head: parity is skipped, exit 0" rc_is 0
 
-# 7b. two paths that differ only in case are refused (the guard compares lower case; a case-insensitive
+# 7b. two paths that differ only in case are refused (the guard matches doors in any casing; a case-insensitive
 # checkout would let one overwrite the other). The paths go straight into the index.
 for pair in ".claude/settings.json:.CLAUDE/settings.json" "scripts/a.sh:SCRIPTS/a.sh" "OWNERS.md:Owners.md"; do
     new_repo
@@ -637,6 +637,19 @@ for pair in ".claude/settings.json:.CLAUDE/settings.json" "scripts/a.sh:SCRIPTS/
     expect "case collision $pair: two-line refusal" rc_pairs 1 "$tag"
     expect "case collision $pair: names the rule" failed "$tag" "two paths differ only in case"
 done
+# a name with a newline cannot ride a line list: the tree is read NUL-delimited and refuses it
+new_repo
+blob1="$(printf 'one\n' | g hash-object -w --stdin)"
+if g update-index --add --cacheinfo "100644,$blob1,docs/a
+b.txt" 2>/dev/null; then
+    g commit -q -m change
+    HEAD_="$(g rev-parse HEAD)"
+    run casenl "docs: add a file" "no-proof: a name plant for the test, no behavior change"
+    expect "a path with a newline in the tree: exit 1" rc_is 1
+    expect "a path with a newline in the tree: names the rule" failed casenl "two paths differ only in case"
+else
+    echo "NOTE  a newline in a path: git refuses the name, case skipped"
+fi
 new_repo
 printf 'x\n' >"$R/docs/guides/other.md"
 finish

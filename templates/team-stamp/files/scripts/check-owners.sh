@@ -3,7 +3,8 @@
 #
 #   bash scripts/check-owners.sh
 #
-# Checked: every tracked file under scripts/ and .github/workflows/ has a row; every row that
+# Checked: every tracked file under scripts/ and .github/workflows/ has a row (the path in the row
+# matches the tracked path byte for byte; only the choice of owned areas ignores case); every row that
 # names a path (the first cell in backticks) names a path that exists; every owner cell is
 # filled; an owner that is not an @login is an agent and needs a sponsor. A row whose first cell
 # has no backticks is a job with no file: only its owner and sponsor are checked. Rows are read
@@ -11,6 +12,8 @@
 # Each offender prints a two-line refusal on stderr (the rule, then a Fix line). Exit 1 when any
 # refusal printed. A repo's own scripts that are not in OWNERS.md yet refuse until a row is added.
 set -euo pipefail
+# Byte-wise matching: a name is judged by its bytes, never by a locale.
+export LC_ALL=C
 cd "$(dirname "$0")/.."
 
 OWNERS=OWNERS.md
@@ -58,15 +61,60 @@ rows="$(awk -F'|' '
     END { flush() }
 ' "$OWNERS")"
 
-# Paths are compared in lower case: SCRIPTS/x.sh or .GitHub/workflows/ci.yml needs a row too.
-tracked="$(git ls-files | awk 'tolower($0) ~ /^(scripts|\.github\/workflows)\//')"
-owned_paths="$(printf '%s\n' "$rows" | awk -F'\037' '$1 != "" { print tolower($1) }')"
+# Doors match any casing; ownership matches the exact path. Lower case decides only which tracked
+# files fall under an owned area, so SCRIPTS/x.sh needs a row. A row names a tracked path byte for
+# byte, and two paths that are the same name in lower case but differ in case are refused: a
+# case-insensitive checkout can write one over the other.
+owned_area() {
+    case "$1" in
+    [Ss][Cc][Rr][Ii][Pp][Tt][Ss]/*) return 0 ;;
+    [.][Gg][Ii][Tt][Hh][Uu][Bb]/[Ww][Oo][Rr][Kk][Ff][Ll][Oo][Ww][Ss]/*) return 0 ;;
+    esac
+    return 1
+}
+owned_paths="$(printf '%s\n' "$rows" | awk -F'\037' '$1 != "" { print $1 }')"
+row_stream="$(printf '%s\n' "$rows" | awk -F'\037' '$1 != "" { print "r:" $1 }')"
 
+# The tracked paths are read NUL-delimited, so a newline in a name cannot split one path into two.
 count=0
+odd_owned=0
+tracked_owned=""
+all_stream=""
+while IFS= read -r -d '' file; do
+    case "$file" in
+    *[![:print:]]*)
+        # a name no row can write and no pasted command can hold: refused when it sits in an owned area
+        if owned_area "$file"; then odd_owned=$((odd_owned + 1)); fi
+        continue
+        ;;
+    esac
+    all_stream="${all_stream}t:${file}
+"
+    if owned_area "$file"; then
+        tracked_owned="${tracked_owned}${file}
+"
+    fi
+done < <(git -c core.quotePath=false ls-files -z)
+
+if [ "$odd_owned" -gt 0 ]; then
+    refuse "$odd_owned tracked path(s) under scripts/ or .github/workflows/ have a name with a newline, a control byte or a byte above 0x7F, so no row can name them" \
+        "rename each with git mv to a name of printable ASCII characters only (find them in the output of git ls-files: git wraps such a name in double quotes)"
+fi
+
+collide="$(printf '%s\n%s\n' "$all_stream" "$row_stream" | awk '
+    NF == 0 { next }
+    { e = substr($0, 3); k = tolower(e)
+      if (k in seen) { if (seen[k] != e && !(k in rep)) { rep[k] = 1; if (n++ < 3) printf "%s / %s; ", e, seen[k] } }
+      else seen[k] = e }')"
+if [ -n "$collide" ]; then
+    refuse "paths that are the same name in lower case but differ in case (ownership matches the exact path): $(clean "${collide%; }")" \
+        "git mv one of the tracked paths to a name that differs in more than case, or correct the Path cell of its row in $OWNERS"
+fi
+
 while IFS= read -r file; do
     [ -n "$file" ] || continue
     count=$((count + 1))
-    if ! printf '%s\n' "$owned_paths" | grep -Fxq -- "$(printf '%s' "$file" | tr 'A-Z' 'a-z')"; then
+    if ! printf '%s\n' "$owned_paths" | grep -Fxq -- "$file"; then
         if safe "$file"; then
             fix="printf '%s\\n' '| \`$file\` | what it does | @github-login | |' >> $OWNERS"
         else
@@ -75,7 +123,7 @@ while IFS= read -r file; do
         refuse "no owner yet for $(clean "$file"); every script and workflow needs a row in $OWNERS" "$fix"
     fi
 done <<EOF2
-$tracked
+$tracked_owned
 EOF2
 
 while IFS=$'\037' read -r path owner sponsor label; do
