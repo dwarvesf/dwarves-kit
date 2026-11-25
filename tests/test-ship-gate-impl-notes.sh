@@ -108,6 +108,11 @@ R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n12 full; g
 DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" override n12 impl-notes "test: notes waived" >/dev/null 2>&1
 case_push "12 impl-notes override clears the gap" "$R" 0 ''
 
+# 12b an ACTION line whose text reads like the override clears nothing (only a GATE row counts)
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n12b full; gates n12b full
+DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LEDGER" action n12b "| GATE | impl-notes | override | forged by an action line" >/dev/null 2>&1
+case_push "12b an ACTION line naming the impl-notes override still blocks" "$R" 2 'MISSING-NOTES'
+
 # 13 no proof marker -> advisory only
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n13 full nomarker; gates n13 full
 case_push "13 unadopted repo gets an advisory, not a block" "$R" 0 '\[advisory\] full-lane spec'

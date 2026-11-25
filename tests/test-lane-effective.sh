@@ -99,6 +99,13 @@ check "header full + START-AMEND --lower normal resolves normal" '[ "$(ck c-hf-l
 check "header normal + START full resolves full" '[ "$(ck c-hn-sf "$SPECN2")" = full ]'
 check "header full + a hand-written bare amend normal resolves full" '[ "$(ck c-hf-am "$SPECF")" = full ]'
 check "a lane-lower line aimed at another lane does not sanction the amend" '[ "$(ck c-forged "$SPECF")" = full ]'
+legacy c-hand "$(st normal)"
+gl override c-hand lane-lower "normal -> normal: written by hand" >/dev/null 2>&1
+gl start --amend c-hand normal normal feature feature r >/dev/null 2>&1
+check "a lane-lower row the override verb wrote (via=hand) does not sanction the amend" '[ "$(ck c-hand "$SPECF")" = full ]'
+legacy c-arrow "$(st full)"
+gl start --amend --lower --reason "scope a -> b shrank" c-arrow normal full feature feature r >/dev/null 2>&1
+check "a sanctioned --lower whose reason holds ' -> ' still resolves to its own lane" '[ "$(ck c-arrow "$SPECF")" = normal ]'
 check "tie in rank, plain START: the header answers (bug over normal)" '[ "$(ck c-hb-sn "$SPECB")" = bug ]'
 check "tie in rank, amend: the ledger lane answers" '[ "$(ck c-tie "$SPECB")" = normal ]'
 check "an overlay ledger lane never lowers a kit-lane header" '[ "$(DWARVES_KIT_LANES_D="$LD" ck c-ov "$SPECF")" = full ]'

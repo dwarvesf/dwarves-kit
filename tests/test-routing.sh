@@ -77,5 +77,21 @@ echo "  -> $OUT5"
 rm -f "$BAD"
 
 echo ""
+echo "=== unknown model: never a tier of its own (the orchestrator allowlist could not route it) ==="
+UNK="$(mktemp "${TMPDIR:-/tmp}/unk-ledger.XXXXXX")" || exit 1
+printf 'code-add-flag\tb-haiku\tpass\t300000\t40\t900\t250000\t49060\t5\t0.1\thaiku-4-5\ts1\n' > "$UNK"
+printf 'code-add-flag\tb-gpt\tpass\t1000\t40\t900\t250\t49\t5\t0.1\tgpt-5\ts2\n' >> "$UNK"
+OUT6=$(bash "$RS" "$UNK" code-add-flag 2>&1); RC6=$?
+echo "  -> $OUT6"
+[ "$RC6" -eq 2 ] && { trap '' PIPE; echo "$OUT6" 2>/dev/null || :; } | grep -q 'thin-data'; chk "unknown model: does not make haiku-only data look like two tiers" $?
+printf 'code-add-flag\tb-sonnet\tpass\t400000\t40\t900\t250000\t49060\t5\t0.1\tsonnet-4-6\ts3\n' >> "$UNK"
+OUT7=$(bash "$RS" "$UNK" code-add-flag 2>&1)
+{ trap '' PIPE; echo "$OUT7" 2>/dev/null || :; } | grep -q 'model=haiku'; chk "unknown model: the cheaper gpt-5 row is never suggested" $?
+printf 'code-add-flag\tb-gpt\tpass\t1000\t40\t900\t250\t49\t5\t0.1\tgpt-5\ts2\n' > "$UNK"
+OUT8=$(bash "$RS" "$UNK" code-add-flag 2>&1); RC8=$?
+[ "$RC8" -eq 2 ] && { trap '' PIPE; echo "$OUT8" 2>/dev/null || :; } | grep -q '^ABSTAIN'; chk "only unknown models: abstains, no crash" $?
+rm -f "$UNK"
+
+echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

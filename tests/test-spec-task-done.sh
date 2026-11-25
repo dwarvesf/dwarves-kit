@@ -106,6 +106,15 @@ eq     "missing log fields exits 1" "$rc" "1"
 expect "missing log fields named" "needs --command, --exit, --excerpt and --verdict" "$out"
 eq     "missing log fields leaves the spec unchanged" "$(cat "$D/spec.md")" "$before"
 
+echo "=== a --verify-log that cannot be written errors before the spec moves ==="
+mk_spec; before="$(cat "$D/spec.md")"; printf 'a file, not a dir\n' > "$D/blocker"
+out="$(bash "$SPEC_SH" task-done "$D/spec.md" TASK-1 --commit 1234abc --verify-log "$D/blocker/v.md" \
+  --command "x" --exit 0 --excerpt "ok" --verdict PASS 2>&1)"; rc=$?
+eq     "unwritable log exits 1" "$rc" "1"
+expect "unwritable log named" "cannot create the directory of --verify-log" "$out"
+eq     "unwritable log leaves the spec unchanged" "$(cat "$D/spec.md")" "$before"
+eq     "unwritable log leaves no temp file" "$(ls "$D" | grep -c '^spec\.md\.')" "0"
+
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"

@@ -172,18 +172,11 @@ After the builder (and any continuation) returns, run in order. A verifier judgi
 
 **Tiered mega-goal node (`[mega] verify = "tiered"` at the base).** `bash lib/gate/known-failures.sh guard <root> <base> <goal-file>` fails a node that edits the known-failures list undeclared (`docs/WORKFLOW.md` "Tiered verification").
 
-**Routing.** PASS continues. FAIL:escalate stops and goes to the human; do not retry it. Read the reason for the policy (`docs/patterns/failure-policy.md`): a reason naming an architecture, risk, or design decision is **escalate**; a reason naming the spec itself as wrong or not worth building is **close**. FAIL:fixable enters the retry loop (a run `known-failures.sh classify` calls `known` spends no retry):
+**Routing.** Do not count retries yourself. Report every end-verifier verdict and do what it prints: `bash bin/verify-loop event <rid> <verdict>`. It runs the proven rule `lib/rules/verify-loop.ts`: at most 2 fix cycles, FAIL:escalate never retried. Per `docs/patterns/failure-policy.md`: a design reason is `FAIL:escalate`, a wrong spec `close`. Verdicts: `PASS`, `FAIL:fixable`, `FAIL:escalate`, `close`, `known` (a run `known-failures.sh classify` calls known), `cannot-fix` (a kit:fix-agent says so), `silent-grace` (a silent builder with grace left), `lost` (`lose-attempt` succeeded). Do what its `action=` says.
 
-```
-retry_count = 0; MAX_RETRIES = 2
-while verdict == "FAIL:fixable" AND retry_count < MAX_RETRIES:
-    dispatch kit:fix-agent (rid=<rid>) with the verifier's issue list (file paths, fix
-    instructions), the acceptance criteria, and the files to modify
-    re-run the failing end verifier(s); retry_count += 1
-if verdict still != "PASS": apply the PARTIAL rule below
-```
+A fix cycle: dispatch kit:fix-agent (rid=<rid>) with the verifier's issues (paths, fix instructions), the acceptance criteria and the files to modify; re-run the failing end verifier(s); report the verdict.
 
-**Check the attempt state before you re-dispatch anything.** The loop handles a builder that REPORTED a fixable failure. A builder that went SILENT reported nothing, and a re-dispatch races the original on the same files. First: `bash lib/goal/attempt-state.sh status <spec-slug>`. An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`** and spend no retry. Only once `lose-attempt` succeeds may a fresh builder take the work, as a new attempt and not a fix cycle. Max 2 retries: if it takes 3+, the issue is a design problem, not a code bug. A `kit:fix-agent` that reports it cannot fix an issue: escalate at once.
+**Check the attempt state before you re-dispatch anything.** The loop handles a builder that REPORTED a fixable failure. A builder that went SILENT reported nothing, and a re-dispatch races the original on the same files. First: `bash lib/goal/attempt-state.sh status <spec-slug>`. An attempt in `disconnected` with grace remaining means **resume it with `SendMessage`** and report `silent-grace`. Only once `lose-attempt` succeeds may a fresh builder take the work: report `lost`, a new attempt and not a fix cycle. A third cycle would mean a design problem, so the loop stops at 2. A `kit:fix-agent` that reports it cannot fix an issue: report `cannot-fix`.
 
 **Sampled recheck (`kit:recheck-verifier`).** Right-arm PASSes are unreviewed by default, so a fresh-context re-audit samples them. Decide once per run, before the first `kit:task-verifier` pass, with the script (it resolves `kit_config_get_root execute.recheck_sample 5`, root-only):
 

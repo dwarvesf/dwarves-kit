@@ -90,11 +90,14 @@ _match() {
 
 # _row_kind <row> -- whether a board row records a measured evaluation or only a skim. The
 # distinction is load-bearing: a skim row closed an eval once, and the eval had to be reopened.
+# `eval` must be a word ([eval], eval, evals, evaluate, evaluation): inside `retrieval` or
+# `medieval` it is not one, and a skim row about them must stay a skim.
 _row_kind() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-    *"[eval]"*|*eval*) printf 'eval' ;;
-    *skim*)            printf 'skim' ;;
-    *)                 printf 'other' ;;
+  local lc; lc="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  if grep -qE '(^|[^a-z])eval(s|uat[a-z]*)?([^a-z]|$)' <<< "$lc"; then printf 'eval'; return; fi
+  case "$lc" in
+    *skim*) printf 'skim' ;;
+    *)      printf 'other' ;;
   esac
 }
 

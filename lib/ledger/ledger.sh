@@ -48,9 +48,13 @@ ledger_root() {
 ledger_append() {
   local stream="${1:-}"; shift || true
   [ -n "$stream" ] || { echo "ledger append: usage: ledger append <stream> <text...>" >&2; return 64; }
+  # Every stream lives under the root: a `..` part would write outside it.
+  case "/$stream/" in */../*) echo "ledger append: stream '$stream' leaves the ledger root" >&2; return 64 ;; esac
   local root; root="$(ledger_root)" || return 1
   local file="$root/$stream"
   mkdir -p "$(dirname "$file")" || { echo "ledger append: cannot create $(dirname "$file")" >&2; return 1; }
+  # A torn last line (a crash mid-write, a hand edit) is ended first, so the new record never joins it.
+  if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then printf '\n' >> "$file"; fi
   printf '%s\n' "$(_ledger_oneline "$@")" >> "$file"
 }
 

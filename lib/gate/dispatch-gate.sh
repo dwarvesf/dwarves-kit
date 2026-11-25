@@ -43,7 +43,10 @@ WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives i
 # lib/goal/goal-registry.sh (cross-session CLI globs). Keep them on one rule.
 gate_normalize_glob() {
   local g="$1"
-  if printf '%s' "$g" | grep -qE '^[A-Za-z0-9._/-]+/\*\*$'; then
+  # A `/**` prefix gets the same segment rule as a file: no empty, `.` or `..` segment and no leading `/`.
+  # Without it `./**`, `a//**` and `b/../a/**` were "proven" disjoint from paths they contain.
+  if printf '%s' "$g" | grep -qE '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/\*\*$' \
+     && ! printf '%s' "${g%/\*\*}" | grep -qE '(^|/)\.\.?(/|$)'; then
     printf '%s\n' "${g%/\*\*}"
   elif printf '%s' "$g" | grep -qE '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$' \
        && ! printf '%s' "$g" | grep -qE '(^|/)\.\.?(/|$)'; then

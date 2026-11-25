@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# bin/verify-loop -- the verification pipeline's retry loop, decided by the PROVEN rule in lib/rules/verify-loop.ts.
+#
+# /kit:execute reports each end-verifier verdict here and does what it prints; it no longer counts retries itself.
+# The decision (fix again, PARTIAL, escalate, resume, new attempt) is the gdp-wired rule's compiled step, whose laws
+# (at most MAX fix cycles, FAIL:escalate never retried, a known failure spends nothing, ...) are proven by
+# `node lib/rules/prove.ts` in tests/test-rules.sh.
+#
+# Usage:
+#   verify-loop event <rid> <PASS|FAIL:fixable|FAIL:escalate|known|close|cannot-fix|silent-grace|lost>
+#   verify-loop status <rid>
+#   verify-loop dir
+# Store: $(git rev-parse --git-common-dir)/kit-verify-loop/<rid>.json (beside kit-attempts; shared by worktrees).
+# Override with VERIFY_LOOP_DIR. The cap is 2 (commands/execute.md); VERIFY_LOOP_MAX overrides it for tests.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RULES="$SELF_DIR/../lib/rules"
+MAX="${VERIFY_LOOP_MAX:-2}"
+
+command -v node >/dev/null 2>&1 || { echo "verify-loop: node is required to run the proven rule (lib/rules); install Node 22+" >&2; exit 69; }
+[ -d "$RULES/node_modules/gdp-wired" ] || { echo "verify-loop: run 'npm install --prefix $RULES' (gdp-wired is missing)" >&2; exit 69; }
+
+store() {
+  if [ -n "${VERIFY_LOOP_DIR:-}" ]; then printf '%s' "$VERIFY_LOOP_DIR"; return; fi
+  local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || { echo "verify-loop: not in a git repo (set VERIFY_LOOP_DIR)" >&2; exit 2; }
+  printf '%s/kit-verify-loop' "$common"
+}
+
+verb="${1:-}"
+case "$verb" in
+  dir) store; echo ;;
+  status|event)
+    rid="${2:-}"
+    case "$rid" in ''|*/*|.*) echo "usage: verify-loop $verb <rid> ...  (a plain run id)" >&2; exit 64 ;; esac
+    dir="$(store)"; mkdir -p "$dir"
+    if [ "$verb" = status ]; then exec node "$RULES/verify-loop.cli.ts" status "$dir/$rid.json" "$MAX"; fi
+    case "${3:-}" in
+      PASS|pass) ev=pass ;;
+      FAIL:fixable|fixable) ev=fixable ;;
+      FAIL:escalate|escalate) ev=escalate ;;
+      known) ev=known ;;
+      close) ev=close ;;
+      cannot-fix|cannot_fix) ev=cannot_fix ;;
+      silent-grace|silent_grace) ev=silent_grace ;;
+      lost) ev=lost ;;
+      *) echo "usage: verify-loop event <rid> <PASS|FAIL:fixable|FAIL:escalate|known|close|cannot-fix|silent-grace|lost>" >&2; exit 64 ;;
+    esac
+    exec node "$RULES/verify-loop.cli.ts" event "$dir/$rid.json" "$MAX" "$ev" ;;
+  *) echo "usage: verify-loop <event|status|dir> ..." >&2; exit 64 ;;
+esac

@@ -102,7 +102,9 @@ lane_spec_header() {
 # answers; ledgers are never rewritten.
 # Check lane (the ship check): the STRICTER of the spec header and the ledger lane, by lane_rank_of, so a
 # plain START cannot shed the header's gates. Two exceptions: an amend written through `--lower --reason`
-# (it is preceded by its `lane-lower` override line) may go below the header, and a tie in rank keeps the
+# (it is preceded by its `lane-lower` override line, tagged `via=lane-lower`; a row the `override` verb wrote
+# carries another tag and sanctions nothing; the target lane is the text right after the first ` -> `, so an
+# arrow inside the reason cannot move it) may go below the header, and a tie in rank keeps the
 # older winner (amend: the ledger lane; start: the header). A lane with no rank (a lanes.d overlay lane, or
 # an unknown header) never lowers a ranked one: an unranked ledger lane yields to a kit-lane header, and an
 # unranked header under a plain START still wins, as before, so check() fails closed on it.
@@ -117,7 +119,7 @@ lane_effective() {
     IFS=$'\t' read -r lane src lowered < <(awk -F' [|] ' -v names=" $(lane_declared_names) " '
       function lane_of(s) { if (match(s, /lane=[^ ]+/)) return substr(s, RSTART + 5, RLENGTH - 5); return "" }
       function ok(l) { return l != "" && index(names, " " l " ") > 0 }
-      $2 == "GATE" && $3 == "lane-lower" && $4 == "override" { n = split($5, p, " -> "); t = p[n]; sub(/:.*$/, "", t); pend = t; next }
+      $2 == "GATE" && $3 == "lane-lower" && $4 == "override" && ($NF == "via=lane-lower" || $NF !~ /^via=/) { split($5, p, " -> "); t = p[2]; sub(/:.*$/, "", t); pend = t; next }
       $2 == "START-AMEND" { l = lane_of($3); if (ok(l)) { a = l; low = (pend == l) } pend = ""; next }
       $2 == "START" && !seen { seen = 1; l = lane_of($3); if (ok(l)) first = l }
       END { if (a != "") print a "\tamend\t" (low ? 1 : 0); else if (first != "") print first "\tstart\t0" }' "$f") || true

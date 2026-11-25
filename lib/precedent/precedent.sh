@@ -74,7 +74,9 @@ _resolve_root() {
 _keywords() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]-' '\n' \
     | grep -vE '^(the|a|an|and|or|to|of|in|on|for|with|into|from|that|this|it|is|are|be|as|at|by|we|our|all|any|via|per|the)$' \
-    | grep -vE '^-' | awk 'length($0) >= 4' | sort -u | head -8 || true   # empty after filtering is a valid result, not a pipeline failure
+    | grep -vE '^-' | awk 'length($0) >= 4' | sort -u \
+    | awk '{ print length($0) "\t" $0 }' | sort -t "$(printf '\t')" -k1,1nr -k2,2 | head -8 | awk -F '\t' '{ print $2 }' \
+    | sort || true   # the 8 longest (most specific), alphabetical out; empty after filtering is a valid result
 }
 
 # _records_find: the original `records` body, unchanged. Byte-identical output to the

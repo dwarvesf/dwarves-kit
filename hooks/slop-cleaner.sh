@@ -83,7 +83,8 @@ find "$SEEN_LOG_DIR" -name 'slop-seen-*.tsv' -mtime +7 -delete 2>/dev/null || tr
 TAB=$(printf '\t')
 
 while IFS= read -r FILE; do
-  [ ! -f "$FILE" ] && continue
+  # Unreadable too: under set -e a failing awk (exit 2) would end the hook with 2 and block the Stop.
+  { [ -f "$FILE" ] && [ -r "$FILE" ]; } || continue
   ISSUES=""
 
   # Check 1: Functions over 50 lines (strong bloat signal)

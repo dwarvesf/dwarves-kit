@@ -207,6 +207,25 @@ watch >/dev/null
 assert_eq "A8: a dead beat with EXIT_SIGNAL true journals gated, not done and not stalled" "$(jverdict fixboard__ID-001)" "gated"
 assert_eq "A8: the reaper says the delta was never checked" "$(jreason fixboard__ID-001 | cut -c1-10)" "unverified"
 
+# A10 a second conductor never runs a slug another conductor holds (lib/rules/goals/queue-conductors.ts). The watcher
+# plans the row, then another conductor launches it (its beat appears) before this tick's `queue run` reaches it:
+# the run must skip the row, open no second window (`_mux_open` would kill the first one's), and leave the holder's
+# beat alone. A hand run beside a live conductor is held to the same claim.
+new_env; new_board_repo; REPO="$WORK/ra10"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"
+OUT="$(watch)"
+case "$OUT" in *"ID-001 ->"*) R=0 ;; *) R=1 ;; esac
+assert "A10: the watcher planned the row while nothing held it" $R "-- got: $OUT"
+: > "$RUNDIR/fixboard__ID-001.beat"           # another conductor launched it meanwhile
+OUT="$(run_row fixboard__ID-001 "$REPO" "$WORK/p.txt")"
+case "$OUT" in *"a run is in flight"*) R=0 ;; *) R=1 ;; esac
+assert "A10: the late conductor skips the held row" $R "-- got: $OUT"
+grep -q 'new-window slug=fixboard__ID-001' "$QLOG"
+assert "A10: no second window was opened for the held slug" $(( ! $? ))
+[ -f "$RUNDIR/fixboard__ID-001.beat" ]
+assert "A10: the holder's heartbeat is left in place" $?
+assert_eq "A10: the skip writes no journal row for the holder's run" "$(jrows fixboard__ID-001)" "0"
+rm -f "$RUNDIR/fixboard__ID-001.beat"
+
 # A9 a slug carrying a path separator is refused before any sidecar file is opened.
 new_env
 bash -c '. "'"$QUEUE"'" >/dev/null 2>&1; _run_file "evil/../../etc/x" beat' >/dev/null 2>&1
@@ -272,6 +291,22 @@ run_row b8 "$REPO" "$WORK/p.txt" >/dev/null
 git -C "$REPO" checkout -q -- f
 assert_eq "B8: a VERIFIED repo delta resets the stall ladder to zero" "$(guard_num b8 stalls)" "0"
 assert_eq "B8: and clears the backoff alarm" "$(guard b8 retry_after)" ""
+
+# B9 a row that fails the SAME way every time (`error`: the window dies, twice, every run) reaches quarantine.
+# The breaker trip climbs the stall ladder (lib/rules/goals/queue-guard.ts): before, an `error` row was cooled
+# down and re-planned after every cooldown, forever, because only a `stalled` verdict climbed the ladder.
+new_env; REPO="$WORK/rb9"; mkrepo "$REPO"; echo "p" > "$WORK/p.txt"; new_board_repo
+export QUEUE_NOPROGRESS_TRIP=2 QUEUE_MAX_STALLS=2
+: > "$QSTUB/fixboard__ID-001.dead"
+for i in 1 2 3; do run_row fixboard__ID-001 "$REPO" "$WORK/p.txt" >/dev/null; done
+assert_eq "B9: an error row's breaker trips climb the stall ladder" "$(guard_num fixboard__ID-001 stalls)" "2"
+[ -f "$RUNDIR/fixboard__ID-001.guard" ]
+assert "B9: the guard file exists (so the empty read below is real)" $?
+assert_eq "B9: the second trip writes an EMPTY retry_after (quarantine)" "$(guard fixboard__ID-001 retry_after)" ""
+OUT="$(watch)"
+case "$OUT" in *quarantined*) R=0 ;; *) R=1 ;; esac
+assert "B9: an error row that never makes progress is quarantined, not re-planned forever" $R "-- got: $OUT"
+unset QUEUE_NOPROGRESS_TRIP QUEUE_MAX_STALLS
 
 # B4 NEGATIVE CONTROL, hatch 1: a run that actually touches the repo is progress. The session
 # dirties the tree DURING the run, which is the only moment hatch 1 can observe (a repo already

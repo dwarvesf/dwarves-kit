@@ -1,0 +1,7 @@
+{
+  "name": "dwarves-kit-rules",
+  "private": true,
+  "type": "module",
+  "description": "The kit's stateful rules as gdp-wired rules: the proven rule is the code that runs.",
+  "dependencies": { "gdp-wired": "0.59.0" }
+}

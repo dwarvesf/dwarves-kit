@@ -833,10 +833,12 @@ bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
 # notes instruction, so the push checks for the file: <slug>.md or the spec's own basename,
 # committed in HEAD, with at least one non-blank line that is not a "# " title (a one-line
 # "No deviations; matches the spec verbatim" counts). A logged `override <slug> impl-notes`
-# clears it. Blocks only in an adopted repo (proof marker); elsewhere it is an advisory.
+# clears it: only a GATE row counts, read by field like check() does, so an ACTION or other
+# additive line whose text holds "| GATE | impl-notes | override |" clears nothing.
+# Blocks only in an adopted repo (proof marker); elsewhere it is an advisory.
 NOTES_GAP=""
 if [ "$LANE" = "full" ] \
-   && ! grep -q '| GATE | impl-notes | override |' < <(bash "$LEDGER" show "$SLUG" 2>/dev/null); then
+   && ! awk -F' [|] ' '$2=="GATE" && $3=="impl-notes" && $4=="override" {f=1} END{exit !f}' < <(bash "$LEDGER" show "$SLUG" 2>/dev/null); then
   NOTES_A="docs/implementation-notes/$SLUG.md"
   NOTES_B="docs/implementation-notes/$(basename "$SPEC")"
   NOTES_OK=0

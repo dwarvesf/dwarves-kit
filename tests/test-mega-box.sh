@@ -109,6 +109,13 @@ eq "megagoals still hides a fully done mega" "$(bash "$KIT_DIR/lib/goal/megagoal
 eq "megagoals counts the parked-only mega in its total line" "$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | tail -1)" "2 mega-goals"
 ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" --all 2>&1 | grep '^donepark ' | awk '{print $2}')"
 eq "megagoals --all shows it as 1/2" "$ml" "1/2"
+# A top-level `# ` heading ends the Sub-goals section like a `## ` one (lib/rules/goals/megagoals.ts): the boxes
+# under a later `# Appendix` are notes, not sub-goals, so they neither count nor make a done mega look open.
+mkdir -p "$REPO/_meta/megagoals/appendix"
+printf '## Sub-goals\n- [x] SG-01 a , auto , PR #1\n\n# Appendix\n- [ ] a follow-up note, not a sub-goal\n' > "$REPO/_meta/megagoals/appendix/ROADMAP.md"
+ml="$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" --all 2>&1 | grep '^appendix ' | awk '{print $2}')"
+eq "megagoals stops counting at a top-level heading" "$ml" "1/1"
+eq "megagoals hides a done mega whose only open box sits under a later # heading" "$(bash "$KIT_DIR/lib/goal/megagoals.sh" list --repo "$REPO" 2>&1 | grep -c '^appendix ')" "0"
 
 # ---- 7. board mirror: progress counts parked in the total; a parked-only mega is not active ----
 mg="$(bash "$KIT_DIR/lib/adapters/hermes/board-mirror.sh" extract-megas "$REPO" r 2>&1)"

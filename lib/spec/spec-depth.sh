@@ -173,6 +173,8 @@ cmd_size() {
   n=$(count_tasks "$spec")
   parse "$spec"
   depth=${LEVELS:-standard}
+  # A Depth line that names no valid level is not standard: it must not read small and skip validation.
+  [ "$HAS_LINE" -eq 1 ] && [ -z "$LEVELS" ] && depth=invalid
   [ "$lane" = normal ] && [ "$depth" = standard ] && [ "$n" -ge 1 ] && [ "$n" -le 3 ] && size=small
   echo "$size tasks=$n lane=${lane:-none} depth=${depth// /+}"
   [ "$size" = small ]

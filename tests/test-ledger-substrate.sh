@@ -33,6 +33,18 @@ KIT_LEDGER_DIR="$TMP" bash "$LEDGER" append "runs/nl.log" "$(printf 'a\nb')"
 NLINES="$(KIT_LEDGER_DIR="$TMP" bash "$LEDGER" read "runs/nl.log" | wc -l | tr -d ' ')"
 assert_eq "an embedded newline does not forge a second ledger line" "$NLINES" "1"
 
+echo "== substrate: an append never joins a torn last line =="
+printf 'torn | GATE | half' >> "$TMP/runs/x.log"
+KIT_LEDGER_DIR="$TMP" bash "$LEDGER" append "runs/x.log" "third line"
+assert_eq "the torn record stays as written and the new record is its own line" \
+  "$(tail -n 2 "$TMP/runs/x.log")" "$(printf 'torn | GATE | half\nthird line')"
+
+echo "== substrate: a stream with a .. part is refused, nothing written outside the root =="
+mkdir -p "$TMP/inner"
+ERR="$(KIT_LEDGER_DIR="$TMP/inner" bash "$LEDGER" append "../escape.log" "x" 2>&1)"; rc=$?
+assert_eq "a .. stream exits 64" "$rc" "64"
+if [ -e "$TMP/escape.log" ]; then bad "a .. stream wrote outside the root"; else ok "nothing written outside the root"; fi
+
 echo "== substrate: ledger root prints the resolved root =="
 GOTROOT="$(KIT_LEDGER_DIR="$TMP" bash "$LEDGER" root)"
 assert_eq "root == KIT_LEDGER_DIR" "$GOTROOT" "$TMP"

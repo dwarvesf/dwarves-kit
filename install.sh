@@ -686,9 +686,26 @@ else
   # Patterns mirror the .gitignore build-output rules.
   (cd "$KIT_DIR" && tar -cf - \
     --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
-    --exclude='lib/*/rust/target' --exclude='lib/*/bin/*-rs' lib) \
+    --exclude='lib/*/rust/target' --exclude='lib/*/bin/*-rs' --exclude='node_modules' lib) \
     | tar -xpf - -C "$CLAUDE_DIR/dwarves-kit"
   echo "[ok] Copied lib into $LIB_DEST (pinned, SPEC-066; build output skipped)"
+fi
+
+# 1c-rules. The kit's stateful rules (lib/rules) are gdp-wired rules: bin/verify-loop runs the proven rule
+# itself, so it needs Node and the pinned gdp-wired from lib/rules/package-lock.json. Hooks stay bash; only
+# the commands that step a proven rule need this. No npm: those commands print how to install and stop.
+RULES_DEST="$CLAUDE_DIR/dwarves-kit/lib/rules"
+if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then RULES_DEST="$KIT_DIR/lib/rules"; fi
+if [ -f "$RULES_DEST/package-lock.json" ]; then
+  if command -v npm >/dev/null 2>&1; then
+    if npm ci --silent --no-audit --no-fund --prefix "$RULES_DEST" >/dev/null 2>&1; then
+      echo "[ok] Installed the proven-rule runtime (gdp-wired) into $RULES_DEST"
+    else
+      echo "[warn] npm ci failed in $RULES_DEST; bin/verify-loop will ask for it on first use"
+    fi
+  else
+    echo "[warn] npm not found: bin/verify-loop needs Node 22+ and 'npm ci --prefix $RULES_DEST'"
+  fi
 fi
 
 # 1c-bis. Deploy bin/ -- the STABLE consumer entrypoint dir (SPEC-184). Consumers (an

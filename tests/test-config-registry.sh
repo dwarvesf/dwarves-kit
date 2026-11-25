@@ -464,6 +464,19 @@ RC=0; printf '%s' "$PREC_EXPLAIN" | grep -q 'source: project .kit.toml' && RC=1
 assert "config explain precedent.registry never reports source: project .kit.toml" "$RC"
 rm -rf "$PREC_DIR" "$LISTDIR"
 
+# A key with two dots splits at the LAST dot, as kit_config_get does: `lane.normal.phases` is
+# section [lane.normal], key phases. A first-dot split read no layer for it and reported the
+# registry default while lane-data.sh read the file (lib/rules/wrap/config-precedence.ts, law
+# "config get reports the layer kit_config_get reads").
+LANE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+printf '[lane.normal]\nphases = ["spec", "build"]\n' > "$LANE_DIR/.kit.toml"
+LANE_GET="$(KIT_PROJECT_ROOT="$LANE_DIR" bash "$CONFIG_BIN" get lane.normal.phases)"
+assert_eq "config get lane.normal.phases reads the project [lane.normal] table" "$LANE_GET" '["spec", "build"]'
+LANE_EXPLAIN="$(KIT_PROJECT_ROOT="$LANE_DIR" bash "$CONFIG_BIN" explain lane.normal.phases)"
+RC=1; printf '%s' "$LANE_EXPLAIN" | grep -q 'source: project .kit.toml' && RC=0
+assert "config explain lane.normal.phases names the project .kit.toml as the source" "$RC"
+rm -rf "$LANE_DIR"
+
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]

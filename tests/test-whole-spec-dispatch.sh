@@ -94,6 +94,10 @@ for c in a b c d e f g h i j k l m n o p; do
   [ "$(d "rid-$c" 3)" = "$WANT" ] || KEYOK=1
 done
 assert "the key is cksum of the rid (printf %s, first field, modulo N), over 16 rids" "$KEYOK"
+assert "a leading-zero N is decimal: 08 decides like 8 and exits 0" "$(V="$(bash "$RS" decide rid-a 08 2>/dev/null)"; [ $? -eq 0 ] && [ "$V" = "$(d rid-a 8)" ] && echo 0 || echo 1)"
+OCTOK=0
+for c in a b c d e f g h i j k l m n o p; do [ "$(d "rid-$c" 010)" = "$(d "rid-$c" 10)" ] || OCTOK=1; done
+assert "a leading-zero N is decimal: 010 decides like 10, never octal 8, over 16 rids" "$OCTOK"
 bash "$RS" decide rid-ledger 0 >/dev/null 2>&1
 assert "the decision is recorded as 'recheck: skipped key=<rid>' in the ledger" "$(bash "$KIT_DIR/lib/gate/gate-ledger.sh" show rid-ledger 2>/dev/null | grep -qF 'recheck: skipped key=rid-ledger' && echo 0 || echo 1)"
 mkdir -p "$WT/root" "$WT/proj" "$WT/noop"

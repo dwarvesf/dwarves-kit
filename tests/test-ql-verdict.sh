@@ -63,6 +63,12 @@ eq "resume: whole file without --section sees every marker" "$(bash "$QV" resume
 
 bash "$QV" resume "$TMP/badvalue" >/dev/null 2>&1; eq "resume: malformed marker exits 65" "$?" "65"
 
+# gdp-wired (lib/rules/hooks/ql-verdict.ts): a round that still has findings never extends the clean streak.
+mk dirtyclean '[[QL-VERDICT round=1 clean=true findings=0]]' '[[QL-VERDICT round=2 clean=true findings=2]]'
+bash "$QV" resume "$TMP/dirtyclean" >/dev/null 2>&1; eq "resume: clean=true with findings is malformed (exit 65)" "$?" "65"
+mk twosided '[[QL-VERDICT round=1 clean=false findings=0]]' '[[QL-VERDICT round=2 clean=true findings=0]]'
+eq "resume: clean=false with 0 findings stays legal (an open HIGH)" "$(bash "$QV" resume "$TMP/twosided")" "round=3 clean_streak=1 last_findings=0"
+
 # ---- one parser: stats.sh no longer carries its own grammar ----
 if grep -q 'QL_OK=' "$KIT_DIR/lib/gauntlet/stats.sh"; then fail "stats.sh still keeps its own QL-VERDICT grammar"; else pass "stats.sh keeps no copy of the grammar"; fi
 grep -q 'ql-verdict.sh' "$KIT_DIR/lib/gauntlet/stats.sh" && pass "stats.sh calls ql-verdict.sh" || fail "stats.sh does not call ql-verdict.sh"

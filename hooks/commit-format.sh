@@ -41,6 +41,9 @@ elif [[ "$CMD" =~ -[[:alpha:]]*m[[:space:]]*\"([^\"]*)\" ]]; then SUBJ="${BASH_R
 elif [[ "$CMD" =~ -[[:alpha:]]*m[[:space:]]*\'([^\']*)\' ]]; then SUBJ="${BASH_REMATCH[1]}"
 fi
 [ -z "$SUBJ" ] && exit 0
+# -m "$(cat <<'EOF' ... EOF)" (how Claude Code writes a commit): the message is the heredoc body, so
+# the subject is the body's first line, not the $(cat line.
+case "$SUBJ" in '$(cat <<'*) SUBJ="${SUBJ#*$'\n'}" ;; esac
 # One -m value may hold subject + blank line + body; git treats only the first line as the subject.
 SUBJ="${SUBJ%%$'\n'*}"
 [ -z "$SUBJ" ] && exit 0

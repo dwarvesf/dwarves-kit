@@ -36,7 +36,9 @@ scan_lines() {
 rows=""; bad=0
 while IFS= read -r line; do
   case "$line" in *QL-VERDICT*) ;; *) continue ;; esac
-  if [[ "${line//\`/}" =~ $MARKER ]]; then
+  # clean=true with findings above 0 breaks the grammar too: every loop defines clean as no findings
+  # left, and counting such a round would extend the clean streak (a false quiescence).
+  if [[ "${line//\`/}" =~ $MARKER ]] && ! { [ "${BASH_REMATCH[2]}" = true ] && [ $((10#${BASH_REMATCH[3]})) -gt 0 ]; }; then
     rows+="${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"$'\n'
   else
     echo "malformed QL-VERDICT in $file: $line" >&2; bad=1

@@ -12,7 +12,7 @@
 #   N=0  never sample (the only way to turn sampling off)
 #   N=1  sample every run (every PASS rechecked)
 #   N>1  sampled when the first cksum field of the rid is divisible by N
-# A non-numeric N falls back to 5. Always exits 0 on a decision; 64 on bad usage.
+# A non-numeric N falls back to 5; N is read as decimal (08 is 8). Always exits 0 on a decision; 64 on bad usage.
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -24,7 +24,8 @@ decide() {
     . "$DIR/../config/kit-config.sh"
     n="$(kit_config_get_root execute.recheck_sample 5)"
   fi
-  case "$n" in ''|*[!0-9]*) n=5 ;; esac
+  # 10# reads the digits as decimal: a leading zero (08, 010) would otherwise be octal in $(( )).
+  case "$n" in ''|*[!0-9]*) n=5 ;; *) n=$((10#$n)) ;; esac
   if [ "$n" -eq 0 ]; then
     verdict=skipped
   elif [ "$n" -eq 1 ]; then

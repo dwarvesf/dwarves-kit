@@ -70,9 +70,7 @@ RULES (compaction may have dropped these):
 - If unsure about architecture, check docs/reference/architecture.md and docs/decisions/.
 "
 
-# SessionStart(compact) output: hookSpecificOutput.additionalContext, built by json.dumps (safe for quotes, backslashes, newlines).
-ESSENTIALS="$ESSENTIALS" python3 -c '
-import json, os
-ctx = "[dwarves-kit post-compaction] Context was compacted. Critical rules re-injected:\n" + os.environ["ESSENTIALS"]
-print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
-'
+# SessionStart(compact) output: hookSpecificOutput.additionalContext, built by jq (safe for quotes, backslashes,
+# newlines). jq, not python3: without python3 the rules above were never re-injected.
+jq -n --arg ctx "[dwarves-kit post-compaction] Context was compacted. Critical rules re-injected:"$'\n'"$ESSENTIALS" \
+  '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'

@@ -49,6 +49,7 @@ cat > "$T/board.md" <<'MD'
 |---|---|---|---|
 | FX-001 | quibblewax parser rewrite | [eval] quibblewax vs the owned parser, measured run | queued |
 | FX-002 | zonkplume reader | skim only, no numbers taken | queued |
+| FX-003 | plinkerton retrieval | skim of the retrieval paper, no numbers taken | queued |
 MD
 
 cat > "$T/verdicts.md" <<'MD'
@@ -156,6 +157,10 @@ assert "the eval row reports row_kind eval" \
 run "$T/op" gate "zonkplume reader" >/dev/null
 assert "the skim row reports row_kind skim" \
   "$(printf '%s' "$OUT" | jq -e '[.hits[] | select(.kind == "board") | .row_kind] | index("skim") != null' >/dev/null; echo $?)"
+
+run "$T/op" gate "plinkerton retrieval" >/dev/null
+assert "a skim row about retrieval stays a skim (eval inside a word is not an eval)" \
+  "$(printf '%s' "$OUT" | jq -e '[.hits[] | select(.kind == "board") | .row_kind] == ["skim"]' >/dev/null; echo $?)"
 
 echo "=== AC7: a project .kit.toml cannot supply an [intake] key ==="
 mkdir -p "$T/proj"
