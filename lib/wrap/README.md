@@ -6,7 +6,7 @@ The landing step after ship. One pass over every repo a session touched: report 
 - `lib/wrap/wrap.sh <verb>`: the dispatcher. `bin/wrap` forwards to it, and consumers call `bin/wrap`.
 - `scan`: report only, never writes.
 - `apply`: gated writes, dry run unless `--apply`. Covers the pull, merged-branch sweep, `--worktrees`, `--own`, `--archive-unmerged`, and `--archive-worktrees`.
-- `merge`: merge one own green PR.
+- `merge`: merge one own green PR, then fast-forward the checkout it was handed (`land`'s pull; `--no-pull` skips it).
 - `land`: land one hand-made worktree, or several in argument order, one at a time.
 - `start`: open a worktree on a fresh branch, with `--pick` and `--carry`.
 - `ship` (`wrap ship`): `start --carry`, commit the named paths, an explicit-only proof override, then `land`, as one call.

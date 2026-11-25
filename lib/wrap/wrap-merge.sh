@@ -949,6 +949,81 @@ _merge_register_gate() {
   return 0
 }
 
+# _merge_pending_only <pr-detail-json> -- 0 when at least one check's latest run is still
+# pending and none ended red. A red check is already the answer, so it never earns a wait:
+# the gate's skip stands and `--with-ci` costs a failing PR nothing.
+_merge_pending_only() {
+  [ -z "$(_rollup_failed_checks "$1")" ] || return 1
+  printf '%s' "$1" | jq -e "${CI_JQ_DEFS}"'
+    def rtime: [.completedAt, .startedAt, .createdAt] | map(real) | .[0] // "";
+    (.statusCheckRollup // [])
+      | group_by(.name // .context)
+      | map(sort_by([(if pending then 1 else 0 end), rtime]) | last)
+      | map(select(pending)) | length > 0' >/dev/null 2>&1
+}
+
+# _merge_pending_wait <repo-url> <pr> <detail> -- the `--with-ci` wait for a PR the
+# gate skipped only because its checks were still running. `_merge_register_gate` and the
+# label sync wait too, but only for a PR the gate had already passed, so a head with a check
+# in flight never reached them and the sweep ended on `nothing eligible`. Holds with the usual
+# bounded wait (KIT_WRAP_CARRY_CHECKS_SECS), then re-reads the PR once GitHub has settled
+# mergeability and sets PW_DETAIL for the caller to re-gate. Returns 0 to re-gate; 2 when the
+# head moved during the wait (the same refusal the label wait makes); WRAP_MERGE_NOT_MERGED_RC
+# (4) when the checks were still pending as the bound ran out: nothing failed and the PR stays
+# open. The caller turns that into its own skip code.
+_merge_pending_wait() {
+  local url="$1" n="$2" detail="$3" head_oid new_head
+  head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  echo "waiting for the pending checks on #${n} (up to ${KIT_WRAP_CARRY_CHECKS_SECS}s)"
+  CI_PRELABEL_KEYS='[]'
+  _ci_checks_wait "$url" "$n"
+  PW_DETAIL="$(_pr_detail_settled "$url" "$n")"
+  new_head="$(printf '%s' "$PW_DETAIL" | jq -r '.headRefOid // ""' 2>/dev/null)"
+  if [ "$new_head" != "$head_oid" ]; then
+    echo "FAILED merge #${n}: head moved to $(_short "$new_head") during the check wait; left open" >&2
+    return 2
+  fi
+  case "${CI_WAIT_END:-}" in
+    ''|*[!0-9]*|0) ;;
+    *) echo "SKIP #${n}: checks still pending after ${KIT_WRAP_CARRY_CHECKS_SECS}s; left open"
+       return "$WRAP_MERGE_NOT_MERGED_RC" ;;
+  esac
+  return 0
+}
+
+# _merge_in_carry -- 0 when `apply`'s autoland carry is the caller. That stage lands its carry
+# branch through this verb in-process, waits for the PR's checks itself, keeps the checkout's
+# stray lines as dirty files, and pulls on its own stage, so the verb neither waits again nor
+# pulls there.
+_merge_in_carry() {
+  case " ${FUNCNAME[*]} " in *" _autoland_carry "*) return 0 ;; esac
+  return 1
+}
+
+# _merge_pull_checkout <repo> <default> -- the fast-forward `merge --apply` owes the checkout
+# it was handed. The merge is server-side, so the checkout stayed behind origin until a later
+# `apply` pulled it. Same guard shape and messages as `land`'s closing pull: skipped under
+# --no-pull (a step 0 stop, where the main checkout belongs to a live session), refused off the
+# default branch, ff-only through `_land_ff_pull` so a dirty merge=union file is carried and
+# nothing is stashed or reset. Advisory like land's: every outcome prints one line naming the
+# command that finishes the job, and none changes the merge's exit code. Silent when `apply`'s
+# autoland carry is the caller (_merge_in_carry): a pull there would move the files it carries.
+_merge_pull_checkout() {
+  local repo="$1" def="$2" cur hint
+  _merge_in_carry && return 0
+  hint="run: wrap apply --apply --pull-only ${repo}"
+  cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
+  if [ "$NO_PULL" = 1 ]; then
+    echo "SKIP pull: --no-pull; ${repo} not pulled, ${hint}"
+  elif [ "$cur" != "$def" ]; then
+    echo "PULL BLOCKED: ${repo} is on '${cur:-<detached>}', not ${def}; ${hint}"
+  elif _land_ff_pull "$repo"; then
+    echo "pulled ${repo}: $(git -C "$repo" log --oneline -1 2>/dev/null)"
+  else
+    echo "PULL BLOCKED: pull --ff-only refused in ${repo}, nothing was stashed or reset; ${hint}"
+  fi
+}
+
 # Exit code of `merge --apply --pr N` when the named PR was not merged and nothing failed:
 # a SKIP, a refusal, or nothing eligible. 0 stays "merged" (or a dry run, or a bare sweep with
 # nothing to merge); 1 gh/query errors, 2 a failed write, 3 merged but the tree check disagrees.
@@ -1075,7 +1150,7 @@ cmd_merge() {
     printf '%s\t%s\t%s\n' "$n" "$head" "$base" >> "$cache"
   done
 
-  local first_eligible="" gate_branch="" verdict title conflict_n="" conflict_count=0
+  local first_eligible="" gate_branch="" verdict title conflict_n="" conflict_count=0 pend pend_list=""
   local superseded_n="" superseded_branch=""
   for n in $numbers; do
     detail="$(cat "${jsondir}/pr-${n}.json" 2>/dev/null)"
@@ -1093,17 +1168,52 @@ cmd_merge() {
     if [ "$verdict" = "OK" ] && awk -F'\t' -v h="$head" -v n="$n" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
       verdict="SKIP dependents open, retarget them first"
     fi
+    # Under `--with-ci` a check still running is a reason to wait, not to skip: queue the PR
+    # for the wait below (a label-armed head already waited in its own prepare step).
+    pend=""
+    if [ "${verdict%% *}" = "WAIT" ] && _ci_on_merge && [ "$ci_armed" != "$n" ] && ! _merge_in_carry && _merge_pending_only "$detail"; then
+      pend=1; pend_list="${pend_list} ${n}"
+    fi
     if [ "$verdict" = "OK" ]; then
       echo "eligible #${n} ${title} [${head}]"
       [ -n "$first_eligible" ] || { first_eligible="$n"; gate_branch="$head"; }
     else
       echo "SKIP #${n} ${title}: ${verdict#* }"
+      [ -z "$pend" ] || [ "$do_apply" = 1 ] || echo "note: #${n} has pending checks; --apply would wait for them"
       case "${verdict%% *}" in
         CONFLICT)
           conflict_count=$(( conflict_count + 1 )); conflict_n="$n" ;;
       esac
     fi
   done
+
+  # Nothing passed the gate and some PR only waits on running checks: hold for them, then
+  # re-gate that PR on the head the wait read. One PR merges per call, so the first PR the
+  # wait turns eligible is the one that goes; a timeout or a moved head stops the sweep.
+  if [ "$do_apply" = 1 ] && [ -z "$first_eligible" ] && [ -n "$pend_list" ]; then
+    local pn
+    for pn in $pend_list; do
+      _merge_pending_wait "$url" "$pn" "$(cat "${jsondir}/pr-${pn}.json" 2>/dev/null)"; prc=$?
+      # A wait that ran out is a skip: the call's own not-merged code, 4 under --pr and 0 for
+      # the bare sweep, as for any other PR the gate leaves open. A moved head stays 2.
+      if [ "$prc" -eq "$WRAP_MERGE_NOT_MERGED_RC" ]; then rm -rf "$jsondir"; return "$skip_rc"; fi
+      if [ "$prc" -ne 0 ]; then rm -rf "$jsondir"; return "$prc"; fi
+      detail="$PW_DETAIL"
+      printf '%s' "$detail" > "${jsondir}/pr-${pn}.json"
+      verdict="$(_pr_gate "$detail" "$def")"
+      title="$(printf '%s' "$detail" | jq -r '.title // ""' 2>/dev/null)"
+      head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
+      if [ "$verdict" = "OK" ] && awk -F'\t' -v h="$head" -v n="$pn" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+        verdict="SKIP dependents open, retarget them first"
+      fi
+      if [ "$verdict" = "OK" ]; then
+        echo "eligible #${pn} ${title} [${head}]"
+        first_eligible="$pn"; gate_branch="$head"
+        break
+      fi
+      echo "SKIP #${pn} ${title}: ${verdict#* } after the check wait"
+    done
+  fi
 
   local head_oid=""
   [ -n "$first_eligible" ] && head_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${first_eligible}.json" 2>/dev/null)"
@@ -1294,6 +1404,7 @@ cmd_merge() {
     OK)
       echo "merged #${first_eligible} (${sha}): tree verified"
       [ -z "$superseded_n" ] || echo "superseded #${superseded_n}: its tree landed via #${first_eligible} on ${superseded_branch}; close #${superseded_n} when ready"
+      _merge_pull_checkout "$repo" "$def"
       ;;
     MISMATCH*)
       echo "merged #${first_eligible} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
