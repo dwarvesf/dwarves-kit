@@ -22,6 +22,7 @@ node_modules/
 !/.claude/memory/
 # The team stamp templates carry files that land under a target repo's .claude/.
 !/templates/team-stamp/files/.claude/
+!/tests/fixtures/team-stamp/files/.claude/
 
 # Legacy / retired artifacts the kit no longer writes: review output now lives in
 # the spec's `## Review` section, and the spec location unified onto docs/specs/
