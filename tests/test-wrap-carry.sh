@@ -441,6 +441,26 @@ chk_has "autoland commits blocked: the reason prints" "$out" "not landed: dirty 
 chk_no "autoland commits blocked: no PR opened" "$(cat "$GH_STUB_CALLS")" "pr create"
 
 
+echo "--- autoland: gh prints a hint block after the PR URL, the carry still lands"
+build_union_repo alhint
+ALHC="$TMPD/uclone-alhint"; ALHB="$TMPD/ubare-alhint"
+printf 'a note\n' > "$ALHC/notes.md"; git -C "$ALHC" add notes.md; git -C "$ALHC" commit -qm "docs: a stray note"
+out="$(GH_STUB_CREATE_HINT=after al_run "$ALHB" "$ALHC" --apply)"; rc=$?
+chk "autoland hint after the URL: apply exits 0" "$rc"
+chk_has "autoland hint after the URL: the PR number is read from the URL" "$out" "opened PR #42"
+chk_has "autoland hint after the URL: the merge verifies" "$out" "tree verified"
+chk_no "autoland hint after the URL: nothing failed" "$out" "FAILED"
+
+echo "--- autoland: gh prints only the hint block, its PR URL mid-line and no URL line: the carry fails and merges nothing"
+build_union_repo alhintonly
+ALYC="$TMPD/uclone-alhintonly"; ALYB="$TMPD/ubare-alhintonly"
+printf 'a note\n' > "$ALYC/notes.md"; git -C "$ALYC" add notes.md; git -C "$ALYC" commit -qm "docs: a stray note"
+out="$(GH_STUB_CREATE_HINT=only al_run "$ALYB" "$ALYC" --apply)"
+chk_has "autoland hint only: the failure names gh pr create" "$out" "FAILED land "
+chk_has "autoland hint only: the output did carry the PR URL mid-line" "$out" "    gh event listen --resource https://github.com/o/r/pull/42 --event"
+chk_no "autoland hint only: the mid-line URL is not taken as the PR" "$out" "opened PR #"
+chk_no "autoland hint only: no merge ran" "$(cat "$GH_STUB_CALLS")" "pr merge"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-carry: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap-carry: all $PASS passed"

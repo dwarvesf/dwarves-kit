@@ -830,7 +830,7 @@ _land_run() {
     if [ "$rc" -ne 0 ]; then
       echo "     PR REFUSED: gh pr create exited ${rc}: ${created}" >&2; return 2
     fi
-    pr_ref="$(printf '%s\n' "$created" | grep -E '/pull/[0-9]+$' | tail -1)"; n="${pr_ref##*/}"
+    pr_ref="$(_pr_url_from_create "$created" || true)"; n="${pr_ref##*/}"
     case "$n" in
       ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 2 ;;
     esac

@@ -176,6 +176,29 @@ chk "land --no-pull deleted the branch on origin" \
 chk_has "land --no-pull reports the origin delete" "$out" "deleted feat/land on origin"
 chk "the default branch on origin holds the PR head tree" \
   "$([ "$(git -C "$TMPD/ld-bare-nopull" rev-parse main^{tree})" = "$(git -C "$NREPO" rev-parse "${NTIP}^{tree}")" ]; echo $?)"
+
+echo "--- gh prints a hint block after the PR URL: the number still comes from the URL line"
+build_land hintafter
+HREPO="$TMPD/ld-repo-hintafter"; HWT="$(cd "$HREPO/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=45 GH_STUB_CREATE_HINT=after GH_STUB_LAND_REPO="$HWT" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-hintafter" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$HWT" 2>&1)"; rc=$?
+chk "hint after the URL: land exits 0" "$rc"
+chk_has "hint after the URL: land reports the PR number" "$out" "opened PR #45"
+chk_no "hint after the URL: no refusal" "$out" "PR REFUSED"
+chk_has "hint after the URL: land merged #45" "$(cat "$GH_STUB_CALLS")" "pr merge 45 --repo"
+
+echo "--- gh prints only the hint block, its PR URL mid-line and no URL line: land still refuses and merges nothing"
+build_land hintonly
+YREPO="$TMPD/ld-repo-hintonly"; YWT="$(cd "$YREPO/wt" && pwd -P)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_HINT=only GH_STUB_LAND_REPO="$YWT" \
+  GH_STUB_LAND_REMOTE="$TMPD/ld-bare-hintonly" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$YWT" 2>&1)"; rc=$?
+chk "hint only: land exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "hint only: land names the missing PR number" "$out" "PR REFUSED: gh pr create named no PR number"
+chk_has "hint only: the output did carry the PR URL mid-line" "$out" "    gh event listen --resource https://github.com/o/r/pull/42 --event"
+chk_no "hint only: the mid-line URL is not taken as the PR" "$out" "opened PR #"
+chk_no "hint only: land never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 } # end sec_happy
 
 # ===========================================================================

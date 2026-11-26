@@ -688,6 +688,33 @@ chk "the stuck branch was left alone" \
 chk "the checkout stayed clean" \
   "$([ -z "$(git -C "$CB_OK" status --porcelain)" ]; echo $?)"
 
+# --- gh prints a hint block after the replacement PR's URL: the number still comes from the URL line
+build_carried hint
+CB_H="$TMPD/cb-clone-hint"; CB_H_TIP="$(git -C "$CB_H" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 60)" GH_STUB_PR_60="$(conflict_json 60 "$CB_H_TIP")" \
+  GH_STUB_CREATE_NUM=61 GH_STUB_CREATE_HINT=after \
+  GH_STUB_PR_61='{"number":61,"title":"log entry","headRefName":"feat/union-squash","headRefOid":"%SQUASH_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$CB_H" GH_STUB_LAND_REMOTE="$TMPD/cb-bare-hint" GH_STUB_LAND_BRANCH=feat/union \
+  "$WRAP" merge --apply "$CB_H" 2>&1)"; rc=$?
+chk "hint after the URL: the squash fallback exits 0" "$rc"
+chk_has "hint after the URL: the replacement PR is #61" "$out" "opened replacement PR #61 on feat/union-squash (supersedes #60)"
+chk_no "hint after the URL: no refusal" "$out" "PR REFUSED"
+chk "hint after the URL: #61 merged" "$(grep -c '^pr merge 61 ' "$GH_STUB_CALLS" | grep -qx 1; echo $?)"
+
+# --- gh prints only the hint block, its PR URL mid-line and no URL line: the fallback refuses and merges nothing
+build_carried hintonly
+CB_Y="$TMPD/cb-clone-hintonly"; CB_Y_TIP="$(git -C "$CB_Y" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 62)" GH_STUB_PR_62="$(conflict_json 62 "$CB_Y_TIP")" \
+  GH_STUB_CREATE_HINT=only \
+  GH_STUB_LAND_REPO="$CB_Y" GH_STUB_LAND_REMOTE="$TMPD/cb-bare-hintonly" GH_STUB_LAND_BRANCH=feat/union \
+  "$WRAP" merge --apply "$CB_Y" 2>&1)"; rc=$?
+chk_has "hint only: the fallback names the missing PR number" "$out" "PR REFUSED: gh pr create named no PR number"
+chk_has "hint only: the output did carry the PR URL mid-line" "$out" "    gh event listen --resource https://github.com/o/r/pull/42 --event"
+chk_no "hint only: the mid-line URL is not taken as the replacement PR" "$out" "opened replacement PR #"
+chk "hint only: the fallback merged nothing" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
 # --- a stuck PR that is also red elsewhere refuses before any git write
 build_carried red
 CB_RED="$TMPD/cb-clone-red"; CB_RED_TIP="$(git -C "$CB_RED" rev-parse feat/union)"
