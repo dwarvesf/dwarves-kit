@@ -261,7 +261,8 @@ while IFS=$'\037' read -r seg mseg wrds; do
                 push.default=*) pdo="${tok[$((j+1))]#push.default=}" ;;
                 *) mark ;;   # core.pager, core.editor, core.sshCommand, diff.external ... can run a string
               esac; j=$((j+2)) ;;
-          --git-dir=*|--work-tree=*|--namespace=*|--exec-path=*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) j=$((j+1)) ;;
+          --exec-path=*) mark; j=$((j+1)) ;;   # moves where git finds the programs it runs
+          --git-dir=*|--work-tree=*|--namespace=*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) j=$((j+1)) ;;
           -*) [ "$has_git_push" = 1 ] && block "git option '${tok[$j]}' before push is not understood"; j=$((j+1)) ;;
           *) sub="${tok[$j]}"; break ;;
         esac
@@ -304,14 +305,22 @@ while IFS=$'\037' read -r seg mseg wrds; do
           --delete|-d) del=1 ;;
           --all|--mirror|--tags|--follow-tags|--prune) pblock "git push $t pushes refs the gate cannot list" ;;
           --force|-f) force=1 ;;
-          -u|--set-upstream|-n|--dry-run|-q|--quiet|-v|--verbose|--no-verify|--verify|--progress|--atomic|--force-with-lease|--force-with-lease=*|--force-if-includes|--no-force-with-lease|--thin|--no-thin|--signed|--signed=*|--no-signed|--porcelain|--ipv4|--ipv6|--recurse-submodules=*|--no-recurse-submodules|--receive-pack=*|--exec=*|--repo=*|--push-option=*) ;;
-          -o|--push-option|--repo|--receive-pack|--exec) skip=1 ;;
+          -u|--set-upstream|-n|--dry-run|-q|--quiet|-v|--verbose|--no-verify|--verify|--progress|--atomic|--force-with-lease|--force-with-lease=*|--force-if-includes|--no-force-with-lease|--thin|--no-thin|--signed|--signed=*|--no-signed|--porcelain|--ipv4|--ipv6|--recurse-submodules=check|--recurse-submodules=no|--no-recurse-submodules|--push-option=*) ;;
+          -o|--push-option) skip=1 ;;   # a push option is data the server reads
+          # the program git runs for the remote side: locally via sh for a path or file:// remote
+          --receive-pack=*|--exec=*) pblock "git push ${t%%=*} runs a command" ;;
+          --receive-pack|--exec) pblock "git push $t runs a command"; skip=1 ;;
+          --repo=*) pblock "git push --repo replaces the remote the gate reads" ;;
+          --repo) pblock "git push --repo replaces the remote the gate reads"; skip=1 ;;
+          --recurse-submodules=*) pblock "git push $t pushes submodule refs the gate cannot list" ;;
           -[a-zA-Z][a-zA-Z]*)
             case "$t" in *f*) force=1 ;; *) printf '%s' "$t" | grep -Eq '^-[unqv]+$' || pblock "git push option '$t' is not understood" ;; esac ;;
           -*) pblock "git push option '$t' is not understood" ;;
           *) pos+=("$t") ;;
         esac
       done
+      # a transport-helper remote (ext::<command>, fd::, ...) runs a program
+      case "${pos[0]:-}" in *::*) pblock "git push to '${pos[0]}' runs a transport helper" ;; esac
       if [ "$del" = 1 ]; then
         # --delete makes every name after the remote a deletion (git refuses src:dst there)
         [ "${#pos[@]}" -ge 2 ] || block "git push --delete names no branch"

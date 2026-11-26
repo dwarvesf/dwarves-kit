@@ -81,6 +81,15 @@ expect_block "rebase --exec, then a real push" "$A" "git rebase -x 'make' master
 expect_block "an unknown git subcommand (an alias), then a real push" "$A" 'git sync && git push -u origin feat/work' "could run another push"
 expect_block "commit -e, then a real push" "$A" 'git commit -e -m x && git push -u origin feat/work' "could run another push"
 expect_pass "add, commit, then a real push" "$A" 'git add -A && git commit -qm "fix: x" && git push -u origin feat/work'
+# A push option that names a program runs it (locally via sh for a path or file:// remote).
+expect_block "--receive-pack= on a delete" "$A" "git push origin --delete feat/old1 --receive-pack='git push origin feat/other:master; git-receive-pack'" "runs a command"
+expect_block "--exec= on a delete" "$A" "git push origin --delete feat/old1 --exec='git push origin feat/other:master; git-receive-pack'" "runs a command"
+expect_block "--receive-pack space form on an empty-source delete" "$A" "git push --receive-pack 'git push origin feat/other:master; git-receive-pack' origin :feat/old1" "runs a command"
+expect_block "--receive-pack= on a real push" "$A" "git push --receive-pack='git push origin feat/other:master; git-receive-pack' origin feat/work" "runs a command"
+expect_block "--repo replaces the remote" "$A" "git push --repo='ext::sh -c true' feat/work" "replaces the remote"
+expect_block "an ext:: transport-helper remote" "$A" "git push 'ext::sh -c true' feat/work" "transport helper"
+expect_block "--recurse-submodules=on-demand" "$A" 'git push --recurse-submodules=on-demand origin feat/work' "submodule refs"
+expect_block "git --exec-path before push" "$A" 'git --exec-path=/tmp/kit-x push origin feat/work' "could run another push"
 expect_block "a delete beside a script run" "$A" 'git push origin --delete feat/old1 && bash ./cleanup.sh' "could run another push"
 expect_block "a delete with a VAR=value prefix" "$A" 'GIT_SSH_COMMAND=x git push origin --delete feat/old1' "could run another push"
 expect_block "a delete beside an unquoted \$ word in git" "$A" 'git push origin --delete feat/old1; git log $X' "could run another push"
