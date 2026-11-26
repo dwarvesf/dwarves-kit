@@ -451,12 +451,14 @@ chk_has "autoland hint after the URL: the PR number is read from the URL" "$out"
 chk_has "autoland hint after the URL: the merge verifies" "$out" "tree verified"
 chk_no "autoland hint after the URL: nothing failed" "$out" "FAILED"
 
-echo "--- autoland: gh prints only the hint block, the carry fails and merges nothing"
+echo "--- autoland: gh prints only the hint block, its PR URL mid-line and no URL line: the carry fails and merges nothing"
 build_union_repo alhintonly
 ALYC="$TMPD/uclone-alhintonly"; ALYB="$TMPD/ubare-alhintonly"
 printf 'a note\n' > "$ALYC/notes.md"; git -C "$ALYC" add notes.md; git -C "$ALYC" commit -qm "docs: a stray note"
 out="$(GH_STUB_CREATE_HINT=only al_run "$ALYB" "$ALYC" --apply)"
 chk_has "autoland hint only: the failure names gh pr create" "$out" "FAILED land "
+chk_has "autoland hint only: the output did carry the PR URL mid-line" "$out" "    gh event listen --resource https://github.com/o/r/pull/42 --event"
+chk_no "autoland hint only: the mid-line URL is not taken as the PR" "$out" "opened PR #"
 chk_no "autoland hint only: no merge ran" "$(cat "$GH_STUB_CALLS")" "pr merge"
 
 echo

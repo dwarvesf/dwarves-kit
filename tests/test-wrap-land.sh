@@ -188,7 +188,7 @@ chk_has "hint after the URL: land reports the PR number" "$out" "opened PR #45"
 chk_no "hint after the URL: no refusal" "$out" "PR REFUSED"
 chk_has "hint after the URL: land merged #45" "$(cat "$GH_STUB_CALLS")" "pr merge 45 --repo"
 
-echo "--- gh prints only the hint block, no URL: land still refuses and merges nothing"
+echo "--- gh prints only the hint block, its PR URL mid-line and no URL line: land still refuses and merges nothing"
 build_land hintonly
 YREPO="$TMPD/ld-repo-hintonly"; YWT="$(cd "$YREPO/wt" && pwd -P)"
 : > "$GH_STUB_CALLS"
@@ -196,6 +196,8 @@ out="$(GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_HINT=only GH_STUB_LAND_REPO="$YWT" \
   GH_STUB_LAND_REMOTE="$TMPD/ld-bare-hintonly" GH_STUB_LAND_BRANCH=feat/land GH_STUB_LAND_DEF=main "$WRAP" land "$YWT" 2>&1)"; rc=$?
 chk "hint only: land exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "hint only: land names the missing PR number" "$out" "PR REFUSED: gh pr create named no PR number"
+chk_has "hint only: the output did carry the PR URL mid-line" "$out" "    gh event listen --resource https://github.com/o/r/pull/42 --event"
+chk_no "hint only: the mid-line URL is not taken as the PR" "$out" "opened PR #"
 chk_no "hint only: land never merges" "$(cat "$GH_STUB_CALLS")" "pr merge"
 } # end sec_happy
 

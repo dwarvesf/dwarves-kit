@@ -86,7 +86,9 @@ _ship_gate_check() {
 # _pr_url_from_create <captured gh pr create output> -- the LAST line that is a GitHub PR URL
 # (`https://<host>/<owner>/<repo>/pull/<digits>`, trailing whitespace allowed). gh prints the URL
 # and, on newer versions, a hint block after it, so the last line is not the URL. Callers read the
-# number as `${url##*/}`. Prints nothing and returns 1 when no line is a PR URL.
+# number as `${url##*/}`. A URL inside a longer line (the hint block's `gh event listen --resource
+# <url> ...`) does not count. Prints nothing and returns 1 when no line is a PR URL; callers add
+# `|| true` and refuse on the empty number.
 _pr_url_from_create() {
   local line num url=""
   while IFS= read -r line; do

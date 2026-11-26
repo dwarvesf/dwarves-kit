@@ -227,11 +227,15 @@ case "$sub" in
       create)
         # `land` reads the number off the printed URL, so the stub answers with one.
         # GH_STUB_CREATE_HINT=after prints the hint block newer gh versions add after the URL;
-        # GH_STUB_CREATE_HINT=only prints the block and no URL.
-        [ "${GH_STUB_CREATE_HINT:-}" = only ] || printf '%s\n' "https://github.com/o/r/pull/${GH_STUB_CREATE_NUM:-42}"
+        # GH_STUB_CREATE_HINT=only prints the block and no URL line. The block is gh's own: its
+        # indented `gh event listen` line carries the PR URL mid-line, which is not a URL line.
+        create_url="https://github.com/o/r/pull/${GH_STUB_CREATE_NUM:-42}"
+        [ "${GH_STUB_CREATE_HINT:-}" = only ] || printf '%s\n' "$create_url"
         if [ -n "${GH_STUB_CREATE_HINT:-}" ]; then
-          printf '%s\n' "" "hint: if you need to wait for this pull request to be merged, run:" \
-            "hint:" "hint:   gh event listen --type pull_request --repo o/r" "hint:"
+          printf '%s\n' "hint: if you need to wait for this pull request to be reviewed, merged, or closed before continuing, use this instead of polling:" \
+            "    gh event listen --resource ${create_url} --event com.github.pull_request.review.submitted.v1,com.github.pull_request.state.changed.v1" \
+            "  - It prints the first event as a JSON line on stdout and exits; run it again to wait for the next one." \
+            "  - Event subscriptions are in preview and may not be enabled for your account."
         fi
         exit "${GH_STUB_CREATE_RC:-0}" ;;
       ready)
