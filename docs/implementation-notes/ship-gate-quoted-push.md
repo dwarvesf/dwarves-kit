@@ -4,70 +4,82 @@ Normal lane by the operator's call (the run started on the full lane and was mov
 
 ## Problem
 
-`lib/gate/push-refs.sh` split a command with `tr ';&|'` on every separator character, quoted or not, and read every word after the remote as a refspec. Four real commands were refused as unaccounted pushes:
+`lib/gate/push-refs.sh` split a command with `tr ';&|'` on every separator character, quoted or not, and read every word after the remote as a refspec. Real commands were refused as unaccounted pushes:
 
-| Command | Refusal |
+| Command | Refusal on master |
 |---|---|
 | `git push -q -u origin <branch> 2>&1 \| tail -2` | `'2>' does not resolve to a commit` |
-| `orca orchestration worker-start ... --spec "...; 2. git push ..."` | `git push runs under a wrapper ('2.')` |
 | `git push origin --delete a b` | `git push --delete pushes refs the gate cannot list` |
+| `orca orchestration worker-start ... --spec "...; 2. git push ..."` | `git push runs under a wrapper ('2.')` |
 | a for-loop running `git push origin --delete "$b"` | `a push segment uses a variable or command substitution` |
 
-The same split had two fail-open bugs: `git push &>/dev/null origin master` was read as a push of the current branch (the default push passed in a repo with no spec), and `bash -c "cd /tmp; git push origin <x>"` was read as a plain push and allowed.
+The same split had fail-open bugs. `git push &>/dev/null origin master` was read as a push of the current branch, so the default push passed in a repo with no spec. `bash -c "cd /tmp; git push origin <x>"` was read as a plain push and allowed.
 
-## What changed
+## Scope after two security reviews
+
+The first version treated quoted push text as data (an orca prompt, a commit message, an echo), answering `@@NONE`. Two automated reviews proved it fail-open. Six commands moved a bare origin's master: a delete followed by push text piped into bash or run as a script, an alias or post-commit hook written by printf or echo, `GIT_EDITOR` carrying the push, and git options held in a variable. The lead's decision: drop that feature entirely, and keep only the redirect fix and the plain-name delete, both failing closed.
+
+| Shape | Result |
+|---|---|
+| redirection in a real push segment (`2>&1`, `>f`, `&>f`, `>\|f`) | read correctly (was: a refspec) |
+| `git push <remote> --delete <plain names>`, `<remote> :<name>` | allowed, `@@DELETE` |
+| quoted `git push` text in an orca `--spec`, a commit message, an echo | refused, as on master; pass long text through a file |
+| for-loop `--delete "$b"` | refused, as on master |
+
+## What the parser does now
 
 ```
-command ──> split_segments (awk) ──> per segment: text, masked text, dequoted words
-              │  split at UNQUOTED ; & | newline
-              │  drop comments and redirections (2>&1, >f, &>f, >|f, N>&M)
-              │  keep a redirect target holding $ ` (
+command ──> split_segments (awk): split at UNQUOTED ; & | newline; drop comments and
+            redirections (a target holding $ ` ( stays visible); per segment: text, masked
+            text (quoted chars blanked), dequoted words
               v
-           classify each segment
-              git push ........ refspecs, --delete names (@@REF / @@DELETE / @@DEFAULT-PUSH)
-              git commit|tag .. push text only in -m/--message, no git global option: data
-              echo|printf|cat|grep|rg  print-only: data unless something can run a string
-              orca + --spec/--prompt/... quoted value: data unless something can run a string
-              anything else with push text: refused (wrapper) or no answer
+           each segment
+              git push ......... refspecs, --delete names
+              anything else .... push text in it, or a risky git step -> suspect=1
+              other command with push words -> wrapper refusal (as master)
               v
-           @@NONE when nothing ships and every push-text occurrence is data
+           default-branch pass (any repo) -> @@DEFAULT-PUSH
+           suspect=1 -> refuse every push answer (ref, delete, force)
+           delete answer also needs runner=0
               v
-hooks/ship-gate.sh: @@NONE passes only when the quote-blanked engage view sees no unquoted
-                    push or gh pr create and no view died; @@DELETE-only passes
+hooks/ship-gate.sh: @@DELETE-only passes; an answer naming no branch and no delete refuses
 ```
 
-"Can run a string" means: an unquoted EXEC word anywhere (shells, eval, xargs, sudo, env, ssh, interpreters, sed, awk, ...), a command word that is a path or holds `$`, a substitution anywhere, or an unquoted `( ) { }`. The EXEC list only adds refusals; the decision to call quoted text data comes from the allowlist (orca, named prompt options), so an unknown program fails closed.
+`suspect` is set by:
+- push text anywhere outside a push segment;
+- a `VAR=value` prefix, or an unquoted `$` word, in a git or gh step;
+- a git step that can run a string: a `-c` other than `push.default`, a subcommand outside the known list (an alias could be anything), `rebase --exec/-x/-i`, or `-e/--edit` on commit, merge, tag, revert, cherry-pick, pull or notes.
 
-A wrapped body (`bash -c "..."`) is parsed once more, nested, for the default-branch rule only. Without this, the quote-aware split would have moved `bash -c "cd x; git push origin main"` from the any-repo default refusal to the adopted-only wrapper refusal.
+`runner` is set by an EXEC word anywhere (shells, eval, xargs, sudo, env, ssh, interpreters, sed, awk, make, ...), a command word that is a path or holds `$`, a substitution anywhere, or an unquoted `( ) { }`. It only adds refusals.
 
-When the splitter cannot parse the command (an unclosed quote, a redirection with no target), the parser falls back to the old plain split with no quote facts: nothing is data, and `@@NONE` is never answered.
+A wrapped body (`bash -c "..."`) is parsed once more, nested, for the default-branch rule only. A wrapped push to a default branch is refused in every repo, adopted or not.
+
+When the splitter cannot parse the command (an unclosed quote, a redirection with no target), the parser falls back to master's plain split.
 
 ## Decision: `--delete` of plain names is allowed
 
-`git push <remote> --delete <name>...` and `git push <remote> :<name>` now emit `@@DELETE <name> <remote>`, and a push that only deletes passes the hook. Why this cannot bypass the proof gate:
+Why this cannot bypass the proof gate:
 
 - The proof gate guards a commit reaching the remote. A delete sends no commit object; the remote ends with less of the branch, never new unproven code.
-- The default-branch pass runs first over every delete target, both argument orders (`--delete feat/x master` and `--delete master`), and `refs/heads/` and `heads/` forms. A default branch is still `@@DEFAULT-PUSH`, refused in any repo.
-- The parser accepts only a plain name (`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`). It refuses `HEAD`, `@`, a glob, a `+`, a variable, and `src:dst`. git itself rejects some of these (`--delete only accepts plain target ref names`, sampled on a local bare origin), but the parser does not rely on that.
-- `--delete` with no names is refused (git: `--delete doesn't make sense without any refs`).
-- A delete plus a real push in one command still gates the real ref: `@@REF` is present, and the hook checks that branch as before.
+- The default-branch pass runs first over every delete target, in both argument orders, and in the `refs/heads/` and `heads/` forms. A default branch is still `@@DEFAULT-PUSH`, refused in any repo.
+- Only a plain name passes (`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`). `HEAD`, `@`, a glob, `+`, a variable and `src:dst` are refused. git rejects some of these too (`--delete only accepts plain target ref names`, sampled on a local bare origin), but the parser does not rely on that. `--delete` with no names is refused.
+- A delete is answered only when `suspect=0` and `runner=0`: the command holds nothing but plain git and gh steps. This closes reviewer bypass F1 (a delete followed by `echo '<push>' | bash`) and F1c (followed by the push written to a script and run from PATH).
+- A delete plus a real push still gates the real ref (`@@REF` present).
 
-Cost: nothing in the kit now refuses deleting a non-default remote branch. safety-gate has no push-delete rule. A deleted feature branch can be recovered from any clone that still holds it.
+Cost: nothing in the kit refuses deleting a non-default remote branch. safety-gate has no push-delete rule.
 
-## Decision: the for-loop delete stays refused
+## Tightening against master
 
-`for b in a b; do git push origin --delete "$b"; done` needs the loop evaluated to know `$b`, and `$b` could be a default branch from a substitution. The literal form `git push origin --delete a b` is allowed and does the same job.
+`tests/test-lanes-data.sh` row `ship-fail-closed-refs` pinned `git log -1 --format="%s about git push" && git push -u origin feat/x` as allowed. It now refuses: push text beside a push is never read as data. The same goes for a push in one command with `GIT_EDITOR=true git merge ...`, `git -c <key>=<value> <step>`, or an alias. Split such a command in two.
 
-## Review fixes (second commit)
+## Out of this diff (holes that exist on master too)
 
-An automated review of the first commit found three fail-open paths, each now pinned by a row that was red on the first commit:
-
-1. git subcommands such as log, show, grep, stash and merge counted as data, but `-c core.pager`, `grep -O` and `--ext-diff` can run a string. Data is now only a commit or tag message.
-2. Any program's quoted `--long-option` counted as data unless an EXEC word appeared. This is now an allowlist, and `( ) { }` count as able to run a string.
-3. The hook trusted `@@NONE` alone. It now also checks its own quote-blanked view.
+- F4: `cat <<EOT | bash` with a push in the body. The parser reports the default push, yet the gate exits 0 in the review harness's repo. The heredoc-to-shell path refuses only where `_fc_applies`, and it runs before the default-branch check.
+- F5: `X=push; git $X origin feat/other:master`. The engage regex never sees `git ... push`, so the parser is never asked.
+- A `git push` run from a script file the command does not name, as in master.
 
 ## Known limits
 
-- A program that can run a string but is not on the EXEC list, combined with an allowlisted orca prompt in the same command, would let the prompt count as data. The prompt still has to be an orca option value. Example: `orca ... --spec "git push x" ; unlisted-runner`.
-- `gh pr create` text inside `gh issue create --body "..."` still gets "no answer" (conservative, unchanged).
+- The known git subcommand list and the EXEC list are fixed lists. An unlisted git subcommand fails closed (suspect). An unlisted runner only loses the extra delete check: push text anywhere still sets suspect.
+- `gh pr create` text inside `gh issue create --body "..."` refuses ("no answer"), unchanged.
 - Pre-existing and untouched: `test-boundary-lint` and `test-no-personal-paths` fail on origin/master (`commands/ui-design.md:27`).
