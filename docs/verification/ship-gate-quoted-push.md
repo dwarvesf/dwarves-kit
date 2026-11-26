@@ -31,7 +31,12 @@ ok - unproven branch: a push after ;
 ok - unproven branch: a push after &&
 ok - &> before the refspec no longer hides a default push
 ok - a wrapped default push after a quoted ; is refused in any repo
-Results: 101 passed, 0 failed
+ok - gh pr create with $(...) in the title
+ok - gh pr create with a backtick in the title
+ok - gh pr create with a process substitution
+ok - git push with $(...) in a refspec
+ok - a pipe into a path named cat
+Results: 108 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -83,7 +88,7 @@ Verdict: PASS for this change. Both failures fail identically on origin/master (
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-refs-block.sh" "git show origin/master:lib/gate/push-refs.sh > lib/gate/push-refs.sh"
 Exit: 0 (green before mutation), 1 (under mutation, RED expected), 0 (green after restore)
 Output:
-  Results: 34 passed, 67 failed
+  Results: 37 passed, 71 failed
 Restore: git checkout HEAD -- lib/gate/push-refs.sh
 Verdict: PASS
 ```
@@ -92,11 +97,11 @@ Verdict: PASS
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-refs-block.sh" "git show 053b9284:hooks/ship-gate.sh > hooks/ship-gate.sh"
 Exit: 0 (green before mutation), 1 (under mutation, RED expected), 0 (green after restore)
 Output:
-  Results: 100 passed, 1 failed
+  Results: 107 passed, 1 failed
 Restore: git checkout HEAD -- hooks/ship-gate.sh
 Verdict: PASS
 ```
-The first control puts master's parser back: 67 rows go red. The second puts back a hook with no refusal for an answer that names no branch: the stub-parser row goes red. negctl restored both files. Both ran with `GIT_CONFIG_GLOBAL=/dev/null`.
+The first control puts master's parser back: 71 rows go red. The second puts back a hook with no refusal for an answer that names no branch: the stub-parser row goes red. negctl restored both files. Both ran with `GIT_CONFIG_GLOBAL=/dev/null`.
 
 ## Not proven
 - The installed hook in a live Claude Code session: the kit install under `~/.claude` still runs master's parser until this ships and is reinstalled.

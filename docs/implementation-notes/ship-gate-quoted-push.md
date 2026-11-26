@@ -22,9 +22,10 @@ Five automated review rounds each found another step that changes what a push do
 ```
 the Bash call ──> split at UNQUOTED ; & | newline (per segment: words, file-redirect flag, separator)
                     v
-                 the push or PR segment must be segment 0, with no VAR=value prefix and no file redirect
+                 the push or PR segment must be segment 0, with no VAR=value prefix, no file redirect,
+                 and no $ ` ( ) anywhere in it, quoted or not (no $(...), backtick, <(...) or >(...))
                  allowed beside it:  fd redirects that write no file  (2>&1, >&2, >/dev/null, 2>/dev/null)
-                                     one trailing `|` into tail, head, cat or grep, literal arguments
+                                     one trailing `|` into the bare word tail, head, cat or grep (not a path), literal arguments
                  anything else (another step, export, cd, a group, a subshell, a file redirect) -> refused
                     v
                  default-branch pass first (any repo), then the one-command check, then @@REF / @@DELETE / @@FORCE
@@ -35,7 +36,8 @@ the Bash call ──> split at UNQUOTED ; & | newline (per segment: words, file-
 | `git push ... 2>&1 \| tail -2`, `>/dev/null 2>&1`, `\| grep -v x` | answered |
 | `git push <remote> --delete <plain names>`, `<remote> :<name>` | answered, `@@DELETE` |
 | `git add && git commit && git push`, `cd x && git push`, `git push && gh pr create` | refused: run each as its own call |
-| `git push >/tmp/log`, `\| tee`, `\| sed`, two pipes | refused |
+| `git push >/tmp/log`, `\| tee`, `\| sed`, `\| ../bin/cat`, two pipes | refused |
+| `gh pr create --title "$(...)"`, a backtick, `<(...)` in the push or PR step | refused (review round 6) |
 | `GIT_*=... git push`, `export ...; git push` | refused |
 | quoted `git push` text in an orca `--spec`, a commit message, an echo | refused, as on master; pass long text through a file |
 | for-loop `--delete "$b"` | refused, as on master |
