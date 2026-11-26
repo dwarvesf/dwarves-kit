@@ -113,7 +113,7 @@ _autoland_carry() {
       # `--head`, never `--base`: with --repo, gh targets the repository's own default branch.
       created="$(gh pr create --repo "$url" --head "$branch" --title "$title" \
         --body "Carried by \`wrap apply\` from a shared checkout; wrap.autoland_carry lands it." 2>&1)"; rc=$?
-      n="$(printf '%s\n' "$created" | tail -1)"; n="${n##*/}"
+      n="$(printf '%s\n' "$created" | grep -E '/pull/[0-9]+$' | tail -1)"; n="${n##*/}"
       if [ "$rc" -ne 0 ] || ! [ "$n" -gt 0 ] 2>/dev/null; then
         echo "     FAILED land ${branch}: gh pr create exited ${rc}: ${created}"; FAILURES=1; return 1
       fi
