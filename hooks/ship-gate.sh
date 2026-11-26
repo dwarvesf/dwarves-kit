@@ -402,9 +402,8 @@ _resolve_base() { ship_rules_resolve_base "$ROOT"; }
 POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
 # Which refs does this command push? lib/gate/push-refs.sh answers, and fails closed: a command it
 # cannot fully account for (--all, --mirror, --tags, an unresolvable source, a variable, a wrapper,
-# more than one directory) is BLOCKED, not guessed at. A command it read whole and found nothing
-# shipping in (@@NONE: `git push` text was quoted data), or a push that only deletes plain-named
-# non-default branches (@@DELETE, no commit sent), passes. A force push is safety-gate's business and
+# more than one directory) is BLOCKED, not guessed at. A push that only deletes plain-named
+# non-default branches (@@DELETE, no commit sent) passes. A force push is safety-gate's business and
 # is left alone. A git push that lands on a default branch is refused in EVERY repo, adopted or
 # not (_default_block below). A native git pre-push hook, which receives the exact refs on stdin,
 # is the structural fix; this parser is best-effort.
@@ -467,14 +466,13 @@ if [ -f "$PREFS" ]; then
   # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
   # The marker scan is pure bash (no forked grep): a dead grep child used to read as "no marker" and
   # let a push to the default branch through.
-  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0; _BLOCKMSG=""; _NREF=0; _FIRSTREF=""; _SEENREFS=$'\n'; _NDEL=0; _NONE=0
+  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0; _BLOCKMSG=""; _NREF=0; _FIRSTREF=""; _SEENREFS=$'\n'; _NDEL=0
   while IFS= read -r _pl; do
     case "$_pl" in
       '@@DEFAULT-PUSH '*) [ -n "$_DPUSH" ] || _DPUSH="$_pl" ;;
       '@@FORCE'|'@@DEFAULT') _HAS_FORCE=1 ;;
       '@@BLOCK '*) [ "$_HAS_BLOCK" = 1 ] || _BLOCKMSG="${_pl#@@BLOCK }"; _HAS_BLOCK=1 ;;
       '@@DELETE '*) _NDEL=$((_NDEL + 1)) ;;
-      '@@NONE') _NONE=1 ;;
       '@@REF '*)
         case "$_SEENREFS" in
           *$'\n'"$_pl"$'\n'*) ;;
@@ -493,15 +491,10 @@ if [ -f "$PREFS" ]; then
       _fc_applies && _refs_block "it pushes more than one branch"
     elif [ "$_NREF" = 1 ]; then
       read -r _ PHEAD BRANCH <<< "$_FIRSTREF"
-    elif [ "$CAP_FAIL" = 0 ] && ! _hit "$GH_RE" "$CMD_ENG" \
-         && { [ "$_NDEL" -gt 0 ] || { [ "$_NONE" = 1 ] && ! _hit "$GIT_RE" "$CMD_ENG"; }; }; then
-      # Nothing ships: the parser read the whole command and found no push (`git push` text was
-      # data, and the quote-blanked engage view agrees: no unquoted push), or the push only deletes
-      # plain-named non-default branches, which sends no commit. A dead view, or an unquoted
-      # `gh pr create`, falls through to the refusal below.
-      exit 0
-    elif [ "$_NONE" = 1 ] || [ "$_NDEL" -gt 0 ]; then
-      _fc_applies && _refs_block "the engage check sees a push the parser called data"
+    elif [ "$_NDEL" -gt 0 ] && [ "$CAP_FAIL" = 0 ]; then
+      exit 0   # the push only deletes plain-named non-default branches: no commit is sent
+    else
+      _fc_applies && _refs_block "the command parser named no branch"   # an answer it does not know
     fi
   fi
 fi
