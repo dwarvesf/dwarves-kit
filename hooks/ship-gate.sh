@@ -493,10 +493,15 @@ if [ -f "$PREFS" ]; then
       _fc_applies && _refs_block "it pushes more than one branch"
     elif [ "$_NREF" = 1 ]; then
       read -r _ PHEAD BRANCH <<< "$_FIRSTREF"
-    elif [ "$_NONE" = 1 ] || [ "$_NDEL" -gt 0 ]; then
+    elif [ "$CAP_FAIL" = 0 ] && ! _hit "$GH_RE" "$CMD_ENG" \
+         && { [ "$_NDEL" -gt 0 ] || { [ "$_NONE" = 1 ] && ! _hit "$GIT_RE" "$CMD_ENG"; }; }; then
       # Nothing ships: the parser read the whole command and found no push (`git push` text was
-      # data), or the push only deletes plain-named non-default branches, which sends no commit.
+      # data, and the quote-blanked engage view agrees: no unquoted push), or the push only deletes
+      # plain-named non-default branches, which sends no commit. A dead view, or an unquoted
+      # `gh pr create`, falls through to the refusal below.
       exit 0
+    elif [ "$_NONE" = 1 ] || [ "$_NDEL" -gt 0 ]; then
+      _fc_applies && _refs_block "the engage check sees a push the parser called data"
     fi
   fi
 fi

@@ -187,8 +187,10 @@ EXEC_RE='^(bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|eval|exec|source|\.|command|b
 # `git push` / `gh pr create` text in a segment, quoted or not.
 GITPUSH_TXT='(^|[^[:alnum:]_-])git[^[:alnum:]_-](.*[^[:alnum:]_-])?push([^[:alnum:]_-]|$)'
 GHPR_TXT='(^|[^[:alnum:]_-])gh[^[:alnum:]_-](.*[^[:alnum:]_-])?pr[^[:alnum:]_-](.*[^[:alnum:]_-])?(create|new)([^[:alnum:]_-]|$)'
-# A long option that names execution: its value may be run, so it is not data.
-EXECOPT_RE='^--([a-z0-9-]*-)?(exec|eval|command|cmd|run|shell|script|sh)([-=].*)?$'
+# The one place a quoted option value of another program is data: an Orca agent prompt or note. The
+# agent it reaches runs under its own hooks. An allowlist, so an unknown program stays refused.
+DATA_CMD_RE='^orca$'
+DATA_OPT_RE='^--(spec|prompt|message|title|body|task|description|note|summary|reason)$'
 
 SEGS="$(printf '%s\n' "$cmd" | split_segments)" || SEGS="@@UNPARSED"
 parsed=1
@@ -205,6 +207,8 @@ fi
 runner=0
 case "$cmd" in *'$('*|*'`'*|*'<('*|*'>('*) runner=1 ;; esac
 while IFS=$'\037' read -r seg mseg _; do
+  # an unquoted ( ) { } is a subshell, group or brace expansion the parser does not follow
+  case "$mseg" in *'('*|*')'*|*'{'*|*'}'*) runner=1 ;; esac
   read -ra mw <<< "$mseg"
   c0=1
   for w in ${mw[@]+"${mw[@]}"}; do
@@ -220,20 +224,34 @@ while IFS=$'\037' read -r seg mseg _; do
 done <<< "$SEGS"
 [ "$parsed" = 1 ] || runner=1
 
-# quoted_data <masked-words...>: every quoted word is the value of a non-exec --long-option.
+# quoted_data <masked-words...>: every quoted word is the value of a DATA_OPT_RE option.
 quoted_data() {
   local prev="" w
   for w in "$@"; do
     case "$w" in
       *[\"\'\\]*)
         case "$w" in
-          --*=*) [[ ${w%%=*} =~ $EXECOPT_RE ]] && return 1 ;;
-          *) case "$prev" in --*) [[ $prev =~ $EXECOPT_RE ]] && return 1 ;; *) return 1 ;; esac ;;
+          --*=*) [[ ${w%%=*} =~ $DATA_OPT_RE ]] || return 1 ;;
+          *) [[ $prev =~ $DATA_OPT_RE ]] || return 1 ;;
         esac ;;
     esac
     prev="$w"
   done
   return 0
+}
+# msg_only <first-index>: from tok[first], push text appears only inside -m/--message values (one
+# token each, so a quoted message), and at least once. `-F file` names a file, not text: not data.
+msg_only() {
+  local k prev="" n=0 t
+  for ((k=$1; k<${#tok[@]}; k++)); do
+    t="${tok[$k]}"
+    if [[ $t =~ $GITPUSH_TXT ]] || [[ $t =~ $GHPR_TXT ]]; then
+      case "$prev" in -m|--message|-[a-zA-Z]*m) ;; *) case "$t" in --message=*|-m?*) ;; *) return 1 ;; esac ;; esac
+      n=$((n + 1))
+    fi
+    prev="$t"
+  done
+  [ "$n" -gt 0 ]
 }
 
 specs=""      # newline-separated "<remote> <refspec>" lines from every git push segment
@@ -261,16 +279,16 @@ while IFS=$'\037' read -r seg mseg wrds; do
   done
   case "$first" in
     git)
-      j=$((i+1)); sub=""; pdo=""
+      j=$((i+1)); sub=""; pdo=""; gopt=0
       while [ "$j" -lt "${#tok[@]}" ]; do
         case "${tok[$j]}" in
           -C) cdirs="$cdirs${tok[$((j+1))]:-}"$'\n'; j=$((j+2)) ;;
-          -c) case "${tok[$((j+1))]:-}" in
+          -c) gopt=1; case "${tok[$((j+1))]:-}" in
                 alias.*) [ "$has_git_push" = 1 ] && block "an alias defined on the command line could be push" ;;
                 push.default=*) pdo="${tok[$((j+1))]#push.default=}" ;;
               esac; j=$((j+2)) ;;
-          --git-dir=*|--work-tree=*|--namespace=*|--exec-path=*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) j=$((j+1)) ;;
-          -*) [ "$has_git_push" = 1 ] && block "git option '${tok[$j]}' before push is not understood"; j=$((j+1)) ;;
+          --git-dir=*|--work-tree=*|--namespace=*|--exec-path=*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) gopt=1; j=$((j+1)) ;;
+          -*) gopt=1; [ "$has_git_push" = 1 ] && block "git option '${tok[$j]}' before push is not understood"; j=$((j+1)) ;;
           *) sub="${tok[$j]}"; break ;;
         esac
       done
@@ -290,13 +308,17 @@ while IFS=$'\037' read -r seg mseg wrds; do
         continue
       fi
       if [ "$sub" != push ]; then   # another git command (a commit message may mention push)
-        # push text in the arguments of a git command that can run a string (rebase --exec,
-        # submodule foreach, bisect run, an alias) is not data
-        case "$sub" in commit|tag|notes|merge|log|show|grep|stash) ;; *) [ "$txt" = 1 ] && suspect=1 ;; esac
+        # Push text is data only inside a commit or tag message (-m/--message), with no git global
+        # option before the subcommand: -c core.pager / core.editor / diff.external, an alias,
+        # rebase --exec, submodule foreach, -O and --ext-diff can each run a string.
+        if [ "$txt" = 1 ]; then
+          case "$sub" in commit|tag) { [ "$gopt" = 0 ] && msg_only $((j+1)); } || suspect=1 ;; *) suspect=1 ;; esac
+        fi
         continue
       fi
       # command substitution, subshells, backticks, variables: cannot be resolved
       case "$seg" in *'$'*|*'`'*|*'('*|*')'*) block "a push segment uses a variable or command substitution" ;; esac
+      case "$mseg" in *'{'*|*'}'*) block "a push segment sits in a { } group or brace expansion" ;; esac
       sawship=1
       pos=(); skip=0; del=0
       for ((k=j+1; k<${#tok[@]}; k++)); do
@@ -342,7 +364,9 @@ while IFS=$'\037' read -r seg mseg wrds; do
         gh_heads="$gh_heads$head"$'\n'
       else gh_plain=1; fi
       ;;
-    echo|printf|cat|grep|rg|sed|awk|'#'*|'') ;;
+    echo|printf|cat|grep|rg)   # print-only: their push text is data unless something can run it
+      [ "$txt" = 1 ] && [ "$runner" = 1 ] && suspect=1 ;;
+    '#'*|'') ;;
     *)
       # any other command word carrying git ... push or gh pr create (xargs, sudo, env, bash -c, ...)
       gi=0; ghw=0; for t in "${tok[@]}"; do [ "$t" = git ] && gi=1; [ "$t" = gh ] && ghw=1; done
@@ -351,11 +375,23 @@ while IFS=$'\037' read -r seg mseg wrds; do
       { [ "$ghw" = 1 ] && [ "$has_gh_create" = 1 ]; } || [[ $seg =~ $GHPR_TXT ]] && tgh=1
       [ "$tgit" = 1 ] || [ "$tgh" = 1 ] || continue
       wmsg="git push runs under a wrapper ('$first')"; [ "$tgit" = 1 ] || wmsg="gh pr create runs under a wrapper ('$first')"
+      # A wrapped body (bash -c "cd x; git push origin main") is read once more, only for the
+      # default-branch rule, which holds in every repo while the wrapper refusal holds in adopted ones.
+      if [ -z "${PUSH_REFS_NESTED:-}" ]; then
+        for w in "${tok[@]}"; do
+          case "$w" in *[[:space:]]*) [[ $w =~ $GITPUSH_TXT ]] || continue ;; *) continue ;; esac
+          dp="$(PUSH_REFS_NESTED=1 bash "${BASH_SOURCE[0]}" "$root" "$w" "$cur" "$defname" 2>/dev/null | grep -m1 '^@@DEFAULT-PUSH ')"
+          [ -n "$dp" ] && { printf '%s\n' "$dp"; exit 0; }
+        done
+      fi
       # unquoted git ... push is run by this command (xargs git push, sudo git push)
       case "$uw" in *" git "*) case "$uw" in *" push "*) block "$wmsg" ;; esac ;; esac
       case "$uw" in *" gh "*) case "$uw" in *" create "*|*" new "*) block "$wmsg" ;; esac ;; esac
-      # quoted text: data only as a non-exec --long-option value, with nothing able to run it
-      if [ "$runner" = 1 ] || ! quoted_data ${mw[@]+"${mw[@]}"}; then block "$wmsg"; fi
+      # quoted text: data only for an allowlisted program, as an allowlisted option value, with
+      # nothing in the command able to run it; anything else is refused, never answered @@NONE
+      if [ "$runner" = 1 ] || ! [[ $first =~ $DATA_CMD_RE ]] || ! quoted_data ${mw[@]+"${mw[@]}"}; then
+        suspect=1; block "$wmsg"
+      fi
       ;;
   esac
 done <<< "$SEGS"

@@ -70,6 +70,26 @@ expect_block "a quoted push as an --exec value" "$A" 'mytool --exec "git push or
 expect_block "a quoted --spec in a command that pipes into sh" "$A" 'orca worker-start --spec "git push origin feat/other" | sh' "wrapper ('orca')"
 expect_block "echo piped into bash" "$A" 'echo "git push origin feat/other" | bash' "no answer"
 expect_block "git rebase --exec runs a push" "$A" 'git rebase --exec "git push origin feat/other" master' "no answer"
+# Push text is data only inside a commit/tag message or an allowlisted Orca prompt option; a git
+# global option, a pager or external-diff hook, an unknown program, or a ( ) { } group never is.
+expect_block "git -c core.pager carrying push text" "$A" 'git -c core.pager="git push origin feat/other" log' "no answer"
+expect_block "git grep -O carrying push text" "$A" 'git grep -O"git push origin feat/other" x' "no answer"
+expect_block "an external diff carrying push text" "$A" 'GIT_EXTERNAL_DIFF="git push origin feat/other" git diff --ext-diff' "no answer"
+expect_block "push text as a commit pathspec, not the message" "$A" 'git commit -qm ok "git push origin feat/other"' "no answer"
+expect_block "an unknown program's quoted --spec" "$A" 'mytool --spec "git push origin feat/other"' "wrapper ('mytool')"
+expect_block "an orca --spec beside a ( ) group" "$A" 'orca worker-start --spec "git push origin feat/other" && (true)' "wrapper ('orca')"
+expect_block "a push inside ( )" "$A" '( git push origin feat/other )' "cannot account for"
+expect_block "a push inside { }" "$A" '{ git push origin feat/other; }' "cannot account for"
+# The hook allows @@NONE only when its own quote-blanked engage view sees no unquoted push: a parser
+# that wrongly answers @@NONE for a real push is still refused.
+STUB="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
+cp -R "$KIT/lib" "$KIT/hooks" "$STUB/"
+printf '#!/usr/bin/env bash\necho @@NONE\n' > "$STUB/lib/gate/push-refs.sh"
+rc="$(jq -n --arg cwd "$A" --arg cmd 'git push -u origin feat/work' '{cwd: $cwd, tool_input: {command: $cmd}}' \
+  | CLAUDE_PLUGIN_ROOT="$STUB" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$STUB/hooks/ship-gate.sh" >/dev/null 2>"$ERR"; echo $?)"
+if [ "$rc" = 2 ] && grep -qF "engage check sees a push" "$ERR"; then ok "a wrong @@NONE for an unquoted push is refused"
+else no "a wrong @@NONE for an unquoted push should refuse (got $rc: $(head -c 300 "$ERR"))"; fi
+
 U="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")/r" || exit 1; mkrepo "$U" yes
 mkdir -p "$U/docs/specs"; printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$U/docs/specs/SPEC-001-work.md"
 git -C "$U" add -A; git -C "$U" commit -qm spec
@@ -86,6 +106,12 @@ expect_lane "unproven branch: a delete plus a real push" 'git push origin --dele
 rc="$(gate "$N" 'git push &>/dev/null origin master')"
 if [ "$rc" = 2 ] && grep -qF "lands on 'master'" "$ERR"; then ok "&> before the refspec no longer hides a default push"
 else no "&> before the refspec should refuse the default push (got $rc: $(head -c 300 "$ERR"))"; fi
+rc="$(gate "$N" 'bash -c "git push origin master"')"
+if [ "$rc" = 2 ] && grep -qF "lands on 'master'" "$ERR"; then ok "a default push wrapped in bash -c is refused in any repo"
+else no "a default push wrapped in bash -c should refuse in any repo (got $rc: $(head -c 300 "$ERR"))"; fi
+rc="$(gate "$N" 'bash -c "cd /tmp; git push origin master"')"
+if [ "$rc" = 2 ] && grep -qF "lands on 'master'" "$ERR"; then ok "a wrapped default push after a quoted ; is refused in any repo"
+else no "a wrapped default push after a quoted ; should refuse in any repo (got $rc: $(head -c 300 "$ERR"))"; fi
 rc="$(gate "$N" 'git push origin --delete feat/old1 master')"
 if [ "$rc" = 2 ] && grep -qF "lands on 'master'" "$ERR"; then ok "--delete naming the default branch is a default push"
 else no "--delete naming the default branch should refuse (got $rc: $(head -c 300 "$ERR"))"; fi
