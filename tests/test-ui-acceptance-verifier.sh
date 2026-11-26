@@ -32,8 +32,9 @@ RUN_TIMEOUT_S=180
 PGREP_CEILING_S=60
 SERVE_WAIT_S=30
 # The runner's own step limit for every browser case. A failing step waits out its whole limit, so the value is
-# also the cost of each FAIL row (twice, with the retry); it is still far above what a loaded host needs for a page.
-STEP_MS=6000
+# also the cost of each FAIL row (three attempts, per viewport); it is still well above what a loaded host needs for
+# a page on localhost. At 6000 the suite took about 265s alone and hit run-all's 300s ceiling under load.
+STEP_MS=3000
 HANG_SCENARIO_MS=15000
 
 CASES="install-root-entry docs-rows agent-file-tokens battery-row live-record suite-harness guard-refusals doctor-and-skip no-browser-rows signal-during-launch fixture-serves internal-error"

@@ -24,7 +24,7 @@ Source: this spec's ## Solution (or the brief's), + the developer's UI intent
 - Tone: [pick an extreme: minimal | maximalist | brutalist | editorial | retro-futuristic | ...]
 - Constraints: [framework, performance, accessibility, existing design system]
 - Differentiation: [the one unforgettable thing]
-- References: [ref-library cards this brief draws on, from `~/workspace/tieubao/ops-toolkit/tools/ref-library/bin/ref-library find <words>`; copy each card's Technique numbers into the motion spec]
+- References: [ref-library cards this brief draws on, from `ref-library find <words>`, the operator's reference-library CLI when it is on PATH; copy each card's Technique numbers into the motion spec]
 - Exclude: [named patterns the generator must not use, e.g. "no off-white background, no pill buttons, no italic accent words in headings"; specific names, never "avoid a generic look"]
 - Persona (optional): [operator-supplied critique archetype, seeded from `$ARGUMENTS` `persona:`; blank if none. Threaded to `/kit:visual-team` in Step 3 as its 6th lens]
 

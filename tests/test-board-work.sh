@@ -382,7 +382,9 @@ check "the fixture holds an idle, a working, an unknown, a null-branch and a nul
 via_bin="$(DWARVES_KIT_LOG_DIR="$LOGS" ORCA_BIN="$STUB" ORCA_STUB_PAGE="$PAGE" bash "$KIT_DIR/bin/board" work --json --repo-root "$REPO" --now "$NOW" --backlog-file "$REPO/_meta/BACKLOG.md")"
 check "bin/board work --json reaches the script and matches" "$via_bin" "$out"
 truthy "bin/board work --help shows the verb" "bash '$KIT_DIR/bin/board' work --help | grep -q 'board work'"
-truthy "board.sh help lists the verb" "bash '$KIT_DIR/lib/board/board.sh' --help | grep -q 'board.sh work'"
+# Captured first: grep -q exits at its first match, and board.sh then dies of SIGPIPE, which pipefail reports as a failed pipeline.
+BOARDSH_HELP="$(bash "$KIT_DIR/lib/board/board.sh" --help)"
+truthy "board.sh help lists the verb" "grep -q 'board.sh work' <<<\"\$BOARDSH_HELP\""
 
 echo "== worktree_items and claims =="
 new_case
