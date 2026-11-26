@@ -402,7 +402,9 @@ _resolve_base() { ship_rules_resolve_base "$ROOT"; }
 POLICY="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-policy.sh"
 # Which refs does this command push? lib/gate/push-refs.sh answers, and fails closed: a command it
 # cannot fully account for (--all, --mirror, --tags, an unresolvable source, a variable, a wrapper,
-# more than one directory) is BLOCKED, not guessed at. A force push is safety-gate's business and
+# more than one directory) is BLOCKED, not guessed at. A command it read whole and found nothing
+# shipping in (@@NONE: `git push` text was quoted data), or a push that only deletes plain-named
+# non-default branches (@@DELETE, no commit sent), passes. A force push is safety-gate's business and
 # is left alone. A git push that lands on a default branch is refused in EVERY repo, adopted or
 # not (_default_block below). A native git pre-push hook, which receives the exact refs on stdin,
 # is the structural fix; this parser is best-effort.
@@ -465,12 +467,14 @@ if [ -f "$PREFS" ]; then
   # REF or BLOCK line, so `feat/DEFAULT-x` cannot pass for the DEFAULT marker.
   # The marker scan is pure bash (no forked grep): a dead grep child used to read as "no marker" and
   # let a push to the default branch through.
-  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0; _BLOCKMSG=""; _NREF=0; _FIRSTREF=""; _SEENREFS=$'\n'
+  _DPUSH=""; _HAS_FORCE=0; _HAS_BLOCK=0; _BLOCKMSG=""; _NREF=0; _FIRSTREF=""; _SEENREFS=$'\n'; _NDEL=0; _NONE=0
   while IFS= read -r _pl; do
     case "$_pl" in
       '@@DEFAULT-PUSH '*) [ -n "$_DPUSH" ] || _DPUSH="$_pl" ;;
       '@@FORCE'|'@@DEFAULT') _HAS_FORCE=1 ;;
       '@@BLOCK '*) [ "$_HAS_BLOCK" = 1 ] || _BLOCKMSG="${_pl#@@BLOCK }"; _HAS_BLOCK=1 ;;
+      '@@DELETE '*) _NDEL=$((_NDEL + 1)) ;;
+      '@@NONE') _NONE=1 ;;
       '@@REF '*)
         case "$_SEENREFS" in
           *$'\n'"$_pl"$'\n'*) ;;
@@ -489,6 +493,10 @@ if [ -f "$PREFS" ]; then
       _fc_applies && _refs_block "it pushes more than one branch"
     elif [ "$_NREF" = 1 ]; then
       read -r _ PHEAD BRANCH <<< "$_FIRSTREF"
+    elif [ "$_NONE" = 1 ] || [ "$_NDEL" -gt 0 ]; then
+      # Nothing ships: the parser read the whole command and found no push (`git push` text was
+      # data), or the push only deletes plain-named non-default branches, which sends no commit.
+      exit 0
     fi
   fi
 fi
