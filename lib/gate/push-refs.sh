@@ -234,8 +234,15 @@ suspect=0
 mark() { suspect=1; return 0; }
 GIT_KNOWN='^(add|am|apply|archive|blame|branch|bundle|cat-file|check-ignore|checkout|cherry|cherry-pick|clean|clone|commit|config|count-objects|describe|diff|fetch|for-each-ref|format-patch|fsck|gc|grep|hash-object|help|init|log|ls-files|ls-remote|ls-tree|maintenance|merge|merge-base|mv|name-rev|notes|pull|push|range-diff|rebase|reflog|remote|reset|restore|rev-list|rev-parse|revert|rm|shortlog|show|show-ref|sparse-checkout|stash|status|switch|symbolic-ref|tag|update-ref|var|version|worktree)$'
 
+# A write into a .git path (a redirect target the splitter drops, a cp, a tee) can change what a
+# push does: config, hooks, the remote's receivepack. A URL ending in .git does not match.
+GITPATH_RE='(^|[[:space:]=>/"'"'"'])\.git(/|$|[[:space:]"'"'"';&|)])'
+[[ $cmd =~ $GITPATH_RE ]] && mark
+nseg=0        # non-empty segments: a delete is answered only as the one step in the command
+
 while IFS=$'\037' read -r seg mseg wrds; do
   [ -n "${seg//[[:space:]]/}" ] || continue
+  nseg=$((nseg + 1))
   IFS=$'\036' read -ra tok <<< "$wrds"
   txt=0; [[ $seg =~ $GITPUSH_TXT ]] && txt=1; [[ $seg =~ $GHPR_TXT ]] && txt=1
   # skip leading VAR=value words
@@ -285,6 +292,24 @@ while IFS=$'\037' read -r seg mseg wrds; do
       if [ "$sub" != push ]; then   # another git command
         [ "$txt" = 1 ] && mark   # push text in its arguments is never data
         [[ $sub =~ $GIT_KNOWN ]] || mark
+        # a step that changes what a later push does or where it goes: config writes, remote edits,
+        # a new repo or submodule
+        case "$sub" in
+          clone|init|submodule) mark ;;
+          config) gw=0; gr=0; np=0
+            for ((k=j+1; k<${#tok[@]}; k++)); do
+              case "${tok[$k]}" in
+                --get|--get-all|--get-regexp|--get-urlmatch|--list|-l|--get-color|--get-colorbool) gr=1 ;;
+                --add|--unset|--unset-all|--replace-all|--rename-section|--remove-section|--edit|-e) gw=1 ;;
+                -*) ;;
+                *) np=$((np + 1)); [ "$np" = 1 ] && case "${tok[$k]}" in set|unset|rename-section|remove-section|edit) gw=1 ;; get|list) gr=1 ;; esac ;;
+              esac
+            done
+            { [ "$gw" = 0 ] && { [ "$gr" = 1 ] || [ "$np" -le 1 ]; }; } || mark ;;
+          remote) ra=""
+            for ((k=j+1; k<${#tok[@]}; k++)); do case "${tok[$k]}" in -*) ;; *) ra="${tok[$k]}"; break ;; esac; done
+            case "$ra" in ''|show|get-url) ;; *) mark ;; esac ;;
+        esac
         for ((k=j+1; k<${#tok[@]}; k++)); do
           case "$sub:${tok[$k]}" in
             rebase:--exec|rebase:--exec=*|rebase:-x|rebase:-i|rebase:--interactive) mark ;;
@@ -404,7 +429,7 @@ resolve() {   # resolve <src> <dst> [remote]: print REF or DELETE, or block
     [[ $dst =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] && [ "$dst" != HEAD ] && [ "$dst" != "@@UNKNOWN" ] \
       || block "git push deletes '$dst', which is not a plain branch name"
     # a delete is answered only when nothing in the command can run a string (suspect already refused)
-    [ "$runner" = 0 ] || block "a delete shares the command with a step that could run another push"
+    [ "$runner" = 0 ] && [ "$nseg" = 1 ] || block "a delete must be the only step in the command"
     printf '@@DELETE %s %s\n' "$dst" "${3:-}"; return 0
   fi
   case "$src$dst" in *'*'*|*'?'*|*'['*) block "refspec '$src:$dst' is a pattern" ;; esac

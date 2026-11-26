@@ -90,7 +90,16 @@ expect_block "--repo replaces the remote" "$A" "git push --repo='ext::sh -c true
 expect_block "an ext:: transport-helper remote" "$A" "git push 'ext::sh -c true' feat/work" "transport helper"
 expect_block "--recurse-submodules=on-demand" "$A" 'git push --recurse-submodules=on-demand origin feat/work' "submodule refs"
 expect_block "git --exec-path before push" "$A" 'git --exec-path=/tmp/kit-x push origin feat/work' "could run another push"
-expect_block "a delete beside a script run" "$A" 'git push origin --delete feat/old1 && bash ./cleanup.sh' "could run another push"
+# Review round 4: a step that changes what a later push does (a config write, a remote edit, a write
+# into .git) refuses any push beside it, and a delete must be the only step in the command.
+expect_block "review H2: config receivepack, then a delete" "$A" "git config remote.origin.receivepack 'git pu\"\"sh --receive-pack=git-receive-pack origin feat/other:master; git-receive-pack'; git push origin --delete feat/old1" "could run another push"
+expect_block "review H2, ref form: config receivepack, then a real push" "$A" "git config remote.origin.receivepack 'git pu\"\"sh --receive-pack=git-receive-pack origin feat/other:master; git-receive-pack'; git push -u origin feat/work" "could run another push"
+expect_block "remote set-url, then a real push" "$A" 'git remote set-url --push origin /tmp/kit-elsewhere.git; git push -u origin feat/work' "could run another push"
+expect_block "a write into .git, then a real push" "$A" 'echo x >> .git/config; git push -u origin feat/work' "could run another push"
+expect_block "a delete beside a harmless step" "$A" 'git push origin --delete feat/old1 && git status' "only step"
+expect_pass "a config read, then a real push" "$A" 'git config user.name && git push -u origin feat/work'
+expect_pass "a push to a URL ending in .git" "$A" 'git push -u https://example.invalid/r.git feat/work'
+expect_block "a delete beside a script run" "$A" 'git push origin --delete feat/old1 && bash ./cleanup.sh' "only step"
 expect_block "a delete with a VAR=value prefix" "$A" 'GIT_SSH_COMMAND=x git push origin --delete feat/old1' "could run another push"
 expect_block "a delete beside an unquoted \$ word in git" "$A" 'git push origin --delete feat/old1; git log $X' "could run another push"
 expect_block "a for-loop delete: the variable stays unresolved" "$A" "$(printf 'for b in feat/old1 feat/old2; do\n  git push origin --delete "$b"\ndone')" "variable"
@@ -133,7 +142,7 @@ expect_lane "unproven branch: a plain push" 'git push -u origin feat/work'
 expect_lane "unproven branch: the redirect form" 'git push -q -u origin feat/work 2>&1 | tail -2'
 expect_lane "unproven branch: a push after ;" 'git status; git push -u origin feat/work'
 expect_lane "unproven branch: a push after &&" 'git status && git push -u origin feat/work'
-expect_lane "unproven branch: a delete plus a real push" 'git push origin --delete feat/old1 && git push -u origin feat/work'
+expect_block "unproven branch: a delete plus a real push" "$U" 'git push origin --delete feat/old1 && git push -u origin feat/work' "only step"
 rc="$(gate "$N" 'git push &>/dev/null origin master')"
 if [ "$rc" = 2 ] && grep -qF "lands on 'master'" "$ERR"; then ok "&> before the refspec no longer hides a default push"
 else no "&> before the refspec should refuse the default push (got $rc: $(head -c 300 "$ERR"))"; fi
