@@ -1,51 +1,37 @@
 # Verification -- ship-gate-quoted-push
 
-The ship-gate's push parser (`lib/gate/push-refs.sh`) no longer reads a redirection in a real push segment as a refspec, and `push --delete` of plain non-default names passes. Quoted push text is never treated as data. Every real unaccounted push still refuses, and so does a push beside any step that could run another push.
+The ship-gate's push parser (`lib/gate/push-refs.sh`) answers a push only when the push is the whole Bash call. It no longer reads an fd redirect on that push as a refspec, and `push --delete` of plain non-default names passes. Any other step beside a push refuses, and the default-branch rule still holds in every repo.
 
 ## Green run
 ```
 Command: bash tests/test-ship-gate-refs-block.sh
 Exit: 0
 Output:
-ok - redirect after the refspec, piped to tail
+ok - 2>&1 on the push
+ok - >/dev/null 2>&1 on the push
+ok - one pipe into grep with a literal pattern
 ok - redirect to a file
+ok - a ~/.gitconfig write, then a push
+ok - an XDG git config write, then a push
+ok - export GIT_CONFIG_GLOBAL, then a push
+ok - GIT_CONFIG_GLOBAL= prefix on the push
+ok - cd, then a push
 ok - --delete of two plain-named branches
-ok - an empty-source delete of a plain name
 ok - review F1: a delete, then push text piped into bash
-ok - review F1c: a delete, then push text run as a script on PATH
-ok - review F2: an alias written by printf, then run
-ok - review F2b: a post-commit hook written by echo
-ok - review F3: GIT_EDITOR carries the push
-ok - review F3b: git options in a variable
-ok - --receive-pack= on a delete
-ok - --exec= on a delete
-ok - --receive-pack space form on an empty-source delete
-ok - --receive-pack= on a real push
-ok - --repo replaces the remote
-ok - an ext:: transport-helper remote
-ok - --recurse-submodules=on-demand
-ok - git --exec-path before push
-ok - review H2: config receivepack, then a delete
-ok - review H2, ref form: config receivepack, then a real push
-ok - remote set-url, then a real push
-ok - a write into .git, then a real push
-ok - a delete beside a harmless step
-ok - a config read, then a real push
-ok - a push to a URL ending in .git
-ok - commit -c core.editor carrying push text, then a real push
-ok - git -c core.editor carrying push text, then a real push
-ok - an editor env prefix, then a real push
-ok - rebase --exec, then a real push
-ok - an unknown git subcommand (an alias), then a real push
 ok - add, commit, then a real push
+ok - --receive-pack= on a real push
+ok - review H2: config receivepack, then a delete
+ok - review S1: GIT_CONFIG_* env sets receivepack, then a push
+ok - review S2: HOME moved and ~/.gitconfig written, then a push
+ok - review S3: a pre-push hook written into .git, then a push
+ok - review S5: export GIT_DIR, then a push
 ok - unproven branch: a plain push
 ok - unproven branch: the redirect form
 ok - unproven branch: a push after ;
 ok - unproven branch: a push after &&
-ok - unproven branch: a delete plus a real push
 ok - &> before the refspec no longer hides a default push
 ok - a wrapped default push after a quoted ; is refused in any repo
-Results: 80 passed, 0 failed
+Results: 101 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -55,48 +41,41 @@ The real primary flow: the hook itself, fed the PreToolUse JSON of each command,
 Command: ship-gate.sh <- PreToolUse JSON, per command, before (origin/master) and after (this branch)
 Exit: per row below
 Output:
-row                                              before                                         after
-git push -q -u origin feat/done 2>&1 | tail -2   exit 2 '2>' does not resolve to a commit        exit 0
-git push -u origin feat/done >/tmp/push.log 2>&1 exit 2 '>/tmp/push.log' does not resolve       exit 0
-git push origin --delete feat/old1 feat/old2     exit 2 git push --delete pushes refs ...        exit 0
-orca ... --spec "...; 2. git push ..."           exit 2 wrapper ('2.')                           exit 2 wrapper ('orca')
-for b in ...; do git push origin --delete "$b"   exit 2 variable or command substitution         exit 2 same
-git push &>/dev/null origin master (Z)           exit 0                                          exit 2 lands on 'master'
-bash -c "cd /tmp; git push origin feat/other"    exit 0                                          exit 2 wrapper ('bash')
-git push -u origin feat/work (unproven)          exit 2 'full' lane requires gates               exit 2 same
-git status; git push -u origin feat/work         exit 2 'full' lane requires gates               exit 2 same
-git status && git push -u origin feat/work       exit 2 'full' lane requires gates               exit 2 same
+row                                              before                                     after
+git push -q -u origin feat/done 2>&1 | tail -2   exit 2 '2>' does not resolve to a commit    exit 0
+git push origin --delete feat/old1 feat/old2     exit 2 git push --delete ...                 exit 0
+git push -u origin feat/done >/tmp/push.log 2>&1 exit 2 '>/tmp/push.log' does not resolve   exit 2 only command in the call
+orca ... --spec "...; 2. git push ..."           exit 2 wrapper ('2.')                       exit 2 wrapper ('orca')
+for b in ...; do git push origin --delete "$b"   exit 2 variable or command substitution     exit 2 same
+git push &>/dev/null origin master (Z)           exit 0                                      exit 2 lands on 'master'
+bash -c "cd /tmp; git push origin feat/other"    exit 0                                      exit 2 wrapper ('bash')
+git push -u origin feat/work (unproven)          exit 2 'full' lane requires gates           exit 2 same
+git status; git push -u origin feat/work         exit 2 'full' lane requires gates           exit 2 only command in the call
 Verdict: PASS
 ```
 
-The second review's harness runs each command for real when the gate passes, then checks the bare origin's master:
+The review harness runs each command for real when the gate passes, then checks the bare origin's master:
 ```
-Command: bash run.sh ./h.sh   (cases F1 F1c F2 F2b F3 F3b F4 F5, R1-R4, H2, H2r)
+Command: GIT_CONFIG_GLOBAL=/dev/null bash run.sh ./h.sh   (all 41 review cases at this head)
 Exit: per case
 Output:
-F1 F1c F2 F2b F3 F3b   GATE rc=2, nothing ran            (6854d945: GATE rc=0, origin master MOVED)
-R1-R4 --receive-pack / --exec on a delete or a push (round 3)
-                       GATE rc=2 "runs a command"    (107b3fd4: the suite rows show gate exit 0)
-H2 / H2r config receivepack, then a delete / a push (round 4)
-                       GATE rc=2, nothing ran        (6dd65f53: the suite rows show gate exit 0)
-F4 heredoc piped into bash       GATE rc=0, master MOVED  (same on origin/master: out of this diff)
-F5 X=push; git $X origin ...     GATE rc=0, master MOVED  (same on origin/master: out of this diff)
-Verdict: PASS for every regression this branch had introduced
+F1 F1c F2 F2b F3 F3b R1-R5 D1 D2 D2b D3-D9 P1 H1 H2 H2r H3 O3 O4 O5 S1 S1b S2 S2b S3 S4 S5   GATE rc=2, nothing ran
+O1 delete with -o carrying push text   GATE rc=0, no push landed (a push option is server data)
+O2 --force-with-lease with a delete    GATE rc=0, no push landed (a force push is safety-gate's)
+C0 plain feature push (control)        GATE rc=0, no push landed on master
+F4 heredoc piped into bash             GATE rc=0, master MOVED  (same on origin/master: out of this diff)
+F5 X=push; git $X origin ...           GATE rc=0, master MOVED  (same on origin/master: out of this diff)
+Verdict: PASS for every case this branch had let through
 ```
 
 ```
-Command: bash tests/run-all.sh --changed --time
+Command: GIT_CONFIG_GLOBAL=/dev/null bash tests/run-all.sh --changed --time
 Exit: 1
 Output:
-test-codex-hooks                               ok (8s)
-test-hooks                                     ok (156s)
-test-lanes-data                                ok (186s)
-test-ship-gate-command-words                   ok (58s)
-test-ship-gate-default-push                    ok (7s)
-test-ship-gate-refs-block                      ok (19s)
 run-all: FAILED -> test-boundary-lint test-no-personal-paths
 run-all: 61 suites run, 0 skipped for missing tooling
-Verdict: PASS for this change. Both failures fail identically on origin/master (commands/ui-design.md:27, a hardcoded operator path); this branch does not touch that file.
+(test-hooks, test-codex-hooks, test-lanes-data and every test-ship-gate-* suite: ok)
+Verdict: PASS for this change. Both failures fail identically on origin/master (commands/ui-design.md:27); this branch does not touch that file. The global git config is isolated because the operator's ~/.gitconfig was overwritten during the review with a remote.origin.push refspec, which turns every plain push in a fixture into a default push.
 ```
 
 ## Negative control
@@ -104,7 +83,7 @@ Verdict: PASS for this change. Both failures fail identically on origin/master (
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-refs-block.sh" "git show origin/master:lib/gate/push-refs.sh > lib/gate/push-refs.sh"
 Exit: 0 (green before mutation), 1 (under mutation, RED expected), 0 (green after restore)
 Output:
-  Results: 37 passed, 43 failed
+  Results: 34 passed, 67 failed
 Restore: git checkout HEAD -- lib/gate/push-refs.sh
 Verdict: PASS
 ```
@@ -113,12 +92,13 @@ Verdict: PASS
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-refs-block.sh" "git show 053b9284:hooks/ship-gate.sh > hooks/ship-gate.sh"
 Exit: 0 (green before mutation), 1 (under mutation, RED expected), 0 (green after restore)
 Output:
-  Results: 79 passed, 1 failed
+  Results: 100 passed, 1 failed
 Restore: git checkout HEAD -- hooks/ship-gate.sh
 Verdict: PASS
 ```
-The first control puts master's parser back: 43 rows go red, so the suite pins the redirect, delete, wrapped-default and fail-closed behaviour. The second puts back a hook with no refusal for an answer that names no branch: the stub-parser row goes red. negctl restored both files.
+The first control puts master's parser back: 67 rows go red. The second puts back a hook with no refusal for an answer that names no branch: the stub-parser row goes red. negctl restored both files. Both ran with `GIT_CONFIG_GLOBAL=/dev/null`.
 
 ## Not proven
 - The installed hook in a live Claude Code session: the kit install under `~/.claude` still runs master's parser until this ships and is reinstalled.
-- F4 (a heredoc piped into a shell, gate exit 0 although the parser reports the default push) and F5 (`X=push; git $X ...`) pass on origin/master and on this branch. They are not fixed here.
+- Config, hooks or environment left by an EARLIER Bash call. Only a native git pre-push hook, which sees the exact refs, can close that.
+- F4 (a heredoc piped into a shell) and F5 (`X=push; git $X ...`) get through on origin/master and on this branch.
