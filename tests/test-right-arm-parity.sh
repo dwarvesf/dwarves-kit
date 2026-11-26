@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test-right-arm-parity.sh -- SPEC-092, kit-hardening SG-04.
-# Validates the right-arm-parity agents (brief-reviewer, acceptance-verifier,
-# recheck-verifier): they exist, conform to ADR-0029, pass the SG-01
-# gate, fill the previously agent-less Acceptance row, carry the pinned
+# Validates the 4 new right-arm-parity agents (brief-reviewer, acceptance-verifier,
+# system-verifier, recheck-verifier): they exist, conform to ADR-0029, pass the SG-01
+# gate, fill the previously agent-less Acceptance/System-test rows, carry the pinned
 # re-execution-not-read-back semantics (recheck-verifier), and that execute.md wires the
 # fresh-context re-audit lens over a right-arm PASS.
 #
@@ -16,6 +16,7 @@
 # Run: bash tests/test-right-arm-parity.sh   (exit 0 = all AC green)
 
 set -uo pipefail
+export KIT_CONFIG_OPERATOR="${TMPDIR:-/tmp}/kit-no-operator.$$"
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FIX="$KIT_DIR/tests/fixtures/right-arm-parity"
 ARCH="$KIT_DIR/docs/reference/architecture.md"
@@ -27,9 +28,9 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${
 
 echo "=== right-arm review parity (SPEC-092 AC1-AC5) ==="
 
-AGENTS="brief-reviewer acceptance-verifier recheck-verifier"
+AGENTS="brief-reviewer acceptance-verifier system-verifier recheck-verifier"
 
-# --- AC1: the agents exist, conform (on-axis name, read-only-or-scoped-Bash tools, ----
+# --- AC1: the 4 agents exist, conform (on-axis name, read-only-or-scoped-Bash tools, ----
 # --- valid model), and each passes the SG-01 gate mode individually. -------------------
 for NAME in $AGENTS; do
   A="$KIT_DIR/agents/$NAME.md"
@@ -50,10 +51,10 @@ for NAME in $AGENTS; do
   fi
 done
 
-# --- AC2: the Acceptance row in the V-phase inventory is non-empty; the whole-suite System level is gone ---
+# --- AC2: the Acceptance and System-test rows in the V-phase inventory are non-empty ---
 [ -f "$ARCH" ]; assert "AC2: docs/reference/architecture.md exists" $?
 grep -q 'acceptance-verifier' "$ARCH"; assert "AC2: architecture.md's Acceptance row names acceptance-verifier" $?
-[ ! -f "$KIT_DIR/agents/system-verifier.md" ] && ! grep -q 'system-verifier' "$ARCH" "$KIT_DIR/commands/verify.md"; assert "AC2: no system-verifier agent and no whole-suite System level in architecture.md or verify.md" $?
+grep -q 'system-verifier' "$ARCH"; assert "AC2: architecture.md's System-test row names system-verifier" $?
 grep -qi 'brief-reviewer' "$ARCH"; assert "AC2: architecture.md carries a brief-reviewer row (the brief mirror)" $?
 grep -qi 'recheck-verifier' "$ARCH"; assert "AC2: architecture.md carries a recheck-verifier row (the re-audit lens)" $?
 
@@ -111,6 +112,17 @@ for NAME in $AGENTS; do
   else
     assert "AC6 [NO-ORPHAN]: $NAME is dispatched by at least one file under commands/" 1
   fi
+done
+
+# --- AC7: the whole suite runs only on an explicit request (--full); the default skips it ---
+VERIFY="$KIT_DIR/commands/verify.md"
+STEP6=$(awk '/^### Step 6: /{f=1; next} /^### /{f=0} f' "$VERIFY")
+printf '%s' "$STEP6" | grep -qF 'SKIPPED: full suite runs only on request (--full)'; assert "AC7: verify.md Step 6 records SKIPPED without --full" $?
+printf '%s' "$STEP6" | grep -q 'only when the operator passed `--full`' && printf '%s' "$STEP6" | grep -q 'With `--full`, dispatch the \*\*kit:system-verifier\*\*'
+assert "AC7: verify.md Step 6 dispatches kit:system-verifier only with --full" $?
+! printf '%s' "$STEP6" | grep -qE 'kit_config_get|test\.suite'; assert "AC7: no config default stands in for the --full request" $?
+for c in execute ship; do
+  grep -q 'only when the operator passed `--full`' "$KIT_DIR/commands/$c.md"; assert "AC7: $c.md runs the whole suite only with --full" $?
 done
 
 echo ""

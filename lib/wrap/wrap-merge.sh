@@ -591,7 +591,7 @@ _squash_fallback() {
     echo "     PR REFUSED: gh pr create for ${sq_branch} exited ${rc}: ${created}" >&2
     return 1
   fi
-  new_n="$(_pr_url_from_create "$created")"; new_n="${new_n##*/}"
+  new_n="$(_pr_url_from_create "$created" || true)"; new_n="${new_n##*/}"
   case "$new_n" in
     ''|*[!0-9]*) echo "     PR REFUSED: gh pr create named no PR number: ${created}" >&2; return 1 ;;
   esac

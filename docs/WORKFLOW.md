@@ -235,7 +235,7 @@ checks: a static review when it is produced (left/vertex) and a dynamic test lat
 
    Brief / Requirement ............................... Acceptance test   acceptance-verifier · /kit:verify
    build /kit:think · /kit:assign  · review brief-reviewer (/kit:think)
-    Solution-design .................................. (no right-arm verifier in the work loop)
+    Solution-design .................................. System test       system-verifier · /kit:verify --full
     build /kit:design  · review /kit:devs-team
      Spec ........................................... Integration test   integration-verifier
      build /kit:spec (+research-*) · review /kit:spec-validate
@@ -258,7 +258,7 @@ review when produced (left/vertex), a dynamic test when executed (right).
 | Artifact | Built by | Static review (when produced) | Dynamic test (executed later) |
 |---|---|---|---|
 | Brief / requirement | `/kit:think`, `/kit:assign` | `brief-reviewer` (dispatched by `/kit:think`) | Acceptance test (`acceptance-verifier`, dispatched by `/kit:verify`; `/kit:ship`'s own test-run step is an inline check, not an agent dispatch) |
-| Solution design | `/kit:design` | `/kit:devs-team` | No dynamic right-arm verifier in the work loop (the whole suite runs in the release/nightly path) |
+| Solution design | `/kit:design` | `/kit:devs-team` | System test (`system-verifier`, dispatched by `/kit:verify --full` only) |
 | Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-verifier`) |
 | Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `code-reviewer`; deep: `security-reviewer`) | Unit / task test (`task-verifier`) |
 | (sampled right-arm PASS, plus every self-attested row) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
@@ -321,10 +321,10 @@ Debug (off-cycle).
   writes the tests; workers write the test code at the vertex. The classic V designs
   a test at every left phase; the kit concentrates it, which is why the testing wing
   is on the right.
-- **The design level has no dynamic right-arm verifier in the work loop.** The work
-  loop runs only the narrowest tests that cover the change (`bin/test-affected`); the
-  whole suite runs in the release/nightly path (`.github/workflows/test.yml` on
-  dispatch or tag, and the operator's nightly job).
+- **System test now HAS an agent**, `system-verifier`, dispatched by `/kit:verify`
+  (SG-04 + TIER-4 close-gate wiring); it runs the whole assembled suite (each
+  command's own test-run step still runs at build and at ship too, but that is an
+  inline check, not this agent).
 
 ### Coverage: the V is fully covered
 
@@ -336,8 +336,10 @@ serve >= 2 lifecycle phases) and "no phantom features":
   agent, dispatched by `/kit:verify` (TIER-4 close-gate wiring closed the orphan;
   `/kit:ship`'s own test-run step stays inline, not this agent). The former "v2
   candidate" is built.
-- **`brief-reviewer` (SHIPPED, SG-04)** -- fills the previously agent-less Brief row,
-  and is now actually dispatched by `/kit:think` (TIER-4 close-gate wiring).
+- **`system-verifier`, `brief-reviewer` (SHIPPED, SG-04)** -- fill the previously
+  agent-less System-test and Brief rows, and are now actually dispatched:
+  `system-verifier` by `/kit:verify`, `brief-reviewer` by `/kit:think` (TIER-4
+  close-gate wiring).
 - **`recheck-verifier` (SHIPPED, SG-04)** -- a fresh-context re-audit that re-executes
   a right-arm PASS's recorded command, catching a stale or fabricated PASS. `/kit:execute`
   samples it (`execute.recheck_sample`, one run in N) and always rechecks self-attested rows
@@ -356,7 +358,7 @@ that validates it):
 | Phase | Review that runs (records to the gate-ledger) |
 |---|---|
 | Think / Brief | `brief-reviewer` (static, dispatched by `/kit:think`) |
-| Design | `/kit:devs-team` (static) · no dynamic verifier in the work loop (the whole suite runs in the release/nightly path) |
+| Design | `/kit:devs-team` (static) · `system-verifier` (dynamic, dispatched by `/kit:verify --full` only) |
 | Spec | `/kit:spec-validate` (static) · `integration-verifier` (dynamic) |
 | Test plan | `/kit:test-plan-review-team` (static): the light pass at every depth, the full team at blind-spot |
 | Build / Code | `/kit:review` · `/kit:review-team` (+ `code-reviewer`, deep `security-reviewer`) · `task-verifier` (dynamic) |
@@ -961,6 +963,14 @@ ADR). This section is what actually dispatches; every claim below is proven by
   `--stream`/`--verbose` piped straight to the conductor -- that tees the child
   transcript into the parent's context, the exact accumulation trap this ADR closes.
 
+### Closing an NN-slug sub-goal
+
+A ROADMAP in the `NN-slug` form (`- [x] NN-slug, PR #N, merged <sha>`) closes a sub-goal with
+`bin/mega tick <mega> <NN-slug> --pr <N>`, never a hand edit. The verb audits the PR through gh
+(MERGED, a merge commit, base on the default branch), checks the goal file's `**Branch:**` against
+the PR head, writes the line with the sha gh reports, and records `attempt-state.sh commit-result`.
+Any refusal writes nothing. Contract: `docs/specs/SPEC-430-mega-tick-verb.md`.
+
 ### Per-sub-goal model routing
 
 Each sub-goal file's `Model:`/`Effort:` header becomes `--model`/`--effort` flags on that
@@ -988,7 +998,7 @@ layer, not this mechanism.
 
 ### Tiered verification
 
-`[mega] verify = "tiered"` (read at the base commit, off by default) adds one join per wave. Inside a node every verification step still runs (execute 3.1, the task-verifier pass, the recheck sample, ship's test step), each on the affected selection, as in every run; nothing is skipped and no record is trusted. Known failures live in a lead-committed file read with `git show <base>:...` (`lib/gate/known-failures.sh`), so a node can neither edit its own bar nor spend a fix retry on a failure the base already has. The full suite runs once per wave in `_wave_converge`: on the base tree for the join's own baseline, then on the merged tree with each PR head pinned. Red on a new failure stops the wave with nothing merged; green passes each pinned head to the merge hook as `--expect-head`, and `mega-merge.sh merge` refuses a head that moved (exit 75), which reruns the join once. The serial path (no wave formed) joins once per DAG level instead: at the top of each cycle, before anything dispatches, `_serial_level_join` joins every level whose sub-goals and lower levels are all checked and that has no `.orchestrate/join-level-<n>.ok`. It runs `[test] join_cmd` on origin's current base tree (the level's merges are in it, since each serial worker merges its own PR), reading every config key at the base sha pinned before the first dispatch, and judges the run against the committed known-failures list with an executed count that may not drop below the last green level's. A red join halts the loop, and a re-run joins that level again first. A level is 0 with no `depends`, else 1 plus its deepest dependency. Rolling waves are refused. Rationale and the out-of-scope list (trust records, tree keys, skip-unchanged): `docs/specs/SPEC-421-tiered-verification.md`.
+`[mega] verify = "tiered"` (read at the base commit, off by default) adds one join per wave. Inside a node every verification step still runs (execute 3.1, the task-verifier pass, the recheck sample, ship's test step), each on the affected selection, as in every run; nothing is skipped and no record is trusted. Known failures live in a lead-committed file read with `git show <base>:...` (`lib/gate/known-failures.sh`), so a node can neither edit its own bar nor spend a fix retry on a failure the base already has. The join runs once per wave in `_wave_converge`: `[test] join_cmd`, the affected selection of the union of heads (`KIT_JOIN_BASE` holds the base commit), on the merged tree with each PR head pinned; there is no base tree run. Red on a failure the known-failures list does not name stops the wave with nothing merged; green passes each pinned head to the merge hook as `--expect-head`, and `mega-merge.sh merge` refuses a head that moved (exit 75), which reruns the join once. The serial path (no wave formed) joins once per DAG level instead: at the top of each cycle, before anything dispatches, `_serial_level_join` joins every level whose sub-goals and lower levels are all checked and that has no `.orchestrate/join-level-<n>.ok`. It runs `[test] join_cmd` on origin's current base tree (the level's merges are in it, since each serial worker merges its own PR) with `KIT_JOIN_BASE` set to the base pinned before the first dispatch, reading every config key at the base sha pinned before the first dispatch, and judges the run against the committed known-failures list with an executed count that may not drop below the last green level's. A red join halts the loop, and a re-run joins that level again first. A level is 0 with no `depends`, else 1 plus its deepest dependency. Rolling waves are refused. Rationale and the out-of-scope list (trust records, tree keys, skip-unchanged): `docs/specs/SPEC-421-tiered-verification.md`.
 
 ### The ledger-under-delegation guarantee
 

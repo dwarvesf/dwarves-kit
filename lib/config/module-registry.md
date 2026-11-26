@@ -122,7 +122,7 @@ real reader consumes it today (all rows below are, except where noted).
 |---|---|---|---|---|---|
 | WAVE_CAP | mega.wave_cap | `2` | [impl] | mega | Max concurrent sub-goals admitted per wave. |
 | WAVE_ROLLING | mega.wave_rolling | `0` (off) | [impl] | mega | Rolling wave admission: a landed member is converged at once and its slot refilled from the recomputed ready set (disjoint from every running member, up to WAVE_CAP), instead of idling until the wave's slowest member ends. |
-| - | mega.verify | `"off"` | [impl] | mega | `"off"` or `"tiered"`. `tiered`: node verification runs the `affected` selection and `_wave_converge` runs the full suite once per wave on the merged tree before `WAVE_MERGE_CMD`, which then gets `--expect-head <pinned sha>`. Read through `kit_config_get_at` (the base commit's `.kit.toml`, then operator and kit-root), never a node's branch. `orchestrate.sh run` refuses it with `WAVE_ROLLING=1`. |
+| - | mega.verify | `"off"` | [impl] | mega | `"off"` or `"tiered"`. `tiered`: `_wave_converge` runs `[test] join_cmd` (the affected selection of the union of heads) once per wave on the merged tree before `WAVE_MERGE_CMD`, which then gets `--expect-head <pinned sha>`. Read through `kit_config_get_at` (the base commit's `.kit.toml`, then operator and kit-root), never a node's branch. `orchestrate.sh run` refuses it with `WAVE_ROLLING=1`. |
 | TIER4_CLOSE | mega.tier4_close | `true` | [impl] | mega | Enables the Tier-4 mega-close auto-verify+hold sequence. |
 | MULTIPLEXER | mega.multiplexer | `0` (off) | [impl] | mega | Opt-in wave pane multiplexing; only engages when a wave actually admits >=1 sub-goal concurrently. |
 | MEGA_MERGE_POSTURE | mega.mega_merge_posture | `"auto-to-final"` | [impl] | mega | `"auto-to-final"` or `"per-pr-review"` merge posture. |
@@ -158,6 +158,8 @@ real reader consumes it today (all rows below are, except where noted).
 | WAVE_MERGE_CMD | env-only | `$LIB_ROOT/goal/mega-merge.sh merge` | [impl] | mega | Override the merge command a completed wave invokes. |
 | WAVE_MERGE_LANE | env-only | `full` | [impl] | mega | Override the risk lane used at wave-merge time. |
 | WAVE_POLL_SECS | env-only | `0.2` | [impl] | mega | Polling interval while waiting for wave admission. |
+| MEGA_TICK_GH_TIMEOUT_S | env-only | `30` | [impl] | mega | Seconds `mega tick`'s one `gh pr view` may run (through `timeout` or `gtimeout`; unbounded when neither exists). |
+| MEGA_TICK_LOCK_WAIT_SECS | env-only | `10` | [impl] | mega | Seconds `mega tick` waits for the shared `flip.lock` before exit 7; `0` or a decimal, polled every 0.2 s. |
 
 ### queue (single-goal driver, `lib/queue/queue.sh`)
 
@@ -443,7 +445,7 @@ never turns the step off.
 | - | test.known_failures | `"tests/known-failures.txt"` | [impl] | (none) | `lib/gate/known-failures.sh`: the lead-committed list of failures a tiered node is not charged for, one name per line, read with `git show <base>:<path>`. A path inside the repo. |
 | - | test.failure_line | `""` | [impl] | (none) | `lib/gate/known-failures.sh`: an ERE whose capture group 1 is a failure name in a test log, read at the base (TOML literal string, single quotes). Empty: a red run is a plain failure. |
 | - | test.count_line | `""` | [impl] | (none) | `lib/gate/known-failures.sh`: an ERE whose numeric capture groups are summed into the executed count of a run, read at the base. Empty: a red run is a plain failure. |
-| - | test.join_cmd | `""` | [impl] | (none) | `lib/queue/orchestrate.sh` `_wave_join`: the full-suite command run on the base tree and on the merged tree when `[mega] verify = "tiered"`, read at the base. Empty: the join refuses and nothing merges. |
+| - | test.join_cmd | `""` | [impl] | (none) | `lib/queue/orchestrate.sh` `_wave_join` and `_serial_join`: the affected-selection command run on the merged tree when `[mega] verify = "tiered"`, with `KIT_JOIN_BASE` set to the base commit (this repo: `bin/test-affected --base "$KIT_JOIN_BASE"`); a red run is judged against the known-failures list. Read at the base. Empty: the join refuses and nothing merges. |
 | KIT_LOAD_WARN | test.load_warn | `16` | [impl] | (none) | `lib/host/load-warn.sh`, called by `bin/test-affected` runs and `lib/queue/orchestrate.sh run`. When the 1-minute load average is over this number it prints one warning line suggesting Devin or self-hosted CI. Warning only, exit code never changes. A non-numeric value prints nothing. |
 | KIT_SUITE_TIMES_FILE | env-only | `${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/suite-times.tsv` | [impl] | (none) | `tests/lib/suite-times.sh`: the per-host log every `tests/run-all.sh` run appends one line per suite to (UTC time, git sha, suite, seconds, exit, 1-min load). A write failure never changes run-all's exit code. |
 | KIT_SUITE_TIMES_CAP | env-only | `20000` | [impl] | (none) | `tests/lib/suite-times.sh`: lines the log keeps after an append. A non-numeric value falls back to 20000. |
@@ -517,6 +519,8 @@ against any of these bare tokens as covered without a registry row.
 | KIT_LOG_DIR | the RESOLVED ledger root, exported by `lib/telemetry/kit-log-dir.sh` for child tools (`mega review`/`mega report` read it); operators configure `KIT_LEDGER_DIR` / `[ledger].location`, never this |
 |---|---|
 | KIT_LOAD_STUB | `lib/host/load-warn.sh` test seam: a number that replaces the real load average so `tests/test-host-load-warn.sh` runs on any host. Never set outside tests. |
+| MEGA_TICK_TEST | `lib/mega/mega.sh` `mega tick` test seam: with `=1`, `MEGA_TICK_TEST_PAUSE_FILE` is honored. Never set outside `tests/test-mega-tick.sh`. |
+| MEGA_TICK_TEST_PAUSE_FILE | `lib/mega/mega.sh` `mega tick` test seam: while this file exists (and `MEGA_TICK_TEST=1`), the verb pauses after the line read, holding the lock, at most 30 s. Never set outside tests. |
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
