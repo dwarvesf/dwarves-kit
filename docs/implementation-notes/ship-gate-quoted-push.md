@@ -48,6 +48,7 @@ hooks/ship-gate.sh: @@DELETE-only passes; an answer naming no branch and no dele
 `suspect` is set by:
 - push text anywhere outside a push segment;
 - a `VAR=value` prefix, or an unquoted `$` word, in a git or gh step;
+- a step that changes what a push does or where it goes: a git config write (anything but `--get*`, `--list`/`-l`, `get`/`list`, or a single key), `git remote` other than `show`/`get-url`, `git clone`, `git init`, `git submodule`, and any `.git` path in the command (a redirect target, a cp or tee into `.git`; a URL ending in `.git` does not match). Review round 4 proved the need: a `remote.origin.receivepack` written by `git config` moved master beside a delete. Its push words were split by an empty quote pair, so the text mark missed them;
 - a git step that can run a string: a `-c` other than `push.default`, a subcommand outside the known list (an alias could be anything), `rebase --exec/-x/-i`, or `-e/--edit` on commit, merge, tag, revert, cherry-pick, pull or notes.
 
 `runner` is set by an EXEC word anywhere (shells, eval, xargs, sudo, env, ssh, interpreters, sed, awk, make, ...), a command word that is a path or holds `$`, a substitution anywhere, or an unquoted `( ) { }`. It only adds refusals.
@@ -65,7 +66,7 @@ Why this cannot bypass the proof gate:
 - The proof gate guards a commit reaching the remote. A delete sends no commit object; the remote ends with less of the branch, never new unproven code.
 - The default-branch pass runs first over every delete target, in both argument orders, and in the `refs/heads/` and `heads/` forms. A default branch is still `@@DEFAULT-PUSH`, refused in any repo.
 - Only a plain name passes (`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`). `HEAD`, `@`, a glob, `+`, a variable and `src:dst` are refused. git rejects some of these too (`--delete only accepts plain target ref names`, sampled on a local bare origin), but the parser does not rely on that. `--delete` with no names is refused.
-- A delete is answered only when `suspect=0` and `runner=0`: the command holds nothing but plain git and gh steps. This closes reviewer bypass F1 (a delete followed by `echo '<push>' | bash`) and F1c (followed by the push written to a script and run from PATH).
+- A delete is answered only when it is the one non-empty segment in the command, with `suspect=0` and `runner=0`: anything beside a delete refuses (`git push origin --delete x 2>&1 | tail` included). This closes reviewer bypass F1 (a delete followed by `echo '<push>' | bash`) and F1c (followed by the push written to a script and run from PATH).
 - A delete plus a real push still gates the real ref (`@@REF` present).
 
 Cost: nothing in the kit refuses deleting a non-default remote branch. safety-gate has no push-delete rule.
