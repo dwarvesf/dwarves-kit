@@ -756,8 +756,8 @@ case_ship_fail_closed_refs() {
 0|git push
 0|git push -u origin feat/x
 0|git push origin HEAD
-0|git log -1 --format="%s about git push" && git push -u origin feat/x
-0|git push -u origin feat/x && gh pr create --fill
+2|git log -1 --format="%s about git push" && git push -u origin feat/x
+2|git push -u origin feat/x && gh pr create --fill
 2|git push origin feat/evil
 2|git push origin feat/x feat/evil
 2|git push --all origin

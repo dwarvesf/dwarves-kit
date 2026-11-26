@@ -112,10 +112,11 @@ case_push "12 impl-notes override clears the gap" "$R" 0 ''
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n13 full nomarker; gates n13 full
 case_push "13 unadopted repo gets an advisory, not a block" "$R" 0 '\[advisory\] full-lane spec'
 
-# 14 push via a leading cd from a foreign cwd checks THAT repo
+# 14 push via a leading cd from a foreign cwd is judged in THAT repo: the target is adopted, so the
+# one-command rule refuses the cd + push there (the foreign cwd is no repo and would have passed)
 R="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1; mkrepo "$R" n14 full; gates n14 full
 _cwd14="$(mktemp -d "${TMPDIR:-/tmp}/kit.XXXXXX")" || exit 1
-case_push "14 cd <repo> && git push checks the target repo" "$R" 2 'MISSING-NOTES' "$_cwd14" "cd $R && git push -u origin HEAD"
+case_push "14 cd <repo> && git push is judged in the target repo" "$R" 2 'only command in the call' "$_cwd14" "cd $R && git push -u origin HEAD"
 
 # 15-17 big producers under pipefail: grep -q exits on its first match, the producer
 # (git show, cat, grep) is still writing, takes SIGPIPE, and pipefail reports the whole
