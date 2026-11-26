@@ -25,21 +25,21 @@
 # remote.<remote>.push when set, else push.default (simple and current push the current branch,
 # upstream pushes to branch.<cur>.merge, matching also counts every local default branch).
 #
-# Accounted for: `git [-C dir] [-c k=v] [--git-dir=x ...] push [options] [remote [refspec...]]`
-# and `gh pr create [--head branch]`, each in any number of `;` `&&` `||` `|` segments.
-# The command is split at UNQUOTED separators only, and redirections (`2>&1`, `>file`, `&>file`)
-# are dropped first: they never change which refs git pushes. A redirect target holding `$`,
-# a backtick or a paren is kept, so the substitution rule below still sees it.
+# Accounted for: `git [-C dir] [-c push.default=x] [--git-dir=x ...] push [options] [remote
+# [refspec...]]` and `gh pr create [--head branch]`. The command is split at UNQUOTED separators only.
+# One-command rule: a push or PR is answered only when it is the whole Bash call. Allowed beside it:
+# fd redirects that write no file (`2>&1`, `>&2`, `>/dev/null`, `2>/dev/null`) and one trailing pipe
+# into tail, head, cat or grep with literal arguments. Another step, a file redirect, a VAR=value
+# prefix, cd, a group or a subshell refuses. The default-branch pass runs first, so a compound
+# command that pushes to a default branch is still reported as @@DEFAULT-PUSH in any repo.
 # `git push <remote> --delete <name>...` and `<remote> :<name>` delete plain-named branches: no
 # commit is sent, so they are @@DELETE, not @@REF; a default branch among the names is still
-# @@DEFAULT-PUSH, and a name that is not plain (a `:`, `+`, glob, variable, HEAD) is refused. A
-# delete is answered only when nothing else in the command could run a push (see `runner`).
-# `git push` / `gh pr create` text anywhere outside a push segment the parser reads (a quoted
-# argument, a commit message, an echo) is never data: a command that also pushes is refused.
+# @@DEFAULT-PUSH, and a name that is not plain (a `:`, `+`, glob, variable, HEAD) is refused.
 # Refused: --all --mirror --tags --follow-tags --prune, an unknown option, a `--git-dir
 # path` space form, a refspec that is globbed or does not resolve to a commit, command
 # substitution or variables in a push segment, a wrapper (xargs, sudo, env, bash -c) around git,
-# and `git push` text in any argument of another command.
+# a push option or git option that runs a program (--receive-pack, --exec, --repo, -c other than
+# push.default, --exec-path, a `::` remote, --recurse-submodules=on-demand).
 set -uo pipefail
 root="${1:-}"; cmd="${2:-}"; cur="${3:-HEAD}"; defname="${4:-}"
 
@@ -91,18 +91,21 @@ is_default() {   # is_default <branch> <remote>
 # Strip one layer of matching quotes from a token.
 unq() { local t="$1"; t="${t#[\"\']}"; t="${t%[\"\']}"; printf '%s' "$t"; }
 
-# split_segments: the command on stdin -> one line per segment, "<text>\037<masked>\037<words>". It
+# split_segments: the command on stdin -> one line per segment,
+# "<text>\037<masked>\037<words>\037<file-redirect 0|1>\037<separator after it>". It
 # splits at UNQUOTED `;` `&` `|` and newlines, drops comments and redirections, and flattens newlines
 # inside quotes to spaces. <masked> is <text> with every quoted or escaped character blanked to `_`
 # (quote marks kept), so a masked word holding a quote mark or `\` is a quoted word. <words> is the
-# segment's shell words with their quotes removed, joined by \036. A quote it cannot close, or a
+# segment's shell words with their quotes removed, joined by \036. <file-redirect> is 1 when the
+# segment redirects to or from any file but /dev/null (an fd copy like 2>&1 is not a file). The
+# separator is ; nl | || |& & && or end. A quote it cannot close, or a
 # redirection with no target, prints the single line @@UNPARSED (bash would not run that command).
 split_segments() {
   awk '
     function bad() { print "@@UNPARSED"; failed = 1; exit }
     function put(r, m) { raw = raw r; msk = msk m }
     function addw() { if (inw) { words = words (nw++ ? "\036" : "") wd }; wd = ""; inw = 0 }
-    function emit() { addw(); if (raw ~ /[^ \t]/) print raw "\037" msk "\037" words; raw = ""; msk = ""; words = ""; nw = 0 }
+    function emit(t) { addw(); if (raw ~ /[^ \t]/) print raw "\037" msk "\037" words "\037" fr "\037" t; raw = ""; msk = ""; words = ""; nw = 0; fr = 0 }
     function flat(b,   m) {   # copy a quote body flat into <text>, blanked into <masked>, bare into the word
       gsub(/\n/, " ", b); m = b; gsub(/./, "_", m); qb = b; qm = m
     }
@@ -137,12 +140,13 @@ split_segments() {
       st = i; i = word(i)
       if (i == st) bad()
       t = substr(s, st, i - st)
+      if (t != "/dev/null") fr = 1
       if (t ~ /[$`(]/) { put(" " t " ", " " t " "); wd = t; inw = 1; addw() }   # a substitution in the target stays visible
       else put(" ", " ")
     }
     { s = (NR == 1 ? $0 : s "\n" $0) }
     END {
-      n = length(s); i = 1; raw = ""; msk = ""; words = ""; nw = 0; wd = ""; inw = 0
+      n = length(s); i = 1; raw = ""; msk = ""; words = ""; nw = 0; wd = ""; inw = 0; fr = 0
       while (i <= n) {
         c = substr(s, i, 1); nx = substr(s, i + 1, 1)
         if (c == "\\") { if (nx != "\n") { put(c nx, "\\_"); wd = wd nx; inw = 1 }; i += 2; continue }
@@ -159,11 +163,12 @@ split_segments() {
           i = j + 1; continue
         }
         if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|()]/)) { addw(); while (i <= n && substr(s, i, 1) != "\n") i++; continue }
-        if (c == "\n" || c == ";") { emit(); i++; continue }
-        if (c == "|") { emit(); i++; if (nx == "|" || nx == "&") i++; continue }
+        if (c == "\n") { emit("nl"); i++; continue }
+        if (c == ";") { emit(";"); i++; continue }
+        if (c == "|") { emit((nx == "|" || nx == "&") ? c nx : c); i++; if (nx == "|" || nx == "&") i++; continue }
         if (c == "&") {
           if (nx == ">") { addw(); i++; redir(1); continue }
-          emit(); i++; if (nx == "&") i++; continue
+          emit(nx == "&" ? "&&" : "&"); i++; if (nx == "&") i++; continue
         }
         if (c == ">" || c == "<") {
           if (nx == "(" || (c == "<" && nx == "<")) { put(c nx, c nx); wd = wd c nx; inw = 1; i += 2; continue }   # process substitution, heredoc: kept as words
@@ -176,49 +181,23 @@ split_segments() {
         if (c == " " || c == "\t") { addw(); put(c, c); i++; continue }
         put(c, c); wd = wd c; inw = 1; i++
       }
-      if (!failed) emit()
+      if (!failed) emit("end")
     }'
 }
 
-# Commands that can run a string they are handed (as an argument or on stdin). One unquoted in the
-# command means quoted `git push` text may run, so it is never read as data.
-EXEC_RE='^(bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|eval|exec|source|\.|command|builtin|xargs|sudo|doas|su|runuser|env|nohup|setsid|timeout|nice|stdbuf|ionice|caffeinate|chronic|unbuffer|watch|time|ssh|mosh|parallel|script|flock|tmux|screen|expect|at|batch|perl|python|python2|python3|ruby|node|deno|bun|osascript|awk|gawk|nawk|mawk|sed|gsed|op|mise|direnv|npx|uvx|pipx|make|just|docker|podman|kubectl|git-sh)$'
 # `git push` / `gh pr create` text in a segment, quoted or not.
 GITPUSH_TXT='(^|[^[:alnum:]_-])git[^[:alnum:]_-](.*[^[:alnum:]_-])?push([^[:alnum:]_-]|$)'
 GHPR_TXT='(^|[^[:alnum:]_-])gh[^[:alnum:]_-](.*[^[:alnum:]_-])?pr[^[:alnum:]_-](.*[^[:alnum:]_-])?(create|new)([^[:alnum:]_-]|$)'
 SEGS="$(printf '%s\n' "$cmd" | split_segments)" || SEGS="@@UNPARSED"
 parsed=1
 if [ "$SEGS" = "@@UNPARSED" ] || [ -z "$SEGS" ] && [ -n "${cmd//[[:space:]]/}" ]; then
-  # Fall back to the plain split (no quote facts): every word counts as unquoted, nothing is data.
+  # Fall back to the plain split (no quote facts). A push read this way is never answered.
   parsed=0; SEGS=""
   while IFS= read -r l; do
     read -ra fw <<< "$l"; ws=""; for t in ${fw[@]+"${fw[@]}"}; do ws="$ws${ws:+$'\036'}$(unq "$t")"; done
-    SEGS="$SEGS$l"$'\037'"$l"$'\037'"$ws"$'\n'
+    SEGS="$SEGS$l"$'\037'"$l"$'\037'"$ws"$'\037'1$'\037'"?"$'\n'
   done <<< "$(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')"
 fi
-# Pre-pass: can anything in this command run a string? An unquoted EXEC word anywhere, a command word
-# that is a path or holds `$` or a backtick, a substitution anywhere (even inside double quotes), or an
-# unquoted ( ) { }. A delete-only answer requires runner=0: the command must hold nothing but plain
-# git and gh steps the parser reads.
-runner=0
-case "$cmd" in *'$('*|*'`'*|*'<('*|*'>('*) runner=1 ;; esac
-while IFS=$'\037' read -r seg mseg _; do
-  # an unquoted ( ) { } is a subshell, group or brace expansion the parser does not follow
-  case "$mseg" in *'('*|*')'*|*'{'*|*'}'*) runner=1 ;; esac
-  read -ra mw <<< "$mseg"
-  c0=1
-  for w in ${mw[@]+"${mw[@]}"}; do
-    if [ "$c0" = 1 ] && [[ $w =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then continue; fi
-    if [ "$c0" = 1 ]; then case "$w" in if|then|else|elif|while|until|do|'!'|'{') continue ;; esac; fi
-    if [ "$c0" = 1 ]; then
-      c0=0
-      case "$w" in *'$'*|*'`'*|*\\*) runner=1 ;; */*) case "${w##*/}" in git|gh) ;; *) runner=1 ;; esac ;; esac
-    fi
-    case "$w" in *[\"\'\\]*) continue ;; esac
-    [[ ${w##*/} =~ $EXEC_RE ]] && runner=1
-  done
-done <<< "$SEGS"
-[ "$parsed" = 1 ] || runner=1
 
 specs=""      # newline-separated "<remote> <refspec>" lines from every git push segment
 gh_heads=""   # newline-separated --head values from gh pr create segments
@@ -226,32 +205,23 @@ gh_plain=0    # a gh pr create with no --head ships the current branch
 cdirs=""      # distinct -C values
 force=0
 sawship=0
-# suspect=1 refuses every push answer (ref, delete, force). It is set by: push text anywhere outside a
-# push segment the parser read; a VAR=value prefix or an unquoted $ word in a git or gh step; and a git
-# step that can run a string: a -c other than push.default, a subcommand outside GIT_KNOWN (an alias
-# could be anything), rebase --exec/-x/-i, an editor flag (-e/--edit) on a step that opens one.
-suspect=0
-mark() { suspect=1; return 0; }
-GIT_KNOWN='^(add|am|apply|archive|blame|branch|bundle|cat-file|check-ignore|checkout|cherry|cherry-pick|clean|clone|commit|config|count-objects|describe|diff|fetch|for-each-ref|format-patch|fsck|gc|grep|hash-object|help|init|log|ls-files|ls-remote|ls-tree|maintenance|merge|merge-base|mv|name-rev|notes|pull|push|range-diff|rebase|reflog|remote|reset|restore|rev-list|rev-parse|revert|rm|shortlog|show|show-ref|sparse-checkout|stash|status|switch|symbolic-ref|tag|update-ref|var|version|worktree)$'
-
-# A write into a .git path (a redirect target the splitter drops, a cp, a tee) can change what a
-# push does: config, hooks, the remote's receivepack. A URL ending in .git does not match.
-GITPATH_RE='(^|[[:space:]=>/"'"'"'])\.git(/|$|[[:space:]"'"'"';&|)])'
-[[ $cmd =~ $GITPATH_RE ]] && mark
-nseg=0        # non-empty segments: a delete is answered only as the one step in the command
-
-while IFS=$'\037' read -r seg mseg wrds; do
+# The one-command rule: a push is answered (@@REF, @@DELETE, @@FORCE) only when it is the whole Bash
+# call. Allowed beside it: fd redirects that write no file (2>&1, >&2, >/dev/null), and one trailing
+# pipe into tail, head, cat or grep with literal arguments. Anything else (another step, a file
+# redirect, a VAR=value prefix, cd, a group, a subshell) refuses, so a step that rewrites git config,
+# a hook, the environment or the directory cannot ride along with a push.
+nseg=0; nshipc=0
+segI=(); segFr=(); segFirst=(); segText=(); segTerm=(); segShip=()
+while IFS=$'\037' read -r seg mseg wrds fr term; do
   [ -n "${seg//[[:space:]]/}" ] || continue
-  nseg=$((nseg + 1))
+  [ "$nseg" -gt 0 ] && [ "$nshipc" != "$ship0" ] && segShip[$((nseg - 1))]=1   # the previous segment shipped
+  ship0="$nshipc"
   IFS=$'\036' read -ra tok <<< "$wrds"
-  txt=0; [[ $seg =~ $GITPUSH_TXT ]] && txt=1; [[ $seg =~ $GHPR_TXT ]] && txt=1
   # skip leading VAR=value words
   i=0; while [ "$i" -lt "${#tok[@]}" ] && printf '%s' "${tok[$i]}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do i=$((i+1)); done
   first="${tok[$i]:-}"; first="${first##*/}"   # /usr/bin/git is git
-  case "$first" in git|gh)
-    [ "$i" -gt 0 ] && mark
-    case " $mseg " in *'$'*) mark ;; esac ;;
-  esac
+  segI[$nseg]="$i"; segFr[$nseg]="$fr"; segFirst[$nseg]="$first"; segText[$nseg]="$seg"; segTerm[$nseg]="$term"; segShip[$nseg]=0
+  nseg=$((nseg + 1))
   has_git_push=0; has_gh_create=0
   for ((k=0; k<${#tok[@]}; k++)); do
     [ "${tok[$k]}" = push ] && has_git_push=1
@@ -259,16 +229,16 @@ while IFS=$'\037' read -r seg mseg wrds; do
   done
   case "$first" in
     git)
-      j=$((i+1)); sub=""; pdo=""
+      j=$((i+1)); sub=""; pdo=""; gcx=""
       while [ "$j" -lt "${#tok[@]}" ]; do
         case "${tok[$j]}" in
           -C) cdirs="$cdirs${tok[$((j+1))]:-}"$'\n'; j=$((j+2)) ;;
           -c) case "${tok[$((j+1))]:-}" in
-                alias.*) [ "$has_git_push" = 1 ] && block "an alias defined on the command line could be push"; mark ;;
+                alias.*) [ "$has_git_push" = 1 ] && block "an alias defined on the command line could be push" ;;
                 push.default=*) pdo="${tok[$((j+1))]#push.default=}" ;;
-                *) mark ;;   # core.pager, core.editor, core.sshCommand, diff.external ... can run a string
+                *) gcx="${tok[$((j+1))]:-}" ;;   # core.sshCommand, core.hooksPath ... : refused on a push below
               esac; j=$((j+2)) ;;
-          --exec-path=*) mark; j=$((j+1)) ;;   # moves where git finds the programs it runs
+          --exec-path=*) gcx="${tok[$j]}"; j=$((j+1)) ;;   # moves where git finds the programs it runs
           --git-dir=*|--work-tree=*|--namespace=*|--no-pager|-p|-P|--paginate|--bare|--no-replace-objects|--literal-pathspecs|--no-optional-locks|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs) j=$((j+1)) ;;
           -*) [ "$has_git_push" = 1 ] && block "git option '${tok[$j]}' before push is not understood"; j=$((j+1)) ;;
           *) sub="${tok[$j]}"; break ;;
@@ -286,42 +256,14 @@ while IFS=$'\037' read -r seg mseg wrds; do
           esac
         done
         case "$nb" in '') ;; -|@\{*) cur="@@UNKNOWN" ;; *) cur="$nb" ;; esac
-        [ "$txt" = 1 ] && mark
         continue
       fi
-      if [ "$sub" != push ]; then   # another git command
-        [ "$txt" = 1 ] && mark   # push text in its arguments is never data
-        [[ $sub =~ $GIT_KNOWN ]] || mark
-        # a step that changes what a later push does or where it goes: config writes, remote edits,
-        # a new repo or submodule
-        case "$sub" in
-          clone|init|submodule) mark ;;
-          config) gw=0; gr=0; np=0
-            for ((k=j+1; k<${#tok[@]}; k++)); do
-              case "${tok[$k]}" in
-                --get|--get-all|--get-regexp|--get-urlmatch|--list|-l|--get-color|--get-colorbool) gr=1 ;;
-                --add|--unset|--unset-all|--replace-all|--rename-section|--remove-section|--edit|-e) gw=1 ;;
-                -*) ;;
-                *) np=$((np + 1)); [ "$np" = 1 ] && case "${tok[$k]}" in set|unset|rename-section|remove-section|edit) gw=1 ;; get|list) gr=1 ;; esac ;;
-              esac
-            done
-            { [ "$gw" = 0 ] && { [ "$gr" = 1 ] || [ "$np" -le 1 ]; }; } || mark ;;
-          remote) ra=""
-            for ((k=j+1; k<${#tok[@]}; k++)); do case "${tok[$k]}" in -*) ;; *) ra="${tok[$k]}"; break ;; esac; done
-            case "$ra" in ''|show|get-url) ;; *) mark ;; esac ;;
-        esac
-        for ((k=j+1; k<${#tok[@]}; k++)); do
-          case "$sub:${tok[$k]}" in
-            rebase:--exec|rebase:--exec=*|rebase:-x|rebase:-i|rebase:--interactive) mark ;;
-            commit:-e|commit:--edit|merge:-e|merge:--edit|tag:-e|tag:--edit|revert:-e|revert:--edit|cherry-pick:-e|cherry-pick:--edit|pull:-e|pull:--edit|notes:-e|notes:--edit) mark ;;
-          esac
-        done
-        continue
-      fi
+      [ "$sub" = push ] || continue   # another git command (a commit message may mention push)
+      [ -z "$gcx" ] || pblock "git ${gcx%%=*} on a push runs config the gate cannot read"
       # command substitution, subshells, backticks, variables: cannot be resolved
       case "$seg" in *'$'*|*'`'*|*'('*|*')'*) block "a push segment uses a variable or command substitution" ;; esac
       case "$mseg" in *'{'*|*'}'*) block "a push segment sits in a { } group or brace expansion" ;; esac
-      sawship=1
+      sawship=1; nshipc=$((nshipc + 1))
       pos=(); skip=0; del=0
       for ((k=j+1; k<${#tok[@]}; k++)); do
         t="${tok[$k]}"
@@ -358,11 +300,8 @@ while IFS=$'\037' read -r seg mseg wrds; do
       fi
       ;;
     gh)
-      if ! { [ "$has_gh_create" = 1 ] && [ "${tok[$((i+1))]:-}" = pr ] && [ "${tok[$((i+2))]:-}" = create ]; }; then
-        [ "$txt" = 1 ] && mark
-        continue
-      fi
-      sawship=1; head=""
+      [ "$has_gh_create" = 1 ] && [ "${tok[$((i+1))]:-}" = pr ] && [ "${tok[$((i+2))]:-}" = create ] || continue
+      sawship=1; nshipc=$((nshipc + 1)); head=""
       for ((k=i+3; k<${#tok[@]}; k++)); do
         case "${tok[$k]}" in
           --head|-H) head="${tok[$((k+1))]:-}" ;;
@@ -374,8 +313,7 @@ while IFS=$'\037' read -r seg mseg wrds; do
         gh_heads="$gh_heads$head"$'\n'
       else gh_plain=1; fi
       ;;
-    echo|printf|cat|grep|rg|'#'*|'')   # their push text can be written out and run later
-      [ "$txt" = 1 ] && mark ;;
+    echo|printf|cat|grep|rg|'#'*|'') ;;   # print-only; sed and awk can run a command, so they fall through
     *)
       # any other command word carrying git ... push or gh pr create (xargs, sudo, env, bash -c, ...)
       gi=0; ghw=0; for t in "${tok[@]}"; do [ "$t" = git ] && gi=1; [ "$t" = gh ] && ghw=1; done
@@ -397,6 +335,20 @@ while IFS=$'\037' read -r seg mseg wrds; do
       ;;
   esac
 done <<< "$SEGS"
+[ "$nseg" -gt 0 ] && [ "$nshipc" != "$ship0" ] && segShip[$((nseg - 1))]=1
+# The one-command rule, checked over the recorded segments: segment 0 is the only push or PR, with no
+# VAR=value prefix and no file redirect; at most one more segment, reached by a plain pipe, running
+# tail/head/cat/grep with literal arguments; the last segment ends the call.
+one_ok=1
+{ [ "$parsed" = 1 ] && [ "$nshipc" = 1 ] && [ "$nseg" -ge 1 ] && [ "$nseg" -le 2 ] && [ "${segShip[0]:-0}" = 1 ]; } || one_ok=0
+{ [ "${segI[0]:-1}" = 0 ] && [ "${segFr[0]:-1}" = 0 ]; } || one_ok=0
+if [ "$nseg" = 2 ]; then
+  [ "${segTerm[0]}" = "|" ] || one_ok=0
+  case "${segFirst[1]}" in tail|head|cat|grep) ;; *) one_ok=0 ;; esac
+  { [ "${segI[1]}" = 0 ] && [ "${segFr[1]}" = 0 ]; } || one_ok=0
+  case "${segText[1]}" in *'$'*|*'`'*|*'('*|*')'*|*'<'*|*'>'*) one_ok=0 ;; esac
+fi
+[ "$nseg" -ge 1 ] && case "${segTerm[$((nseg - 1))]}" in end|';'|nl) ;; *) one_ok=0 ;; esac
 
 [ "$sawship" = 1 ] || exit 0
 distinct_c="$(printf '%s' "$cdirs" | sed '/^$/d' | sort -u | wc -l | tr -d ' ')"
@@ -418,7 +370,7 @@ while read -r rem scur r; do
   if [ "$d" != HEAD ] && is_default "$d" "$rem"; then printf '@@DEFAULT-PUSH %s %s\n' "$d" "$rem"; exit 0; fi
 done <<< "$specs"
 [ -z "$pend" ] || block "$pend"
-[ "$suspect" = 0 ] || block "a step beside the push could run another push (push text outside the push, an env prefix, a git option or editor)"
+[ "$one_ok" = 1 ] || block "a push must be the only command in the call (allowed beside it: 2>&1 or >/dev/null, and one pipe into tail, head, cat or grep)"
 if [ "$force" = 1 ]; then printf '@@FORCE\n'; exit 0; fi
 
 resolve() {   # resolve <src> <dst> [remote]: print REF or DELETE, or block
@@ -428,8 +380,6 @@ resolve() {   # resolve <src> <dst> [remote]: print REF or DELETE, or block
     dst="$(dest "$dst")"
     [[ $dst =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] && [ "$dst" != HEAD ] && [ "$dst" != "@@UNKNOWN" ] \
       || block "git push deletes '$dst', which is not a plain branch name"
-    # a delete is answered only when nothing in the command can run a string (suspect already refused)
-    [ "$runner" = 0 ] && [ "$nseg" = 1 ] || block "a delete must be the only step in the command"
     printf '@@DELETE %s %s\n' "$dst" "${3:-}"; return 0
   fi
   case "$src$dst" in *'*'*|*'?'*|*'['*) block "refspec '$src:$dst' is a pattern" ;; esac
