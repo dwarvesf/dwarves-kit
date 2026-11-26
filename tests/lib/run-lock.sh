@@ -52,7 +52,14 @@ run_lock_exec() { # run_lock_exec <script> [args...]; returns 0 to run inline, e
   export KIT_TEST_LOCK_HELD=1
   local child
   trap '_rl_release' EXIT
-  bash "$script" "$@" <&0 &
+  # `&` in a non-interactive shell starts the child with INT and QUIT ignored, and an ignored signal stays
+  # ignored through every exec below it: each suite under run-all would inherit it, and a suite that signals
+  # its own tool with INT would see it swallowed. perl resets both to default before the exec.
+  if command -v perl >/dev/null 2>&1; then
+    perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!"' bash "$script" "$@" <&0 &
+  else
+    bash "$script" "$@" <&0 &
+  fi
   child=$!
   trap 'kill -TERM "$child" 2>/dev/null' INT TERM
   local rc

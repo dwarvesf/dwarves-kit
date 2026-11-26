@@ -91,5 +91,22 @@ chk_has "the give-up warning is printed" "$(cat "$TMPD/err")" "running anyway"
 chk "a non-owner does not release the holder's lock" "$([ "$(sed -n 1p "$LOCK/info")" = "$$" ]; echo $?)"
 
 echo
+echo "=== the locked child gets default INT and QUIT ==="
+# A non-interactive `&` starts the child with both ignored, and the dispositions are read back from the child
+# itself with perl (a bash self-kill is no probe: bash ignores QUIT).
+rm -rf "$LOCK"
+cat >"$TMPD/disp.sh" <<EOF
+#!/usr/bin/env bash
+source "$KIT_DIR/tests/lib/run-lock.sh"
+run_lock_exec "\$0" "\$@"
+for s in INT QUIT; do
+  perl -MPOSIX -e 'sigaction(&POSIX::SIG'"\$s"', undef, my \$o = POSIX::SigAction->new); print "'"\$s"'=", \$o->handler, "\n"'
+done
+EOF
+out="$(env -u CI -u KIT_TEST_LOCK -u KIT_TEST_LOCK_HELD KIT_TEST_LOCK_DIR="$LOCK" bash "$TMPD/disp.sh" 2>&1)"
+chk_has "INT is default in the locked child" "$out" "INT=DEFAULT"
+chk_has "QUIT is default in the locked child" "$out" "QUIT=DEFAULT"
+
+echo
 if [ "$FAIL" -gt 0 ]; then echo "test-run-lock: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-run-lock: all $PASS passed"
