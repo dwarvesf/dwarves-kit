@@ -17,6 +17,14 @@ ok - review F2: an alias written by printf, then run
 ok - review F2b: a post-commit hook written by echo
 ok - review F3: GIT_EDITOR carries the push
 ok - review F3b: git options in a variable
+ok - --receive-pack= on a delete
+ok - --exec= on a delete
+ok - --receive-pack space form on an empty-source delete
+ok - --receive-pack= on a real push
+ok - --repo replaces the remote
+ok - an ext:: transport-helper remote
+ok - --recurse-submodules=on-demand
+ok - git --exec-path before push
 ok - commit -c core.editor carrying push text, then a real push
 ok - git -c core.editor carrying push text, then a real push
 ok - an editor env prefix, then a real push
@@ -30,7 +38,7 @@ ok - unproven branch: a push after &&
 ok - unproven branch: a delete plus a real push
 ok - &> before the refspec no longer hides a default push
 ok - a wrapped default push after a quoted ; is refused in any repo
-Results: 65 passed, 0 failed
+Results: 73 passed, 0 failed
 Verdict: PASS
 ```
 
@@ -56,10 +64,12 @@ Verdict: PASS
 
 The second review's harness runs each command for real when the gate passes, then checks the bare origin's master:
 ```
-Command: bash run.sh ./h.sh   (cases F1 F1c F2 F2b F3 F3b F4 F5)
+Command: bash run.sh ./h.sh   (cases F1 F1c F2 F2b F3 F3b F4 F5, and R1-R4)
 Exit: per case
 Output:
 F1 F1c F2 F2b F3 F3b   GATE rc=2, nothing ran            (6854d945: GATE rc=0, origin master MOVED)
+R1-R4 --receive-pack / --exec on a delete or a push (round 3)
+                       GATE rc=2 "runs a command"    (107b3fd4: the suite rows show gate exit 0)
 F4 heredoc piped into bash       GATE rc=0, master MOVED  (same on origin/master: out of this diff)
 F5 X=push; git $X origin ...     GATE rc=0, master MOVED  (same on origin/master: out of this diff)
 Verdict: PASS for every regression this branch had introduced
@@ -85,7 +95,7 @@ Verdict: PASS for this change. Both failures fail identically on origin/master (
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-refs-block.sh" "git show origin/master:lib/gate/push-refs.sh > lib/gate/push-refs.sh"
 Exit: 0 (green before mutation), 1 (under mutation, RED expected), 0 (green after restore)
 Output:
-  Results: 35 passed, 30 failed
+  Results: 35 passed, 38 failed
 Restore: git checkout HEAD -- lib/gate/push-refs.sh
 Verdict: PASS
 ```
@@ -94,11 +104,11 @@ Verdict: PASS
 Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-ship-gate-refs-block.sh" "git show 053b9284:hooks/ship-gate.sh > hooks/ship-gate.sh"
 Exit: 0 (green before mutation), 1 (under mutation, RED expected), 0 (green after restore)
 Output:
-  Results: 64 passed, 1 failed
+  Results: 72 passed, 1 failed
 Restore: git checkout HEAD -- hooks/ship-gate.sh
 Verdict: PASS
 ```
-The first control puts master's parser back: 30 rows go red, so the suite pins the redirect, delete, wrapped-default and fail-closed behaviour. The second puts back a hook with no refusal for an answer that names no branch: the stub-parser row goes red. negctl restored both files.
+The first control puts master's parser back: 38 rows go red, so the suite pins the redirect, delete, wrapped-default and fail-closed behaviour. The second puts back a hook with no refusal for an answer that names no branch: the stub-parser row goes red. negctl restored both files.
 
 ## Not proven
 - The installed hook in a live Claude Code session: the kit install under `~/.claude` still runs master's parser until this ships and is reinstalled.

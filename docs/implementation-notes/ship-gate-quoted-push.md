@@ -52,6 +52,8 @@ hooks/ship-gate.sh: @@DELETE-only passes; an answer naming no branch and no dele
 
 `runner` is set by an EXEC word anywhere (shells, eval, xargs, sudo, env, ssh, interpreters, sed, awk, make, ...), a command word that is a path or holds `$`, a substitution anywhere, or an unquoted `( ) { }`. It only adds refusals.
 
+Push options that run a program are refused: `--receive-pack` and `--exec` (git runs the named program for the remote side, through sh locally for a path or file:// remote; review round 3 proved a delete carrying one moved master), `--repo` (it replaces the remote the gate reads), a `::` remote (`ext::<command>`, a transport helper), and `--recurse-submodules` other than `check`/`no` (it pushes submodule refs). `git --exec-path` marks the command suspect. `-o`/`--push-option` stays allowed: it is data the server reads.
+
 A wrapped body (`bash -c "..."`) is parsed once more, nested, for the default-branch rule only. A wrapped push to a default branch is refused in every repo, adopted or not.
 
 When the splitter cannot parse the command (an unclosed quote, a redirection with no target), the parser falls back to master's plain split.
