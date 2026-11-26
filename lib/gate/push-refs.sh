@@ -220,7 +220,7 @@ while IFS=$'\037' read -r seg mseg wrds fr term; do
   # skip leading VAR=value words
   i=0; while [ "$i" -lt "${#tok[@]}" ] && printf '%s' "${tok[$i]}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*='; do i=$((i+1)); done
   first="${tok[$i]:-}"; first="${first##*/}"   # /usr/bin/git is git
-  segI[$nseg]="$i"; segFr[$nseg]="$fr"; segFirst[$nseg]="$first"; segText[$nseg]="$seg"; segTerm[$nseg]="$term"; segShip[$nseg]=0
+  segI[$nseg]="$i"; segFr[$nseg]="$fr"; segFirst[$nseg]="${tok[$i]:-}"; segText[$nseg]="$seg"; segTerm[$nseg]="$term"; segShip[$nseg]=0
   nseg=$((nseg + 1))
   has_git_push=0; has_gh_create=0
   for ((k=0; k<${#tok[@]}; k++)); do
@@ -342,9 +342,11 @@ done <<< "$SEGS"
 one_ok=1
 { [ "$parsed" = 1 ] && [ "$nshipc" = 1 ] && [ "$nseg" -ge 1 ] && [ "$nseg" -le 2 ] && [ "${segShip[0]:-0}" = 1 ]; } || one_ok=0
 { [ "${segI[0]:-1}" = 0 ] && [ "${segFr[0]:-1}" = 0 ]; } || one_ok=0
+# no substitution in the push or PR step itself, quoted or not: `gh pr create --title "$(git push ...)"`
+case "${segText[0]:-}" in *'$'*|*'`'*|*'('*|*')'*) one_ok=0 ;; esac
 if [ "$nseg" = 2 ]; then
   [ "${segTerm[0]}" = "|" ] || one_ok=0
-  case "${segFirst[1]}" in tail|head|cat|grep) ;; *) one_ok=0 ;; esac
+  case "${segFirst[1]}" in tail|head|cat|grep) ;; *) one_ok=0 ;; esac   # the bare word: ../bin/cat is not cat
   { [ "${segI[1]}" = 0 ] && [ "${segFr[1]}" = 0 ]; } || one_ok=0
   case "${segText[1]}" in *'$'*|*'`'*|*'('*|*')'*|*'<'*|*'>'*) one_ok=0 ;; esac
 fi
