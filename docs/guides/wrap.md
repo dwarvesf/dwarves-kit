@@ -23,8 +23,9 @@ By default the distill half also runs: it scans the session for repeated work wo
 3. To land one worktree by hand, run `bin/wrap land <worktree>`. It pushes, opens or adopts the PR, squash-merges, verifies the tree, pulls the main checkout, and removes the worktree and branch. There is no dry run.
 4. To land without a merge, add `--draft`. It opens a draft PR and stops.
 5. To tidy a repo, run `bin/wrap apply --worktrees <repo>` first. It is a dry run and prints `WOULD ...` lines. Read every `SKIP` line, then add `--apply`.
-6. On a shared checkout where other sessions are live, name only your own worktrees: `bin/wrap apply --apply --own <worktree> <repo>`. Add `--no-pull` to leave the main checkout alone.
-7. Read the report from the top. Only the `Needs you` section asks anything of you.
+6. To sweep across your whole workspace, run `bin/wrap sweep --worktrees --json <root>...` (or configure `wrap.sweep_roots`). It locks each repo, runs in parallel, and emits a `wrap-sweep/1` JSON report; add `--apply` to remove proven merged worktrees and branches.
+7. On a shared checkout where other sessions are live, name only your own worktrees: `bin/wrap apply --apply --own <worktree> <repo>`. Add `--no-pull` to leave the main checkout alone.
+8. Read the report from the top. Only the `Needs you` section asks anything of you.
 
 A `<repo>` or `<worktree>` argument is a path. Pass an absolute path. `wrap <verb> --help` is not supported; only `wrap --help` prints usage.
 

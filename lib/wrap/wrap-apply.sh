@@ -159,11 +159,141 @@ _wt_busy() {
   return 0
 }
 
+_SWEEP_ROWS_FILE=""
+_APPLY_WORKSPACE_RM=""
+
+# _run_seam_workspace_rm <cmd> <worktree> <repo> -- invokes the optional wrap.workspace_rm seam
+# with `<worktree> <repo>` and a 20s (or WRAP_WORKSPACE_RM_TIMEOUT) cap. Prints `ok`, `failed`,
+# `timeout`, or `null` when empty. Never alters exit code or undoes a removal.
+_run_seam_workspace_rm() {
+  local cmd_str="${1:-}" wt="$2" repo="$3"
+  [ -n "$cmd_str" ] || { printf 'null\n'; return 0; }
+  local secs="${WRAP_WORKSPACE_RM_TIMEOUT:-20}"
+  case "$secs" in ''|*[!0-9]*|0) secs=20 ;; esac
+
+  local -a words=()
+  set -f
+  # shellcheck disable=SC2206
+  words=($cmd_str)
+  set +f
+  [ "${#words[@]}" -gt 0 ] || { printf 'null\n'; return 0; }
+  case "${words[0]}" in
+    "~") words[0]="$HOME" ;;
+    "~/"*) words[0]="$HOME/${words[0]#\~/}" ;;
+  esac
+
+  local rc=0
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "${words[@]}" "$wt" "$repo" </dev/null >/dev/null 2>&1; rc=$?
+    case "$rc" in
+      0) printf 'ok\n' ;;
+      124) printf 'timeout\n' ;;
+      *) printf 'failed\n' ;;
+    esac
+    return 0
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "${words[@]}" "$wt" "$repo" </dev/null >/dev/null 2>&1; rc=$?
+    case "$rc" in
+      0) printf 'ok\n' ;;
+      124) printf 'timeout\n' ;;
+      *) printf 'failed\n' ;;
+    esac
+    return 0
+  fi
+
+  local cpid wpid to_flag
+  to_flag="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || to_flag=""
+  rm -f "$to_flag"
+  "${words[@]}" "$wt" "$repo" </dev/null >/dev/null 2>&1 &
+  cpid=$!
+  (
+    sleep "$secs"
+    if kill -0 "$cpid" 2>/dev/null; then
+      [ -n "$to_flag" ] && : > "$to_flag"
+      kill -TERM "$cpid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$cpid" 2>/dev/null || true
+    fi
+  ) >/dev/null 2>&1 &
+  wpid=$!
+  wait "$cpid" 2>/dev/null; rc=$?
+  kill "$wpid" 2>/dev/null || true
+  wait "$wpid" 2>/dev/null || true
+  if [ -n "$to_flag" ] && [ -e "$to_flag" ]; then
+    rm -f "$to_flag"
+    printf 'timeout\n'
+  elif [ "$rc" -eq 0 ]; then
+    printf 'ok\n'
+  else
+    printf 'failed\n'
+  fi
+  return 0
+}
+
+_sweep_row_pr_info() {
+  local repo="$1" def="$2" ghs="$3" b="$4" tip="$5"
+  [ -n "$b" ] || { printf 'null\tnull\n'; return 0; }
+  if [ -n "$_APPLY_PRS_MERGED" ] || [ -n "$_APPLY_PRS_OPEN" ] || [ -n "$_APPLY_PRS_CLOSED" ]; then
+    _branch_pr_info "$b" "$tip" "$def" "$_APPLY_PRS_MERGED" "$_APPLY_PRS_OPEN" "$_APPLY_PRS_CLOSED"
+  else
+    _branch_pr_info_fallback "$repo" "$def" "$ghs" "$b" "$tip"
+  fi
+}
+
+_sweep_wt_holder() {
+  local wt="$1" pid=""
+  if _wt_locked "$wt" && _wt_lock_live "$wt"; then
+    pid="$(_wt_lock_pid "$wt")"
+  fi
+  if [ -z "$pid" ] && _wt_busy "$wt"; then
+    pid="$BUSY_PID"
+  fi
+  case "$pid" in
+    ''|*[!0-9]*) printf 'null\n' ;;
+    *) printf '%s\n' "$pid" ;;
+  esac
+}
+
+# _emit_sweep_row <kind> <path> <branch> <verdict> <reason> <pr> <pr_state> <dirty> <holder> <own_commits> <workspace_rm>
+_emit_sweep_row() {
+  [ -n "${_SWEEP_ROWS_FILE:-}" ] || return 0
+  local kind="$1" path="$2" branch="$3" verdict="$4" reason="$5"
+  local pr="$6" pr_state="$7" dirty="$8" holder="$9" own_commits="${10}" workspace_rm="${11}"
+  jq -cn \
+    --arg kind "$kind" \
+    --arg path "$path" \
+    --arg branch "$branch" \
+    --arg verdict "$verdict" \
+    --arg reason "$reason" \
+    --arg pr "$pr" \
+    --arg pr_state "$pr_state" \
+    --arg dirty "$dirty" \
+    --arg holder "$holder" \
+    --arg own_commits "$own_commits" \
+    --arg workspace_rm "$workspace_rm" '
+    {
+      kind: $kind,
+      path: (if $path == "" then null else $path end),
+      branch: (if $branch == "" then null else $branch end),
+      verdict: $verdict,
+      reason: $reason,
+      pr: (if ($pr | test("^[0-9]+$")) then ($pr | tonumber) else null end),
+      pr_state: (if ($pr_state == "" or $pr_state == "null") then null else $pr_state end),
+      dirty: (if $dirty == "true" then true elif $dirty == "false" then false else null end),
+      holder: (if ($holder | test("^[0-9]+$")) then ($holder | tonumber) else null end),
+      own_commits: (if ($own_commits | test("^[0-9]+$")) then ($own_commits | tonumber) else null end),
+      workspace_rm: (if ($workspace_rm == "" or $workspace_rm == "null") then null else $workspace_rm end)
+    }' >> "$_SWEEP_ROWS_FILE"
+}
+
 # A worktree path may carry a newline, so the record stream is NUL-delimited: `--porcelain -z`
 # terminates every attribute with NUL, which keeps the path whole.
 _apply_worktrees() {
   local repo="$1" def="$2" cur="$3" fetch_succeeded="$4" ghs="$5"
-  local main_wt rec wt wt_c wtb lcode lreason proof lock verdict tip scanned
+  local main_wt rec wt wt_c wtb lcode lreason proof lock verdict tip scanned wrm_res
+  local pr_n pr_st own_c hpid
+  _APPLY_WORKSPACE_RM=""
+  [ "$APPLY" = 1 ] && _APPLY_WORKSPACE_RM="$(kit_config_get_root wrap.workspace_rm "")"
   echo "-- worktrees:"
   [ -n "$OWN_SET" ] && echo "     scope --own: only the named worktrees are candidates"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
@@ -172,7 +302,11 @@ _apply_worktrees() {
   while IFS= read -r -d '' rec; do
     case "$rec" in "worktree "*) wt="${rec#worktree }" ;; *) continue ;; esac
     wt_c="$(cd "$wt" 2>/dev/null && pwd -P)"
-    if [ -z "$wt_c" ]; then echo "     SKIP ${wt}: unresolvable"; continue; fi
+    if [ -z "$wt_c" ]; then
+      echo "     SKIP ${wt}: unresolvable"
+      _emit_sweep_row worktree "$wt" "" error "unresolvable" null null null null null null
+      continue
+    fi
     if [ -n "$OWN_SET" ]; then
       # --own is the operator's worktree opt-in for the named set only; an unnamed
       # entry is skipped without a line so a shared repo stays readable. Seen is
@@ -191,55 +325,142 @@ _apply_worktrees() {
       [ -z "$wtb" ] || OWN_BRANCHES="${OWN_BRANCHES}${wtb}"$'\n'
     fi
     if [ -z "$OWN_SET" ] && [ "$WORKTREES" != 1 ]; then
-      echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"; continue
+      echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"
+      _emit_sweep_row worktree "$wt" "" keep "--worktrees not given" null null null null null null
+      continue
     fi
     if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
-      echo "     SKIP ${wt}: dirty (another session's work stays)"; continue
+      echo "     SKIP ${wt}: dirty (another session's work stays)"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        wtb="$(git -C "$wt" branch --show-current 2>/dev/null)"
+        tip=""; [ -n "$wtb" ] && tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="null"; [ -n "$wtb" ] && own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "dirty (another session's work stays)" "$pr_n" "$pr_st" true "$hpid" "$own_c" null
+      fi
+      continue
     fi
     wtb="$(git -C "$wt" branch --show-current 2>/dev/null)"
     if [ -z "$wtb" ]; then
-      echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"; continue
+      echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "" keep "detached HEAD (removal could orphan the commit)" null null false "$hpid" null null
+      fi
+      continue
     fi
     case "$wtb" in "$def"|main|master)
-      echo "     SKIP ${wt}: ${wtb} is the default or a protected branch name"; continue ;;
+      echo "     SKIP ${wt}: ${wtb} is the default or a protected branch name"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "${wtb} is the default or a protected branch name" null null false "$hpid" null null
+      fi
+      continue ;;
     esac
     if [ "$wtb" = "$cur" ]; then
-      echo "     SKIP ${wt}: ${wtb} is the main checkout's branch"; continue
+      echo "     SKIP ${wt}: ${wtb} is the main checkout's branch"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "${wtb} is the main checkout's branch" "$pr_n" "$pr_st" false "$hpid" "$own_c" null
+      fi
+      continue
     fi
     if [ "$fetch_succeeded" != 1 ]; then
-      echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
+      echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "fetch failed, stale merge proof for ${wtb}" null null false "$hpid" null null
+      fi
+      continue
     fi
     read -r lcode lreason proof <<< "$(_apply_branch_merged "$repo" "$def" "$ghs" "$wtb")"
     if [ "$lcode" != SAFE ]; then
+      local skip_reason
       if [ "${lcode} ${lreason}" = "LEAVE fresh" ]; then
-        echo "     SKIP ${wt}: ${proof}"; continue
+        skip_reason="${proof}"
+      else
+        skip_reason="${wtb} is not proven merged into ${def} (leave it)"
       fi
-      echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
+      echo "     SKIP ${wt}: ${skip_reason}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "$skip_reason" "$pr_n" "$pr_st" false "$hpid" "$own_c" null
+      fi
+      continue
     fi
     # The proof above can cost a network round trip, so both destructive inputs are re-read right
     # before the force: `-f -f` overrides a worktree that went dirty, and `-D` discards a commit
     # made since the run's own tip snapshot.
     if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
-      echo "     SKIP ${wt}: went dirty while the proof was read"; continue
+      echo "     SKIP ${wt}: went dirty while the proof was read"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "went dirty while the proof was read" "$pr_n" "$pr_st" true "$hpid" "$own_c" null
+      fi
+      continue
     fi
     tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
     scanned="$(_scanned_tip "$wtb")"
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
-      echo "     SKIP ${wt}: ${wtb} tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
+      local moved_msg="${wtb} tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"
+      echo "     SKIP ${wt}: ${moved_msg}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        hpid="$(_sweep_wt_holder "$wt")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "$moved_msg" "$pr_n" "$pr_st" false "$hpid" "$own_c" null
+      fi
+      continue
     fi
     lock="unlocked"; _wt_locked "$wt" && lock="locked"
     if [ "$lock" = "locked" ] && _wt_lock_live "$wt"; then
-      echo "     SKIP ${wt}: locked by live pid $(_wt_lock_pid "$wt") (an agent is still running)"; continue
+      local lpid; lpid="$(_wt_lock_pid "$wt")"
+      local lmsg="locked by live pid ${lpid} (an agent is still running)"
+      echo "     SKIP ${wt}: ${lmsg}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "$lmsg" "$pr_n" "$pr_st" false "$lpid" "$own_c" null
+      fi
+      continue
     fi
     if _wt_busy "$wt"; then
-      echo "     ${BUSY_MSG}"; continue
+      echo "     ${BUSY_MSG}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "${BUSY_MSG#SKIP ${wt}: }" "$pr_n" "$pr_st" false "$BUSY_PID" "$own_c" null
+      fi
+      continue
     fi
     verdict="remove worktree ${wt} [${wtb}, ${lock}] and delete ${wtb} (${proof})"
     if [ "$APPLY" != 1 ]; then
-      echo "     WOULD ${verdict}"; continue
+      echo "     WOULD ${verdict}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        _emit_sweep_row worktree "$wt" "$wtb" would_remove "${proof}" "$pr_n" "$pr_st" false null "$own_c" null
+      fi
+      continue
     fi
     if ! _write_guard "$repo"; then
-      echo "     SKIP ${wt}: index.lock held by another writer"; continue
+      echo "     SKIP ${wt}: index.lock held by another writer"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "index.lock held by another writer" "$pr_n" "$pr_st" false null "$own_c" null
+      fi
+      continue
     fi
     # A lock alone is not proof the run finished: the Agent tool locks every worktree it creates,
     # including one made seconds ago for a subagent still running, so a fresh branch can be a
@@ -248,13 +469,24 @@ _apply_worktrees() {
     # override. `-f -f`, not `--force`: one --force refuses a locked worktree outright (`cannot
     # remove a locked working tree`), measured on git 2.55; two overrides the lock once every
     # guard above has passed.
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+      IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+      own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+    fi
     run "$repo" "$verdict" git -C "$repo" worktree remove -f -f "$wt"
     if _wt_cleared "$repo" "$wt"; then
+      wrm_res="$(_run_seam_workspace_rm "$_APPLY_WORKSPACE_RM" "$wt" "$repo")"
       run "$repo" "delete ${wtb} (${proof}, its ${lock} worktree is gone)" \
         git -C "$repo" branch -D "$wtb"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        _emit_sweep_row worktree "$wt" "$wtb" removed "${proof}" "$pr_n" "$pr_st" false null "$own_c" "$wrm_res"
+      fi
     else
       echo "     FAILED ${verdict}: ${wt} survived the removal, ${wtb} not deleted"
       FAILURES=1
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        _emit_sweep_row worktree "$wt" "$wtb" error "${wt} survived the removal, ${wtb} not deleted" "$pr_n" "$pr_st" false null "$own_c" null
+      fi
     fi
   done < <(git -C "$repo" worktree list --porcelain -z 2>/dev/null)
   if [ -n "$OWN_SET" ]; then
@@ -272,43 +504,95 @@ _apply_worktrees() {
 _apply_branches() {
   local repo="$1" def="$2" cur="$3" fetch_succeeded="$4" ghs="$5"
   echo "-- branches:"
-  local b tip scanned lcode lreason ldetail
+  local b tip scanned lcode lreason ldetail pr_n pr_st own_c wt_held_refs=""
+  [ -n "${_SWEEP_ROWS_FILE:-}" ] && wt_held_refs="$(git -C "$repo" worktree list --porcelain 2>/dev/null)"
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/); do
     case "$b" in "$def"|main|master) echo "     SKIP ${b}: default or protected branch name"; continue ;; esac
-    if [ "$b" = "$cur" ]; then echo "     SKIP ${b}: currently checked out"; continue; fi
+    if [ "$b" = "$cur" ]; then
+      echo "     SKIP ${b}: currently checked out"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$b" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$b")"
+        _emit_sweep_row branch "" "$b" keep "currently checked out" "$pr_n" "$pr_st" null null "$own_c" null
+      fi
+      continue
+    fi
     if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
-      echo "     SKIP ${b}: held by a worktree"; continue
+      echo "     SKIP ${b}: held by a worktree"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ] && [ "$WORKTREES" != 1 ]; then
+        tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$b" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$b")"
+        _emit_sweep_row branch "" "$b" keep "held by a worktree" "$pr_n" "$pr_st" null null "$own_c" null
+      fi
+      continue
     fi
     if [ "$fetch_succeeded" != 1 ]; then
-      echo "     SKIP ${b}: fetch failed, stale ancestor data"; continue
+      echo "     SKIP ${b}: fetch failed, stale ancestor data"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        _emit_sweep_row branch "" "$b" keep "fetch failed, stale ancestor data" null null null null null null
+      fi
+      continue
     fi
     tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
     scanned="$(_scanned_tip "$b")"
     if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
-      echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
+      local moved_msg="tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"
+      echo "     SKIP ${b}: ${moved_msg}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$b" "$tip")"
+        own_c="$(_branch_own_commits "$repo" "$def" "$b")"
+        _emit_sweep_row branch "" "$b" keep "$moved_msg" "$pr_n" "$pr_st" null null "$own_c" null
+      fi
+      continue
+    fi
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+      IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$b" "$tip")"
+      own_c="$(_branch_own_commits "$repo" "$def" "$b")"
     fi
     # -D, not -d: the proof is wrap's own, against origin/<def>. `branch -d` judges against the
     # branch's OWN upstream (or HEAD when it has none), so it refused a branch that tracks
     # another ref or nothing even though origin/<def> already holds its tip. The proof judges the
     # sha read above, see branch_merged.
     read -r lcode lreason ldetail <<< "$(_apply_branch_merged --tip "$tip" "$repo" "$def" "$ghs" "$b")"
+    local b_verdict="keep" b_reason=""
     case "${lcode} ${lreason}" in
       "SAFE ancestor"|"SAFE absorbed")
+        b_reason="${ldetail}"
         run "$repo" "delete ${b} (${ldetail})" git -C "$repo" branch -D "$b" ;;
       "SAFE squash")
-        run "$repo" "delete ${b} (squash-merged into ${def}, tip matches the PR head)" \
+        b_reason="squash-merged into ${def}, tip matches the PR head"
+        run "$repo" "delete ${b} (${b_reason})" \
           git -C "$repo" branch -D "$b" ;;
       "LEAVE fresh")
+        b_reason="${ldetail}"
         echo "     SKIP ${b}: ${ldetail}" ;;
       "LEAVE nogh")
-        echo "     SKIP ${b}: ${ldetail}, no squash proof available" ;;
+        b_reason="${ldetail}, no squash proof available"
+        echo "     SKIP ${b}: ${b_reason}" ;;
       "LEAVE tip")
-        echo "     SKIP ${b}: tip $(_short "$tip") != merged PR head $(_short "$ldetail") (unpushed commits, leave it)" ;;
+        b_reason="tip $(_short "$tip") != merged PR head $(_short "$ldetail") (unpushed commits, leave it)"
+        echo "     SKIP ${b}: ${b_reason}" ;;
       "LEAVE base")
-        echo "     SKIP ${b}: merged into ${ldetail}, not the default branch" ;;
+        b_reason="merged into ${ldetail}, not the default branch"
+        echo "     SKIP ${b}: ${b_reason}" ;;
       *)
-        echo "     SKIP ${b}: no merged PR found for this head" ;;
+        b_reason="no merged PR found for this head"
+        echo "     SKIP ${b}: ${b_reason}" ;;
     esac
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+      if [ "$lcode" = SAFE ]; then
+        if [ "$APPLY" != 1 ]; then
+          b_verdict="would_remove"
+        elif ! _ref_exists "$repo" "refs/heads/${b}"; then
+          b_verdict="removed"
+        else
+          b_verdict="error"
+        fi
+      fi
+      _emit_sweep_row branch "" "$b" "$b_verdict" "$b_reason" "$pr_n" "$pr_st" null null "$own_c" null
+    fi
   done
 }
 
@@ -925,7 +1209,10 @@ _apply_batch_prs_init() {
   local repo="$1" def="$2" fetch_ok="$3" ghs="$4" want_closed="${5:-0}"
   _apply_batch_prs_clear
   [ "$ghs" = "ok" ] || return 0
-  _gh_owner_repo "$(_origin_url "$repo")" >/dev/null 2>&1 || return 0
+  local remote_url
+  remote_url="$(git -C "$repo" config --get remote.origin.url 2>/dev/null)"
+  [ -n "$remote_url" ] || remote_url="$(_origin_url "$repo")"
+  _gh_owner_repo "$remote_url" >/dev/null 2>&1 || return 0
 
   local nl=$'\n' cand="" b tip
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/ 2>/dev/null); do
@@ -941,9 +1228,9 @@ _apply_batch_prs_init() {
     done <<< "$_APPLY_ORIGIN_HEADS_CACHE"
   fi
 
-  local brs=()
+  local brs=() n_brs=0
   while IFS= read -r b; do
-    [ -n "$b" ] && brs[${#brs[@]}]="$b"
+    [ -n "$b" ] && { brs[$n_brs]="$b"; n_brs=$(( n_brs + 1 )); }
   done <<< "$cand"
 
   _APPLY_PRS_MERGED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { _apply_batch_prs_clear; return 0; }
@@ -1036,6 +1323,7 @@ _apply_origin_branches() {
   mfile="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" \
     || { echo "     SKIP origin sweep: no scratch file for the merged-PR list"; return 0; }
   printf '%s' "$merged" > "$mfile"
+  local b_arr=() t_arr=() idx=0 pr_n pr_st
   elig=""
   while IFS=$'\t' read -r tip b; do
     b="${b#refs/heads/}"
@@ -1047,7 +1335,10 @@ _apply_origin_branches() {
     case "$nl$mnames$nl" in *"$nl$b$nl"*) ;; *) continue ;; esac
     case "$nl$protect$nl" in *"$nl$b$nl"*) continue ;; esac
     verdict="$(branch_merged --need pr --tip "$tip" --prs-json "$mfile" "$repo" "$def" ok "$b")"
-    case "$verdict" in "SAFE squash "*) elig="${elig}${b} ${tip}"$'\n' ;; esac
+    case "$verdict" in "SAFE squash "*)
+      elig="${elig}${b} ${tip}"$'\n'
+      b_arr[$idx]="$b"; t_arr[$idx]="$tip"; idx=$(( idx + 1 )) ;;
+    esac
   done <<< "$heads_out"
   rm -f "$mfile"
   elig="${elig%$'\n'}"
@@ -1055,11 +1346,28 @@ _apply_origin_branches() {
   n="$(printf '%s' "$names" | grep -c .)"
   if [ "$n" -eq 0 ]; then echo "     no merged branches left on origin"; return 0; fi
   if [ "$(kit_config_get_root wrap.delete_merged_remote_branches true)" != "true" ]; then
-    echo "     ${n} merged branches left on origin (wrap.delete_merged_remote_branches=false)"; return 0
+    echo "     ${n} merged branches left on origin (wrap.delete_merged_remote_branches=false)"
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+      local j=0
+      while [ "$j" -lt "$idx" ]; do
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "${b_arr[$j]}" "${t_arr[$j]}")"
+        _emit_sweep_row origin_branch "" "${b_arr[$j]}" keep "wrap.delete_merged_remote_branches=false" "$pr_n" "$pr_st" null null null null
+        j=$(( j + 1 ))
+      done
+    fi
+    return 0
   fi
   if [ "$APPLY" != 1 ]; then
     echo "     WOULD delete ${n} merged branches on origin:"
     printf '%s\n' "$names" | sed 's/^/       /'
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+      local j=0
+      while [ "$j" -lt "$idx" ]; do
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "${b_arr[$j]}" "${t_arr[$j]}")"
+        _emit_sweep_row origin_branch "" "${b_arr[$j]}" would_remove "merged branch on origin" "$pr_n" "$pr_st" null null null null
+        j=$(( j + 1 ))
+      done
+    fi
     return 0
   fi
   # Ref names hold no whitespace or glob characters, so word splitting yields exact
@@ -1078,10 +1386,57 @@ _apply_origin_branches() {
   done
   # A multi-ref push is not atomic, so the count comes from what origin still holds.
   if ! heads="$(git -C "$repo" ls-remote --heads origin 2>/dev/null)"; then
-    echo "     FAILED re-read origin after the delete, so the deleted count is unknown"; FAILURES=1; return 0
+    echo "     FAILED re-read origin after the delete, so the deleted count is unknown"; FAILURES=1
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+      local j=0
+      while [ "$j" -lt "$idx" ]; do
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "${b_arr[$j]}" "${t_arr[$j]}")"
+        _emit_sweep_row origin_branch "" "${b_arr[$j]}" error "re-read origin after delete failed" "$pr_n" "$pr_st" null null null null
+        j=$(( j + 1 ))
+      done
+    fi
+    return 0
   fi
-  left="$(printf '%s\n' "$heads" | sed 's|.*refs/heads/||' | grep -cxF -f <(printf '%s\n' "$names"))"
+  local rem_names
+  rem_names="$(printf '%s\n' "$heads" | sed 's|.*refs/heads/||')"
+  left="$(printf '%s\n' "$rem_names" | grep -cxF -f <(printf '%s\n' "$names"))"
   echo "     deleted $(( n - left )) of ${n} merged branches on origin"
+  if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+    local j=0 ov
+    while [ "$j" -lt "$idx" ]; do
+      IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "${b_arr[$j]}" "${t_arr[$j]}")"
+      if printf '%s\n' "$rem_names" | grep -qxF "${b_arr[$j]}"; then
+        _emit_sweep_row origin_branch "" "${b_arr[$j]}" error "failed to delete merged branch on origin" "$pr_n" "$pr_st" null null null null
+      else
+        _emit_sweep_row origin_branch "" "${b_arr[$j]}" removed "merged branch on origin" "$pr_n" "$pr_st" null null null null
+      fi
+      j=$(( j + 1 ))
+    done
+  fi
+}
+
+# _sweep_repo_apply <repo> <def> <cur> <ghs> <rows_file> -- runs the apply cleanup logic
+# for one already-fetched repo under wrap sweep, emitting structured JSON rows to <rows_file>
+# without pulling or touching the main checkout's working tree.
+_sweep_repo_apply() {
+  local repo="$1" def="$2" cur="$3" ghs="$4" rows_file="$5"
+  _SWEEP_ROWS_FILE="$rows_file"
+  TIPS_FILE="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || TIPS_FILE=""
+  if [ -n "$TIPS_FILE" ]; then
+    git -C "$repo" for-each-ref --format='%(refname:lstrip=2) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
+  fi
+  _apply_batch_prs_init "$repo" "$def" 1 "$ghs" 1
+  _wt_busy_snap_init
+  if [ "$WORKTREES" = 1 ]; then
+    _apply_worktrees "$repo" "$def" "$cur" 1 "$ghs"
+  fi
+  _apply_branches "$repo" "$def" "$cur" 1 "$ghs"
+  _apply_origin_branches "$repo" "$def" "$ghs" 1
+  _wt_busy_snap_clear
+  _apply_batch_prs_clear
+  [ -n "$TIPS_FILE" ] && rm -f "$TIPS_FILE"
+  TIPS_FILE=""
+  _SWEEP_ROWS_FILE=""
 }
 
 

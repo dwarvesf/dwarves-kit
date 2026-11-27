@@ -53,12 +53,13 @@ branch_merged_batch_fetch() {
 
   [ "$ghs" = "ok" ] || return 1
   local url or owner name
-  url="$(_origin_url "$repo")"
+  url="$(git -C "$repo" config --get remote.origin.url 2>/dev/null)"
+  [ -n "$url" ] || url="$(_origin_url "$repo")"
   or="$(_gh_owner_repo "$url")" || return 1
   IFS=$'\t' read -r owner name <<< "$or"
 
   # Deduplicate candidate branch names while preserving bash 3.2 compatibility.
-  local branches=() nl=$'\n' seen b
+  local branches=() nl=$'\n' seen b n_br=0
   seen="$nl"
   for b in "$@"; do
     [ -n "$b" ] || continue
@@ -66,10 +67,11 @@ branch_merged_batch_fetch() {
       *"$nl${b}$nl"*) continue ;;
     esac
     seen="${seen}${b}${nl}"
-    branches[${#branches[@]}]="$b"
+    branches[$n_br]="$b"
+    n_br=$(( n_br + 1 ))
   done
 
-  if [ "${#branches[@]}" -eq 0 ]; then
+  if [ "$n_br" -eq 0 ]; then
     printf '[]\n' > "$mfile"
     printf '[]\n' > "$ofile"
     [ -n "$cfile" ] && printf '[]\n' > "$cfile"
@@ -83,7 +85,7 @@ branch_merged_batch_fetch() {
   : > "$tmp_m"
   : > "$tmp_c"
 
-  local idx=0 total="${#branches[@]}" chunk_sz=40 first_chunk=1
+  local idx=0 total="$n_br" chunk_sz=40 first_chunk=1
   local want_closed=0
   [ -n "$cfile" ] && want_closed=1
 
@@ -200,6 +202,39 @@ _branch_pr_info() {
   ' 2>/dev/null || printf 'null\tnull\n'
 }
 
+# _branch_pr_info_fallback <repo> <default> <gh state> <branch> <tip>
+# Queries gh for a single branch when batch PR files are unavailable (e.g. non-GitHub stubbed origin).
+_branch_pr_info_fallback() {
+  local repo="$1" def="$2" ghs="$3" b="$4" tip="$5"
+  [ "$ghs" = "ok" ] || { printf 'null\tnull\n'; return 0; }
+  local url mjson ojson cjson
+  url="$(_origin_url "$repo")"
+  mjson="$(_squash_json "$url" "$b")"
+  printf '%s' "$mjson" | jq -e 'type == "array"' >/dev/null 2>&1 || mjson="[]"
+  ojson="$(gh pr list --repo "$url" --head "$b" --state open \
+    --json number,headRefName,headRefOid,baseRefName,isCrossRepository 2>/dev/null)" || ojson="[]"
+  printf '%s' "$ojson" | jq -e 'type == "array"' >/dev/null 2>&1 || ojson="[]"
+  cjson="$(gh pr list --repo "$url" --head "$b" --state closed \
+    --json number,headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null)" || cjson="[]"
+  printf '%s' "$cjson" | jq -e 'type == "array"' >/dev/null 2>&1 || cjson="[]"
+  jq -nr --arg b "$b" --arg tip "$tip" --arg def "$def" \
+    --argjson m "$mjson" --argjson o "$ojson" --argjson c "$cjson" '
+    def mine: select((.isCrossRepository == false) and (.headRefName == $b));
+    ([ $m[] | mine | select(.mergedAt != null and .baseRefName == $def and .headRefOid == $tip) ][0]) //
+    ([ $m[] | mine | select(.mergedAt != null) ][0]) as $mh |
+    if $mh != null then "\($mh.number // "null")\tMERGED"
+    else
+      ([ $o[] | mine ][0]) as $oh |
+      if $oh != null then "\($oh.number // "null")\tOPEN"
+      else
+        ([ $c[] | mine | select(.mergedAt == null) ][0]) as $ch |
+        if $ch != null then "\($ch.number // "null")\tCLOSED"
+        else "null\tnull" end
+      end
+    end
+  ' 2>/dev/null || printf 'null\tnull\n'
+}
+
 _gh_note() {
   case "$1" in
     unavailable)     printf '(gh unavailable)\n' ;;
@@ -250,37 +285,45 @@ _absorbed() {
 # _branch_never_committed <repo> <default> <branch> -- 0 when the local branch ref shows no
 # sign of ever moving past its creation off the default line. The branch reflog is the only
 # place that distinction survives after a merge: once origin/<default> contains the tip, the
-# graph of a fast-forwarded real branch and of a never-used worker branch is identical. Exactly
-# one reflog entry means fresh; so does a missing or expired reflog, because deletion safety
-# wins over cleanup. A copy explicitly made from another feature ref that still exists is not
-# fresh: its log already carries that feature's commits. A SHA, a revision expression, an
-# unreadable source, or HEAD fails safe as fresh. This only distrusts the trivial-ancestor
-# rung; absorbed content and an exact merged PR still prove SAFE.
+# graph of a fast-forwarded real branch and of a never-used worker branch is identical.
+# Entry-kind scan: `commit*`, `cherry-pick*`, `revert*`, `am*`, and `merge <non-default>`
+# mark real own work; sync, rebase, reset, and rename entries leave a branch fresh. Creation
+# from `origin/<same branch>` (`wrap start --existing`) is a feature copy; `origin/HEAD`,
+# `origin/<default>`, another ref, a SHA, a revision expression, or a missing/expired reflog
+# fails safe as fresh. This only distrusts trivial ancestry; absorbed content and an exact
+# merged PR still prove SAFE.
 _branch_never_committed() {
-  local repo="$1" def="$2" b="$3" entries msg n source
+  local repo="$1" def="$2" b="$3" entries line msg source target
   entries="$(git -C "$repo" reflog show --format='%H%x09%gs' "refs/heads/${b}" 2>/dev/null)"
   [ -n "$entries" ] || return 0
-  n="$(printf '%s\n' "$entries" | awk 'END { print NR }')"
-  [ "$n" = 1 ] || return 1
-  msg="${entries#*	}"
-  case "$msg" in
-    "branch: Created from "*) source="${msg#branch: Created from }" ;;
-    *) return 0 ;;
-  esac
-  case "$source" in
-    "origin/${def}"|"refs/remotes/origin/${def}"|"${def}"|"HEAD") return 0 ;;
-  esac
-  # Revision operators cannot appear in a refname. Treating them as feature copies would
-  # reopen the false deletion of a worker created from an older default-line commit.
-  case "$source" in
-    *[!A-Za-z0-9._/-]*) return 0 ;;
-  esac
-  if git -C "$repo" show-ref --verify --quiet "$source" ||
-    git -C "$repo" show-ref --verify --quiet "refs/heads/${source}" ||
-    git -C "$repo" show-ref --verify --quiet "refs/remotes/${source}" ||
-    git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/${source}"; then
-    return 1
-  fi
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    msg="${line#*	}"
+    case "$msg" in
+      commit*|cherry-pick*|revert*|am*)
+        return 1 ;;
+      "merge "*)
+        target="${msg#merge }"
+        target="${target%%:*}"
+        case "$target" in
+          "$def"|"refs/heads/${def}"|"origin/${def}"|"refs/remotes/origin/${def}"|\
+          "origin/HEAD"|"refs/remotes/origin/HEAD"|\
+          main|master|"origin/main"|"origin/master"|\
+          "refs/heads/main"|"refs/heads/master"|\
+          "refs/remotes/origin/main"|"refs/remotes/origin/master") ;;
+          *) return 1 ;;
+        esac ;;
+      "branch: Created from "*)
+        source="${msg#branch: Created from }"
+        case "$b" in
+          "$def"|main|master|HEAD|"") ;;
+          *)
+            case "$source" in
+              "origin/${b}"|"refs/remotes/origin/${b}") return 1 ;;
+            esac ;;
+        esac ;;
+    esac
+  done <<< "$entries"
   return 0
 }
 

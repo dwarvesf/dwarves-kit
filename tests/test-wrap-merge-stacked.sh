@@ -136,8 +136,9 @@ chk "held: exits 0" "$rc"
 chk_no "held: no scratch worktree" "$out" "scratch worktree"
 chk_has "held: ran the verify command in the checkout" "$out" "test -f b.txt"
 chk "held: origin stack/b moved" "$([ "$NEWB" != "$SK_B" ]; echo $?)"
-chk "held: the checkout's branch is the pushed head" "$([ "$(git -C "$HELD_WT" rev-parse HEAD)" = "$NEWB" ]; echo $?)"
-chk "held: the checkout is clean" "$([ -z "$(git -C "$HELD_WT" status --porcelain)" ]; echo $?)"
+chk "held: post-merge sweep removed the merged worktree" "$([ ! -e "$HELD_WT" ]; echo $?)"
+chk "held: only the main checkout remains in worktree list" \
+  "$([ "$(git -C "$TMPD/sk-clone-held" worktree list | wc -l | tr -d ' ')" -eq 1 ]; echo $?)"
 chk_has "held: merges once gated" "$out" "merged #22 ("
 
 echo "=== merge --rebase-stacked: a rebase conflict refuses by name and touches nothing ==="

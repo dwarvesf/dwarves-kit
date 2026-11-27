@@ -655,7 +655,7 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 50)" \
   GH_STUB_PR_51='{"number":51,"title":"log entry","headRefName":"feat/union-squash","headRefOid":"%SQUASH_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
   GH_STUB_LAND_REPO="$CB_OK" GH_STUB_LAND_REMOTE="$TMPD/cb-bare-ok" GH_STUB_LAND_BRANCH=feat/union \
   "$WRAP" merge --apply "$CB_OK" 2>&1)"; rc=$?
-SQ_OK="$(git -C "$CB_OK" rev-parse feat/union-squash 2>/dev/null)"
+SQ_OK="$(git -C "$TMPD/cb-bare-ok" rev-parse refs/heads/feat/union-squash 2>/dev/null)"
 SQ_CALLS="$(cat "$GH_STUB_CALLS")"
 chk "squash fallback exits 0" "$rc"
 chk_has "squash fallback names why the re-merge could not run" "$out" \
@@ -678,11 +678,11 @@ chk "squash fallback merged #51, never #50" \
 chk_has "squash fallback pinned the squash commit it built" "$SQ_CALLS" \
   "--squash --match-head-commit ${SQ_OK}"
 chk "the squash commit's tree is the stuck head's tree" \
-  "$([ "$(git -C "$CB_OK" rev-parse 'feat/union-squash^{tree}')" = "$(git -C "$CB_OK" rev-parse 'feat/union^{tree}')" ]; echo $?)"
+  "$([ -n "$SQ_OK" ] && [ "$(git -C "$CB_OK" rev-parse "${SQ_OK}^{tree}")" = "$(git -C "$CB_OK" rev-parse 'feat/union^{tree}')" ]; echo $?)"
 chk "the squash commit's parent is the origin/main tip it fetched" \
-  "$([ "$(git -C "$CB_OK" rev-parse 'feat/union-squash^')" = "$CB_OK_MAIN" ]; echo $?)"
+  "$([ -n "$SQ_OK" ] && [ "$(git -C "$CB_OK" rev-parse "${SQ_OK}^")" = "$CB_OK_MAIN" ]; echo $?)"
 chk "the -squash branch reached the remote" \
-  "$([ "$(git -C "$TMPD/cb-bare-ok" rev-parse feat/union-squash)" = "$SQ_OK" ]; echo $?)"
+  "$([ -n "$SQ_OK" ]; echo $?)"
 chk "the stuck branch was left alone" \
   "$([ "$(git -C "$CB_OK" rev-parse feat/union)" = "$CB_OK_TIP" ]; echo $?)"
 chk "the checkout stayed clean" \

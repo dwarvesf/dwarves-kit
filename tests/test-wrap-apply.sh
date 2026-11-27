@@ -894,8 +894,13 @@ echo "=== apply --worktrees: a lock naming a live pid is skipped, a dead pid is 
 # A worktree the Agent tool just created for a still-running subagent is also locked and its
 # fresh branch can be a trivial ancestor of origin/main: the lock alone must not authorize
 # removal when the pid it names is still alive.
-git -C "$MTX" branch mtx-live-branch origin/merged-ancestor >/dev/null 2>&1
-git -C "$MTX" branch mtx-dead-branch origin/merged-ancestor >/dev/null 2>&1
+mtx_merged_branch() {
+  git -C "$TMPD/bare-rmain" branch -f "$1" refs/heads/merged-ancestor >/dev/null 2>&1
+  git -C "$MTX" fetch -q origin
+  git -C "$MTX" branch "$1" "origin/$1" >/dev/null 2>&1
+}
+mtx_merged_branch mtx-live-branch
+mtx_merged_branch mtx-dead-branch
 git -C "$MTX" worktree add "$TMPD/mtx-livepid" mtx-live-branch >/dev/null 2>&1
 git -C "$MTX" worktree lock "$TMPD/mtx-livepid" --reason "claude agent test (pid $$ started now)" >/dev/null 2>&1
 git -C "$MTX" worktree add "$TMPD/mtx-deadpid" mtx-dead-branch >/dev/null 2>&1
@@ -921,7 +926,7 @@ echo "=== apply --worktrees: a worktree a live process holds is skipped, then re
 # A subagent can report done while a browser, a blocked `cp -i` or a test loop still runs with
 # its cwd or an open file in the worktree. Removing the directory under it loses its writes.
 BUSY_SECS=120
-git -C "$MTX" branch mtx-busy-branch origin/merged-ancestor >/dev/null 2>&1
+mtx_merged_branch mtx-busy-branch
 git -C "$MTX" worktree add "$TMPD/mtx-busy" mtx-busy-branch >/dev/null 2>&1
 BUSY_FILE="$(git -C "$TMPD/mtx-busy" ls-files | head -1)"
 ( cd "$TMPD/mtx-busy" && exec sleep "$BUSY_SECS" ) & BUSY_CWD_PID=$!
@@ -956,14 +961,14 @@ chk "busy: after the holders exit, the branch is deleted" \
   "$(git -C "$MTX" show-ref --verify --quiet refs/heads/mtx-busy-branch && echo 1 || echo 0)"
 
 echo "--- busy: a wrap run from inside the worktree is its own holder, never busy"
-git -C "$MTX" branch mtx-self-branch origin/merged-ancestor >/dev/null 2>&1
+mtx_merged_branch mtx-self-branch
 git -C "$MTX" worktree add "$TMPD/mtx-self" mtx-self-branch >/dev/null 2>&1
 out="$(cd "$TMPD/mtx-self" && "$WRAP" apply --apply --own "$TMPD/mtx-self" "$MTX" 2>&1)"
 chk_no "own-cwd: the run's own cwd is not a busy holder" "$out" "busy, held by"
 chk "own-cwd: the worktree is removed" "$([ ! -e "$TMPD/mtx-self" ]; echo $?)"
 
 echo "--- busy: a pipeline reader standing in the worktree is the caller's own, never busy"
-git -C "$MTX" branch mtx-pipe-branch origin/merged-ancestor >/dev/null 2>&1
+mtx_merged_branch mtx-pipe-branch
 git -C "$MTX" worktree add "$TMPD/mtx-pipe" mtx-pipe-branch >/dev/null 2>&1
 out="$( { "$WRAP" apply --apply --own "$TMPD/mtx-pipe" "$MTX" 2>&1; echo "APPLY_RC=$?"; } | ( cd "$TMPD/mtx-pipe" && cat ) )"
 chk_has "pipe reader: apply exits 0" "$out" "APPLY_RC=0"
@@ -971,7 +976,7 @@ chk_no "pipe reader: the run's own pipeline is not a busy holder" "$out" "busy, 
 chk "pipe reader: the worktree is removed" "$([ ! -e "$TMPD/mtx-pipe" ]; echo $?)"
 
 echo "--- busy: without lsof, one NOTE and today's removal"
-git -C "$MTX" branch mtx-nolsof-branch origin/merged-ancestor >/dev/null 2>&1
+mtx_merged_branch mtx-nolsof-branch
 git -C "$MTX" worktree add "$TMPD/mtx-nolsof" mtx-nolsof-branch >/dev/null 2>&1
 # PATH without lsof. Dropping lsof's directory is not enough on a merged-usr Linux host, where
 # lsof sits in /usr/bin beside git and every other tool the run needs: the run would die on a
@@ -1899,6 +1904,9 @@ echo "--- pinned refs: injected GIT_CONFIG_COUNT config reaches wrap's git calls
 # origin's URL resolves only through that mapping, and agent2 is proven merged only once the
 # fetch through it succeeds.
 IC="$(pin_fixture ic)"
+git -C "$TMPD/ic-bare" branch -f agent2 refs/heads/agent
+git -C "$IC" fetch -q origin
+git -C "$IC" branch -q -D agent2 && git -C "$IC" branch -q agent2 origin/agent2
 git -C "$TMPD/ic-work" merge -q --ff-only agent; git -C "$TMPD/ic-work" push -q "$TMPD/ic-bare" main
 git -C "$IC" remote set-url origin "fake://ic/remote"
 out="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$TMPD/ic-bare.insteadOf" GIT_CONFIG_VALUE_0="fake://ic/remote" \

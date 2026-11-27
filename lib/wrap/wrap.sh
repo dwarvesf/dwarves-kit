@@ -4,6 +4,7 @@
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
+#   wrap.sh sweep [--apply] [--worktrees] [--json] [<root>...]  sweep repos under roots (or wrap.sweep_roots), dry-run default
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
 #   wrap.sh merge [--apply] [--no-pull] [--pr N [--rebase-stacked]] [--with-ci] [--verify C] <repo>|--repo <owner>/<name>   merges ONE own green PR (--pr: a named draft; --repo: no checkout, gh-only, local steps skipped); --apply --pr N exits 4 when N was not merged
@@ -177,9 +178,9 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 source "$LIB_ROOT/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
-for _m in common scan apply pull carry ci merge land start ship log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
+for _m in common scan apply sweep pull carry ci merge land start ship log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
-_usage() { sed -n '2,54p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,55p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # _verb_usage <verb> -- the usage lines that start `wrap.sh <verb>`; the whole usage when none do.
 _verb_usage() {
@@ -196,7 +197,7 @@ main() {
   # `wrap <verb> -h|--help` is a usage request for every verb, answered here once so no verb
   # parser can read the flag as an argument (`log` would write it as an entry, the rest refuse it).
   case "$verb:${1:-}" in
-    scan:-h|scan:--help|apply:-h|apply:--help|merge:-h|merge:--help|land:-h|land:--help|\
+    scan:-h|scan:--help|apply:-h|apply:--help|sweep:-h|sweep:--help|merge:-h|merge:--help|land:-h|land:--help|\
     start:-h|start:--help|ship:-h|ship:--help|log:-h|log:--help|\
     default-branch:-h|default-branch:--help|knowledge-root:-h|knowledge-root:--help|\
     follow-mode:-h|follow-mode:--help|deploy-wait:-h|deploy-wait:--help|stage:-h|stage:--help|\
@@ -206,6 +207,7 @@ main() {
   case "$verb" in
     scan)           cmd_scan "$@" ;;
     apply)          cmd_apply "$@" ;;
+    sweep)          cmd_sweep "$@" ;;
     merge)          cmd_merge "$@" ;;
     land)           cmd_land "$@" ;;
     start)          cmd_start "$@" ;;
