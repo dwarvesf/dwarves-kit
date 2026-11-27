@@ -123,7 +123,7 @@ _wt_busy() {
 # terminates every attribute with NUL, which keeps the path whole.
 _apply_worktrees() {
   local repo="$1" def="$2" cur="$3" fetch_succeeded="$4" ghs="$5"
-  local main_wt rec wt wt_c wtb lcode proof lock verdict tip scanned
+  local main_wt rec wt wt_c wtb lcode lreason proof lock verdict tip scanned
   echo "-- worktrees:"
   [ -n "$OWN_SET" ] && echo "     scope --own: only the named worktrees are candidates"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
@@ -169,8 +169,11 @@ _apply_worktrees() {
     if [ "$fetch_succeeded" != 1 ]; then
       echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
     fi
-    read -r lcode _ proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
+    read -r lcode lreason proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
     if [ "$lcode" != SAFE ]; then
+      if [ "${lcode} ${lreason}" = "LEAVE fresh" ]; then
+        echo "     SKIP ${wt}: ${proof}"; continue
+      fi
       echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
     fi
     # The proof above can cost a network round trip, so both destructive inputs are re-read right
@@ -255,6 +258,8 @@ _apply_branches() {
       "SAFE squash")
         run "$repo" "delete ${b} (squash-merged into ${def}, tip matches the PR head)" \
           git -C "$repo" branch -D "$b" ;;
+      "LEAVE fresh")
+        echo "     SKIP ${b}: ${ldetail}" ;;
       "LEAVE nogh")
         echo "     SKIP ${b}: ${ldetail}, no squash proof available" ;;
       "LEAVE tip")
