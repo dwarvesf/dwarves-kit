@@ -287,17 +287,20 @@ _absorbed() {
 # place that distinction survives after a merge: once origin/<default> contains the tip, the
 # graph of a fast-forwarded real branch and of a never-used worker branch is identical.
 # Entry-kind scan: `commit*`, `cherry-pick*`, `revert*`, `am*`, and `merge <non-default>`
-# mark real own work; sync, rebase, reset, and rename entries leave a branch fresh. Creation
-# from `origin/<same branch>` (`wrap start --existing`) is a feature copy; `origin/HEAD`,
+# mark real own work; sync, rebase, reset, and rename entries leave a branch fresh. An
+# unrecognised merge target (e.g. `@{u}`, `FETCH_HEAD`, or a bare SHA) does not count as own
+# work when the entry's new sha is an ancestor of `origin/<default>`; when unsure, keep fresh.
+# Creation from `origin/<same branch>` (`wrap start --existing`) is a feature copy; `origin/HEAD`,
 # `origin/<default>`, another ref, a SHA, a revision expression, or a missing/expired reflog
 # fails safe as fresh. This only distrusts trivial ancestry; absorbed content and an exact
 # merged PR still prove SAFE.
 _branch_never_committed() {
-  local repo="$1" def="$2" b="$3" entries line msg source target
+  local repo="$1" def="$2" b="$3" entries line sha msg source target rc
   entries="$(git -C "$repo" reflog show --format='%H%x09%gs' "refs/heads/${b}" 2>/dev/null)"
   [ -n "$entries" ] || return 0
   while IFS= read -r line; do
     [ -n "$line" ] || continue
+    sha="${line%%	*}"
     msg="${line#*	}"
     case "$msg" in
       commit*|cherry-pick*|revert*|am*)
@@ -311,7 +314,12 @@ _branch_never_committed() {
           main|master|"origin/main"|"origin/master"|\
           "refs/heads/main"|"refs/heads/master"|\
           "refs/remotes/origin/main"|"refs/remotes/origin/master") ;;
-          *) return 1 ;;
+          *)
+            if [ -n "$sha" ]; then
+              git -C "$repo" merge-base --is-ancestor "$sha" "refs/remotes/origin/${def}" 2>/dev/null
+              rc=$?
+              [ "$rc" -eq 1 ] && return 1
+            fi ;;
         esac ;;
       "branch: Created from "*)
         source="${msg#branch: Created from }"

@@ -137,6 +137,9 @@
 # the first failed write and the remaining repos would never report.
 set -uo pipefail
 
+# Capture caller working directory before any subcommand changes directories.
+[ -n "${_WRAP_CALLER_PWD:-}" ] || _WRAP_CALLER_PWD="$(pwd -P 2>/dev/null || pwd)"
+
 # A git call must never block on a credential prompt inside an unattended wrap.
 export GIT_TERMINAL_PROMPT=0
 

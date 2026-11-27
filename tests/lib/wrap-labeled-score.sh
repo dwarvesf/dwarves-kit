@@ -30,7 +30,14 @@ false_deletions=0
 false_keeps=0
 missing=0
 bad_reason=0
+labeled_rows=0
+scored_rows=0
 wrap_rc=0
+
+if [ ! -s "$root/labels.tsv" ]; then
+  echo "wrap-labeled-score: missing or empty labels file: $root/labels.tsv" >&2
+  exit 1
+fi
 
 if [ "$mode" = "apply" ]; then
   outfile="$root/wrap.out"
@@ -54,8 +61,9 @@ else
 fi
 
 printf 'case\texpected\tobserved\n'
-while IFS=$'\t' read -r name expected kind want_reason; do
+while IFS=$'\t' read -r name expected kind want_reason || [ -n "${name:-}" ]; do
   case "$name" in ''|\#*) continue ;; esac
+  labeled_rows=$(( labeled_rows + 1 ))
   observed="missing"
   reason_ok=1
   if [ "$mode" = "apply" ]; then
@@ -112,6 +120,9 @@ while IFS=$'\t' read -r name expected kind want_reason; do
     fi
   fi
 
+  if [ "$observed" = keep ] || [ "$observed" = remove ]; then
+    scored_rows=$(( scored_rows + 1 ))
+  fi
   if [ "$expected" = keep ] && [ "$observed" = remove ]; then
     false_deletions=$(( false_deletions + 1 ))
   elif [ "$expected" = remove ] && [ "$observed" != remove ]; then
@@ -127,6 +138,7 @@ printf 'false_deletions=%d\n' "$false_deletions"
 printf 'false_keeps=%d\n' "$false_keeps"
 printf 'missing=%d\n' "$missing"
 printf 'bad_reason=%d\n' "$bad_reason"
+printf 'scored=%d/%d\n' "$scored_rows" "$labeled_rows"
 printf 'wrap_exit=%d\n' "$wrap_rc"
 
-[ "$false_deletions" -eq 0 ] && [ "$missing" -eq 0 ] && [ "$bad_reason" -eq 0 ] && [ "$wrap_rc" -eq 0 ]
+[ "$labeled_rows" -gt 0 ] && [ "$scored_rows" -eq "$labeled_rows" ] && [ "$false_deletions" -eq 0 ] && [ "$missing" -eq 0 ] && [ "$bad_reason" -eq 0 ] && [ "$wrap_rc" -eq 0 ]

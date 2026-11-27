@@ -105,6 +105,8 @@ git -C "$repo" worktree add -b case-fresh-ff-sync "$root/wt-fresh-ff-sync" origi
 git -C "$repo" worktree add -b case-fresh-rebase "$root/wt-fresh-rebase" origin/main >/dev/null 2>&1
 git -C "$repo" worktree add -b case-fresh-reset "$root/wt-fresh-reset" origin/main >/dev/null 2>&1
 git -C "$repo" worktree add -b case-fresh-rename0 "$root/wt-fresh-rename" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add --track -b case-fresh-ff-upstream "$root/wt-fresh-ff-upstream" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add -b case-fresh-ff-fetchhead "$root/wt-fresh-ff-fetchhead" origin/main >/dev/null 2>&1
 
 git -C "$bare" update-ref refs/heads/main refs/heads/sync-main
 git -C "$repo" fetch -q origin
@@ -112,6 +114,9 @@ git -C "$root/wt-fresh-ff-sync" merge -q --ff-only origin/main >/dev/null 2>&1
 git -C "$root/wt-fresh-rebase" rebase -q origin/main >/dev/null 2>&1
 git -C "$root/wt-fresh-reset" reset -q --hard origin/main >/dev/null 2>&1
 git -C "$repo" branch -m case-fresh-rename0 case-fresh-rename >/dev/null 2>&1
+git -C "$root/wt-fresh-ff-upstream" merge -q --ff-only '@{u}' >/dev/null 2>&1
+git -C "$root/wt-fresh-ff-fetchhead" fetch -q origin main >/dev/null 2>&1
+git -C "$root/wt-fresh-ff-fetchhead" merge -q --ff-only FETCH_HEAD >/dev/null 2>&1
 
 # Removal-proof cases and the merged-then-more case.
 git -C "$repo" worktree add "$root/wt-merged-ff" case-merged-ff >/dev/null 2>&1
@@ -180,6 +185,8 @@ fresh-reset	keep	worktree	fresh branch, no own commits and no merged PR (leave i
 fresh-rename	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
 fresh-origin-head	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
 fresh-upstream-alias	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-ff-upstream	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-ff-fetchhead	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
 merged-ff	remove	worktree	-
 merged-commit	remove	branch	-
 squash-equiv	remove	worktree	-

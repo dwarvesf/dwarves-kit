@@ -76,7 +76,7 @@ _wt_busy_snap_clear() {
 }
 
 _wt_busy() {
-  local wt="$1" canon holders psnap pid cmd n
+  local wt="$1" mode="${2:-snap}" canon holders psnap pid cmd n
   BUSY_MSG=""
   BUSY_PID=""
   [ "${KIT_WRAP_SKIP_BUSY_CHECK:-0}" = 1 ] && return 1
@@ -87,7 +87,7 @@ _wt_busy() {
     return 1
   fi
   canon="$(cd "$wt" 2>/dev/null && pwd -P)" || return 1
-  if [ "$_WT_BUSY_LAZY_SNAP" = 1 ] && [ -z "$_WT_LSOF_SNAP" ]; then
+  if [ "$mode" != "live" ] && [ "$_WT_BUSY_LAZY_SNAP" = 1 ] && [ -z "$_WT_LSOF_SNAP" ]; then
     _WT_LSOF_SNAP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || _WT_LSOF_SNAP=""
     _WT_PSNAP_SNAP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || _WT_PSNAP_SNAP=""
     if [ -n "$_WT_LSOF_SNAP" ] && [ -n "$_WT_PSNAP_SNAP" ]; then
@@ -98,7 +98,7 @@ _wt_busy() {
       _WT_LSOF_SNAP=""; _WT_PSNAP_SNAP=""
     fi
   fi
-  if [ -n "$_WT_PSNAP_SNAP" ] && [ -r "$_WT_PSNAP_SNAP" ]; then
+  if [ "$mode" != "live" ] && [ -n "$_WT_PSNAP_SNAP" ] && [ -r "$_WT_PSNAP_SNAP" ]; then
     psnap="$(cat "$_WT_PSNAP_SNAP" 2>/dev/null)"
   else
     psnap="$(ps -axo pid=,ppid=,pgid=,comm= 2>/dev/null)"
@@ -146,7 +146,7 @@ _wt_busy() {
       if (count > 0) printf "%s\t%s\t%d\n", fpid, fcmd, count
     }
   '
-  if [ -n "$_WT_LSOF_SNAP" ] && [ -r "$_WT_LSOF_SNAP" ]; then
+  if [ "$mode" != "live" ] && [ -n "$_WT_LSOF_SNAP" ] && [ -r "$_WT_LSOF_SNAP" ]; then
     holders="$(WT="$canon" SELF="$$" PSNAP="$psnap" awk "$awk_prog" < "$_WT_LSOF_SNAP")"
   else
     holders="$(cd / && lsof -nP -w +c 0 -Fpcftn 2>/dev/null | WT="$canon" SELF="$$" PSNAP="$psnap" awk "$awk_prog")"
@@ -157,6 +157,60 @@ _wt_busy() {
   BUSY_MSG="SKIP ${wt}: busy, held by pid ${pid} (${cmd})"
   [ "${n:-1}" -gt 1 ] 2>/dev/null && BUSY_MSG="${BUSY_MSG} and $(( n - 1 )) more"
   return 0
+}
+
+_WT_CALLER_CWDS=""
+
+# _wt_caller_cwds_init -- caches canonical caller working directories (this process plus up to
+# 8 ancestor processes via targeted lsof -p -d cwd) so cleanup never removes its own worktree.
+_wt_caller_cwds_init() {
+  local nl=$'\n' c="" pids=""
+  _WT_CALLER_CWDS=""
+  if [ -n "${_WRAP_CALLER_PWD:-}" ]; then
+    c="$(cd "$_WRAP_CALLER_PWD" 2>/dev/null && pwd -P)" || c="$_WRAP_CALLER_PWD"
+    [ -n "$c" ] && _WT_CALLER_CWDS="${_WT_CALLER_CWDS}${c}${nl}"
+  fi
+  c="$(pwd -P 2>/dev/null || pwd)"
+  if [ -n "$c" ]; then
+    case "${nl}${_WT_CALLER_CWDS}" in
+      *"${nl}${c}${nl}"*) ;;
+      *) _WT_CALLER_CWDS="${_WT_CALLER_CWDS}${c}${nl}" ;;
+    esac
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    pids="$(ps -axo pid=,ppid= 2>/dev/null | awk -v start="${PPID:-0}" '
+      { par[$1] = $2 }
+      END {
+        p = start
+        for (i = 0; i < 8 && p != "" && p + 0 > 1; i++) {
+          out = (out == "" ? p : out "," p)
+          if (p == par[p]) break
+          p = par[p]
+        }
+        if (out != "") print out
+      }')"
+    if [ -n "$pids" ]; then
+      while IFS= read -r c; do
+        [ -n "$c" ] || continue
+        case "${nl}${_WT_CALLER_CWDS}" in
+          *"${nl}${c}${nl}"*) ;;
+          *) _WT_CALLER_CWDS="${_WT_CALLER_CWDS}${c}${nl}" ;;
+        esac
+      done < <(lsof -nP -w -a -p "$pids" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    fi
+  fi
+}
+
+_wt_is_caller_cwd() {
+  local wt_c="$1" c=""
+  [ -n "$wt_c" ] && [ -n "$_WT_CALLER_CWDS" ] || return 1
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    case "$c" in
+      "$wt_c"|"$wt_c"/*) return 0 ;;
+    esac
+  done <<< "$_WT_CALLER_CWDS"
+  return 1
 }
 
 _SWEEP_ROWS_FILE=""
@@ -294,6 +348,7 @@ _apply_worktrees() {
   local pr_n pr_st own_c hpid
   _APPLY_WORKSPACE_RM=""
   [ "$APPLY" = 1 ] && _APPLY_WORKSPACE_RM="$(kit_config_get_root wrap.workspace_rm "")"
+  [ -z "${_SWEEP_ROWS_FILE:-}" ] || _wt_caller_cwds_init
   echo "-- worktrees:"
   [ -n "$OWN_SET" ] && echo "     scope --own: only the named worktrees are candidates"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
@@ -327,6 +382,19 @@ _apply_worktrees() {
     if [ -z "$OWN_SET" ] && [ "$WORKTREES" != 1 ]; then
       echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"
       _emit_sweep_row worktree "$wt" "" keep "--worktrees not given" null null null null null null
+      continue
+    fi
+    if [ -n "${_SWEEP_ROWS_FILE:-}" ] && _wt_is_caller_cwd "$wt_c"; then
+      echo "     SKIP ${wt}: caller's own worktree (leave it)"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        local _cw_dirty="false"
+        [ -n "$(git -C "$wt" status --short 2>/dev/null)" ] && _cw_dirty="true"
+        wtb="$(git -C "$wt" branch --show-current 2>/dev/null)"
+        tip=""; [ -n "$wtb" ] && tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${wtb}" 2>/dev/null)"
+        IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
+        own_c="null"; [ -n "$wtb" ] && own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+        _emit_sweep_row worktree "$wt" "$wtb" keep "caller's own worktree (leave it)" "$pr_n" "$pr_st" "$_cw_dirty" null "$own_c" null
+      fi
       continue
     fi
     if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
@@ -472,6 +540,13 @@ _apply_worktrees() {
     if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
       IFS=$'\t' read -r pr_n pr_st <<< "$(_sweep_row_pr_info "$repo" "$def" "$ghs" "$wtb" "$tip")"
       own_c="$(_branch_own_commits "$repo" "$def" "$wtb")"
+    fi
+    if _wt_busy "$wt" live; then
+      echo "     ${BUSY_MSG}"
+      if [ -n "${_SWEEP_ROWS_FILE:-}" ]; then
+        _emit_sweep_row worktree "$wt" "$wtb" keep "${BUSY_MSG#SKIP ${wt}: }" "$pr_n" "$pr_st" false "${BUSY_PID:-null}" "$own_c" null
+      fi
+      continue
     fi
     run "$repo" "$verdict" git -C "$repo" worktree remove -f -f "$wt"
     if _wt_cleared "$repo" "$wt"; then

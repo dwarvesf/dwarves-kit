@@ -16,8 +16,8 @@ mkdir -p "$FIX"
 fixture_out="$(bash "$KIT_DIR/tests/lib/wrap-labeled-fixture.sh" "$FIX" 2>&1)"; rc=$?
 chk "fixture builder exits 0" "$rc"
 chk "fixture builder writes labels.tsv" "$([ -s "$FIX/labels.tsv" ]; echo $?)"
-chk "labeled set covers 23 cases" \
-  "$([ "$(wc -l < "$FIX/labels.tsv" | tr -d ' ')" = 23 ]; echo $?)"
+chk "labeled set covers 25 cases" \
+  "$([ "$(wc -l < "$FIX/labels.tsv" | tr -d ' ')" = 25 ]; echo $?)"
 
 score_before="$(bash "$KIT_DIR/tests/lib/wrap-labeled-score.sh" --mode apply "$FIX" "$KIT_DIR" 2>&1)"; rc=$?
 cp "$FIX/wrap.out" "$FIX/wrap-before-fetch.out"
@@ -59,6 +59,10 @@ chk_has "fresh origin/HEAD worktree: exact skip reason" "$raw_before" \
   "SKIP $FIX/wt-fresh-origin-head: fresh branch, no own commits and no merged PR (leave it)"
 chk_has "fresh upstream-alias worktree: exact skip reason" "$raw_before" \
   "SKIP $FIX/wt-fresh-upstream-alias: fresh branch, no own commits and no merged PR (leave it)"
+chk_has "fresh ff --ff-only @{u} worktree: exact skip reason" "$raw_before" \
+  "SKIP $FIX/wt-fresh-ff-upstream: fresh branch, no own commits and no merged PR (leave it)"
+chk_has "fresh ff FETCH_HEAD worktree: exact skip reason" "$raw_before" \
+  "SKIP $FIX/wt-fresh-ff-fetchhead: fresh branch, no own commits and no merged PR (leave it)"
 chk_has "merged fast-forward worktree still removes" "$score_before" $'merged-ff\tremove\tremove'
 chk_has "merged-commit branch still removes" "$score_before" $'merged-commit\tremove\tremove'
 chk_has "squash-equivalent worktree still removes" "$score_before" $'squash-equiv\tremove\tremove'
@@ -105,11 +109,30 @@ chk_has "negative control (apply): fresh reset is a false deletion" "$score_neg"
 chk_has "negative control (apply): fresh rename is a false deletion" "$score_neg" $'fresh-rename\tkeep\tremove'
 chk_has "negative control (apply): fresh origin-head is a false deletion" "$score_neg" $'fresh-origin-head\tkeep\tremove'
 chk_has "negative control (apply): fresh upstream-alias is a false deletion" "$score_neg" $'fresh-upstream-alias\tkeep\tremove'
-chk_has "negative control (apply): all 10 fresh cases are counted" "$score_neg" "false_deletions=10"
+chk_has "negative control (apply): fresh ff-upstream is a false deletion" "$score_neg" $'fresh-ff-upstream\tkeep\tremove'
+chk_has "negative control (apply): fresh ff-fetchhead is a false deletion" "$score_neg" $'fresh-ff-fetchhead\tkeep\tremove'
+chk_has "negative control (apply): all 12 fresh cases are counted" "$score_neg" "false_deletions=12"
 
 score_neg_sweep="$(WRAP_LABELED_WRAP="$NEG/bin/wrap" bash "$KIT_DIR/tests/lib/wrap-labeled-score.sh" --mode sweep "$FIX" "$KIT_DIR" 2>&1)"; rc=$?
 chk "negative control (sweep): scorer exits non-zero" "$([ "$rc" -ne 0 ]; echo $?)"
-chk_has "negative control (sweep): all 10 fresh cases are counted" "$score_neg_sweep" "false_deletions=10"
+chk_has "negative control (sweep): all 12 fresh cases are counted" "$score_neg_sweep" "false_deletions=12"
+
+# Scorer rejects missing, empty, or truncated labels sets.
+MISS_SB="$TMPD_P/miss-sb"
+mkdir -p "$MISS_SB/bin"
+cp -R "$FIX/repo" "$MISS_SB/repo"
+cp -R "$FIX/bin"/* "$MISS_SB/bin/"
+bash "$KIT_DIR/tests/lib/wrap-labeled-score.sh" --mode apply "$MISS_SB" "$KIT_DIR" >/dev/null 2>&1; rc=$?
+chk "scorer exits non-zero when labels.tsv missing" "$([ "$rc" -ne 0 ]; echo $?)"
+: > "$MISS_SB/labels.tsv"
+bash "$KIT_DIR/tests/lib/wrap-labeled-score.sh" --mode apply "$MISS_SB" "$KIT_DIR" >/dev/null 2>&1; rc=$?
+chk "scorer exits non-zero when labels.tsv empty" "$([ "$rc" -ne 0 ]; echo $?)"
+printf 'bogus-missing\tkeep\tworktree\t-\n' > "$FIX/labels-short.tsv"
+cp "$FIX/labels.tsv" "$FIX/labels.orig"
+cat "$FIX/labels.orig" "$FIX/labels-short.tsv" > "$FIX/labels.tsv"
+bash "$KIT_DIR/tests/lib/wrap-labeled-score.sh" --mode apply "$FIX" "$KIT_DIR" >/dev/null 2>&1; rc=$?
+mv "$FIX/labels.orig" "$FIX/labels.tsv"
+chk "scorer exits non-zero when fewer rows scored than labeled" "$([ "$rc" -ne 0 ]; echo $?)"
 
 kill "$(cat "$FIX/holder.pid" 2>/dev/null)" 2>/dev/null
 

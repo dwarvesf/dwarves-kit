@@ -325,6 +325,128 @@ out_merge="$(KIT_CONFIG_OPERATOR="$OP_CFG" "$WRAP" merge --apply --pr 77 "$R_PMM
 chk "wrap merge --apply exits 0 with post-merge sweep" "$rc"
 chk "post-merge sweep after merge removed sibling merged worktree" "$([ ! -e "$TMPD_P/wt-sib-merge" ]; echo $?)"
 
+# ===========================================================================
+echo "=== 02 fix1: late holder, caller worktree, stale lock PID/age, worker crash ==="
+# ===========================================================================
+# 1) Late holder enters wt-b2 after initial snapshot during wt-a1 workspace_rm, plus caller worktree wt-caller
+R_F1="$TMPD_P/fix1-repo"
+sw_mk_repo "$R_F1" "o/f1" >/dev/null
+for nm in a1 b2 caller; do
+  git -C "$R_F1" checkout -q -b "feat/$nm" main
+  echo "$nm" > "$R_F1/${nm}.txt"; git -C "$R_F1" add "${nm}.txt"; git -C "$R_F1" commit -qm "feat: $nm"
+  git -C "$R_F1" checkout -q main
+  git -C "$R_F1" merge -q --no-ff --no-edit "feat/$nm"
+done
+git -C "$R_F1" push -q origin main
+git -C "$R_F1" checkout -q --detach origin/main
+git -C "$R_F1" worktree add -q "$TMPD_P/wt-f1-a1" feat/a1
+git -C "$R_F1" worktree add -q "$TMPD_P/wt-f1-b2" feat/b2
+git -C "$R_F1" worktree add -q "$TMPD_P/wt-f1-caller" feat/caller
+
+SEAM_LATE="$TMPD/wrm-late-holder.sh"
+PID_LATE_F="$TMPD/late-holder.pid"
+cat > "$SEAM_LATE" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  *wt-f1-a1)
+    ( cd "$TMPD_P/wt-f1-b2" && nohup sleep 45 </dev/null >/dev/null 2>&1 & echo "\$!" > "$PID_LATE_F" )
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$SEAM_LATE"
+printf '[wrap]\nworkspace_rm = "%s"\n' "$SEAM_LATE" > "$OP_CFG/kit.toml"
+
+SW_F1="$TMPD/sweep-fix1.json"
+(
+  cd "$TMPD_P/wt-f1-caller" && \
+    KIT_WRAP_SKIP_BUSY_CHECK=0 KIT_CONFIG_OPERATOR="$OP_CFG" \
+    "$WRAP" sweep --apply --worktrees --json "$R_F1" > "$SW_F1" 2>"$TMPD/sweep-fix1.err"
+); rc=$?
+[ -s "$PID_LATE_F" ] && late_pid="$(cat "$PID_LATE_F")" || late_pid=""
+chk "fix1 late-holder + caller-wt sweep exits 0" "$rc"
+chk "fix1 wt-f1-a1 removed before late holder spawned" "$([ ! -e "$TMPD_P/wt-f1-a1" ]; echo $?)"
+chk "fix1 wt-f1-b2 kept by live busy recheck with holder pid" \
+  "$([ -d "$TMPD_P/wt-f1-b2" ] && jq -e '.repos[0].rows[] | select(.branch == "feat/b2") | .verdict == "keep" and (.reason | startswith("busy, held by pid")) and (.holder | type == "number")' "$SW_F1" >/dev/null 2>&1; echo $?)"
+chk "fix1 wt-f1-caller skipped with caller's own worktree reason" \
+  "$([ -d "$TMPD_P/wt-f1-caller" ] && jq -e '.repos[0].rows[] | select(.branch == "feat/caller") | .verdict == "keep" and .reason == "caller'\''s own worktree (leave it)"' "$SW_F1" >/dev/null 2>&1; echo $?)"
+[ -n "${late_pid:-}" ] && kill "$late_pid" 2>/dev/null || true
+
+# 2) Post-merge sweep inside wrap merge --apply leaves caller's own sibling worktree alone
+R_F1M="$TMPD_P/fix1-merge"
+B_F1M="$(sw_mk_repo "$R_F1M" "o/f1m")"
+git -C "$R_F1M" checkout -q -b feat/sib-self main
+echo ss > "$R_F1M/ss.txt"; git -C "$R_F1M" add ss.txt; git -C "$R_F1M" commit -qm "feat: ss"
+git -C "$R_F1M" checkout -q main
+git -C "$R_F1M" merge -q --no-ff --no-edit feat/sib-self
+git -C "$R_F1M" push -q origin main
+git -C "$R_F1M" worktree add -q "$TMPD_P/wt-f1m-caller" feat/sib-self
+git -C "$R_F1M" checkout -q -b feat/pr-f1m main
+echo pf1 > "$R_F1M/pf1.txt"; git -C "$R_F1M" add pf1.txt; git -C "$R_F1M" commit -qm "feat: pf1"
+PF1_OID="$(git -C "$R_F1M" rev-parse HEAD)"
+git -C "$R_F1M" push -q origin feat/pr-f1m
+git -C "$R_F1M" checkout -q main
+git -C "$B_F1M" branch -f main feat/pr-f1m
+out_f1m="$(
+  cd "$TMPD_P/wt-f1m-caller" && \
+    GH_STUB_OPEN_PRS="[{\"number\":88,\"title\":\"feat: pf1\",\"headRefName\":\"feat/pr-f1m\",\"baseRefName\":\"main\",\"headRefOid\":\"${PF1_OID}\",\"isDraft\":false}]" \
+    GH_STUB_PR_88="{\"number\":88,\"state\":\"OPEN\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"headRefName\":\"feat/pr-f1m\",\"headRefOid\":\"${PF1_OID}\",\"baseRefName\":\"main\",\"isDraft\":false,\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"statusCheckRollup\":[]}" \
+    KIT_CONFIG_OPERATOR="$TMPD_P/no-op-cfg" "$WRAP" merge --apply --pr 88 "$R_F1M" 2>&1
+)"; rc=$?
+chk "fix1 wrap merge --apply exits 0 when run from inside merged sibling worktree" "$rc"
+chk "fix1 wrap merge post-merge sweep keeps caller worktree intact" "$([ -d "$TMPD_P/wt-f1m-caller" ]; echo $?)"
+
+# 3) Lock recovery: live pid older than 30m stays locked; dead pid is reclaimed; age >=30m without pid is reclaimed
+L_REPO="$EST/org1/app1"
+if command -v shasum >/dev/null 2>&1; then
+  L_HASH="$(printf '%s' "$L_REPO" | shasum -a 1 | awk '{print $1}')"
+else
+  L_HASH="$(printf '%s' "$L_REPO" | sha1sum | awk '{print $1}')"
+fi
+L_DIR="$XDG_STATE_HOME/wrap/locks/$L_HASH"
+
+# 3a) live PID + backdated mtime -> still skipped: "locked" (liveness before age)
+rm -rf "$L_DIR"; mkdir -p "$L_DIR"
+sleep 30 >/dev/null 2>&1 & live_lock_pid=$!
+printf '%s\n' "$live_lock_pid" > "$L_DIR/pid"
+touch -t 202001010000 "$L_DIR"
+SW_LK_LIVE="$TMPD/sweep-lock-live.json"
+"$WRAP" sweep --json "$L_REPO" > "$SW_LK_LIVE" 2>/dev/null; rc=$?
+kill "$live_lock_pid" 2>/dev/null || true; wait "$live_lock_pid" 2>/dev/null || true
+chk "fix1 backdated lock with live pid stays locked (exit 3)" "$([ "$rc" -eq 3 ]; echo $?)"
+chk "fix1 backdated lock with live pid reports skipped=locked" \
+  "$(jq -e '.repos[0].skipped == "locked"' "$SW_LK_LIVE" >/dev/null 2>&1; echo $?)"
+
+# 3b) dead PID (fresh mtime) -> reclaimed and logged
+rm -rf "$L_DIR"; mkdir -p "$L_DIR"
+printf '999999\n' > "$L_DIR/pid"
+SW_LK_DEAD="$TMPD/sweep-lock-dead.json"
+"$WRAP" sweep --json "$L_REPO" > "$SW_LK_DEAD" 2>"$TMPD/sweep-lock-dead.err"; rc=$?
+chk "fix1 lock with dead pid is reclaimed (exit 0)" "$rc"
+chk "fix1 dead-pid lock reclaim logs stale message and runs repo" \
+  "$(grep -q 'reclaimed stale lock (dead pid 999999)' "$TMPD/sweep-lock-dead.err" && jq -e '.repos[0].skipped == null' "$SW_LK_DEAD" >/dev/null 2>&1; echo $?)"
+
+# 3c) empty/no-PID lock aged >30m -> reclaimed and logged
+rm -rf "$L_DIR"; mkdir -p "$L_DIR"
+touch -t 202001010000 "$L_DIR"
+SW_LK_AGE="$TMPD/sweep-lock-age.json"
+"$WRAP" sweep --json "$L_REPO" > "$SW_LK_AGE" 2>"$TMPD/sweep-lock-age.err"; rc=$?
+chk "fix1 old lock without pid is reclaimed (exit 0)" "$rc"
+chk "fix1 old lock reclaim logs stale message and runs repo" \
+  "$(grep -q 'reclaimed stale lock (no live pid' "$TMPD/sweep-lock-age.err" && jq -e '.repos[0].skipped == null' "$SW_LK_AGE" >/dev/null 2>&1; echo $?)"
+
+# 4) Crashed per-repo worker produces an error row and exit code 2
+SW_CRASH="$TMPD/sweep-crash.json"
+(
+  set +e
+  source "$KIT_DIR/lib/wrap/wrap.sh" >/dev/null
+  _sweep_one_repo() { exit 1; }
+  cmd_sweep --json "$L_REPO"
+) > "$SW_CRASH" 2>"$TMPD/sweep-crash.err"; rc=$?
+chk "fix1 crashed worker exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "fix1 crashed worker emits valid JSON with error row and summary.errors=1" \
+  "$(sw_validate_json "$SW_CRASH" && jq -e '.summary.errors == 1 and (.repos[0].error | type == "string" and length > 0)' "$SW_CRASH" >/dev/null 2>&1; echo $?)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-sweep: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap-sweep: all $PASS passed"
