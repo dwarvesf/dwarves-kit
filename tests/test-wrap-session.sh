@@ -84,6 +84,7 @@ merged='[{"number":9,"title":"landed","headRefName":"feat/landed","mergedAt":"20
 out="$(PATH="$TMPD/gh-deploy:$PATH" GH_DEPLOY_DELEGATE="$TMPD/stub/gh" GH_STUB_MERGED_ALL="$merged" WRAP_SESSION_WRAP_BIN="$fake" "$WRAP" session --json "$dep" 2>/dev/null)"; rc=$?
 chk "the deploy gather exits 0" "$rc"
 jqok "a successful check-run on the merge sha is deploy success" "$out" '.repos[0].pull_requests.merged_recent[0].number == 9 and .repos[0].pull_requests.deploys[0].state == "success" and .repos[0].pull_requests.deploys[0].merge_sha == "abc123"'
+jqok "the GitHub slug and PR links are first-class fields" "$out" '.repos[0].github_slug == "acme/widgets" and .repos[0].pull_requests.open_own[0].url == "https://github.com/acme/widgets/pull/7" and .repos[0].pull_requests.merged_recent[0].url == "https://github.com/acme/widgets/pull/9"'
 
 # ===========================================================================
 echo "=== fallback and degraded gh states ==="
@@ -94,6 +95,10 @@ jqok "without wrap sweep the row falls back to apply dry-run text" "$out" '.repo
 out="$(WRAP_SESSION_WRAP_BIN="$fake" GH_STUB_UNAUTH=1 "$WRAP" session --json "$clone" 2>/dev/null)"; rc=$?
 chk "an unauthenticated gh still exits 0" "$rc"
 jqok "gh degradation is a field, not a failure" "$out" '.repos[0].pull_requests.gh_state == "unauthenticated" and .repos[0].pull_requests.open_own == []'
+
+out="$(WRAP_SESSION_WRAP_BIN="$fake" "$WRAP" session --json --follow-mode all "$clone" 2>/dev/null)"; rc=$?
+chk "the follow-mode override exits 0" "$rc"
+jqok "the follow-mode override lands in config" "$out" '.config.follow_mode == "all" and (.config.follow_lanes | test("full"))'
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-session: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

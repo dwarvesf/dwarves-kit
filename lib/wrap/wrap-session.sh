@@ -185,6 +185,7 @@ _session_prs_json() {
     jq -cn --arg state "$ghs" '{gh_state:$state,error:null,open_own:[],merged_recent:[],deploys:[],dispatch_workflows:[]}'
     return 0
   fi
+  slug="$(_session_repo_slug "$url" 2>/dev/null)"
   own="$(_open_own_prs "$url" 2>/dev/null)"
   if [ -z "$own" ]; then
     jq -cn --arg state "$ghs" '{gh_state:$state,error:"open PR query failed",open_own:[],merged_recent:[],deploys:[],dispatch_workflows:[]}'
@@ -207,6 +208,9 @@ $(printf '%s' "$own" | jq -r '.[].number' 2>/dev/null)
 EOF_SESSION_PRS
   open_json="$(jq -s . "$tmp" 2>/dev/null)"; [ -n "$open_json" ] || open_json='[]'
   rm -f "$tmp"
+  open_json="$(printf '%s' "$open_json" | jq -c --arg slug "$slug" \
+    'map(. + {url:(if $slug == "" then null else "https://github.com/\($slug)/pull/\(.number)" end)})' 2>/dev/null)"
+  [ -n "$open_json" ] || open_json='[]'
 
   me="$(gh api user --jq .login 2>/dev/null)"
   merged_raw="$(gh pr list --repo "$url" --state merged --limit 20 \
@@ -217,8 +221,10 @@ EOF_SESSION_PRS
        | .[0:5] | map({number,title,headRefName,mergedAt,merge_sha:(.mergeCommit.oid // null)})' 2>/dev/null)"
   fi
   [ -n "$merged" ] || merged='[]'
+  merged="$(printf '%s' "$merged" | jq -c --arg slug "$slug" \
+    'map(. + {url:(if $slug == "" then null else "https://github.com/\($slug)/pull/\(.number)" end)})' 2>/dev/null)"
+  [ -n "$merged" ] || merged='[]'
 
-  slug="$(_session_repo_slug "$url" 2>/dev/null)"
   dtmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   while IFS= read -r prjson; do
     [ -n "$prjson" ] || continue
@@ -319,7 +325,7 @@ _session_config_json() {
 # _session_repo_json <repo> -- one repo object. Every child read degrades into a field,
 # never into extra stdout, so the final document stays machine-readable.
 _session_repo_json() {
-  local input="$1" repo def board checkout handoffs prs sweep
+  local input="$1" repo def board checkout handoffs prs sweep origin slug
   repo="$(cd "$input" 2>/dev/null && pwd -P)"
   [ -n "$repo" ] || repo="$input"
   if ! _is_repo "$repo"; then
@@ -329,18 +335,22 @@ _session_repo_json() {
   fi
 
   def="$(_default_branch "$repo" 2>/dev/null)"
+  origin="$(_origin_url "$repo")"
+  slug="$(_session_repo_slug "$origin" 2>/dev/null)"
   checkout="$(_session_checkout_json "$repo" "$def")"
   board="$(_session_board_json "$repo")"
   handoffs="$(_session_handoffs_json "$repo")"
   prs="$(_session_prs_json "$repo" "$def")"
   sweep="$(_session_sweep_json "$repo")"
 
-  jq -cn --arg path "$repo" --arg def "$def" \
+  jq -cn --arg path "$repo" --arg def "$def" --arg origin "$origin" --arg slug "$slug" \
     --argjson checkout "$checkout" --argjson board "$board" --argjson handoffs "$handoffs" \
     --argjson prs "$prs" --argjson sweep "$sweep" \
     '{path:$path,is_repo:true,error:(if $def=="" then "no default branch resolved" else null end),
       fetch_error:null,
-      default_branch:(if $def=="" then null else $def end),checkout:$checkout,board:$board,
+      default_branch:(if $def=="" then null else $def end),
+      origin_url:(if $origin=="" then null else $origin end),github_slug:(if $slug=="" then null else $slug end),
+      checkout:$checkout,board:$board,
       handoffs:$handoffs,pull_requests:$prs,sweep:$sweep}'
 }
 
