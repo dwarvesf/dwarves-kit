@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # wrap.sh -- the landing step after ship. One pass over every repo a session
-# touched, with fifteen verbs:
+# touched, with sixteen verbs:
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
+#   wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]   one read-only session gather, schema wrap-session/1
+#   wrap.sh session --writers [--since <epoch>] [--check-mark <state>] [--mark <state>] [--self <worktree>]... [--text] <repo>   live per-worktree foreign-writer facts, schema wrap-writers/1
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)
@@ -177,7 +179,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 source "$LIB_ROOT/config/merge-command.sh" || { echo "FATAL: lib/config/merge-command.sh missing or unreadable" >&2; exit 1; }
 # shellcheck source=lib/gate/default-branch-warn.sh
 source "$LIB_ROOT/gate/default-branch-warn.sh" || { echo "FATAL: lib/gate/default-branch-warn.sh missing or unreadable" >&2; exit 1; }
-for _m in common scan apply pull carry ci merge land start ship log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
+for _m in common scan session apply pull carry ci merge land start ship log deploy rebase adopt flick; do source "$SELF_DIR/wrap-$_m.sh" || { echo "FATAL: lib/wrap/wrap-$_m.sh missing or unreadable" >&2; exit 1; }; done; unset _m
 
 _usage() { sed -n '2,54p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
@@ -196,7 +198,7 @@ main() {
   # `wrap <verb> -h|--help` is a usage request for every verb, answered here once so no verb
   # parser can read the flag as an argument (`log` would write it as an entry, the rest refuse it).
   case "$verb:${1:-}" in
-    scan:-h|scan:--help|apply:-h|apply:--help|merge:-h|merge:--help|land:-h|land:--help|\
+    scan:-h|scan:--help|session:-h|session:--help|apply:-h|apply:--help|merge:-h|merge:--help|land:-h|land:--help|\
     start:-h|start:--help|ship:-h|ship:--help|log:-h|log:--help|\
     default-branch:-h|default-branch:--help|knowledge-root:-h|knowledge-root:--help|\
     follow-mode:-h|follow-mode:--help|deploy-wait:-h|deploy-wait:--help|stage:-h|stage:--help|\
@@ -205,6 +207,7 @@ main() {
   esac
   case "$verb" in
     scan)           cmd_scan "$@" ;;
+    session)        cmd_session "$@" ;;
     apply)          cmd_apply "$@" ;;
     merge)          cmd_merge "$@" ;;
     land)           cmd_land "$@" ;;

@@ -1,0 +1,38 @@
+{
+  "schema": "wrap-sweep/1",
+  "mode": "dry-run",
+  "started_at": "2026-11-28T03:10:00Z",
+  "duration_ms": 5100,
+  "roots": ["/Users/x/workspace"],
+  "repos": [
+    {
+      "path": "/Users/x/workspace/org/app",
+      "default_branch": "main",
+      "skipped": null,
+      "error": null,
+      "rows": [
+        {"kind": "worktree", "path": "/Users/x/workspace/org/app/.claude/worktrees/fix-a", "branch": "fix/a", "verdict": "would_remove", "reason": "PR #12 merged, clean", "pr": 12, "pr_state": "MERGED", "dirty": false, "holder": null, "own_commits": 3, "workspace_rm": null},
+        {"kind": "worktree", "path": "/Users/x/workspace/org/app/.claude/worktrees/feat-b", "branch": "feat/b", "verdict": "keep", "reason": "fresh branch, no own commits and no merged PR (leave it)", "pr": null, "pr_state": null, "dirty": false, "holder": null, "own_commits": 0, "workspace_rm": null},
+        {"kind": "worktree", "path": "/Users/x/orca/workspaces/app/eel", "branch": "fix/c", "verdict": "keep", "reason": "fix/c is not proven merged into main (leave it)", "pr": 14, "pr_state": "OPEN", "dirty": false, "holder": 81995, "own_commits": 2, "workspace_rm": null},
+        {"kind": "worktree", "path": "/Users/x/workspace/org/app/.claude/worktrees/fix-d", "branch": "fix/d", "verdict": "keep", "reason": "dirty: 2 uncommitted paths (leave it)", "pr": 15, "pr_state": "MERGED", "dirty": true, "holder": null, "own_commits": 1, "workspace_rm": null},
+        {"kind": "branch", "path": null, "branch": "chore/e", "verdict": "would_remove", "reason": "ancestor of origin/main", "pr": 16, "pr_state": "MERGED", "dirty": null, "holder": null, "own_commits": 1, "workspace_rm": null},
+        {"kind": "origin_branch", "path": null, "branch": "docs/f", "verdict": "would_remove", "reason": "merged branch on origin", "pr": 17, "pr_state": "MERGED", "dirty": null, "holder": null, "own_commits": null, "workspace_rm": null}
+      ]
+    },
+    {
+      "path": "/Users/x/workspace/org/tools",
+      "default_branch": "master",
+      "skipped": "locked",
+      "error": null,
+      "rows": []
+    },
+    {
+      "path": "/Users/x/workspace/org/broken",
+      "default_branch": null,
+      "skipped": null,
+      "error": "git fetch failed: could not read from remote",
+      "rows": []
+    }
+  ],
+  "summary": {"repos": 3, "removed": 0, "would_remove": 3, "keep": 3, "errors": 1, "skipped": 1}
+}

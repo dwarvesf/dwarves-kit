@@ -50,7 +50,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:verify` | `[H/I]` | Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier, plus kit:system-verifier only with --full) … | SPEC-002, SPEC-003, SPEC-006 +57 | test-board-digest.sh, test-board-hermes.sh, test-board-sweep-verify.sh +32 |
 | `/kit:visual-team` | `[H/I]` | Parallel multi-lens critique of a visual/UI design. Dispatches 5 design lenses, merges findings, reports a verdict. Report-only, downstream… | SPEC-016, SPEC-018, SPEC-019 +12 | test-command-emit-sweep.sh, test-meta-review-verifiers.sh, test-meta-spec-depth.sh +1 |
 | `/kit:wayfind` | `[H]` | Plan a chunk of work too big for one agent session as a shared decision map: map.md + typed decision tickets in the mega-goal folder, resol… | SPEC-206, SPEC-207, SPEC-217 +2 | - |
-| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +75 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +50 |
+| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +75 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +51 |
 
 ## Agents
 
@@ -85,7 +85,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `security-reviewer` | `[D]` | battery, review-team | Deep security review of code changes. Read-only. Dispatched by /review-team for focused security analysis. More thorough than /review's bui… | SPEC-090, SPEC-092, SPEC-111 +3 | test-kit-contract.sh, test-review-team-plants.sh |
 | `slop-stripper` | `[D]` | review-team | Behavior-preserving AI-slop strip pass. Given a base ref, scans the branch diff and applies surgical edits that strip AI-generated smell (r… | - | - |
 | `system-verifier` | `[D]` | verify | Runs the whole assembled project's test suite end to end as the dynamic right-arm mirror of the design phase. Fills the agent-less System-t… | SPEC-090, SPEC-092, SPEC-108 +2 | test-every-step-review.sh, test-meta-review-verifiers.sh, test-right-arm-parity.sh |
-| `task-verifier` | `[D]` | battery, debug, dispatch +5 | Verifies a completed task against its spec acceptance criteria. Callers invoke it per task or, under /kit:execute, once over every task of … | SPEC-002, SPEC-003, SPEC-007 +19 | test-agent-effectiveness.sh, test-ceremony-lens.sh, test-every-step-review.sh +7 |
+| `task-verifier` | `[D]` | battery, debug, dispatch +4 | Verifies a completed task against its spec acceptance criteria. Callers invoke it per task or, under /kit:execute, once over every task of … | SPEC-002, SPEC-003, SPEC-007 +19 | test-agent-effectiveness.sh, test-ceremony-lens.sh, test-every-step-review.sh +7 |
 | `test-writer` | `[D]` | test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework. Write-c… | SPEC-203, SPEC-220 | test-test-writer-contract.sh |
 | `ui-acceptance-verifier` | `[D]` | battery, kit-health | Drives a PR preview through its acceptance criteria with the kit's own runner (`lib/ui-verify/run.mjs`) and returns a per-criterion PASS, F… | SPEC-292 | test-ui-acceptance-verifier.sh |
 
