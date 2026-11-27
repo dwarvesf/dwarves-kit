@@ -51,17 +51,97 @@ _session_worktrees_json() {
   | jq -s . 2>/dev/null
 }
 
+# _session_reflog_latest_at <worktree> -- newest HEAD reflog entry time. `%ct` is the
+# commit's date; `%gd` with --date=unix is the reflog entry's own write time.
+_session_reflog_latest_at() {
+  local wt="$1" sel t
+  sel="$(git -C "$wt" log -g -1 --date=unix --format=%gd HEAD 2>/dev/null)"
+  t="$(printf '%s' "$sel" | awk -F'[{}]' '{print $2}' 2>/dev/null)"
+  case "$t" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$t"
+}
+
 # _session_newest_reflog <repo> -- newest HEAD reflog unix timestamp across the worktrees.
 _session_newest_reflog() {
   local repo="$1" wt ts newest=0
   while IFS= read -r wt; do
     [ -n "$wt" ] || continue
-    ts="$(git -C "$wt" reflog -1 --format=%ct 2>/dev/null)"
+    ts="$(_session_reflog_latest_at "$wt" 2>/dev/null)"
     case "$ts" in ''|*[!0-9]*) ;; *) [ "$ts" -gt "$newest" ] && newest="$ts" ;; esac
   done <<EOF_SESSION_REFL
 $(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '/^worktree / { print substr($0, 10) }')
 EOF_SESSION_REFL
   [ "$newest" -gt 0 ] && printf '%s\n' "$newest"
+}
+
+# _session_abs_path <path> -- symlink-free directory path when it exists.
+_session_abs_path() {
+  [ -d "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
+}
+
+# _session_writers_json <repo> <since> <self> -- live per-worktree foreign-writer facts.
+# The session's own worktree is excluded. Each row carries its own index.lock and reflog
+# facts; nothing is collapsed into one global maximum.
+_session_writers_json() {
+  local input="$1" since="$2" self_in="$3" repo self rows tmp row wt branch detached head
+  local wt_abs gd lock_exists lock_age ts newer foreign rows_json any_foreign self_top
+  repo="$(_session_abs_path "$input")"
+  if ! _is_repo "$repo"; then
+    jq -cn --arg path "$input" '{schema:"wrap-writers/1",repo:$path,is_repo:false,error:"not a git repo",worktrees:[]}'
+    return 0
+  fi
+  self_in="${self_in:-$PWD}"
+  self_top="$(git -C "$self_in" rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
+  [ -n "$self_top" ] || self_top="$(_session_abs_path "$self_in")"
+  rows="$(_session_worktrees_json "$repo")"
+  [ -n "$rows" ] || rows='[]'
+  tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
+  printf '%s' "$rows" | jq -c '.[]' 2>/dev/null | while IFS= read -r row; do
+    wt="$(printf '%s' "$row" | jq -r '.path' 2>/dev/null)"
+    [ -n "$wt" ] || continue
+    wt_abs="$(_session_abs_path "$wt")"
+    [ "$wt_abs" = "$self_top" ] && continue
+    branch="$(printf '%s' "$row" | jq -r '.branch // ""' 2>/dev/null)"
+    detached="$(printf '%s' "$row" | jq -r '.detached' 2>/dev/null)"
+    head="$(printf '%s' "$row" | jq -r '.head // ""' 2>/dev/null)"
+    gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+    lock_exists=false; lock_age=null
+    if [ -n "$gd" ] && [ -e "$gd/index.lock" ]; then
+      lock_exists=true
+      lock_age="$(( $(date +%s) - $(_mtime "$gd/index.lock") ))"
+      case "$lock_age" in ''|*[!0-9-]*) lock_age=null ;; esac
+    fi
+    ts="$(_session_reflog_latest_at "$wt" 2>/dev/null)"
+    case "$ts" in ''|*[!0-9]*) ts=null ;; esac
+    newer=null
+    if [ "$since" != "null" ] && [ "$ts" != "null" ]; then
+      if [ "$ts" -gt "$since" ]; then newer=true; else newer=false; fi
+    fi
+    foreign=false
+    [ "$lock_exists" = true ] && foreign=true
+    [ "$newer" = true ] && foreign=true
+    jq -cn --arg path "$wt_abs" --arg branch "$branch" --arg head "$head" \
+      --argjson detached "$detached" --argjson lock_exists "$lock_exists" --argjson lock_age "$lock_age" \
+      --argjson ts "$ts" --argjson newer "$newer" --argjson foreign "$foreign" \
+      '{path:$path,branch:(if $branch=="" then null else $branch end),head:(if $head=="" then null else $head end),
+        detached:$detached,index_lock:{present:$lock_exists,age_seconds:$lock_age},
+        reflog:{latest_at:$ts,newer_than_since:$newer},foreign_activity:$foreign}' >> "$tmp"
+  done
+  rows_json="$(jq -s . "$tmp" 2>/dev/null)"; [ -n "$rows_json" ] || rows_json='[]'
+  rm -f "$tmp"
+  any_foreign="$(printf '%s' "$rows_json" | jq 'any(.[]; .foreign_activity)' 2>/dev/null)"
+  [ -n "$any_foreign" ] || any_foreign=false
+  jq -cn --arg repo "$repo" --arg self "$self_top" --argjson since "$since" \
+    --argjson rows "$rows_json" --argjson any_foreign "$any_foreign" --argjson now "$(date +%s)" \
+    '{schema:"wrap-writers/1",generated_at_epoch:$now,repo:$repo,is_repo:true,error:null,
+      since:$since,self:(if $self=="" then null else $self end),foreign_activity:$any_foreign,worktrees:$rows}'
+}
+
+# _session_writers_text <json> -- the same writer facts in the text fallback shape.
+_session_writers_text() {
+  printf '%s' "$1" | jq -r '
+    "wrap-writers repo=\(.repo) is_repo=\(.is_repo) since=\(.since // "null") self=\(.self // "null") foreign_activity=\(.foreign_activity // false)",
+    (.worktrees[]? | "writer path=\(.path) branch=\(.branch // "null") detached=\(.detached) index_lock_present=\(.index_lock.present) index_lock_age_seconds=\(if .index_lock.age_seconds == null then "null" else .index_lock.age_seconds end) reflog_latest_at=\(if .reflog.latest_at == null then "null" else .reflog.latest_at end) reflog_newer_than_since=\(if .reflog.newer_than_since == null then "null" else .reflog.newer_than_since end) foreign_activity=\(.foreign_activity)")' 2>/dev/null
 }
 
 # _session_checkout_json <repo> <default-branch> -- checkout, dirty, counts, lock, reflog facts.
@@ -75,7 +155,7 @@ _session_checkout_json() {
   fi
   case "$ahead" in ''|*[!0-9]*) ahead=null ;; esac
   case "$behind" in ''|*[!0-9]*) behind=null ;; esac
-  dirty="$(git -C "$repo" status --short 2>/dev/null | _session_lines_json)"
+  dirty="$(git --no-optional-locks -C "$repo" status --short 2>/dev/null | _session_lines_json)"
   [ -n "$dirty" ] || dirty='[]'
   worktrees="$(_session_worktrees_json "$repo")"
   [ -n "$worktrees" ] || worktrees='[]'
@@ -246,11 +326,40 @@ EOF_SESSION_DEPLOY
     '{gh_state:$state,error:null,open_own:$open,merged_recent:$merged,deploys:$deploys,dispatch_workflows:$workflows}'
 }
 
+# _session_sweep_text_readonly <repo> -- the fallback sweep facts without a fetch. This is
+# deliberately narrower than `apply`: no deletion verdict needs fresh origin state here, and
+# the session gather's read-only contract outranks a preview of what apply would remove.
+_session_sweep_text_readonly() {
+  local repo="$1" def="$2" b tip wt merged
+  {
+    printf 'wrap-session sweep fallback (read-only; no fetch; origin refs may be stale)\n'
+    printf 'worktrees:\n'
+    _session_worktrees_json "$repo" | jq -r '.[]? | "  \(.path) branch=\(.branch // "detached") head=\((.head // "")[0:7])"' 2>/dev/null
+    printf 'branches:\n'
+    while IFS="$(printf '\t')" read -r b tip wt; do
+      [ -n "$b" ] || continue
+      merged=unknown
+      if [ -n "$def" ] && git -C "$repo" rev-parse --verify -q "refs/remotes/origin/$def" >/dev/null 2>&1; then
+        if git -C "$repo" merge-base --is-ancestor "$b" "refs/remotes/origin/$def" >/dev/null 2>&1; then
+          merged=yes
+        else
+          merged=no
+        fi
+      fi
+      printf '  %s tip=%s merged_in_origin_%s=%s worktree=%s\n' "$b" "$tip" "${def:-unknown}" "$merged" "${wt:-none}"
+    done <<EOF_SESSION_BRANCHES
+$(git -C "$repo" for-each-ref --format='%(refname:short)%09%(objectname:short)%09%(worktreepath)' refs/heads 2>/dev/null)
+EOF_SESSION_BRANCHES
+    printf 'fetch: not attempted (read-only gather)\n'
+  } 2>/dev/null
+}
+
 # _session_sweep_json <repo> -- one sweep-read seam. `wrap sweep --json` wins once the verb
-# exists; until then the row carries the `wrap apply --worktrees` dry-run text unchanged.
+# exists; until then the row carries read-only local inventory text, never an apply dry run
+# (even a dry-run apply fetches, which breaks this gather's no-write contract).
 # WRAP_SESSION_WRAP_BIN is an internal test seam, defaulting to this install's bin/wrap.
 _session_sweep_json() {
-  local repo="$1" bin out err rc errline valid apply_out arc
+  local repo="$1" def="$2" bin out err rc errline valid apply_out arc
   bin="${WRAP_SESSION_WRAP_BIN:-$LIB_ROOT/../bin/wrap}"
   err="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   out="$("$bin" sweep --json --worktrees "$repo" 2>"$err")"; rc=$?
@@ -265,9 +374,9 @@ _session_sweep_json() {
       '{format:"json",exit_code:$exit_code,document:$document,text:null,error:(if $error=="" then null else $error end)}'
     return 0
   fi
-  apply_out="$("$bin" apply --worktrees "$repo" 2>&1)"; arc=$?
-  jq -cn --arg text "$apply_out" --argjson exit_code "$arc" \
-    '{format:"text",exit_code:$exit_code,document:null,text:$text,error:null}'
+  apply_out="$(_session_sweep_text_readonly "$repo" "$def")"; arc=0
+  jq -cn --arg text "$apply_out" --argjson exit_code "$arc" --arg error "$errline" \
+    '{format:"text",exit_code:$exit_code,document:null,text:$text,error:(if $error=="" then null else $error end)}'
 }
 
 # _session_activity_json -- where step 6's line would land, without writing it.
@@ -325,7 +434,7 @@ _session_config_json() {
 # _session_repo_json <repo> -- one repo object. Every child read degrades into a field,
 # never into extra stdout, so the final document stays machine-readable.
 _session_repo_json() {
-  local input="$1" repo def board checkout handoffs prs sweep origin slug
+  local input="$1" repo def board checkout handoffs prs sweep origin slug fetch_err
   repo="$(cd "$input" 2>/dev/null && pwd -P)"
   [ -n "$repo" ] || repo="$input"
   if ! _is_repo "$repo"; then
@@ -341,13 +450,26 @@ _session_repo_json() {
   board="$(_session_board_json "$repo")"
   handoffs="$(_session_handoffs_json "$repo")"
   prs="$(_session_prs_json "$repo" "$def")"
-  sweep="$(_session_sweep_json "$repo")"
+  sweep="$(_session_sweep_json "$repo" "$def")"
+
+  fetch_err="$(printf '%s' "$sweep" | jq -r --arg repo "$repo" \
+    'if .format == "json" then ([.document.repos[]? | select(.path == $repo) | .error // empty] | first // "") else "" end' 2>/dev/null)"
+  if [ -z "$fetch_err" ]; then
+    if [ -z "$origin" ]; then
+      fetch_err="no origin remote"
+    elif [ -n "$def" ] && ! git -C "$repo" rev-parse --verify -q "refs/remotes/origin/$def" >/dev/null 2>&1; then
+      fetch_err="origin/$def missing locally; the read-only gather does not fetch"
+    elif printf '%s' "$sweep" | jq -e '.format == "text"' >/dev/null 2>&1; then
+      fetch_err="fetch not attempted (read-only fallback); origin data may be stale"
+    fi
+  fi
 
   jq -cn --arg path "$repo" --arg def "$def" --arg origin "$origin" --arg slug "$slug" \
+    --arg fetch_err "$fetch_err" \
     --argjson checkout "$checkout" --argjson board "$board" --argjson handoffs "$handoffs" \
     --argjson prs "$prs" --argjson sweep "$sweep" \
     '{path:$path,is_repo:true,error:(if $def=="" then "no default branch resolved" else null end),
-      fetch_error:null,
+      fetch_error:(if $fetch_err=="" then null else $fetch_err end),
       default_branch:(if $def=="" then null else $def end),
       origin_url:(if $origin=="" then null else $origin end),github_slug:(if $slug=="" then null else $slug end),
       checkout:$checkout,board:$board,
@@ -356,11 +478,19 @@ _session_repo_json() {
 
 cmd_session() {
   local json=0 follow="" arg count=0 start end duration tmp repos config activity
+  local writers=0 writers_text=0 since_json=null self="" start_epoch writers_out
   local -a repos_args=()
   while [ $# -gt 0 ]; do
     arg="$1"
     case "$arg" in
       --json) json=1 ;;
+      --writers) writers=1 ;;
+      --text) writers_text=1 ;;
+      --since) [ $# -ge 2 ] || { echo "usage: wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>" >&2; return 64; }
+        case "$2" in ''|*[!0-9]*) echo "wrap.sh session --since: epoch must be a whole number" >&2; return 64 ;; esac
+        since_json="$2"; shift 2; continue ;;
+      --self) [ $# -ge 2 ] || { echo "usage: wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>" >&2; return 64; }
+        self="$2"; shift 2; continue ;;
       --follow-mode) [ $# -ge 2 ] || { echo "usage: wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]" >&2; return 64; }
         case "$2" in lanes|all) ;; *) echo "usage: wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]" >&2; return 64 ;; esac
         follow="$2"; shift 2; continue ;;
@@ -371,9 +501,24 @@ cmd_session() {
     shift
   done
   count="${#repos_args[@]}"
+
+  if [ "$writers" = 1 ]; then
+    [ "$count" -eq 1 ] || { echo "usage: wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>" >&2; return 64; }
+    if [ "$since_json" = "null" ]; then
+      case "${WRAP_SESSION_START:-}" in ''|*[!0-9]*) ;; *) since_json="$WRAP_SESSION_START" ;; esac
+    fi
+    writers_out="$(_session_writers_json "${repos_args[0]}" "$since_json" "$self")"
+    if [ "$writers_text" = 1 ]; then
+      _session_writers_text "$writers_out"
+    else
+      printf '%s\n' "$writers_out"
+    fi
+    return 0
+  fi
+
   [ "$json" = 1 ] && [ "$count" -ge 1 ] || { echo "usage: wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]" >&2; return 64; }
 
-  start=$(( $(date +%s) * 1000 ))
+  start_epoch="$(date +%s)"; start=$(( start_epoch * 1000 ))
   tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   for arg in "${repos_args[@]}"; do _session_repo_json "$arg" >> "$tmp"; done
   repos="$(jq -s . "$tmp" 2>/dev/null)"; [ -n "$repos" ] || repos='[]'
@@ -382,9 +527,10 @@ cmd_session() {
   activity="$(_session_activity_json)"
   end=$(( $(date +%s) * 1000 )); duration=$(( end - start ))
 
-  jq -cn --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson duration_ms "$duration" \
+  jq -cn --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson started_epoch "$start_epoch" \
+    --argjson duration_ms "$duration" \
     --argjson repos "$repos" --argjson config "$config" --argjson activity "$activity" \
-    '{schema:"wrap-session/1",generated_at:$started_at,duration_ms:$duration_ms,
+    '{schema:"wrap-session/1",generated_at:$started_at,generated_at_epoch:$started_epoch,duration_ms:$duration_ms,
       config:$config.wrap,activity_log:$activity,repos:$repos,
       summary:{repos:($repos|length),
         invalid_repos:([$repos[] | select(.is_repo != true)] | length),

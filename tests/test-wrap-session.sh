@@ -89,9 +89,19 @@ jqok "the GitHub slug and PR links are first-class fields" "$out" '.repos[0].git
 # ===========================================================================
 echo "=== fallback and degraded gh states ==="
 # ===========================================================================
+gd_common="$(git -C "$clone" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+refs_before="$(git -C "$clone" for-each-ref 2>/dev/null)"
+index_before="$(stat -c %Y "$clone/.git/index" 2>/dev/null || stat -f %m "$clone/.git/index" 2>/dev/null)"
+if [ -e "$gd_common/FETCH_HEAD" ]; then fh_before=yes; else fh_before=no; fi
 out="$("$WRAP" session --json "$clone" 2>/dev/null)"; rc=$?
+refs_after="$(git -C "$clone" for-each-ref 2>/dev/null)"
+index_after="$(stat -c %Y "$clone/.git/index" 2>/dev/null || stat -f %m "$clone/.git/index" 2>/dev/null)"
+if [ -e "$gd_common/FETCH_HEAD" ]; then fh_after=yes; else fh_after=no; fi
 chk "the fallback gather exits 0" "$rc"
-jqok "without wrap sweep the row falls back to apply dry-run text" "$out" '.repos[0].sweep.format == "text" and .repos[0].sweep.document == null and (.repos[0].sweep.text|type) == "string"'
+jqok "without wrap sweep the row falls back to read-only inventory text" "$out" '.repos[0].sweep.format == "text" and .repos[0].sweep.document == null and (.repos[0].sweep.text|type) == "string" and (.repos[0].sweep.text | contains("read-only; no fetch"))'
+chk "the fallback gather changes no ref" "$([ "$refs_before" = "$refs_after" ]; echo $?)"
+chk "the fallback gather neither creates nor removes FETCH_HEAD" "$([ "$fh_before" = "$fh_after" ]; echo $?)"
+chk "the fallback gather does not refresh the index" "$([ "$index_before" = "$index_after" ]; echo $?)"
 out="$(WRAP_SESSION_WRAP_BIN="$fake" GH_STUB_UNAUTH=1 "$WRAP" session --json "$clone" 2>/dev/null)"; rc=$?
 chk "an unauthenticated gh still exits 0" "$rc"
 jqok "gh degradation is a field, not a failure" "$out" '.repos[0].pull_requests.gh_state == "unauthenticated" and .repos[0].pull_requests.open_own == []'
@@ -99,6 +109,53 @@ jqok "gh degradation is a field, not a failure" "$out" '.repos[0].pull_requests.
 out="$(WRAP_SESSION_WRAP_BIN="$fake" "$WRAP" session --json --follow-mode all "$clone" 2>/dev/null)"; rc=$?
 chk "the follow-mode override exits 0" "$rc"
 jqok "the follow-mode override lands in config" "$out" '.config.follow_mode == "all" and (.config.follow_lanes | test("full"))'
+
+# ===========================================================================
+echo "=== live writer facts stay per worktree ==="
+# ===========================================================================
+make_clone writers rmain main main
+wclone="$TMPD/clone-writers"
+wself="$TMPD/wt-writers-clean"
+wdirty="$TMPD/wt-writers-dirty"
+now_epoch="$(date +%s)"
+since_epoch=$(( now_epoch - 3600 ))
+old_epoch=$(( now_epoch - 86400 ))
+echo old >> "$wdirty/wt-dirty.txt"
+git -C "$wdirty" add wt-dirty.txt
+GIT_AUTHOR_DATE="@$old_epoch +0000" GIT_COMMITTER_DATE="@$old_epoch +0000" git -C "$wdirty" commit -qm old-write
+out="$("$WRAP" session --writers --since "$since_epoch" --self "$wself" "$wclone" 2>/dev/null)"; rc=$?
+chk "writers exits 0" "$rc"
+jqok "writers excludes the session worktree and keeps per-worktree reflog truth" "$out" '.schema == "wrap-writers/1" and (.since|type) == "number" and (.worktrees as $w | ([$w[] | select(.path | endswith("wt-writers-clean"))] | length) == 0 and ([$w[] | select(.branch == "wt-dirty") | .reflog.newer_than_since][0]) == false and ([$w[] | select(.branch == "main") | .reflog.newer_than_since][0]) == true)'
+jqok "the old worktree reflog is not hidden by a newer global maximum" "$out" '([.worktrees[] | select(.branch == "wt-dirty") | .reflog.latest_at][0]) < .since'
+
+wgda="$(git -C "$wclone" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+: > "$wgda/index.lock"
+out="$("$WRAP" session --writers --since "$since_epoch" --self "$wself" "$wclone" 2>/dev/null)"; rc=$?
+text="$("$WRAP" session --writers --text --since "$since_epoch" --self "$wself" "$wclone" 2>/dev/null)"; trc=$?
+rm -f "$wgda/index.lock"
+chk "writers still exits 0 with an index lock present" "$rc"
+jqok "writers reports the lock on its own worktree row" "$out" '([.worktrees[] | select(.branch == "main") | .index_lock.present][0]) == true and ([.worktrees[] | select(.branch == "main") | .foreign_activity][0]) == true and .foreign_activity == true'
+chk "writers text fallback exits 0" "$trc"
+json_rows="$(printf '%s' "$out" | jq '.worktrees | length' 2>/dev/null)"
+text_rows="$(printf '%s\n' "$text" | grep -c '^writer path=')"
+chk "writers text fallback carries every worktree row" "$([ "$json_rows" = "$text_rows" ]; echo $?)"
+chk_has "writers text fallback carries the lock fact" "$text" "index_lock_present=true"
+chk_has "writers text fallback carries the per-row reflog fact" "$text" "reflog_newer_than_since=false"
+
+# ===========================================================================
+echo "=== fetch_error is measured, not hardcoded ==="
+# ===========================================================================
+jqok "a readable origin ref reports that fetch was not attempted" "$("$WRAP" session --json "$clone" 2>/dev/null)" '.repos[0].fetch_error == "fetch not attempted (read-only fallback); origin data may be stale"'
+noorigin="$TMPD/no-origin-repo"
+mkdir -p "$noorigin"
+git -C "$noorigin" init -q
+gitc "$noorigin"
+echo x > "$noorigin/x.txt"
+git -C "$noorigin" add x.txt
+git -C "$noorigin" commit -qm base
+out="$(WRAP_SESSION_WRAP_BIN="$fake" "$WRAP" session --json "$noorigin" 2>/dev/null)"; rc=$?
+chk "a repo without origin still exits 0" "$rc"
+jqok "fetch_error reports the missing origin instead of a hardcoded null" "$out" '.repos[0].fetch_error == "no origin remote"'
 
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-session: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi

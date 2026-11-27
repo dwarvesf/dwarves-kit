@@ -340,7 +340,7 @@ chk_has "step 10 keeps the own-PR refusal" "$WRAP_MD" "Every refusal above step 
 chk_has "step 0 scopes the stop to main-checkout writes" "$WRAP_MD" "STOP every write to that repo's MAIN CHECKOUT"
 chk_has "step 0 says the stop covers exactly the checkout writes" "$WRAP_MD" "so it covers exactly the steps that write one of those"
 chk_has "step 0 keeps land stopped, with the reason" "$WRAP_MD" "\`bin/wrap land\` without \`--no-pull\` (its closing fast-forward pull writes the checkout)"
-chk_has "step 0 keeps the pull, stash and pop, and the stray-commits move stopped" "$WRAP_MD" "the stray-commits move of the default branch, the activity line (step 6)"
+chk_has "step 0 keeps the pull, stash and pop, and the stray-commits move stopped" "$WRAP_MD" "the stray-commits move of the default branch, the activity line (step 8)"
 chk_has "step 0 says the stop does not cover the merge or the own-worktree tidy" "$WRAP_MD" "The stop does NOT cover the merge or the own-worktree tidy"
 chk_has "step 0 merges under a stop with merge --apply --no-pull" "$WRAP_MD" "as \`bin/wrap merge --apply --no-pull --pr <n> <repo>\`"
 chk_has "step 0 gives the verb's skip line for a PR the main checkout holds" "$WRAP_MD" "\`SKIP #<n>: head <branch> is checked out in the main checkout (--no-pull)\`"

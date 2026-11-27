@@ -4,33 +4,43 @@ description: "The session-scoped landing step after ship: flips board rows, merg
 
 Self-intro: open with exactly `[kit:wrap] Land the session after ship: board rows, merges, deploy check, tidy, activity line, retro.`
 
-You are the session's landing step. Run one read-only gather, act only on rows needing a decision, then print the report. The full rule text and edge cases live in `docs/reference/wrap.md`; this file is the execution path.
+You are the session's landing step. Run a read-only start gather, act only on rows needing a decision, run one final read-only gather, then print the report. The full rule text and edge cases live in `docs/reference/wrap.md`; this file is the execution path.
 
 ## Scope and switches
 
 Run after `/kit:ship`, at session end, or when the operator asks to land work. Never run mid-build. Positional arguments are repos; with none, use the current repo. `distill` or `--distill` turns the distill half on once, `wide` widens `Left alone`, and the word `follow` (or `--follow-through`) runs follow-through. `all` is an argument only right after `follow`; `/kit:wrap follow all` means all lanes. Consume these words before reading repos. `/kit:wrap distill` means the same switch.
 
-The distill half is on unless the operator root config sets `wrap.distill = false`; `harvest` hands it to the harvest sweep only when `<state>/sweep/installed` exists and `harvest.enable` is true. With distill off, skip the candidate scan, seams, and step 7, and report `SKIPPED: distill off`. Harvest mode reports `SKIPPED: distill runs in the harvest sweep`; in phase 1 the sweep reports candidates and builds none. Read `harvest_sweep.py --status` for the newest report. When the knob resolves as true but the marker is absent, the FYI row says `not installed on this host`. An explicit one-shot distill means the sweep will also see this session.
+The distill half is the candidate scan, both seams, steps 7a-7c, and the drain. It is on unless the operator root config sets `wrap.distill = false`; `harvest` hands it to the harvest sweep only when `<state>/sweep/installed` exists and `harvest.enable` is true. With distill off, skip those distill steps by name and report `SKIPPED: distill off`. The retro is landing, not distill, and still runs when its ledger condition is met. Harvest mode reports `SKIPPED: distill runs in the harvest sweep`; in phase 1 the sweep reports candidates and builds none. Read `harvest_sweep.py --status` for the newest report. When the knob resolves as true but the marker is absent, the FYI row says `not installed on this host`. An explicit one-shot distill means the sweep will also see this session.
 
 **Wrapping another session.** Never scan the wrapper's empty context. Resolve it with `bin/session recall --name`, list worker transcripts with `bin/session recall --subagents`, collect the target and pickup transcript paths, dispatch one read-only Sonnet miner, and use only its candidate list and landing facts. The lead never reads a transcript into its own context.
 
-## One gather
+## Start gather
 
-Bracket timing: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`. Resolve each main checkout once from a worktree with `git -C <cwd> rev-parse --path-format=absolute --git-common-dir` minus `/.git`. Then run exactly one gather for the pass, saving the JSON:
+Bracket timing: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`. Resolve each main checkout once from a worktree with `git -C <cwd> rev-parse --path-format=absolute --git-common-dir` minus `/.git`. Then run the start gather, saving the JSON:
 
 ```bash
 bin/wrap session --json [--follow-mode lanes|all] <repo>... > "$scratch/session.json"
 ```
 
-The document is `wrap-session/1`: config knobs, activity-log state, and per repo the checkout, dirty files, worktrees, reflog and index-lock facts, active board rows, handoffs, own open PRs with check totals and gates, recent merge deploy state, and the sweep report. Treat it as facts, not as proof of intent. Rows this session did not touch stay untouched.
+The document is `wrap-session/1`: config knobs, activity-log state, and per repo the checkout, dirty files, worktrees, reflog and index-lock facts, active board rows, handoffs, own open PRs with check totals and gates, recent merge deploy state, and the sweep report. Treat it as facts, not as proof of intent. Rows this session did not touch stay untouched. Save the target session's real start epoch when known; otherwise `.generated_at_epoch` is the writer-check threshold.
 
 `config` carries the root-only values of `wrap.distill`, `wrap.before`, `wrap.after`, `wrap.merge_own_prs`, `wrap.tidy_worktrees`, `wrap.delete_merged_remote_branches`, `wrap.carry_stray_lines`, `wrap.autoland_carry`, `wrap.build_candidates`, `kit_config_get_root wrap.build_lanes`, `wrap.drain_staged`, and the mode that `bin/wrap follow-mode [lanes|all]` resolves. Every false knob turns its write into a report line and earns a `STATE` row.
 
+## Candidate scan and before seam
+
+When distill is on, scan the target session now, before either seam and before step 0, and write the candidate list to scratch: repeated procedures, general one-off scripts, deferred enhancements, and repeated tool errors. What the session built as its deliverable is not a candidate; the method that produced it can be. Delegated repetition counts.
+
+Then, when `config.before` names a skill, invoke it ahead of step 0 while the uncommitted state is still intact. Empty is `NOTHING: no seam configured`; a failure is `SKIPPED: <why>`. Fold the before and after outcomes into the report's one `**Seam:**` line. Distill off or an active harvest sweep runs no scan and no seam.
+
 ## Landing pass
 
-Run these steps once per repo, in order. Re-read the gathered foreign-activity facts before steps 3, 5, and 6; if the repo may have changed, one targeted `bin/wrap scan <repo>` is allowed.
+Run these steps once per repo, in order. Before every write step (steps 1, 2, 3, 4, 6, 7, and 8, plus any seam or distill write into the repo), re-check live:
 
-A foreign `index.lock` or a reflog newer than the session start means STOP every write to that repo's MAIN CHECKOUT, so it covers exactly the steps that write one of those: `bin/wrap land` without `--no-pull` (its closing fast-forward pull writes the checkout), the pull, the stash and pop, the stray-commits move of the default branch, the activity line (step 6). The stop does NOT cover the merge or the own-worktree tidy. The stop does NOT cover a build in an isolated worktree because that build never writes the main checkout. Run the merge as `bin/wrap merge --apply --no-pull --pr <n> <repo>`. A main-held PR prints `SKIP #<n>: head <branch> is checked out in the main checkout (--no-pull)` because merging it at all lands mid-iteration work. Do not name a draft with `--pr` unless the operator explicitly directs it.
+```bash
+bin/wrap session --writers --since <session-start-epoch> [--self <session-worktree>] <repo>
+```
+
+Use the target session start when known, else the start gather epoch. A lock older than 5 seconds or persisting for 5 seconds, or a per-worktree reflog row newer than that epoch in any worktree except the session's own, means foreign activity. `--text` carries the same per-worktree facts. Foreign activity means STOP every write to that repo's MAIN CHECKOUT, so it covers exactly the steps that write one of those: the board flip (step 1), a handoff write or archive there (step 2), the commit (step 3), `bin/wrap land` without `--no-pull` (its closing fast-forward pull writes the checkout), the pull, the stash and pop, the stray-commits move of the default branch, the activity line (step 8), and any seam or distill write into that checkout. The stop does NOT cover the merge or the own-worktree tidy. The stop does NOT cover a build in an isolated worktree because that build never writes the main checkout. Run the merge as `bin/wrap merge --apply --no-pull --pr <n> <repo>`. A main-held PR prints `SKIP #<n>: head <branch> is checked out in the main checkout (--no-pull)` because merging it at all lands mid-iteration work. Do not name a draft with `--pr` unless the operator explicitly directs it.
 
 The stopped tidy is `bin/wrap apply --apply --own <wt>... --no-pull <repo>` (dry run first). The tidy under a stop is `--own` only. Unscoped `--no-pull` prints `SKIP worktree sweep: --no-pull needs --own`, `SKIP branch sweep: --no-pull needs --own`; it also prints (`SKIP pull: --no-pull`, `SKIP stray commits: --no-pull`). `SKIP stray lines: --no-pull (N lines in <file> stay local)`, makes no `wrap/stray-*` branch. A session that never had a worktree has nothing to name, so it skips the tidy under a stop. Under `--no-pull` (a step 0 stop) the carry also pushes nothing. a held `index.lock` still makes `apply` skip every local removal.
 
@@ -43,23 +53,23 @@ The stopped tidy is `bin/wrap apply --apply --own <wt>... --no-pull <repo>` (dry
 7. **Pull and strays.** Let `apply` pull `--ff-only`, carry union stray lines, and carry stray commits exactly as the verb reports. Relay any printed `gh pr create --head <branch>` under `Needs you` unless `wrap.autoland_carry` landed it. A pull skipped by `--no-pull` is `PULL BLOCKED` with the reason; the scan's behind count shows the checkout stayed behind. `wrap.pull_past_dirty` changes the checkout only through the verb's stash-and-pop path.
 8. **Activity line.** Re-check foreign activity, then `bin/wrap log "<slug>: <one sentence>"`. Use the gathered activity-log state to explain where the line landed or why it did not.
 
+Landing retro: after the per-repo pass, run `/kit:retro` only when a run ledger has `| GATE | ship | ran | shipping pr=#<n>` for a PR merged in this pass, anchoring the number. This retro is landing work, so distill off does not skip it.
+
 `bin/wrap start <repo> <branch>` creates an isolated worktree for later builds; `--existing` starts on an origin branch, and `--pick <branch>` folds worker branches into it. `wrap ship` is the one-call small-docs path. These are reference verbs for follow-through, not default landing steps.
 
 ## Distill half
 
-When distill is on, scan before landing and write the candidate list to scratch: repeated procedures, general one-off scripts, deferred enhancements, and repeated tool errors. What the session built as its deliverable is not a candidate; the method that produced it can be. Delegated repetition counts.
+Step 7a writes the DEBT marker. Every skip in 7a skips only 7a; 7b and 7c still run. Capture `rid_out` and `rid_rc` exactly. A non-zero `rid_rc` prints `skipped (structural): DEBT marker impossible this run (<rid_out>)`; Do not synthesize a rid. Then use the run log and `bash lib/classify/significance-classify.sh record <rid> "<one-line session description>"`. A configured teacher from `bash lib/gate/quiz-gate.sh teacher` receives the record; empty prints `skipped: no teacher`.
 
-Step 7a writes the DEBT marker. Capture `rid_out` and `rid_rc` exactly. A non-zero `rid_rc` prints `skipped (structural): DEBT marker impossible this run (<rid_out>)`; Do not synthesize a rid. Then use the run log and `bash lib/classify/significance-classify.sh record <rid> "<one-line session description>"`. A configured teacher from `bash lib/gate/quiz-gate.sh teacher` receives the record; empty prints `skipped: no teacher`.
+Step 7b acts on the scan list written before landing, never on a fresh recollection. For each candidate run `bin/precedent find --surface inventory --json`, open the top hit before deciding, and prefer a code home over prose. Then classify with `bash lib/classify/lane-classify.sh risk`. `wrap.build_candidates` false still classifies and reports. `wrap.build_lanes` decides which lanes build inline; `full` never builds inline. Build in the home repo through `bin/wrap start <home> <type>/<slug>`, dispatch a worker, verify once, and report the quoted check. Sonnet is the default worker; Opus takes security, money, data models, and verification; Haiku takes mechanical fan-out. Everything else is REPORTED in the report only: it never mints a board row or a staging block. A whole-cover hit is a NOTE with a pointer written in-session. Run `bin/wrap flick-7b` even with empty stdin and carry its `STATE` row verbatim.
 
-Step 7b acts on the scan list. For each candidate run `bin/precedent find --surface inventory --json`, open the top hit before deciding, and prefer a code home over prose. Then classify with `bash lib/classify/lane-classify.sh risk`. `wrap.build_candidates` false still classifies and reports. `wrap.build_lanes` decides which lanes build inline; `full` never builds inline. Build in the home repo through `bin/wrap start <home> <type>/<slug>`, dispatch a worker, verify once, and report the quoted check. Sonnet is the default worker; Opus takes security, money, data models, and verification; Haiku takes mechanical fan-out. Everything else is REPORTED in the report only: it never mints a board row or a staging block. A whole-cover hit is a NOTE with a pointer written in-session. Run `bin/wrap flick-7b` even with empty stdin and carry its `STATE` row verbatim.
+Step 7c writes one memory note per incident whose root cause was our mistake, plus its index line. No incidents prints `skipped: no incidents`. For each note written, resolve `bash lib/gate/quiz-gate.sh teacher`; empty prints `skipped: no teacher` with the note path, and a named teacher receives the note path and incident file. The drain of hand-staged rows runs only when `wrap.drain_staged` is true.
 
-Step 7c writes one memory note per incident whose root cause was our mistake, plus its index line. No incidents prints `skipped: no incidents`. The drain of hand-staged rows runs only when `wrap.drain_staged` is true.
-
-Step 8 runs `/kit:retro` only when a run ledger has `| GATE | ship | ran | shipping pr=#<n>` for a PR merged in this pass, anchoring the number. Step 8b invokes the configured `wrap.after` skill. Empty is `NOTHING: no seam configured`; failure is `SKIPPED: <why>`.
+The after seam invokes the configured `wrap.after` skill after landing. Empty is `NOTHING: no seam configured`; failure is `SKIPPED: <why>`.
 
 ## Report
 
-Draft the skim-first report, write it to scratch. Run the lint before printing: `bash lib/wrap/report-lint.sh <file>`. Fix or do what the lint names, then re-run. The shape is:
+Before drafting, run one final read-only gather over the same repos: `bin/wrap session --json <repo>... > "$scratch/session-final.json"`. `Left alone` uses that final gather, never memory or the start snapshot. Draft the skim-first report, write it to scratch. Run the lint before printing: `bash lib/wrap/report-lint.sh <file>`. Fix or do what the lint names, then re-run. The shape is:
 
 ```markdown
 ## Wrap: <session slug, 3 to 6 words>
@@ -102,7 +112,7 @@ Rules that the lint and operator rely on:
 - Prose is STE-lite: sentences of 20 words or fewer, active voice, one topic per bullet, no filler.
 - `What happened` quotes real proof output, never only "tests pass". Use `## How I verified it` output where a follow-through commit carries it.
 - `Shipped`, `Left alone`, and `FYI` are tables; `- NOTHING` replaces the whole table.
-- `Left alone` comes from the final scan, never memory. This pass's residue gets rows; foreign residue collapses to one count row unless `wide`.
+- `Left alone` comes from the final gather, never memory. This pass's residue gets rows; foreign residue collapses to one count row unless `wide`.
 - Every `FYI` row OPENS WITH ITS TAG in caps: `SKIPPED`, `STATE`, or `INCIDENT`. **`FYI` carries no ask.** A follow-up lives in the report, and the report is its home; it never mints a board row or a staging block. Name a home only when one already exists.
 - `**Built:**` and `**Seam:**` are required. Their NOTHING and SKIPPED states stay on the header line. `STAGED` and `FILED` are retired.
 - `wrap merge` verifies the merge commit landed the PR's net change. A `TREE MISMATCH` means the merge did not really land.
