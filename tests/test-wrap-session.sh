@@ -15,7 +15,7 @@ chk "session with no arguments exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 chk_has "session usage names --json" "$out" "session --json"
 out="$("$WRAP" session --json "$TMPD/no-such-repo" 2>/dev/null)"; rc=$?
 chk "an invalid repo still exits 0 with JSON" "$rc"
-jqok "the invalid repo is a row, not a crash" "$out" '.schema == "wrap-session/1" and .repos[0].is_repo == false and .summary.invalid_repos == 1'
+jqok "the invalid repo is a row, not a crash" "$out" '.schema == "wrap-session/1" and .repos[0].is_repo == false and .repos[0].github_slug == null and .summary.invalid_repos == 1'
 
 # ===========================================================================
 echo "=== one fixture repo through the sweep JSON seam ==="

@@ -330,7 +330,7 @@ _session_repo_json() {
   [ -n "$repo" ] || repo="$input"
   if ! _is_repo "$repo"; then
     jq -cn --arg path "$input" '{path:$path,is_repo:false,error:"not a git repo",default_branch:null,
-      checkout:null,board:null,handoffs:null,pull_requests:null,sweep:null}'
+      origin_url:null,github_slug:null,checkout:null,board:null,handoffs:null,pull_requests:null,sweep:null}'
     return 0
   fi
 
