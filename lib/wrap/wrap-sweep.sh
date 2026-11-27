@@ -115,7 +115,7 @@ _sweep_one_repo() {
   local lock_base="${XDG_STATE_HOME:-$HOME/.local/state}/wrap/locks"
   mkdir -p "$lock_base" 2>/dev/null || true
   local mypid="${BASHPID:-}"
-  [ -n "$mypid" ] || mypid="$(sh -c 'echo $PPID' 2>/dev/null)"
+  [ -n "$mypid" ] || mypid="$(exec sh -c 'echo $PPID' 2>/dev/null)"
   local stale_msg="" lock_acquired=0
   _SWEEP_LOCK_DIR="$lock_base/$(_sweep_path_sha1 "$repo")"
   if mkdir "$_SWEEP_LOCK_DIR" 2>/dev/null; then
