@@ -466,6 +466,20 @@ roots = ""                      # [impl] space-separated list of directories (no
                                  #        reason as the knobs below: it decides what a bare flag
                                  #        sweeps across every project on the machine.
 
+sweep_roots = ""                # [impl] space-separated list of root directories `wrap sweep`
+                                 #        scans when no `<root>` argument is passed, tilde ok.
+                                 #        Each root is either a git repo or a parent holding repos
+                                 #        at depth 1 or 2 (`<root>/*/` and `<root>/*/*/`). Empty =
+                                 #        `wrap sweep` with no argument exits 1 naming this key.
+                                 #        Resolved with `kit_config_get_root` (operator or kit-root
+                                 #        `kit.toml` only).
+
+workspace_rm = ""               # [consumer] optional command run after `wrap apply --apply --worktrees`,
+                                 #        `wrap sweep --apply --worktrees`, or `wrap land` removes
+                                 #        a linked worktree: `<cmd> <worktree_path> <repo_path>` with
+                                 #        a 20s timeout. Empty by default; failures never undo or
+                                 #        block removal. Resolved with `kit_config_get_root`.
+
 land_ignored_allow = ""         # [impl] space-separated allow entries for `wrap land`'s ignored-file
                                  #        guard. The guard refuses a land when the worktree holds a
                                  #        gitignored file under a directory the branch touches, since

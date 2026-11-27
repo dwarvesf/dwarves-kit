@@ -1,0 +1,461 @@
+#!/usr/bin/env bash
+# test-wrap-sweep.sh -- sub-goal 01 (batched GraphQL + fallback + local refs) and
+# sub-goal 02 (`wrap sweep` discovery, JSON contract wrap-sweep/1, per-repo locks,
+# error isolation, `wrap.workspace_rm` seam, and post-merge sweep in `land` / `merge`).
+# Shares tests/lib/wrap-stub.sh (offline local bare origins + stub gh only).
+# modules under test (the test-affected cache key greps this line):
+# lib/gate/branch-merged.sh lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-sweep.sh lib/wrap/wrap-land.sh lib/wrap/wrap-merge.sh
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$KIT_DIR/tests/lib/wrap-stub.sh"
+
+export PATH="$TMPD/stub:$PATH"
+export GH_STUB_CALLS="$TMPD/gh.calls"
+export XDG_STATE_HOME="$TMPD/state"
+export KIT_WRAP_SKIP_BUSY_CHECK=1
+mkdir -p "$XDG_STATE_HOME"
+
+sw_mk_repo() { # sw_mk_repo <path> [github_slug]
+  local dir="$1" slug="${2:-}"
+  local seed="$TMPD/seed-$(basename "$dir")-$$-$RANDOM"
+  local bare="$TMPD/bare-$(basename "$dir")-$$-$RANDOM.git"
+  mkdir -p "$seed" "$(dirname "$dir")"
+  git -C "$seed" init -q
+  git -C "$seed" config user.email t@t
+  git -C "$seed" config user.name t
+  git -C "$seed" config commit.gpgsign false
+  git -C "$seed" symbolic-ref HEAD refs/heads/main
+  echo base > "$seed/a.txt"
+  git -C "$seed" add a.txt
+  git -C "$seed" commit -qm "chore: base"
+  git clone -q --bare "$seed" "$bare"
+  git clone -q "$bare" "$dir"
+  git -C "$dir" config user.email t@t
+  git -C "$dir" config user.name t
+  git -C "$dir" config commit.gpgsign false
+  git -C "$dir" remote set-head origin main >/dev/null 2>&1
+  if [ -n "$slug" ]; then
+    git -C "$dir" remote set-url origin "https://github.com/${slug}.git"
+    git -C "$dir" config "url.${bare}.insteadOf" "https://github.com/${slug}.git"
+  fi
+  printf '%s\n' "$bare"
+}
+
+sw_validate_json() { # sw_validate_json <json_file>
+  jq -e '
+    .schema == "wrap-sweep/1" and
+    (.mode == "dry-run" or .mode == "apply") and
+    (.started_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) and
+    ((.duration_ms | type) == "number" and (.duration_ms >= 0)) and
+    (.roots | type == "array") and
+    (.repos | type == "array") and
+    all(.repos[];
+      ((.path | type) == "string") and
+      ((.default_branch | type) == "string" or .default_branch == null) and
+      ((.skipped | type) == "string" or .skipped == null) and
+      ((.error | type) == "string" or .error == null) and
+      (.rows | type == "array") and
+      all(.rows[];
+        (.kind == "worktree" or .kind == "branch" or .kind == "origin_branch") and
+        ((.path | type) == "string" or .path == null) and
+        ((.branch | type) == "string" or .branch == null) and
+        (.verdict == "removed" or .verdict == "would_remove" or .verdict == "keep" or .verdict == "error") and
+        ((.reason | type) == "string") and
+        ((.pr | type) == "number" or .pr == null) and
+        ((.pr_state == "MERGED" or .pr_state == "OPEN" or .pr_state == "CLOSED") or .pr_state == null) and
+        ((.dirty | type) == "boolean" or .dirty == null) and
+        ((.holder | type) == "number" or .holder == null) and
+        ((.own_commits | type) == "number" or .own_commits == null) and
+        ((.workspace_rm == "ok" or .workspace_rm == "failed" or .workspace_rm == "timeout") or .workspace_rm == null)
+      )
+    ) and
+    (.summary | keys_unsorted | sort == ["errors","keep","removed","repos","skipped","would_remove"])
+  ' "$1" >/dev/null 2>&1
+}
+
+# ===========================================================================
+echo "=== 01 speed: batched GraphQL lookup + fallback parity ==="
+# ===========================================================================
+R_SPD="$TMPD_P/spd-repo"
+BARE_SPD="$(sw_mk_repo "$R_SPD" "o/spd")"
+git -C "$R_SPD" checkout -q -b feat/sq-wt main
+echo sq > "$R_SPD/sq.txt"; git -C "$R_SPD" add sq.txt; git -C "$R_SPD" commit -qm "feat: sq-wt"
+SQ_TIP="$(git -C "$R_SPD" rev-parse HEAD)"
+git -C "$R_SPD" push -q origin feat/sq-wt
+git -C "$R_SPD" checkout -q main
+# Squash-equivalent doesn't hold because main adds a different commit; only gh proves it.
+echo other > "$R_SPD/other.txt"; git -C "$R_SPD" add other.txt; git -C "$R_SPD" commit -qm "chore: advance"
+git -C "$R_SPD" push -q origin main
+git -C "$R_SPD" worktree add -q "$TMPD_P/wt-sq" feat/sq-wt
+
+git -C "$R_SPD" checkout -q -b feat/unmerged main
+echo u > "$R_SPD/u.txt"; git -C "$R_SPD" add u.txt; git -C "$R_SPD" commit -qm "feat: unmerged"
+git -C "$R_SPD" checkout -q main
+
+export GH_STUB_MERGED_ALL="[{\"number\":55,\"headRefName\":\"feat/sq-wt\",\"headRefOid\":\"${SQ_TIP}\",\"baseRefName\":\"main\",\"mergedAt\":\"2026-01-01T00:00:00Z\",\"isCrossRepository\":false}]"
+export GH_STUB_MERGED_feat_sq_wt="$GH_STUB_MERGED_ALL"
+export GH_STUB_OPEN_PRS='[{"number":56,"title":"unmerged","headRefName":"feat/unmerged","baseRefName":"main"}]'
+
+: > "$GH_STUB_CALLS"
+out_gql="$(GH_STUB_GRAPHQL=1 "$WRAP" apply --worktrees "$R_SPD" 2>&1)"; rc_gql=$?
+calls_gql="$(cat "$GH_STUB_CALLS")"
+chk "speed: batched graphql apply exits 0" "$rc_gql"
+chk "speed: exactly 1 gh auth status call" "$([ "$(printf '%s\n' "$calls_gql" | grep -c '^auth status')" -eq 1 ]; echo $?)"
+chk "speed: exactly 1 gh api graphql call" "$([ "$(printf '%s\n' "$calls_gql" | grep -c '^api graphql')" -eq 1 ]; echo $?)"
+chk "speed: 0 gh pr list --state merged calls" "$([ "$(printf '%s\n' "$calls_gql" | grep -c 'pr list.*--state merged')" -eq 0 ]; echo $?)"
+
+: > "$GH_STUB_CALLS"
+out_fb="$(GH_STUB_GRAPHQL_RC=1 "$WRAP" apply --worktrees "$R_SPD" 2>&1)"; rc_fb=$?
+calls_fb="$(cat "$GH_STUB_CALLS")"
+chk "speed: fallback apply exits 0" "$rc_fb"
+chk "speed: fallback produces identical output to batched path" "$([ "$out_gql" = "$out_fb" ]; echo $?)"
+chk "speed: fallback invoked gh pr list --state merged" "$([ "$(printf '%s\n' "$calls_fb" | grep -c 'pr list.*--state merged')" -ge 1 ]; echo $?)"
+
+# ===========================================================================
+echo "=== 02 discovery: depth 0/1/2, non-repo, wrap.sweep_roots fence ==="
+# ===========================================================================
+EST="$TMPD_P/estate"
+mkdir -p "$EST/org1/app1" "$EST/direct-clean" "$EST/empty-dir"
+B_APP1="$(sw_mk_repo "$EST/org1/app1" "org1/app1")"
+B_DIR="$(sw_mk_repo "$EST/direct-clean")"
+git -C "$EST/org1/app1" checkout -q -b feat/merged-b main
+echo b > "$EST/org1/app1/b.txt"; git -C "$EST/org1/app1" add b.txt; git -C "$EST/org1/app1" commit -qm "feat: b"
+git -C "$EST/org1/app1" checkout -q main
+git -C "$EST/org1/app1" merge -q --no-ff --no-edit feat/merged-b
+git -C "$EST/org1/app1" push -q origin main
+git -C "$EST/org1/app1" worktree add -q "$EST/wt-app1-merged" feat/merged-b
+
+# Project .kit.toml must never supply wrap.sweep_roots
+PROJ_SW="$TMPD_P/proj-sweep"
+mkdir -p "$PROJ_SW"
+printf '[wrap]\nsweep_roots = "%s"\n' "$EST" > "$PROJ_SW/.kit.toml"
+err_proj="$(cd "$PROJ_SW" && KIT_PROJECT_ROOT="$PROJ_SW" "$WRAP" sweep --json 2>&1)"; rc=$?
+chk "project .kit.toml cannot set wrap.sweep_roots (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "usage error names wrap.sweep_roots" "$err_proj" "wrap.sweep_roots"
+chk_no "usage error prints no JSON" "$err_proj" "wrap-sweep/1"
+
+# Operator kit.toml sets wrap.sweep_roots
+OP_CFG="$TMPD_P/op-cfg"; mkdir -p "$OP_CFG"
+printf '[wrap]\nsweep_roots = "%s %s"\n' "$EST" "$EST/empty-dir" > "$OP_CFG/kit.toml"
+SW_JSON="$TMPD/sweep-disc.json"
+KIT_CONFIG_OPERATOR="$OP_CFG" GH_STUB_GRAPHQL=1 "$WRAP" sweep --worktrees --json > "$SW_JSON" 2>"$TMPD/sweep-disc.err"; rc=$?
+chk "sweep --worktrees --json exits 0" "$rc"
+chk "sweep JSON passes wrap-sweep/1 schema check" "$(sw_validate_json "$SW_JSON"; echo $?)"
+chk "sweep JSON sees app1 and skipped empty-dir" \
+  "$(jq -e '([.repos[] | select(.path | endswith("/app1"))] | length) == 1 and ([.repos[] | select(.skipped == "not a git repo")] | length) == 1' "$SW_JSON" >/dev/null 2>&1; echo $?)"
+chk "sweep JSON filtered out clean repo direct-clean" \
+  "$(jq -e '([.repos[] | select(.path | endswith("/direct-clean"))] | length) == 0' "$SW_JSON" >/dev/null 2>&1; echo $?)"
+chk "sweep JSON app1 worktree verdict is would_remove" \
+  "$(jq -e '.repos[] | select(.path | endswith("/app1")) | .rows[] | select(.kind == "worktree") | .verdict == "would_remove"' "$SW_JSON" >/dev/null 2>&1; echo $?)"
+
+# Explicit clean repo root is still included when named directly
+SW_EX="$TMPD/sweep-explicit.json"
+"$WRAP" sweep --json "$EST/direct-clean" > "$SW_EX" 2>/dev/null; rc=$?
+chk "explicit clean repo exits 0" "$rc"
+chk "explicit clean repo appears in repos[]" \
+  "$(jq -e '(.repos | length) == 1 and .repos[0].skipped == null and (.repos[0].rows | length) == 0' "$SW_EX" >/dev/null 2>&1; echo $?)"
+
+# ===========================================================================
+echo "=== 02 locking: skipped=locked, exit 3 when all locked, signal cleanup ==="
+# ===========================================================================
+if command -v shasum >/dev/null 2>&1; then
+  sha_app1="$(printf '%s' "$EST/org1/app1" | shasum -a 1 | awk '{print $1}')"
+else
+  sha_app1="$(printf '%s' "$EST/org1/app1" | sha1sum | awk '{print $1}')"
+fi
+LOCK_DIR="$XDG_STATE_HOME/wrap/locks/$sha_app1"
+mkdir -p "$LOCK_DIR"
+SW_LOCK="$TMPD/sweep-lock.json"
+"$WRAP" sweep --worktrees --json "$EST/org1/app1" > "$SW_LOCK" 2>/dev/null; rc=$?
+chk "all-locked sweep exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk "all-locked JSON is valid and says skipped=locked" \
+  "$(sw_validate_json "$SW_LOCK" && jq -e '.repos[0].skipped == "locked" and .summary.skipped == 1' "$SW_LOCK" >/dev/null 2>&1; echo $?)"
+
+# Mixed: one locked + one unlocked -> exit 0
+SW_MIX="$TMPD/sweep-mix.json"
+"$WRAP" sweep --worktrees --json "$EST/org1/app1" "$EST/direct-clean" > "$SW_MIX" 2>/dev/null; rc=$?
+chk "mixed locked+unlocked sweep exits 0" "$rc"
+chk "mixed JSON reports skipped=1 and 2 repos" \
+  "$(jq -e '.summary.repos == 2 and .summary.skipped == 1' "$SW_MIX" >/dev/null 2>&1; echo $?)"
+rm -rf "$LOCK_DIR"
+
+# SIGTERM cleanup: killing an active sweep cleans up its lock directory
+SIG_BIN="$TMPD/sig-bin"; mkdir -p "$SIG_BIN"
+cat > "$SIG_BIN/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = auth ] && exit 0
+sleep 10
+STUB
+chmod +x "$SIG_BIN/gh"
+PATH="$SIG_BIN:$PATH" "$WRAP" sweep --worktrees --json "$EST/org1/app1" >/dev/null 2>&1 &
+sw_pid=$!
+w_i=0
+while [ ! -d "$LOCK_DIR" ] && [ "$w_i" -lt 40 ]; do sleep 0.05; w_i=$(( w_i + 1 )); done
+chk "active sweep created lock dir" "$([ -d "$LOCK_DIR" ]; echo $?)"
+kill -TERM "$sw_pid" 2>/dev/null || true
+wait "$sw_pid" 2>/dev/null || true
+chk "SIGTERM cleaned up lock dir" "$([ ! -d "$LOCK_DIR" ]; echo $?)"
+
+# ===========================================================================
+echo "=== 02 per-repo error isolation: broken remote -> exit 2, sibling still runs ==="
+# ===========================================================================
+R_BROKEN="$TMPD_P/broken-repo"
+sw_mk_repo "$R_BROKEN" >/dev/null
+git -C "$R_BROKEN" remote set-url origin "$TMPD_P/nonexistent-remote.git"
+SW_ERR="$TMPD/sweep-err.json"
+GH_STUB_GRAPHQL=1 "$WRAP" sweep --worktrees --json "$R_BROKEN" "$EST/org1/app1" > "$SW_ERR" 2>/dev/null; rc=$?
+chk "broken repo + healthy sibling exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "broken repo JSON validates and has error=git fetch failed" \
+  "$(sw_validate_json "$SW_ERR" && jq -e '([.repos[] | select(.error != null and (.error | startswith("git fetch failed:")))] | length) == 1 and .summary.errors == 1' "$SW_ERR" >/dev/null 2>&1; echo $?)"
+chk "healthy sibling still produced rows despite broken repo" \
+  "$(jq -e '.repos[] | select(.path | endswith("/app1")) | (.rows | length) >= 1' "$SW_ERR" >/dev/null 2>&1; echo $?)"
+
+# ===========================================================================
+echo "=== 02 apply + wrap.workspace_rm seam (ok / failed / timeout / root-only) ==="
+# ===========================================================================
+SEAM_LOG="$TMPD/workspace_rm.log"
+SEAM_SCRIPT="$TMPD/wrm-ok.sh"
+cat > "$SEAM_SCRIPT" <<EOF
+#!/usr/bin/env bash
+printf '%s\t%s\n' "\$1" "\$2" >> "$SEAM_LOG"
+exit 0
+EOF
+chmod +x "$SEAM_SCRIPT"
+
+cat > "$OP_CFG/kit.toml" <<EOF
+[wrap]
+workspace_rm = "$SEAM_SCRIPT"
+EOF
+
+# Project .kit.toml must not override workspace_rm
+printf '[wrap]\nworkspace_rm = "echo pwned"\n' > "$EST/org1/app1/.kit.toml"
+
+SW_APP="$TMPD/sweep-apply.json"
+KIT_CONFIG_OPERATOR="$OP_CFG" KIT_PROJECT_ROOT="$EST/org1/app1" GH_STUB_GRAPHQL=1 "$WRAP" sweep --apply --worktrees --json "$EST/org1/app1" > "$SW_APP" 2>/dev/null; rc=$?
+chk "sweep --apply --worktrees exits 0" "$rc"
+chk "sweep --apply JSON validates and reports removed + workspace_rm=ok" \
+  "$(sw_validate_json "$SW_APP" && jq -e '.mode == "apply" and .summary.removed >= 1 and (.repos[0].rows[] | select(.kind == "worktree") | .verdict == "removed" and .workspace_rm == "ok")' "$SW_APP" >/dev/null 2>&1; echo $?)"
+chk "workspace_rm seam fired once with <wt> <repo>" \
+  "$([ "$(wc -l < "$SEAM_LOG" | tr -d ' ')" -eq 1 ] && grep -qF "$EST/wt-app1-merged	$EST/org1/app1" "$SEAM_LOG"; echo $?)"
+chk "lock was cleaned up after sweep --apply" "$([ ! -d "$LOCK_DIR" ]; echo $?)"
+
+# Failing seam -> workspace_rm="failed", removal stands, exit 0
+SEAM_FAIL="$TMPD/wrm-fail.sh"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$SEAM_FAIL"; chmod +x "$SEAM_FAIL"
+printf '[wrap]\nworkspace_rm = "%s"\n' "$SEAM_FAIL" > "$OP_CFG/kit.toml"
+git -C "$EST/org1/app1" checkout -q -b feat/merged-fail main
+echo bf > "$EST/org1/app1/bf.txt"; git -C "$EST/org1/app1" add bf.txt; git -C "$EST/org1/app1" commit -qm "feat: bf"
+git -C "$EST/org1/app1" checkout -q main
+git -C "$EST/org1/app1" merge -q --no-ff --no-edit feat/merged-fail
+git -C "$EST/org1/app1" push -q origin main
+git -C "$EST/org1/app1" worktree add -q "$EST/wt-app1-fail" feat/merged-fail
+SW_FAIL="$TMPD/sweep-seam-fail.json"
+KIT_CONFIG_OPERATOR="$OP_CFG" "$WRAP" sweep --apply --worktrees --json "$EST/org1/app1" > "$SW_FAIL" 2>/dev/null; rc=$?
+chk "failing workspace_rm still exits 0" "$rc"
+chk "failing workspace_rm still removed worktree and recorded failed" \
+  "$([ ! -e "$EST/wt-app1-fail" ] && jq -e '.repos[0].rows[] | select(.kind == "worktree") | .verdict == "removed" and .workspace_rm == "failed"' "$SW_FAIL" >/dev/null 2>&1; echo $?)"
+
+# Timing out seam -> workspace_rm="timeout", removal stands, exit 0
+SEAM_TO="$TMPD/wrm-to.sh"
+printf '#!/usr/bin/env bash\nsleep 5\n' > "$SEAM_TO"; chmod +x "$SEAM_TO"
+printf '[wrap]\nworkspace_rm = "%s"\n' "$SEAM_TO" > "$OP_CFG/kit.toml"
+git -C "$EST/org1/app1" checkout -q -b feat/merged-to main
+echo bt > "$EST/org1/app1/bt.txt"; git -C "$EST/org1/app1" add bt.txt; git -C "$EST/org1/app1" commit -qm "feat: bt"
+git -C "$EST/org1/app1" checkout -q main
+git -C "$EST/org1/app1" merge -q --no-ff --no-edit feat/merged-to
+git -C "$EST/org1/app1" push -q origin main
+git -C "$EST/org1/app1" worktree add -q "$EST/wt-app1-to" feat/merged-to
+SW_TO="$TMPD/sweep-seam-to.json"
+WRAP_WORKSPACE_RM_TIMEOUT=1 KIT_CONFIG_OPERATOR="$OP_CFG" "$WRAP" sweep --apply --worktrees --json "$EST/org1/app1" > "$SW_TO" 2>/dev/null; rc=$?
+chk "timed-out workspace_rm still exits 0" "$rc"
+chk "timed-out workspace_rm still removed worktree and recorded timeout" \
+  "$([ ! -e "$EST/wt-app1-to" ] && jq -e '.repos[0].rows[] | select(.kind == "worktree") | .verdict == "removed" and .workspace_rm == "timeout"' "$SW_TO" >/dev/null 2>&1; echo $?)"
+
+# ===========================================================================
+echo "=== 02 post-merge sweep in wrap land and wrap merge --apply ==="
+# ===========================================================================
+# 1) wrap land removes a sibling already-merged worktree and triggers workspace_rm
+R_PM="$TMPD_P/pm-land"
+B_PM="$(sw_mk_repo "$R_PM" "o/pm")"
+git -C "$R_PM" checkout -q -b feat/sibling-done main
+echo sib > "$R_PM/sib.txt"; git -C "$R_PM" add sib.txt; git -C "$R_PM" commit -qm "feat: sib"
+git -C "$R_PM" checkout -q main
+git -C "$R_PM" merge -q --no-ff --no-edit feat/sibling-done
+git -C "$R_PM" push -q origin main
+git -C "$R_PM" worktree add -q "$TMPD_P/wt-sibling" feat/sibling-done
+
+git -C "$R_PM" worktree add -q -b feat/to-land "$TMPD_P/wt-to-land" main
+echo landme > "$TMPD_P/wt-to-land/landme.txt"
+git -C "$TMPD_P/wt-to-land" add landme.txt
+git -C "$TMPD_P/wt-to-land" commit -qm "feat: landme"
+
+: > "$SEAM_LOG"
+printf '[wrap]\nworkspace_rm = "%s"\n' "$SEAM_SCRIPT" > "$OP_CFG/kit.toml"
+body_f="$TMPD/land-body.md"; printf 'Test body\n' > "$body_f"
+out_land="$(KIT_CONFIG_OPERATOR="$OP_CFG" GH_STUB_OPEN_PRS='[]' GH_STUB_CREATE_NUM=42 \
+  GH_STUB_LAND_REPO="$TMPD_P/wt-to-land" GH_STUB_LAND_REMOTE="$B_PM" \
+  GH_STUB_LAND_BRANCH=feat/to-land GH_STUB_LAND_DEF=main \
+  "$WRAP" land "$TMPD_P/wt-to-land" --title "feat: landme" --body-file "$body_f" 2>&1)"; rc=$?
+chk "wrap land exits 0 with post-merge sweep" "$rc"
+chk "wrap land keeps LAND: as last stdout line" "$(printf '%s\n' "$out_land" | tail -1 | grep -q '^LAND: merged #'; echo $?)"
+chk "post-merge sweep after land removed sibling merged worktree" "$([ ! -e "$TMPD_P/wt-sibling" ]; echo $?)"
+chk "workspace_rm fired for both landed and sibling worktrees" "$([ "$(wc -l < "$SEAM_LOG" | tr -d ' ')" -eq 2 ]; echo $?)"
+
+# 2) wrap merge --apply removes a sibling already-merged worktree
+R_PMM="$TMPD_P/pm-merge"
+B_PMM="$(sw_mk_repo "$R_PMM" "o/pmm")"
+git -C "$R_PMM" checkout -q -b feat/sib-merge main
+echo sm > "$R_PMM/sm.txt"; git -C "$R_PMM" add sm.txt; git -C "$R_PMM" commit -qm "feat: sm"
+git -C "$R_PMM" checkout -q main
+git -C "$R_PMM" merge -q --no-ff --no-edit feat/sib-merge
+git -C "$R_PMM" push -q origin main
+git -C "$R_PMM" worktree add -q "$TMPD_P/wt-sib-merge" feat/sib-merge
+
+git -C "$R_PMM" checkout -q -b feat/pr-open main
+echo prm > "$R_PMM/prm.txt"; git -C "$R_PMM" add prm.txt; git -C "$R_PMM" commit -qm "feat: prm"
+PRM_OID="$(git -C "$R_PMM" rev-parse HEAD)"
+git -C "$R_PMM" push -q origin feat/pr-open
+git -C "$R_PMM" checkout -q main
+# Advance bare remote on merge when gh pr merge runs? In stub, state,mergeCommit reads bare HEAD,
+# so push feat/pr-open onto bare main as squash-test or set GH_STUB_VIEW_STATE + tree verify:
+git -C "$B_PMM" branch -f main feat/pr-open
+
+export GH_STUB_OPEN_PRS="[{\"number\":77,\"title\":\"feat: prm\",\"headRefName\":\"feat/pr-open\",\"baseRefName\":\"main\",\"headRefOid\":\"${PRM_OID}\",\"isDraft\":false}]"
+export GH_STUB_PR_77="{\"number\":77,\"state\":\"OPEN\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"headRefName\":\"feat/pr-open\",\"headRefOid\":\"${PRM_OID}\",\"baseRefName\":\"main\",\"isDraft\":false,\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"statusCheckRollup\":[]}"
+out_merge="$(KIT_CONFIG_OPERATOR="$OP_CFG" "$WRAP" merge --apply --pr 77 "$R_PMM" 2>&1)"; rc=$?
+chk "wrap merge --apply exits 0 with post-merge sweep" "$rc"
+chk "post-merge sweep after merge removed sibling merged worktree" "$([ ! -e "$TMPD_P/wt-sib-merge" ]; echo $?)"
+
+# ===========================================================================
+echo "=== 02 fix1: late holder, caller worktree, stale lock PID/age, worker crash ==="
+# ===========================================================================
+# 1) Late holder enters wt-b2 after initial snapshot during wt-a1 workspace_rm, plus caller worktree wt-caller
+R_F1="$TMPD_P/fix1-repo"
+sw_mk_repo "$R_F1" "o/f1" >/dev/null
+for nm in a1 b2 caller; do
+  git -C "$R_F1" checkout -q -b "feat/$nm" main
+  echo "$nm" > "$R_F1/${nm}.txt"; git -C "$R_F1" add "${nm}.txt"; git -C "$R_F1" commit -qm "feat: $nm"
+  git -C "$R_F1" checkout -q main
+  git -C "$R_F1" merge -q --no-ff --no-edit "feat/$nm"
+done
+git -C "$R_F1" push -q origin main
+git -C "$R_F1" checkout -q --detach origin/main
+git -C "$R_F1" worktree add -q "$TMPD_P/wt-f1-a1" feat/a1
+git -C "$R_F1" worktree add -q "$TMPD_P/wt-f1-b2" feat/b2
+git -C "$R_F1" worktree add -q "$TMPD_P/wt-f1-caller" feat/caller
+
+SEAM_LATE="$TMPD/wrm-late-holder.sh"
+PID_LATE_F="$TMPD/late-holder.pid"
+cat > "$SEAM_LATE" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  *wt-f1-a1)
+    ( cd "$TMPD_P/wt-f1-b2" && nohup sleep 45 </dev/null >/dev/null 2>&1 & echo "\$!" > "$PID_LATE_F" )
+    ;;
+esac
+exit 0
+EOF
+chmod +x "$SEAM_LATE"
+printf '[wrap]\nworkspace_rm = "%s"\n' "$SEAM_LATE" > "$OP_CFG/kit.toml"
+
+SW_F1="$TMPD/sweep-fix1.json"
+(
+  cd "$TMPD_P/wt-f1-caller" && \
+    KIT_WRAP_SKIP_BUSY_CHECK=0 KIT_CONFIG_OPERATOR="$OP_CFG" \
+    "$WRAP" sweep --apply --worktrees --json "$R_F1" > "$SW_F1" 2>"$TMPD/sweep-fix1.err"
+); rc=$?
+[ -s "$PID_LATE_F" ] && late_pid="$(cat "$PID_LATE_F")" || late_pid=""
+chk "fix1 late-holder + caller-wt sweep exits 0" "$rc"
+chk "fix1 wt-f1-a1 removed before late holder spawned" "$([ ! -e "$TMPD_P/wt-f1-a1" ]; echo $?)"
+chk "fix1 wt-f1-b2 kept by live busy recheck with holder pid" \
+  "$([ -d "$TMPD_P/wt-f1-b2" ] && jq -e '.repos[0].rows[] | select(.branch == "feat/b2") | .verdict == "keep" and (.reason | startswith("busy, held by pid")) and (.holder | type == "number")' "$SW_F1" >/dev/null 2>&1; echo $?)"
+chk "fix1 wt-f1-caller skipped with caller's own worktree reason" \
+  "$([ -d "$TMPD_P/wt-f1-caller" ] && jq -e '.repos[0].rows[] | select(.branch == "feat/caller") | .verdict == "keep" and .reason == "caller'\''s own worktree (leave it)"' "$SW_F1" >/dev/null 2>&1; echo $?)"
+[ -n "${late_pid:-}" ] && kill "$late_pid" 2>/dev/null || true
+
+# 2) Post-merge sweep inside wrap merge --apply leaves caller's own sibling worktree alone
+R_F1M="$TMPD_P/fix1-merge"
+B_F1M="$(sw_mk_repo "$R_F1M" "o/f1m")"
+git -C "$R_F1M" checkout -q -b feat/sib-self main
+echo ss > "$R_F1M/ss.txt"; git -C "$R_F1M" add ss.txt; git -C "$R_F1M" commit -qm "feat: ss"
+git -C "$R_F1M" checkout -q main
+git -C "$R_F1M" merge -q --no-ff --no-edit feat/sib-self
+git -C "$R_F1M" push -q origin main
+git -C "$R_F1M" worktree add -q "$TMPD_P/wt-f1m-caller" feat/sib-self
+git -C "$R_F1M" checkout -q -b feat/pr-f1m main
+echo pf1 > "$R_F1M/pf1.txt"; git -C "$R_F1M" add pf1.txt; git -C "$R_F1M" commit -qm "feat: pf1"
+PF1_OID="$(git -C "$R_F1M" rev-parse HEAD)"
+git -C "$R_F1M" push -q origin feat/pr-f1m
+git -C "$R_F1M" checkout -q main
+git -C "$B_F1M" branch -f main feat/pr-f1m
+out_f1m="$(
+  cd "$TMPD_P/wt-f1m-caller" && \
+    GH_STUB_OPEN_PRS="[{\"number\":88,\"title\":\"feat: pf1\",\"headRefName\":\"feat/pr-f1m\",\"baseRefName\":\"main\",\"headRefOid\":\"${PF1_OID}\",\"isDraft\":false}]" \
+    GH_STUB_PR_88="{\"number\":88,\"state\":\"OPEN\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"headRefName\":\"feat/pr-f1m\",\"headRefOid\":\"${PF1_OID}\",\"baseRefName\":\"main\",\"isDraft\":false,\"isCrossRepository\":false,\"author\":{\"login\":\"me\"},\"statusCheckRollup\":[]}" \
+    KIT_CONFIG_OPERATOR="$TMPD_P/no-op-cfg" "$WRAP" merge --apply --pr 88 "$R_F1M" 2>&1
+)"; rc=$?
+chk "fix1 wrap merge --apply exits 0 when run from inside merged sibling worktree" "$rc"
+chk "fix1 wrap merge post-merge sweep keeps caller worktree intact" "$([ -d "$TMPD_P/wt-f1m-caller" ]; echo $?)"
+
+# 3) Lock recovery: live pid older than 30m stays locked; dead pid is reclaimed; age >=30m without pid is reclaimed
+L_REPO="$EST/org1/app1"
+if command -v shasum >/dev/null 2>&1; then
+  L_HASH="$(printf '%s' "$L_REPO" | shasum -a 1 | awk '{print $1}')"
+else
+  L_HASH="$(printf '%s' "$L_REPO" | sha1sum | awk '{print $1}')"
+fi
+L_DIR="$XDG_STATE_HOME/wrap/locks/$L_HASH"
+
+# 3a) live PID + backdated mtime -> still skipped: "locked" (liveness before age)
+rm -rf "$L_DIR"; mkdir -p "$L_DIR"
+sleep 30 >/dev/null 2>&1 & live_lock_pid=$!
+printf '%s\n' "$live_lock_pid" > "$L_DIR/pid"
+touch -t 202001010000 "$L_DIR"
+SW_LK_LIVE="$TMPD/sweep-lock-live.json"
+"$WRAP" sweep --json "$L_REPO" > "$SW_LK_LIVE" 2>/dev/null; rc=$?
+kill "$live_lock_pid" 2>/dev/null || true; wait "$live_lock_pid" 2>/dev/null || true
+chk "fix1 backdated lock with live pid stays locked (exit 3)" "$([ "$rc" -eq 3 ]; echo $?)"
+chk "fix1 backdated lock with live pid reports skipped=locked" \
+  "$(jq -e '.repos[0].skipped == "locked"' "$SW_LK_LIVE" >/dev/null 2>&1; echo $?)"
+
+# 3b) dead PID (fresh mtime) -> reclaimed and logged
+rm -rf "$L_DIR"; mkdir -p "$L_DIR"
+printf '999999\n' > "$L_DIR/pid"
+SW_LK_DEAD="$TMPD/sweep-lock-dead.json"
+"$WRAP" sweep --json "$L_REPO" > "$SW_LK_DEAD" 2>"$TMPD/sweep-lock-dead.err"; rc=$?
+chk "fix1 lock with dead pid is reclaimed (exit 0)" "$rc"
+chk "fix1 dead-pid lock reclaim logs stale message and runs repo" \
+  "$(grep -q 'reclaimed stale lock (dead pid 999999)' "$TMPD/sweep-lock-dead.err" && jq -e '.repos[0].skipped == null' "$SW_LK_DEAD" >/dev/null 2>&1; echo $?)"
+
+# 3c) empty/no-PID lock aged >30m -> reclaimed and logged
+rm -rf "$L_DIR"; mkdir -p "$L_DIR"
+touch -t 202001010000 "$L_DIR"
+SW_LK_AGE="$TMPD/sweep-lock-age.json"
+"$WRAP" sweep --json "$L_REPO" > "$SW_LK_AGE" 2>"$TMPD/sweep-lock-age.err"; rc=$?
+chk "fix1 old lock without pid is reclaimed (exit 0)" "$rc"
+chk "fix1 old lock reclaim logs stale message and runs repo" \
+  "$(grep -q 'reclaimed stale lock (no live pid' "$TMPD/sweep-lock-age.err" && jq -e '.repos[0].skipped == null' "$SW_LK_AGE" >/dev/null 2>&1; echo $?)"
+
+# 4) Crashed per-repo worker produces an error row and exit code 2
+SW_CRASH="$TMPD/sweep-crash.json"
+(
+  set +e
+  source "$KIT_DIR/lib/wrap/wrap.sh" >/dev/null
+  _sweep_one_repo() { exit 1; }
+  cmd_sweep --json "$L_REPO"
+) > "$SW_CRASH" 2>"$TMPD/sweep-crash.err"; rc=$?
+chk "fix1 crashed worker exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk "fix1 crashed worker emits valid JSON with error row and summary.errors=1" \
+  "$(sw_validate_json "$SW_CRASH" && jq -e '.summary.errors == 1 and (.repos[0].error | type == "string" and length > 0)' "$SW_CRASH" >/dev/null 2>&1; echo $?)"
+
+# 5) --no-fetch: a dry run that reads refs on disk and writes no FETCH_HEAD; refused with --apply
+rm -f "$L_REPO/.git/FETCH_HEAD"
+SW_NF="$TMPD/sweep-nofetch.json"
+"$WRAP" sweep --json --no-fetch --worktrees "$L_REPO" > "$SW_NF" 2>/dev/null; rc=$?
+chk "no-fetch dry run exits 0 with valid JSON" "$([ "$rc" -eq 0 ] && sw_validate_json "$SW_NF"; echo $?)"
+chk "no-fetch dry run writes no FETCH_HEAD" "$([ ! -e "$L_REPO/.git/FETCH_HEAD" ]; echo $?)"
+"$WRAP" sweep --apply --no-fetch "$L_REPO" >/dev/null 2>&1; rc=$?
+chk "no-fetch with --apply is refused (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+
+echo
+if [ "$FAIL" -gt 0 ]; then echo "test-wrap-sweep: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
+echo "test-wrap-sweep: all $PASS passed"

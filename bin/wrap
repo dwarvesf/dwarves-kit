@@ -9,6 +9,7 @@
 #   wrap session --json [--follow-mode lanes|all] <repo> [<repo>...]      one read-only session gather
 #   wrap session --writers [--since <epoch>] [--check-mark <state>] [--mark <state>] [--self <worktree>]... [--text] <repo>   foreign-writer facts
 #   wrap apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... <repo> [...]     gated writes, dry-run by default
+#   wrap sweep [--apply] [--worktrees] [--json] [--no-fetch] [<root>...]     sweep repos under roots (or wrap.sweep_roots), dry-run default
 #   wrap merge [--apply] [--no-pull] [--pr N] [--verify C] <repo>   one own green PR (--pr: a named PR, a draft marked ready)
 #   wrap land <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify C]  one hand-made worktree, landed
 #     --verify C runs inside a re-merge of a CONFLICTING PR (land runs it only inside that merge cycle) and is echoed as typed, so a secret belongs in the environment, not the flag

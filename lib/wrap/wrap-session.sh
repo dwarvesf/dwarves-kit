@@ -476,7 +476,7 @@ _session_sweep_json() {
   local repo="$1" def="$2" bin out err rc errline valid apply_out arc
   bin="${WRAP_SESSION_WRAP_BIN:-$LIB_ROOT/../bin/wrap}"
   err="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
-  out="$("$bin" sweep --json --worktrees "$repo" 2>"$err")"; rc=$?
+  out="$("$bin" sweep --json --no-fetch --worktrees "$repo" 2>"$err")"; rc=$?
   IFS= read -r errline < "$err" || errline=""
   rm -f "$err"
   valid=1
@@ -573,8 +573,8 @@ _session_repo_json() {
       fetch_err="no origin remote"
     elif [ -n "$def" ] && ! git -C "$repo" rev-parse --verify -q "refs/remotes/origin/$def" >/dev/null 2>&1; then
       fetch_err="origin/$def missing locally; the read-only gather does not fetch"
-    elif printf '%s' "$sweep" | jq -e '.format == "text"' >/dev/null 2>&1; then
-      fetch_err="fetch not attempted (read-only fallback); origin data may be stale"
+    else
+      fetch_err="fetch not attempted (read-only gather); origin data may be stale"
     fi
   fi
 

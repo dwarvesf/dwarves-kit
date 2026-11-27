@@ -1404,6 +1404,7 @@ cmd_merge() {
       echo "merged #${first_eligible} (${sha}): tree verified"
       [ -z "$superseded_n" ] || echo "superseded #${superseded_n}: its tree landed via #${first_eligible} on ${superseded_branch}; close #${superseded_n} when ready"
       _merge_pull_checkout "$repo" "$def"
+      _post_merge_sweep "$repo"
       ;;
     MISMATCH*)
       echo "merged #${first_eligible} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2

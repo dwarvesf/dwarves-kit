@@ -47,10 +47,10 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:test-write` | `[H/I]` | Turn a SOLID-verdict `## Test plan critique` into real, executing test code via `kit:test-writer`, one case per matrix row. Never dispatche… | SPEC-203, SPEC-227, SPEC-237 +2 | test-test-writer-contract.sh |
 | `/kit:think` | `[H/I]` | Challenge an idea before writing any spec. 6 forcing questions that reframe the product. Use when the operator brings a new idea, feature, … | SPEC-003, SPEC-004, SPEC-005 +40 | test-command-emit-sweep.sh, test-command-triggers.sh, test-config-stamp.sh +17 |
 | `/kit:ui-design` | `[H/I]` | Downstream UI-design loop: write a structured ## UI design brief, delegate generation to the external frontend-design skill, critique via /… | SPEC-020, SPEC-023, SPEC-102 +10 | test-anomalies-advisor.sh, test-command-emit-sweep.sh, test-gate-ledger-inherit.sh +6 |
-| `/kit:verify` | `[H/I]` | Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier, plus kit:system-verifier only with --full) … | SPEC-002, SPEC-003, SPEC-006 +57 | test-board-digest.sh, test-board-hermes.sh, test-board-sweep-verify.sh +32 |
+| `/kit:verify` | `[H/I]` | Re-run the test levels (kit:task-verifier + kit:integration-verifier + kit:acceptance-verifier, plus kit:system-verifier only with --full) … | SPEC-002, SPEC-003, SPEC-006 +57 | test-board-digest.sh, test-board-hermes.sh, test-board-sweep-verify.sh +33 |
 | `/kit:visual-team` | `[H/I]` | Parallel multi-lens critique of a visual/UI design. Dispatches 5 design lenses, merges findings, reports a verdict. Report-only, downstream… | SPEC-016, SPEC-018, SPEC-019 +12 | test-command-emit-sweep.sh, test-meta-review-verifiers.sh, test-meta-spec-depth.sh +1 |
 | `/kit:wayfind` | `[H]` | Plan a chunk of work too big for one agent session as a shared decision map: map.md + typed decision tickets in the mega-goal folder, resol… | SPEC-206, SPEC-207, SPEC-217 +2 | - |
-| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +75 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +51 |
+| `/kit:wrap` | `[H/I]` | The session-scoped landing step after ship: flips board rows, merges green PRs, checks deploys, tidies worktrees, prints the skim-first rep… | SPEC-020, SPEC-060, SPEC-072 +75 | test-bin-forwarders.sh, test-board-work.sh, test-boundary-lint.sh +52 |
 
 ## Agents
 

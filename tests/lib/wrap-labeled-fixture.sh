@@ -67,8 +67,10 @@ topic_branch case-unmerged-gone unmerged-gone.txt unmerged
 topic_branch case-pr-merged pr-merged.txt pr-head
 topic_branch case-pr-closed-unmerged pr-closed.txt closed
 
-# The after-fetch main advance is already an object in the bare origin.
-git -C "$seed" checkout -q -b next-main main
+# The in-fixture sync advance and the after-fetch main advance are prepared in bare origin.
+git -C "$seed" checkout -q -b sync-main main
+commit_file "$seed" sync.txt sync "advance main for sync cases"
+git -C "$seed" checkout -q -b next-main sync-main
 commit_file "$seed" later.txt later "advance main later"
 git -C "$seed" checkout -q main
 
@@ -89,12 +91,32 @@ for b in \
 done
 
 # Fresh cases: worktree and branch-only refs still at their creation commit, including
-# creation by SHA and revision expression rather than the default ref's name.
+# creation by SHA, revision expression, origin/HEAD, and non-matching upstream alias.
 git -C "$repo" worktree add -b case-fresh-zero "$root/wt-fresh-zero" origin/main >/dev/null 2>&1
 git -C "$repo" branch case-fresh-branch origin/main
 base_sha="$(git -C "$repo" rev-parse origin/main)"
 git -C "$repo" worktree add -b case-fresh-sha "$root/wt-fresh-sha" "$base_sha" >/dev/null 2>&1
 git -C "$repo" branch case-fresh-revision 'origin/main~0'
+git -C "$repo" worktree add -b case-fresh-origin-head "$root/wt-fresh-origin-head" origin/HEAD >/dev/null 2>&1
+git -C "$repo" worktree add -b case-fresh-upstream-alias "$root/wt-fresh-upstream-alias" origin/case-merged-ff >/dev/null 2>&1
+
+# Fresh worktrees that perform ordinary zero-commit sync/rename steps after origin/main advances.
+git -C "$repo" worktree add -b case-fresh-ff-sync "$root/wt-fresh-ff-sync" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add -b case-fresh-rebase "$root/wt-fresh-rebase" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add -b case-fresh-reset "$root/wt-fresh-reset" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add -b case-fresh-rename0 "$root/wt-fresh-rename" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add --track -b case-fresh-ff-upstream "$root/wt-fresh-ff-upstream" origin/main >/dev/null 2>&1
+git -C "$repo" worktree add -b case-fresh-ff-fetchhead "$root/wt-fresh-ff-fetchhead" origin/main >/dev/null 2>&1
+
+git -C "$bare" update-ref refs/heads/main refs/heads/sync-main
+git -C "$repo" fetch -q origin
+git -C "$root/wt-fresh-ff-sync" merge -q --ff-only origin/main >/dev/null 2>&1
+git -C "$root/wt-fresh-rebase" rebase -q origin/main >/dev/null 2>&1
+git -C "$root/wt-fresh-reset" reset -q --hard origin/main >/dev/null 2>&1
+git -C "$repo" branch -m case-fresh-rename0 case-fresh-rename >/dev/null 2>&1
+git -C "$root/wt-fresh-ff-upstream" merge -q --ff-only '@{u}' >/dev/null 2>&1
+git -C "$root/wt-fresh-ff-fetchhead" fetch -q origin main >/dev/null 2>&1
+git -C "$root/wt-fresh-ff-fetchhead" merge -q --ff-only FETCH_HEAD >/dev/null 2>&1
 
 # Removal-proof cases and the merged-then-more case.
 git -C "$repo" worktree add "$root/wt-merged-ff" case-merged-ff >/dev/null 2>&1
@@ -122,7 +144,7 @@ git -C "$bare" update-ref -d refs/heads/case-unmerged-gone
 
 mkdir -p "$root/bin"
 pr_tip="$(git -C "$repo" rev-parse refs/heads/case-pr-merged)"
-printf '[{"headRefName":"case-pr-merged","headRefOid":"%s","baseRefName":"main","mergedAt":"2026-01-01T00:00:00Z","isCrossRepository":false}]\n' \
+printf '[{"number":101,"headRefName":"case-pr-merged","headRefOid":"%s","baseRefName":"main","mergedAt":"2026-01-01T00:00:00Z","isCrossRepository":false}]\n' \
   "$pr_tip" > "$root/merged-pr.json"
 cat > "$root/bin/gh" <<'STUB'
 #!/usr/bin/env bash
@@ -153,23 +175,31 @@ STUB
 chmod +x "$root/bin/gh"
 
 cat > "$root/labels.tsv" <<'LABELS'
-fresh-zero	keep
-fresh-branch	keep
-fresh-sha	keep
-fresh-revision	keep
-merged-ff	remove
-merged-commit	remove
-squash-equiv	remove
-merged-more	keep
-merged-dirty	keep
-merged-untracked	keep
-unmerged-gone	keep
-detached-head	keep
-live-holder	keep
-protected-main	keep
-protected-master	keep
-pr-merged	remove
-pr-closed-unmerged	keep
+fresh-zero	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-branch	keep	branch	fresh branch, no own commits and no merged PR (leave it)
+fresh-sha	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-revision	keep	branch	fresh branch, no own commits and no merged PR (leave it)
+fresh-ff-sync	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-rebase	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-reset	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-rename	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-origin-head	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-upstream-alias	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-ff-upstream	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+fresh-ff-fetchhead	keep	worktree	fresh branch, no own commits and no merged PR (leave it)
+merged-ff	remove	worktree	-
+merged-commit	remove	branch	-
+squash-equiv	remove	worktree	-
+merged-more	keep	worktree	not proven merged
+merged-dirty	keep	worktree	dirty
+merged-untracked	keep	worktree	dirty
+unmerged-gone	keep	branch	no merged PR found
+detached-head	keep	worktree	detached HEAD
+live-holder	keep	worktree	busy, held by pid
+protected-main	keep	worktree	default or a protected branch name
+protected-master	keep	worktree	default or a protected branch name
+pr-merged	remove	branch	-
+pr-closed-unmerged	keep	branch	no merged PR found
 LABELS
 
 printf 'labeled fixture: %s\n' "$root"

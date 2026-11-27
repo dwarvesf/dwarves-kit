@@ -5,7 +5,7 @@
 # builders more than one suite uses. Sourced, never executed: a suite sets KIT_DIR,
 # then sources this file.
 # modules under test (the test-affected cache key greps this line):
-# lib/gate/branch-merged.sh lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-session.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh lib/wrap/wrap-ship.sh
+# lib/gate/branch-merged.sh lib/wrap/wrap.sh lib/wrap/wrap-common.sh lib/wrap/wrap-scan.sh lib/wrap/wrap-session.sh lib/wrap/wrap-apply.sh lib/wrap/wrap-sweep.sh lib/wrap/wrap-pull.sh lib/wrap/wrap-carry.sh lib/wrap/wrap-ci.sh lib/wrap/wrap-merge.sh lib/wrap/wrap-land.sh lib/wrap/wrap-start.sh lib/wrap/wrap-log.sh lib/wrap/wrap-deploy.sh lib/wrap/wrap-rebase.sh lib/wrap/report-lint.sh lib/wrap/wrap-adopt.sh lib/wrap/wrap-ship.sh
 
 set -uo pipefail
 WRAP="$KIT_DIR/bin/wrap"
@@ -84,6 +84,36 @@ case "$sub" in
     # the branch, GH_STUB_COMPARE_BASE the merge base (default: the sha asked about, so the
     # default branch holds it), GH_STUB_COMPARE_RC a failed compare read.
     case "${1:-}" in
+      graphql)
+        [ "${GH_STUB_GRAPHQL_RC:-0}" = "0" ] || exit "${GH_STUB_GRAPHQL_RC}"
+        gql_in="$(cat)"
+        if [ -n "${GH_STUB_GRAPHQL_JSON:-}" ]; then
+          printf '%s\n' "$GH_STUB_GRAPHQL_JSON"
+          exit 0
+        fi
+        if [ "${GH_STUB_GRAPHQL:-0}" = "1" ]; then
+          gql_open="$(printf '%s' "${GH_STUB_OPEN_PRS:-[]}" | jq -c '[.[] | . + {state: (.state // "OPEN"), isCrossRepository: (.isCrossRepository // false), baseRefName: (.baseRefName // "main")}]')"
+          gql_mall="${GH_STUB_MERGED_ALL:-[]}"
+          gql_repo_obj="$(jq -cn --argjson open "$gql_open" '{openPrs: {pageInfo: {hasNextPage: false}, nodes: $open}}')"
+          while IFS=$'\t' read -r gk gv; do
+            [ -n "$gk" ] || continue
+            gidx="${gk#b}"
+            gsan="$(printf '%s' "$gv" | tr -c 'A-Za-z0-9' '_')"
+            eval "gm=\"\${GH_STUB_MERGED_${gsan}:-}\""
+            if [ -z "$gm" ]; then
+              gm="$(printf '%s' "$gql_mall" | jq -c --arg b "$gv" '[.[] | select(.headRefName == $b)]')"
+            fi
+            [ -n "$gm" ] || gm="[]"
+            gm="$(printf '%s' "$gm" | jq -c --arg b "$gv" '[.[] | . + {state: (.state // "MERGED"), headRefName: (.headRefName // $b), isCrossRepository: (.isCrossRepository // false)}]')"
+            eval "gc=\"\${GH_STUB_CLOSED_${gsan}:-}\""
+            [ -n "$gc" ] || gc="[]"
+            gc="$(printf '%s' "$gc" | jq -c --arg b "$gv" '[.[] | . + {state: (.state // "CLOSED"), headRefName: (.headRefName // $b), isCrossRepository: (.isCrossRepository // false)}]')"
+            gql_repo_obj="$(printf '%s' "$gql_repo_obj" | jq -c --arg mk "m${gidx}" --arg ck "c${gidx}" --argjson m "$gm" --argjson c "$gc" '. + {($mk): {pageInfo: {hasNextPage: false}, nodes: $m}, ($ck): {nodes: $c}}')"
+          done < <(printf '%s' "$gql_in" | jq -r '.variables // {} | to_entries[] | select(.key | test("^b[0-9]+$")) | "\(.key)\t\(.value)"')
+          jq -cn --argjson repo "$gql_repo_obj" '{data: {repository: $repo}}'
+          exit 0
+        fi
+        exit 1 ;;
       repos/*/compare/*)
         [ "${GH_STUB_COMPARE_RC:-0}" = "0" ] || exit "$GH_STUB_COMPARE_RC"
         want="${1#*/compare/}"; want="${want%%...*}"

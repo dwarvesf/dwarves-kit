@@ -1077,6 +1077,7 @@ _land_run() {
   [ -z "$proof_base" ] || proof_block="$(_land_proof_block "$wt" "$proof_base" "${pr_ref:-#${n}}")"
   _LAND_STEP=tidy
   _land_tidy "$repo" "$wt" "$branch" "$def" "$url" "$tip" "" "$base_ignored" "$obranch"; rc=$?
+  [ "$_LAND_KIND" = "merged" ] && _post_merge_sweep "$repo"
   [ -z "$proof_block" ] || printf '%s\n' "$proof_block"
   return "$rc"
 }
@@ -1161,6 +1162,7 @@ _land_tidy() {
     _wt_cleared "$repo" "$wt" || { echo "     FAILED remove worktree ${wt}: git still lists it, so ${branch} stays" >&2; return 2; }
     echo "     worktree ${wt} was already removed by the merge"
     _LAND_WT=removed
+    _run_seam_workspace_rm "$(kit_config_get_root wrap.workspace_rm "")" "$wt" "$repo" >/dev/null
     if git -C "$repo" rev-parse -q --verify "refs/heads/${branch}" >/dev/null 2>&1; then
       if [ "$(git -C "$repo" rev-parse "refs/heads/${branch}" 2>/dev/null)" != "$tip" ]; then
         echo "     ${branch} changed since it was checked; branch left in place" >&2
@@ -1209,6 +1211,7 @@ _land_tidy() {
   fi
   echo "     removed worktree ${wt}"
   _LAND_WT=removed
+  _run_seam_workspace_rm "$(kit_config_get_root wrap.workspace_rm "")" "$wt" "$repo" >/dev/null
   if git -C "$repo" branch -D "$branch" >/dev/null 2>&1; then
     echo "     deleted ${branch}"
   else

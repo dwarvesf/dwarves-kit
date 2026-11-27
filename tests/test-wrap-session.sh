@@ -98,7 +98,10 @@ refs_after="$(git -C "$clone" for-each-ref 2>/dev/null)"
 index_after="$(stat -c %Y "$clone/.git/index" 2>/dev/null || stat -f %m "$clone/.git/index" 2>/dev/null)"
 if [ -e "$gd_common/FETCH_HEAD" ]; then fh_after=yes; else fh_after=no; fi
 chk "the fallback gather exits 0" "$rc"
-jqok "without wrap sweep the row falls back to read-only inventory text" "$out" '.repos[0].sweep.format == "text" and .repos[0].sweep.document == null and (.repos[0].sweep.text|type) == "string" and (.repos[0].sweep.text | contains("read-only; no fetch"))'
+jqok "with wrap sweep present the gather reads its JSON (run with --no-fetch)" "$out" '.repos[0].sweep.format == "json" and .repos[0].sweep.document.schema == "wrap-sweep/1"'
+nosweep="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"; printf '#!/bin/sh\nexit 64\n' > "$nosweep"; chmod +x "$nosweep"
+out_ns="$(WRAP_SESSION_WRAP_BIN="$nosweep" "$WRAP" session --json "$clone" 2>/dev/null)"; rm -f "$nosweep"
+jqok "without wrap sweep the row falls back to read-only inventory text" "$out_ns" '.repos[0].sweep.format == "text" and .repos[0].sweep.document == null and (.repos[0].sweep.text|type) == "string" and (.repos[0].sweep.text | contains("read-only; no fetch"))'
 chk "the fallback gather changes no ref" "$([ "$refs_before" = "$refs_after" ]; echo $?)"
 chk "the fallback gather neither creates nor removes FETCH_HEAD" "$([ "$fh_before" = "$fh_after" ]; echo $?)"
 chk "the fallback gather does not refresh the index" "$([ "$index_before" = "$index_after" ]; echo $?)"
@@ -193,7 +196,7 @@ jqok "an unwritable writer mark is conservatively foreign" "$out" '.foreign_acti
 # ===========================================================================
 echo "=== fetch_error is measured, not hardcoded ==="
 # ===========================================================================
-jqok "a readable origin ref reports that fetch was not attempted" "$("$WRAP" session --json "$clone" 2>/dev/null)" '.repos[0].fetch_error == "fetch not attempted (read-only fallback); origin data may be stale"'
+jqok "a readable origin ref reports that fetch was not attempted" "$("$WRAP" session --json "$clone" 2>/dev/null)" '.repos[0].fetch_error == "fetch not attempted (read-only gather); origin data may be stale"'
 noorigin="$TMPD/no-origin-repo"
 mkdir -p "$noorigin"
 git -C "$noorigin" init -q

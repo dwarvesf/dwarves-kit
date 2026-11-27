@@ -10,16 +10,19 @@ echo "=== help and usage ==="
 # ===========================================================================
 out="$("$WRAP" --help 2>&1)"; rc=$?
 chk "--help exits 0" "$rc"
-for verb in scan session apply merge start log default-branch knowledge-root stage deploy-wait rebase; do
+for verb in scan session apply sweep merge start log default-branch knowledge-root stage deploy-wait rebase; do
   chk_has "--help names $verb" "$out" "$verb"
 done
-for verb in scan session apply merge land start ship log default-branch knowledge-root follow-mode deploy-wait stage rebase adopt flick-7b; do
+for verb in scan session apply sweep merge land start ship log default-branch knowledge-root follow-mode deploy-wait stage rebase adopt flick-7b; do
   for hf in --help -h; do
     out="$("$WRAP" "$verb" "$hf" 2>&1 </dev/null)"; rc=$?
     chk "$verb $hf exits 0" "$rc"
     chk_has "$verb $hf prints its usage" "$out" "wrap.sh $verb"
   done
 done
+out="$("$WRAP" sweep 2>&1)"; rc=$?
+chk "sweep with no root and empty wrap.sweep_roots exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "sweep error names wrap.sweep_roots" "$out" "wrap.sweep_roots"
 out="$("$WRAP" scan 2>&1)"; rc=$?
 chk "scan with no argument exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 out="$("$WRAP" apply 2>&1)"; rc=$?
