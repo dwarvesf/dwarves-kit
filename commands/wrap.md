@@ -123,11 +123,10 @@ A full-lane worker reserves the spec number, writes and commits the spec with gr
 **Land, one repo at a time, after the last worker reports.**
 
 1. Size the real diff with `bash lib/classify/lane-classify.sh risk --files`; a branch now full takes the draft path.
-2. `wrap.merge_own_prs` false: stop here; `Shipped` lists the PR `OPEN`. Every refusal above step 10 still holds: never merge a PR the operator did not open, never force-push.
-3. Run `bin/wrap rebase <wt>` first. When it prints `rebased`, re-run the worker's verification command. A refusal or red re-run keeps the item REPORTED and the worktree in `Left alone`.
-4. Push from the worktree as `cd <wt> && git push -u origin HEAD:<branch>` so the home ship-gate judges it. A ship-gate refusal (a missing proof, a missing gate) is never overridden here. Open the PR there. Never use `land` because `land` merges right after it opens a PR and never reads the checks.
-5. A foreign-activity stop does not end the landing: step 4 merges with `--no-pull` added. Inside this background follow-through, `gh pr checks <n> --watch` may wait for checks; it never holds the first report. Merge only through the PR gate as `bin/wrap merge --apply --pr <n> <repo>` (a stopped repo adds `--no-pull`): it merges only an own PR. A SKIP or TREE MISMATCH leaves it OPEN.
-6. Tidy through the own-scope dry run, then apply; a stopped repo adds `--no-pull`.
+2. Run `bin/wrap rebase <wt>` first. When it prints `rebased`, re-run the worker's verification command. A refusal or red re-run keeps the item REPORTED and the worktree in `Left alone`. Then push from the worktree as `cd <wt> && git push -u origin HEAD:<branch>` so the home ship-gate judges it. A ship-gate refusal (a missing proof, a missing gate) is never overridden here. Open the PR there. Never use `land` because `land` merges right after it opens a PR and never reads the checks.
+3. Re-run the step 0 check for the repo. `wrap.merge_own_prs` false: stop here; `Shipped` lists the PR `OPEN`. Every refusal above step 10 still holds: never merge a PR the operator did not open, never force-push. A foreign-activity stop does not end the landing: step 4 merges with `--no-pull` added.
+4. Inside this background follow-through, `gh pr checks <n> --watch` may wait for checks; it never holds the first report. Merge only through the PR gate as `bin/wrap merge --apply --pr <n> <repo>` (a stopped repo adds `--no-pull`): it merges only an own PR. A SKIP or TREE MISMATCH leaves it OPEN.
+5. Tidy through the own-scope dry run, then apply; a stopped repo adds `--no-pull`.
 
 Print the second report only when follow-through ran, in the same grammar under `### Step 10: follow-through:`. It has no `**Seam:**` line. Its `Needs you` lists only new review items or blockers. Record `bash lib/gate/gate-ledger.sh record <rid> wrap-follow ran` and close `bash lib/gate/gate-ledger.sh outcome <rid> wrap-follow end`.
 
