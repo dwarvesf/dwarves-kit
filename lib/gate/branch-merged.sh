@@ -62,6 +62,43 @@ _absorbed() {
   return 0
 }
 
+# _branch_never_committed <repo> <default> <branch> -- 0 when the local branch ref shows no
+# sign of ever moving past its creation off the default line. The branch reflog is the only
+# place that distinction survives after a merge: once origin/<default> contains the tip, the
+# graph of a fast-forwarded real branch and of a never-used worker branch is identical. Exactly
+# one reflog entry means fresh; so does a missing or expired reflog, because deletion safety
+# wins over cleanup. A copy explicitly made from another feature ref that still exists is not
+# fresh: its log already carries that feature's commits. A SHA, a revision expression, an
+# unreadable source, or HEAD fails safe as fresh. This only distrusts the trivial-ancestor
+# rung; absorbed content and an exact merged PR still prove SAFE.
+_branch_never_committed() {
+  local repo="$1" def="$2" b="$3" entries msg n source
+  entries="$(git -C "$repo" reflog show --format='%H%x09%gs' "refs/heads/${b}" 2>/dev/null)"
+  [ -n "$entries" ] || return 0
+  n="$(printf '%s\n' "$entries" | awk 'END { print NR }')"
+  [ "$n" = 1 ] || return 1
+  msg="${entries#*	}"
+  case "$msg" in
+    "branch: Created from "*) source="${msg#branch: Created from }" ;;
+    *) return 0 ;;
+  esac
+  case "$source" in
+    "origin/${def}"|"refs/remotes/origin/${def}"|"${def}"|"HEAD") return 0 ;;
+  esac
+  # Revision operators cannot appear in a refname. Treating them as feature copies would
+  # reopen the false deletion of a worker created from an older default-line commit.
+  case "$source" in
+    *[!A-Za-z0-9._/-]*) return 0 ;;
+  esac
+  if git -C "$repo" show-ref --verify --quiet "$source" ||
+    git -C "$repo" show-ref --verify --quiet "refs/heads/${source}" ||
+    git -C "$repo" show-ref --verify --quiet "refs/remotes/${source}" ||
+    git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/${source}"; then
+    return 1
+  fi
+  return 0
+}
+
 # _squash_json <repo-url> <branch> -- the merged-PR list gh reports for that head.
 _squash_json() {
   gh pr list --repo "$1" --head "$2" --state merged \
@@ -84,6 +121,7 @@ _squash_rows() {
 #   LEAVE tip <sha>          merged into the default branch, but from another tip (sha = PR head)
 #   LEAVE base <name>        merged into another branch
 #   LEAVE none <phrase>      no merged PR for this head (also the answer for unusable JSON)
+#   LEAVE fresh <phrase>     a never-committed branch whose only proof would be trivial ancestry
 #   LEAVE nogh <gh note>     the squash rung could not run: gh is not ok
 # A caller branches on the first two words and prints the detail, never the other way round.
 # The detail of a LEAVE tip or base is data (a sha, a branch name); every other detail is a
@@ -121,7 +159,7 @@ _squash_verdict() {
 # branch called origin/<def> beats the remote-tracking ref. Either once proved an unlanded
 # worktree branch "merged".
 branch_merged() {
-  local need=any tip="" prsjson="" numbers=0 repo def ghs b json rows grc=0 out
+  local need=any tip="" prsjson="" numbers=0 repo def ghs b json rows grc=0 out fresh=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --need) need="${2:-}"; shift 2 || return 64 ;;
@@ -137,9 +175,12 @@ branch_merged() {
   case "$need" in any|pr) ;; *) return 64 ;; esac
   repo="$1"; def="$2"; ghs="$3"; b="$4"
   [ -n "$tip" ] || tip="$(git -C "$repo" rev-parse --verify --quiet "refs/heads/${b}" 2>/dev/null)"
+  if [ "$need" = any ] && [ "$numbers" = 0 ] && _branch_never_committed "$repo" "$def" "$b"; then
+    fresh=1
+  fi
   if [ "$need" = any ] && [ "$numbers" = 0 ]; then
     if git -C "$repo" merge-base --is-ancestor "$tip" "refs/remotes/origin/${def}" 2>/dev/null; then
-      printf 'SAFE ancestor ancestor of origin/%s\n' "$def"; return 0
+      [ "$fresh" = 1 ] || { printf 'SAFE ancestor ancestor of origin/%s\n' "$def"; return 0; }
     fi
     if _absorbed "$repo" "$def" "$tip"; then
       printf 'SAFE absorbed content already on origin/%s\n' "$def"; return 0
@@ -147,6 +188,9 @@ branch_merged() {
   fi
   if [ "$ghs" != "ok" ]; then
     [ "$numbers" = 1 ] && return 2
+    if [ "$fresh" = 1 ]; then
+      printf 'LEAVE fresh fresh branch, no own commits and no merged PR (leave it)\n'; return 0
+    fi
     printf 'LEAVE nogh %s\n' "$(_gh_note "$ghs")"; return 0
   fi
   if [ -n "$prsjson" ]; then
@@ -162,5 +206,13 @@ branch_merged() {
     [ -n "$out" ] || return 1
     printf '%s\n' "$out"; return 0
   fi
-  _squash_verdict "$rows" "$tip" "$def"
+  out="$(_squash_verdict "$rows" "$tip" "$def")"
+  if [ "$fresh" = 1 ]; then
+    case "$out" in
+      "SAFE squash "*) printf '%s\n' "$out" ;;
+      *) printf 'LEAVE fresh fresh branch, no own commits and no merged PR (leave it)\n' ;;
+    esac
+    return 0
+  fi
+  printf '%s\n' "$out"
 }
