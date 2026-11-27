@@ -34,7 +34,7 @@ _scan_repo() {
   echo "-- worktrees:"
   git -C "$repo" worktree list 2>/dev/null | sed 's/^/     /'
 
-  echo "-- local branches (an ancestor of origin/${def} is SAFE-d; a squash merge needs the gh proof):"
+  echo "-- local branches (a used branch ancestor of origin/${def} is SAFE-d; a fresh branch stays LEAVE):"
   local b lcode lreason
   # The proofs name full refs (see branch_merged). A squash merge needs the gh proof; any LEAVE
   # reads the same here, apply is where tip, base and none part ways.

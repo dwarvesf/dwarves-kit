@@ -1165,11 +1165,23 @@ echo "=== apply --apply: an ancestor of origin/<default> goes whatever its upstr
 # main sits behind origin/main here, so both branches fail git's check while wrap's proof
 # (ancestor of origin/main) holds: one has no upstream, one tracks a ref that lacks its tip.
 build_union_repo noup; advance_union_repo noup
-NU="$TMPD/uclone-noup"
+NU="$TMPD/uclone-noup"; NUBARE="$TMPD/ubare-noup"
 git -C "$NU" fetch -q origin
-git -C "$NU" branch --no-track no-upstream origin/main
+# The branches must carry real merged work, not just point at origin/main: a never-used
+# branch off the default line is now kept as fresh. Feature refs push; main itself is
+# advanced inside the local bare origin, never pushed.
+git -C "$NU" checkout -q --no-track -b no-upstream origin/main
+echo merged > "$NU/no-upstream.txt"; git -C "$NU" add no-upstream.txt; git -C "$NU" commit -qm "feat: no-upstream"
+git -C "$NU" push -q origin no-upstream:no-upstream
+git -C "$NUBARE" update-ref refs/heads/main refs/heads/no-upstream
+git -C "$NU" fetch -q origin
 git -C "$NU" branch --no-track old-base main
-git -C "$NU" branch --no-track other-upstream origin/main
+git -C "$NU" checkout -q --no-track -b other-upstream origin/main
+echo merged > "$NU/other-upstream.txt"; git -C "$NU" add other-upstream.txt; git -C "$NU" commit -qm "feat: other-upstream"
+git -C "$NU" push -q origin other-upstream:other-upstream
+git -C "$NUBARE" update-ref refs/heads/main refs/heads/other-upstream
+git -C "$NU" fetch -q origin
+git -C "$NU" checkout -q main
 git -C "$NU" branch -q -u old-base other-upstream
 out="$("$WRAP" apply --apply "$NU" 2>&1)"; rc=$?
 chk "no upstream: apply exits 0" "$rc"

@@ -41,7 +41,7 @@ A `<repo>` or `<worktree>` argument is a path. Pass an absolute path. `wrap <ver
 -- worktrees:
      <repo>                                   55f32d0 [main]
      <repo>/.claude/worktrees/demo-change     55f32d0 [feat/demo-change]
--- local branches (an ancestor of origin/main is SAFE-d; a squash merge needs the gh proof):
+-- local branches (a used branch ancestor of origin/main is SAFE-d; a fresh branch stays LEAVE):
      feat/demo-change  [SAFE-d: ancestor of origin/main]
 ```
 
