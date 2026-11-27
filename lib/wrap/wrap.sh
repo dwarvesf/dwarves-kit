@@ -4,7 +4,7 @@
 #
 #   wrap.sh scan  [--under <root>]... <repo> [<repo>...]    report only, exit 0
 #   wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]   one read-only session gather, schema wrap-session/1
-#   wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>   live per-worktree foreign-writer facts, schema wrap-writers/1
+#   wrap.sh session --writers [--since <epoch>] [--check-mark <state>] [--mark <state>] [--self <worktree>]... [--text] <repo>   live per-worktree foreign-writer facts, schema wrap-writers/1
 #   wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [...]  dry-run by default
 #   wrap.sh apply --pull-only [--apply] <repo> [...]        fetch + pull stage alone, no worktree/branch/stray write
 #   wrap.sh apply --no-pull [--apply] [--own <path>]... <repo> [...]  tidy without the pull or the stray-commits move (a step 0 stop)

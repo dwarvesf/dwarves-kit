@@ -79,28 +79,99 @@ _session_abs_path() {
   [ -d "$1" ] && (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"
 }
 
-# _session_writers_json <repo> <since> <self> -- live per-worktree foreign-writer facts.
-# The session's own worktree is excluded. Each row carries its own index.lock and reflog
-# facts; nothing is collapsed into one global maximum.
+# _session_main_checkout <repo> -- the primary checkout behind a worktree or main repo.
+_session_main_checkout() {
+  local common main
+  common="$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  case "$common" in
+    */.git) main="${common%/.git}" ;;
+    *) return 1 ;;
+  esac
+  _session_abs_path "$main"
+}
+
+# _session_reflog_identity <worktree> -- HEAD reflog head, entry time, and content digest.
+# The digest changes on every reflog append, including one that lands on the same commit.
+_session_reflog_identity() {
+  local wt="$1" gd log head latest digest
+  head="$(git -C "$wt" log -g -1 --format=%H HEAD 2>/dev/null)"
+  latest="$(_session_reflog_latest_at "$wt" 2>/dev/null)"
+  gd="$(git -C "$wt" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+  log="$gd/logs/HEAD"
+  digest=""
+  [ -n "$gd" ] && [ -f "$log" ] && digest="$(git hash-object "$log" 2>/dev/null)"
+  case "$head" in ''|*[!0-9a-f]*) head=null ;; *) head="\"$head\"" ;; esac
+  case "$latest" in ''|*[!0-9]*) latest=null ;; esac
+  case "$digest" in ''|*[!0-9a-f]*) digest=null ;; *) digest="\"$digest\"" ;; esac
+  jq -cn --argjson head "$head" --argjson latest "$latest" --argjson digest "$digest" \
+    '{head:$head,latest_at:$latest,digest:$digest}'
+}
+
+# _session_writer_mark_write <file> <repo> <rows-json> -- atomically save every worktree's
+# reflog identity. The mark is scratch state, never repository state.
+_session_writer_mark_write() {
+  local file="$1" repo="$2" rows="$3" tmp rc
+  [ ! -d "$file" ] || return 1
+  tmp="$(mktemp "${file}.XXXXXX")" || return 1
+  jq -cn --arg repo "$repo" --argjson rows "$rows" --argjson now "$(date +%s)" \
+    '{schema:"wrap-writer-mark/1",marked_at_epoch:$now,repo:$repo,
+      worktrees:[$rows[] | {path:.path,reflog:{head:.reflog.head,latest_at:.reflog.latest_at,digest:.reflog.digest}}]}' \
+    > "$tmp" 2>/dev/null
+  rc=$?
+  if [ "$rc" -eq 0 ]; then mv "$tmp" "$file" 2>/dev/null; rc=$?; fi
+  [ ! -e "$tmp" ] || rm -f "$tmp"
+  return "$rc"
+}
+
+# _session_writers_json <repo> <since> <check-mark> <write-mark> [self]... --
+# live per-worktree foreign-writer facts. Session worktrees are excluded except the
+# main checkout, whose lock always counts and whose reflog is judged against the mark.
 _session_writers_json() {
-  local input="$1" since="$2" self_in="$3" repo self rows tmp row wt branch detached head
-  local wt_abs gd lock_exists lock_age ts newer foreign rows_json any_foreign self_top
+  local input="$1" since="$2" check_mark="$3" write_mark="$4"
+  shift 4
+  local repo rows tmp row wt branch detached head main_top
+  local wt_abs gd lock_exists lock_age ts newer foreign rows_json any_foreign
+  local ident rhead rdigest changed marked_head marked_digest mark_found mark_valid mark_error
+  local self_in self_top selfs_json filtered_rows write_error=""
+  local -a self_tops=()
   repo="$(_session_abs_path "$input")"
   if ! _is_repo "$repo"; then
     jq -cn --arg path "$input" '{schema:"wrap-writers/1",repo:$path,is_repo:false,error:"not a git repo",worktrees:[]}'
     return 0
   fi
-  self_in="${self_in:-$PWD}"
-  self_top="$(git -C "$self_in" rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
-  [ -n "$self_top" ] || self_top="$(_session_abs_path "$self_in")"
+  if [ $# -eq 0 ]; then set -- "$PWD"; fi
+  for self_in in "$@"; do
+    self_top="$(git -C "$self_in" rev-parse --path-format=absolute --show-toplevel 2>/dev/null)"
+    [ -n "$self_top" ] || self_top="$(_session_abs_path "$self_in")"
+    self_tops+=("$self_top")
+  done
+  selfs_json='[]'
+  for self_top in "${self_tops[@]}"; do
+    selfs_json="$(jq -cn --argjson rows "$selfs_json" --arg path "$self_top" '$rows + [$path]' 2>/dev/null)"
+  done
+  [ -n "$selfs_json" ] || selfs_json='[]'
+  main_top="$(_session_main_checkout "$repo" 2>/dev/null)"
   rows="$(_session_worktrees_json "$repo")"
   [ -n "$rows" ] || rows='[]'
+  if [ -z "$main_top" ]; then
+    main_top="$(printf '%s' "$rows" | jq -r '.[0].path // empty' 2>/dev/null)"
+    [ -z "$main_top" ] || main_top="$(_session_abs_path "$main_top")"
+  fi
+
+  mark_valid=null
+  if [ -n "$check_mark" ]; then
+    if [ -f "$check_mark" ] && jq -e '.schema == "wrap-writer-mark/1" and (.worktrees|type) == "array"' "$check_mark" >/dev/null 2>&1; then
+      mark_valid=true
+    else
+      mark_valid=false
+    fi
+  fi
+
   tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")"
   printf '%s' "$rows" | jq -c '.[]' 2>/dev/null | while IFS= read -r row; do
     wt="$(printf '%s' "$row" | jq -r '.path' 2>/dev/null)"
     [ -n "$wt" ] || continue
     wt_abs="$(_session_abs_path "$wt")"
-    [ "$wt_abs" = "$self_top" ] && continue
     branch="$(printf '%s' "$row" | jq -r '.branch // ""' 2>/dev/null)"
     detached="$(printf '%s' "$row" | jq -r '.detached' 2>/dev/null)"
     head="$(printf '%s' "$row" | jq -r '.head // ""' 2>/dev/null)"
@@ -111,37 +182,80 @@ _session_writers_json() {
       lock_age="$(( $(date +%s) - $(_mtime "$gd/index.lock") ))"
       case "$lock_age" in ''|*[!0-9-]*) lock_age=null ;; esac
     fi
-    ts="$(_session_reflog_latest_at "$wt" 2>/dev/null)"
-    case "$ts" in ''|*[!0-9]*) ts=null ;; esac
+    ident="$(_session_reflog_identity "$wt" 2>/dev/null)"
+    [ -n "$ident" ] || ident='{"head":null,"latest_at":null,"digest":null}'
+    ts="$(printf '%s' "$ident" | jq -r '.latest_at // null' 2>/dev/null)"
+    rhead="$(printf '%s' "$ident" | jq -r 'if .head == null then "" else .head end' 2>/dev/null)"
+    rdigest="$(printf '%s' "$ident" | jq -r 'if .digest == null then "" else .digest end' 2>/dev/null)"
     newer=null
     if [ "$since" != "null" ] && [ "$ts" != "null" ]; then
       if [ "$ts" -gt "$since" ]; then newer=true; else newer=false; fi
     fi
+    changed=null
+    if [ -n "$check_mark" ] && [ "$mark_valid" = true ]; then
+      mark_found="$(jq -r --arg path "$wt_abs" '([.worktrees[]? | select(.path == $path)] | length) > 0' "$check_mark" 2>/dev/null)"
+      marked_head="$(jq -r --arg path "$wt_abs" '(([.worktrees[]? | select(.path == $path)][0]).reflog.head) // ""' "$check_mark" 2>/dev/null)"
+      marked_digest="$(jq -r --arg path "$wt_abs" '(([.worktrees[]? | select(.path == $path)][0]).reflog.digest) // ""' "$check_mark" 2>/dev/null)"
+      if [ "$mark_found" != true ]; then
+        changed=true
+      elif [ "$marked_head" != "$rhead" ] || [ "$marked_digest" != "$rdigest" ]; then
+        changed=true
+      else
+        changed=false
+      fi
+    fi
     foreign=false
     [ "$lock_exists" = true ] && foreign=true
-    [ "$newer" = true ] && foreign=true
+    if [ -n "$check_mark" ]; then
+      [ "$mark_valid" != true ] && foreign=true
+      [ "$changed" = true ] && foreign=true
+    else
+      [ "$newer" = true ] && foreign=true
+    fi
     jq -cn --arg path "$wt_abs" --arg branch "$branch" --arg head "$head" \
       --argjson detached "$detached" --argjson lock_exists "$lock_exists" --argjson lock_age "$lock_age" \
-      --argjson ts "$ts" --argjson newer "$newer" --argjson foreign "$foreign" \
+      --argjson ts "$ts" --argjson newer "$newer" --arg reflog_head "$rhead" --arg reflog_digest "$rdigest" \
+      --argjson changed "$changed" --argjson foreign "$foreign" \
       '{path:$path,branch:(if $branch=="" then null else $branch end),head:(if $head=="" then null else $head end),
         detached:$detached,index_lock:{present:$lock_exists,age_seconds:$lock_age},
-        reflog:{latest_at:$ts,newer_than_since:$newer},foreign_activity:$foreign}' >> "$tmp"
+        reflog:{latest_at:$ts,newer_than_since:$newer,
+          head:(if $reflog_head=="" then null else $reflog_head end),
+          digest:(if $reflog_digest=="" then null else $reflog_digest end),changed_since_mark:$changed},
+        foreign_activity:$foreign}' >> "$tmp"
   done
   rows_json="$(jq -s . "$tmp" 2>/dev/null)"; [ -n "$rows_json" ] || rows_json='[]'
   rm -f "$tmp"
-  any_foreign="$(printf '%s' "$rows_json" | jq 'any(.[]; .foreign_activity)' 2>/dev/null)"
+
+  if [ -n "$write_mark" ]; then
+    if ! _session_writer_mark_write "$write_mark" "$repo" "$rows_json"; then
+      write_error="writer mark write failed"
+    fi
+  fi
+
+  filtered_rows="$(jq -cn --argjson rows "$rows_json" --argjson selves "$selfs_json" --arg main "$main_top" \
+    '[ $rows[] | . as $row | select(($row.path == $main) or (($selves | index($row.path)) == null)) ]' 2>/dev/null)"
+  [ -n "$filtered_rows" ] || filtered_rows='[]'
+  any_foreign="$(printf '%s' "$filtered_rows" | jq 'any(.[]; .foreign_activity)' 2>/dev/null)"
   [ -n "$any_foreign" ] || any_foreign=false
-  jq -cn --arg repo "$repo" --arg self "$self_top" --argjson since "$since" \
-    --argjson rows "$rows_json" --argjson any_foreign "$any_foreign" --argjson now "$(date +%s)" \
+  [ "$mark_valid" = false ] && any_foreign=true
+  [ -n "$write_error" ] && any_foreign=true
+  mark_error=null
+  [ "$mark_valid" = false ] && mark_error='"writer mark missing or invalid"'
+  [ -n "$write_error" ] && mark_error="\"$write_error\""
+  jq -cn --arg repo "$repo" --arg main "$main_top" --argjson selves "$selfs_json" --argjson since "$since" \
+    --arg check_mark "$check_mark" --arg write_mark "$write_mark" --argjson mark_valid "$mark_valid" --argjson mark_error "$mark_error" \
+    --argjson rows "$filtered_rows" --argjson any_foreign "$any_foreign" --argjson now "$(date +%s)" \
     '{schema:"wrap-writers/1",generated_at_epoch:$now,repo:$repo,is_repo:true,error:null,
-      since:$since,self:(if $self=="" then null else $self end),foreign_activity:$any_foreign,worktrees:$rows}'
+      since:$since,self:$selves,main_checkout:(if $main=="" then null else $main end),
+      writer_mark:{check:(if $check_mark=="" then null else $check_mark end),write:(if $write_mark=="" then null else $write_mark end),valid:$mark_valid,error:$mark_error},
+      foreign_activity:$any_foreign,worktrees:$rows}'
 }
 
 # _session_writers_text <json> -- the same writer facts in the text fallback shape.
 _session_writers_text() {
   printf '%s' "$1" | jq -r '
-    "wrap-writers repo=\(.repo) is_repo=\(.is_repo) since=\(.since // "null") self=\(.self // "null") foreign_activity=\(.foreign_activity // false)",
-    (.worktrees[]? | "writer path=\(.path) branch=\(.branch // "null") detached=\(.detached) index_lock_present=\(.index_lock.present) index_lock_age_seconds=\(if .index_lock.age_seconds == null then "null" else .index_lock.age_seconds end) reflog_latest_at=\(if .reflog.latest_at == null then "null" else .reflog.latest_at end) reflog_newer_than_since=\(if .reflog.newer_than_since == null then "null" else .reflog.newer_than_since end) foreign_activity=\(.foreign_activity)")' 2>/dev/null
+    "wrap-writers repo=\(.repo) is_repo=\(.is_repo) since=\(.since // "null") self=\((.self // []) | join(",")) foreign_activity=\(.foreign_activity // false)",
+    (.worktrees[]? | "writer path=\(.path) branch=\(.branch // "null") detached=\(.detached) index_lock_present=\(.index_lock.present) index_lock_age_seconds=\(if .index_lock.age_seconds == null then "null" else .index_lock.age_seconds end) reflog_latest_at=\(if .reflog.latest_at == null then "null" else .reflog.latest_at end) reflog_newer_than_since=\(if .reflog.newer_than_since == null then "null" else .reflog.newer_than_since end) reflog_changed_since_mark=\(if .reflog.changed_since_mark == null then "null" else .reflog.changed_since_mark end) foreign_activity=\(.foreign_activity)")' 2>/dev/null
 }
 
 # _session_checkout_json <repo> <default-branch> -- checkout, dirty, counts, lock, reflog facts.
@@ -478,19 +592,24 @@ _session_repo_json() {
 
 cmd_session() {
   local json=0 follow="" arg count=0 start end duration tmp repos config activity
-  local writers=0 writers_text=0 since_json=null self="" start_epoch writers_out
-  local -a repos_args=()
+  local writers=0 writers_text=0 since_json=null start_epoch writers_out check_mark="" write_mark=""
+  local wusage="usage: wrap.sh session --writers [--since <epoch>] [--check-mark <state>] [--mark <state>] [--self <worktree>]... [--text] <repo>"
+  local -a repos_args=() selfs=()
   while [ $# -gt 0 ]; do
     arg="$1"
     case "$arg" in
       --json) json=1 ;;
       --writers) writers=1 ;;
       --text) writers_text=1 ;;
-      --since) [ $# -ge 2 ] || { echo "usage: wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>" >&2; return 64; }
+      --since) [ $# -ge 2 ] || { echo "$wusage" >&2; return 64; }
         case "$2" in ''|*[!0-9]*) echo "wrap.sh session --since: epoch must be a whole number" >&2; return 64 ;; esac
         since_json="$2"; shift 2; continue ;;
-      --self) [ $# -ge 2 ] || { echo "usage: wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>" >&2; return 64; }
-        self="$2"; shift 2; continue ;;
+      --self) [ $# -ge 2 ] || { echo "$wusage" >&2; return 64; }
+        selfs+=("$2"); shift 2; continue ;;
+      --mark) [ $# -ge 2 ] || { echo "$wusage" >&2; return 64; }
+        write_mark="$2"; shift 2; continue ;;
+      --check-mark) [ $# -ge 2 ] || { echo "$wusage" >&2; return 64; }
+        check_mark="$2"; shift 2; continue ;;
       --follow-mode) [ $# -ge 2 ] || { echo "usage: wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]" >&2; return 64; }
         case "$2" in lanes|all) ;; *) echo "usage: wrap.sh session --json [--follow-mode lanes|all] <repo> [<repo>...]" >&2; return 64 ;; esac
         follow="$2"; shift 2; continue ;;
@@ -503,11 +622,18 @@ cmd_session() {
   count="${#repos_args[@]}"
 
   if [ "$writers" = 1 ]; then
-    [ "$count" -eq 1 ] || { echo "usage: wrap.sh session --writers [--since <epoch>] [--self <worktree>] [--text] <repo>" >&2; return 64; }
+    [ "$count" -eq 1 ] || { echo "$wusage" >&2; return 64; }
     if [ "$since_json" = "null" ]; then
       case "${WRAP_SESSION_START:-}" in ''|*[!0-9]*) ;; *) since_json="$WRAP_SESSION_START" ;; esac
     fi
-    writers_out="$(_session_writers_json "${repos_args[0]}" "$since_json" "$self")"
+    if [ -n "$check_mark" ] && [ -n "$write_mark" ]; then
+      echo "wrap.sh session --writers: --mark and --check-mark are separate steps" >&2; return 64
+    fi
+    if [ "${#selfs[@]}" -eq 0 ]; then
+      writers_out="$(_session_writers_json "${repos_args[0]}" "$since_json" "$check_mark" "$write_mark")"
+    else
+      writers_out="$(_session_writers_json "${repos_args[0]}" "$since_json" "$check_mark" "$write_mark" "${selfs[@]}")"
+    fi
     if [ "$writers_text" = 1 ]; then
       _session_writers_text "$writers_out"
     else

@@ -178,6 +178,10 @@ chk_has "the finding names the offending bullet by index" "$out" "item 2"
 chk_has "commands/wrap.md classifies each candidate's lane" "$(cat "$KIT_DIR/commands/wrap.md")" "lib/classify/lane-classify.sh risk"
 chk_has "commands/wrap.md names the worker model tiers" "$(cat "$KIT_DIR/commands/wrap.md")" "Sonnet is the default worker"
 chk_has "commands/wrap.md reads the build_lanes knob" "$(cat "$KIT_DIR/commands/wrap.md")" "kit_config_get_root wrap.build_lanes"
+chk_has "commands/wrap.md checks writers against a mark" "$(cat "$KIT_DIR/commands/wrap.md")" "session --writers --check-mark"
+chk_has "commands/wrap.md never excludes the main checkout" "$(cat "$KIT_DIR/commands/wrap.md")" "The main checkout is never excluded"
+chk_has "commands/wrap.md passes every session worktree as self" "$(cat "$KIT_DIR/commands/wrap.md")" "agent-*"
+chk_has "commands/wrap.md follow-through includes pending-check PRs" "$(cat "$KIT_DIR/commands/wrap.md")" "own OPEN PRs left open for pending checks"
 chk_has "kit.toml ships build_lanes defaulting to tiny" "$(cat "$KIT_DIR/kit.toml")" 'build_lanes = "tiny"'
 chk_no "commands/wrap.md no longer files a candidate with board capture" "$(cat "$KIT_DIR/commands/wrap.md")" "bin/board capture"
 chk_no "commands/wrap.md no longer stages a candidate" "$(cat "$KIT_DIR/commands/wrap.md")" "bin/wrap stage \"<title>\""
@@ -352,7 +356,7 @@ out="$(_follow '🔴 **Needs you:**
 a. REVIEW #71: full-lane design for gamma. Say go and I merge it.' "$FT_FULL" | bash "$LINT" 2>&1)"; rc=$?
 chk "a paired REVIEW item still fails the permission rule" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the permission finding fires on the REVIEW item" "$out" "asks permission instead of naming a blocker"
-out="$(printf '[kit:wrap] follow-through: 1 builds, 0 follow-ups, 0 full-lane, running in background\n\n' | cat - <(_follow '✅ **Needs you:** NOTHING' "$FT_OK") | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf '[kit:wrap] follow-through: 1 builds, 0 follow-ups, 0 full-lane, 0 PR waits, running in background\n\n' | cat - <(_follow '✅ **Needs you:** NOTHING' "$FT_OK") | bash "$LINT" 2>&1)"; rc=$?
 chk "a preamble line before the Follow-through heading still reads as a follow-through report" "$([ "$rc" -eq 0 ]; echo $?)"
 out="$(_report '✅ **Needs you:** NOTHING' | sed '/^\*\*Seam:\*\*/d' | sed 's/^- body$/- the follow-through phase ran; see ## Follow-through: t below/' | bash "$LINT" 2>&1)"; rc=$?
 chk "a Wrap report that mentions a follow-through heading later still owes a Seam line" "$([ "$rc" -eq 1 ]; echo $?)"

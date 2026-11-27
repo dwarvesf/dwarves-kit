@@ -143,6 +143,54 @@ chk_has "writers text fallback carries the lock fact" "$text" "index_lock_presen
 chk_has "writers text fallback carries the per-row reflog fact" "$text" "reflog_newer_than_since=false"
 
 # ===========================================================================
+echo "=== writer marks ignore own writes and never hide the main checkout ==="
+# ===========================================================================
+wmark="$TMPD/writer-mark.json"
+wown="$TMPD/wt-writers-own"
+git -C "$wclone" branch own-merge
+git -C "$wclone" worktree add "$wown" own-merge >/dev/null 2>&1
+echo own-merge > "$wown/own-merge.txt"
+git -C "$wown" add own-merge.txt
+git -C "$wown" commit -qm own-merge
+"$WRAP" session --writers --mark "$wmark" --self "$wself" --self "$wown" "$wclone" >/dev/null 2>&1; rc=$?
+chk "writing the writer mark exits 0" "$rc"
+jqok "the mark stores every worktree reflog identity" "$(cat "$wmark")" '.schema == "wrap-writer-mark/1" and ([.worktrees[].path] | length) == 5 and ([.worktrees[] | select(.reflog.head != null and .reflog.digest != null)] | length) == 5'
+git -C "$wclone" merge -q --ff-only own-merge
+out="$("$WRAP" session --writers --check-mark "$wmark" --self "$wself" --self "$wown" "$wclone" 2>/dev/null)"; rc=$?
+chk "the pre-mark own-write control exits 0" "$rc"
+jqok "an own main-checkout write is visible before the mark moves" "$out" '.foreign_activity == true and ([.worktrees[] | select(.branch == "main" and .reflog.changed_since_mark == true)] | length) == 1'
+"$WRAP" session --writers --mark "$wmark" --self "$wself" --self "$wown" "$wclone" >/dev/null 2>&1
+out="$("$WRAP" session --writers --check-mark "$wmark" --self "$wself" --self "$wown" "$wclone" 2>/dev/null)"; rc=$?
+chk "the own-merge re-check exits 0" "$rc"
+jqok "an own merge then a fresh mark gives no foreign activity" "$out" '.foreign_activity == false and ([.worktrees[] | select(.branch == "main" and .reflog.changed_since_mark == false and .foreign_activity == false)] | length) == 1'
+jqok "two --self paths are both excluded" "$out" '([.worktrees[] | select(.path | endswith("wt-writers-clean") or endswith("wt-writers-own"))] | length) == 0 and (.self | length) == 2'
+
+wgda="$(git -C "$wclone" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
+: > "$wgda/index.lock"
+out="$(cd "$wclone" && "$WRAP" session --writers --check-mark "$wmark" "$wclone" 2>/dev/null)"; rc=$?
+rm -f "$wgda/index.lock"
+chk "the main-checkout lock check exits 0" "$rc"
+jqok "running from the main checkout never hides its index lock" "$out" '.foreign_activity == true and ([.worktrees[] | select(.branch == "main" and .index_lock.present == true and .foreign_activity == true)] | length) == 1 and ([.self[] | select(endswith("clone-writers"))] | length) == 1'
+
+git -C "$wdirty" update-ref -m same-head HEAD HEAD
+out="$("$WRAP" session --writers --check-mark "$wmark" --self "$wself" --self "$wown" "$wclone" 2>/dev/null)"; rc=$?
+chk "the same-head reflog append re-check exits 0" "$rc"
+jqok "a reflog append on the same head is foreign through the digest" "$out" '.foreign_activity == true and ([.worktrees[] | select(.branch == "wt-dirty" and .reflog.changed_since_mark == true and .foreign_activity == true)] | length) == 1'
+
+echo foreign > "$wdirty/foreign-write.txt"
+git -C "$wdirty" add foreign-write.txt
+git -C "$wdirty" commit -qm foreign-write
+out="$("$WRAP" session --writers --check-mark "$wmark" --self "$wself" --self "$wown" "$wclone" 2>/dev/null)"; rc=$?
+chk "the foreign-worktree re-check exits 0" "$rc"
+jqok "a foreign commit in another worktree after the mark is foreign" "$out" '.foreign_activity == true and ([.worktrees[] | select(.branch == "wt-dirty" and .reflog.changed_since_mark == true and .foreign_activity == true)] | length) == 1'
+out="$("$WRAP" session --writers --check-mark "$TMPD/no-such-mark" --self "$wself" "$wclone" 2>/dev/null)"; rc=$?
+chk "a missing writer mark still exits 0" "$rc"
+jqok "a missing writer mark is conservatively foreign" "$out" '.foreign_activity == true and .writer_mark.valid == false and .writer_mark.error == "writer mark missing or invalid"'
+out="$("$WRAP" session --writers --mark "$TMPD" --self "$wself" "$wclone" 2>/dev/null)"; rc=$?
+chk "an unwritable writer mark still exits 0" "$rc"
+jqok "an unwritable writer mark is conservatively foreign" "$out" '.foreign_activity == true and .writer_mark.error == "writer mark write failed"'
+
+# ===========================================================================
 echo "=== fetch_error is measured, not hardcoded ==="
 # ===========================================================================
 jqok "a readable origin ref reports that fetch was not attempted" "$("$WRAP" session --json "$clone" 2>/dev/null)" '.repos[0].fetch_error == "fetch not attempted (read-only fallback); origin data may be stale"'
