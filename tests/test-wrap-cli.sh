@@ -10,10 +10,10 @@ echo "=== help and usage ==="
 # ===========================================================================
 out="$("$WRAP" --help 2>&1)"; rc=$?
 chk "--help exits 0" "$rc"
-for verb in scan apply merge start log default-branch knowledge-root stage deploy-wait rebase; do
+for verb in scan session apply merge start log default-branch knowledge-root stage deploy-wait rebase; do
   chk_has "--help names $verb" "$out" "$verb"
 done
-for verb in scan apply merge land start ship log default-branch knowledge-root follow-mode deploy-wait stage rebase adopt flick-7b; do
+for verb in scan session apply merge land start ship log default-branch knowledge-root follow-mode deploy-wait stage rebase adopt flick-7b; do
   for hf in --help -h; do
     out="$("$WRAP" "$verb" "$hf" 2>&1 </dev/null)"; rc=$?
     chk "$verb $hf exits 0" "$rc"
