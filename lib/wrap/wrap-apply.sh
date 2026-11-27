@@ -56,10 +56,29 @@ _wt_cleared() {
 # KIT_WRAP_SKIP_BUSY_CHECK=1 turns the check off. Without lsof it prints one NOTE per run and
 # answers "not busy", today's behavior.
 BUSY_MSG=""
+BUSY_PID=""
 _WT_BUSY_NOTED=0
+_WT_BUSY_LAZY_SNAP=0
+_WT_LSOF_SNAP=""
+_WT_PSNAP_SNAP=""
+
+_wt_busy_snap_init() {
+  _wt_busy_snap_clear
+  _WT_BUSY_LAZY_SNAP=1
+}
+
+_wt_busy_snap_clear() {
+  [ -n "$_WT_LSOF_SNAP" ] && rm -f "$_WT_LSOF_SNAP"
+  [ -n "$_WT_PSNAP_SNAP" ] && rm -f "$_WT_PSNAP_SNAP"
+  _WT_LSOF_SNAP=""
+  _WT_PSNAP_SNAP=""
+  _WT_BUSY_LAZY_SNAP=0
+}
+
 _wt_busy() {
   local wt="$1" canon holders psnap pid cmd n
   BUSY_MSG=""
+  BUSY_PID=""
   [ "${KIT_WRAP_SKIP_BUSY_CHECK:-0}" = 1 ] && return 1
   if ! command -v lsof >/dev/null 2>&1; then
     if [ "$_WT_BUSY_NOTED" = 0 ]; then
@@ -68,9 +87,24 @@ _wt_busy() {
     return 1
   fi
   canon="$(cd "$wt" 2>/dev/null && pwd -P)" || return 1
-  psnap="$(ps -axo pid=,ppid=,pgid=,comm= 2>/dev/null)"
+  if [ "$_WT_BUSY_LAZY_SNAP" = 1 ] && [ -z "$_WT_LSOF_SNAP" ]; then
+    _WT_LSOF_SNAP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || _WT_LSOF_SNAP=""
+    _WT_PSNAP_SNAP="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || _WT_PSNAP_SNAP=""
+    if [ -n "$_WT_LSOF_SNAP" ] && [ -n "$_WT_PSNAP_SNAP" ]; then
+      ( cd / && lsof -nP -w +c 0 -Fpcftn 2>/dev/null ) > "$_WT_LSOF_SNAP"
+      ps -axo pid=,ppid=,pgid=,comm= 2>/dev/null > "$_WT_PSNAP_SNAP"
+    else
+      rm -f "$_WT_LSOF_SNAP" "$_WT_PSNAP_SNAP"
+      _WT_LSOF_SNAP=""; _WT_PSNAP_SNAP=""
+    fi
+  fi
+  if [ -n "$_WT_PSNAP_SNAP" ] && [ -r "$_WT_PSNAP_SNAP" ]; then
+    psnap="$(cat "$_WT_PSNAP_SNAP" 2>/dev/null)"
+  else
+    psnap="$(ps -axo pid=,ppid=,pgid=,comm= 2>/dev/null)"
+  fi
   # lsof runs from /, so this shell's own cwd inside the worktree cannot match.
-  holders="$(cd / && lsof -nP -w +c 0 -Fpcftn 2>/dev/null | WT="$canon" SELF="$$" PSNAP="$psnap" awk '
+  local awk_prog='
     BEGIN {
       n = split(ENVIRON["PSNAP"], rows, "\n")
       for (i = 1; i <= n; i++) {
@@ -111,9 +145,15 @@ _wt_busy() {
       }
       if (count > 0) printf "%s\t%s\t%d\n", fpid, fcmd, count
     }
-  ')"
+  '
+  if [ -n "$_WT_LSOF_SNAP" ] && [ -r "$_WT_LSOF_SNAP" ]; then
+    holders="$(WT="$canon" SELF="$$" PSNAP="$psnap" awk "$awk_prog" < "$_WT_LSOF_SNAP")"
+  else
+    holders="$(cd / && lsof -nP -w +c 0 -Fpcftn 2>/dev/null | WT="$canon" SELF="$$" PSNAP="$psnap" awk "$awk_prog")"
+  fi
   [ -n "$holders" ] || return 1
   IFS=$'\t' read -r pid cmd n <<< "$holders"
+  BUSY_PID="$pid"
   BUSY_MSG="SKIP ${wt}: busy, held by pid ${pid} (${cmd})"
   [ "${n:-1}" -gt 1 ] 2>/dev/null && BUSY_MSG="${BUSY_MSG} and $(( n - 1 )) more"
   return 0
@@ -169,7 +209,7 @@ _apply_worktrees() {
     if [ "$fetch_succeeded" != 1 ]; then
       echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
     fi
-    read -r lcode lreason proof <<< "$(branch_merged "$repo" "$def" "$ghs" "$wtb")"
+    read -r lcode lreason proof <<< "$(_apply_branch_merged "$repo" "$def" "$ghs" "$wtb")"
     if [ "$lcode" != SAFE ]; then
       if [ "${lcode} ${lreason}" = "LEAVE fresh" ]; then
         echo "     SKIP ${wt}: ${proof}"; continue
@@ -251,7 +291,7 @@ _apply_branches() {
     # branch's OWN upstream (or HEAD when it has none), so it refused a branch that tracks
     # another ref or nothing even though origin/<def> already holds its tip. The proof judges the
     # sha read above, see branch_merged.
-    read -r lcode lreason ldetail <<< "$(branch_merged --tip "$tip" "$repo" "$def" "$ghs" "$b")"
+    read -r lcode lreason ldetail <<< "$(_apply_branch_merged --tip "$tip" "$repo" "$def" "$ghs" "$b")"
     case "${lcode} ${lreason}" in
       "SAFE ancestor"|"SAFE absorbed")
         run "$repo" "delete ${b} (${ldetail})" git -C "$repo" branch -D "$b" ;;
@@ -842,12 +882,111 @@ _archive_worktree_push() {
 # branch tracks a handful of origin's branches. Each delete is leased to the tip it read, so a
 # branch pushed to after the read is refused rather than lost. Under --own the sweep considers
 # only the branches the named worktrees held (OWN_BRANCHES): a wrap cleans up its own session.
+_APPLY_PRS_MERGED=""
+_APPLY_PRS_OPEN=""
+_APPLY_PRS_CLOSED=""
+_APPLY_BATCH_BRANCHES=""
+_APPLY_ORIGIN_HEADS_CACHE=""
+_APPLY_ORIGIN_HEADS_OK=0
+
+# _origin_heads_ref_list <repo> <fetch_succeeded> -- prints "<sha>\trefs/heads/<branch>" lines
+# matching `git ls-remote --heads origin`. After a successful `fetch --prune` with the standard
+# wildcard fetch refspec, `refs/remotes/origin/*` already holds that exact map locally.
+_origin_heads_ref_list() {
+  local repo="$1" fetch_ok="${2:-0}" spec has_glob=0
+  if [ "$fetch_ok" = 1 ]; then
+    while IFS= read -r spec; do
+      case "$spec" in
+        "+refs/heads/*:refs/remotes/origin/*"|"refs/heads/*:refs/remotes/origin/*") has_glob=1; break ;;
+      esac
+    done < <(git -C "$repo" config --get-all remote.origin.fetch 2>/dev/null)
+  fi
+  if [ "$has_glob" = 1 ]; then
+    git -C "$repo" for-each-ref --format='%(objectname)%09refs/heads/%(refname:lstrip=3)' refs/remotes/origin/ 2>/dev/null \
+      | awk -F'\t' '$2 != "refs/heads/HEAD"'
+  else
+    git -C "$repo" ls-remote --heads origin 2>/dev/null
+  fi
+}
+
+_apply_batch_prs_clear() {
+  [ -n "$_APPLY_PRS_MERGED" ] && rm -f "$_APPLY_PRS_MERGED"
+  [ -n "$_APPLY_PRS_OPEN" ] && rm -f "$_APPLY_PRS_OPEN"
+  [ -n "$_APPLY_PRS_CLOSED" ] && rm -f "$_APPLY_PRS_CLOSED"
+  _APPLY_PRS_MERGED=""
+  _APPLY_PRS_OPEN=""
+  _APPLY_PRS_CLOSED=""
+  _APPLY_BATCH_BRANCHES=""
+  _APPLY_ORIGIN_HEADS_CACHE=""
+  _APPLY_ORIGIN_HEADS_OK=0
+}
+
+_apply_batch_prs_init() {
+  local repo="$1" def="$2" fetch_ok="$3" ghs="$4" want_closed="${5:-0}"
+  _apply_batch_prs_clear
+  [ "$ghs" = "ok" ] || return 0
+  _gh_owner_repo "$(_origin_url "$repo")" >/dev/null 2>&1 || return 0
+
+  local nl=$'\n' cand="" b tip
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/ 2>/dev/null); do
+    case "$b" in "$def"|main|master|"") continue ;; esac
+    cand="${cand}${b}${nl}"
+  done
+  if _APPLY_ORIGIN_HEADS_CACHE="$(_origin_heads_ref_list "$repo" "$fetch_ok")"; then
+    _APPLY_ORIGIN_HEADS_OK=1
+    while IFS=$'\t' read -r tip b; do
+      b="${b#refs/heads/}"
+      [ -n "$tip" ] && [ -n "$b" ] && [ "$b" != "$def" ] || continue
+      cand="${cand}${b}${nl}"
+    done <<< "$_APPLY_ORIGIN_HEADS_CACHE"
+  fi
+
+  local brs=()
+  while IFS= read -r b; do
+    [ -n "$b" ] && brs[${#brs[@]}]="$b"
+  done <<< "$cand"
+
+  _APPLY_PRS_MERGED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { _apply_batch_prs_clear; return 0; }
+  _APPLY_PRS_OPEN="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { _apply_batch_prs_clear; return 0; }
+  if [ "$want_closed" = 1 ]; then
+    _APPLY_PRS_CLOSED="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { _apply_batch_prs_clear; return 0; }
+  fi
+
+  if branch_merged_batch_fetch "$repo" "$ghs" "$_APPLY_PRS_MERGED" "$_APPLY_PRS_OPEN" "$_APPLY_PRS_CLOSED" -- ${brs[@]+"${brs[@]}"}; then
+    _APPLY_BATCH_BRANCHES="${nl}"
+    for b in ${brs[@]+"${brs[@]}"}; do
+      _APPLY_BATCH_BRANCHES="${_APPLY_BATCH_BRANCHES}${b}${nl}"
+    done
+  else
+    _apply_batch_prs_clear
+  fi
+}
+
+_apply_branch_merged() {
+  local tip="" repo="" def="" ghs="" b="" nl=$'\n'
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tip) tip="${2:-}"; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  repo="$1"; def="$2"; ghs="$3"; b="$4"
+  local args=()
+  [ -n "$tip" ] && { args[${#args[@]}]="--tip"; args[${#args[@]}]="$tip"; }
+  if [ -n "$_APPLY_PRS_MERGED" ] && [ -r "$_APPLY_PRS_MERGED" ]; then
+    case "$_APPLY_BATCH_BRANCHES" in
+      *"${nl}${b}${nl}"*) args[${#args[@]}]="--prs-json"; args[${#args[@]}]="$_APPLY_PRS_MERGED" ;;
+    esac
+  fi
+  branch_merged ${args[@]+"${args[@]}"} "$repo" "$def" "$ghs" "$b"
+}
+
 # ponytail: a branch whose merged PR sits past the list cap is kept; raise the cap if that bites.
 _ORIGIN_PR_LIMIT=1000
 # Names per `git push`; the env override is a test seam for the chunk loop.
 _ORIGIN_DELETE_CHUNK=${WRAP_ORIGIN_DELETE_CHUNK:-100}
 _apply_origin_branches() {
-  local repo="$1" def="$2" ghs="$3" url merged open elig names n k left heads push_args own_json="null"
+  local repo="$1" def="$2" ghs="$3" fetch_ok="${4:-0}" url merged open elig names n k left heads push_args own_json="null"
   if [ -n "$OWN_SET" ]; then
     own_json="$(printf '%s' "$OWN_BRANCHES" | jq -R -s -c 'split("\n") | map(select(length > 0)) | unique')" || own_json="[]"
     echo "-- origin branches (own scope: $(printf '%s' "$own_json" | jq 'length') named branches):"
@@ -861,17 +1000,31 @@ _apply_origin_branches() {
   [ "$ghs" = "ok" ] || { echo "     SKIP origin sweep: $(_gh_note "$ghs")"; return 0; }
   url="$(_origin_url "$repo")"
   # A failed read leaves its list empty, which is no JSON array, so the sweep skips.
-  merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" --json headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null)" || merged="" # merged-ok: the one repo-wide list branch_merged --prs-json judges
-  open="$(gh pr list --repo "$url" --state open --limit "$_ORIGIN_PR_LIMIT" \
-    --json headRefName,baseRefName 2>/dev/null)" || open=""
+  if [ -n "$_APPLY_PRS_MERGED" ] && [ -s "$_APPLY_PRS_MERGED" ]; then
+    merged="$(cat "$_APPLY_PRS_MERGED" 2>/dev/null)" || merged=""
+  else
+    merged="$(gh pr list --repo "$url" --state merged --limit "$_ORIGIN_PR_LIMIT" --json headRefName,headRefOid,baseRefName,mergedAt,isCrossRepository 2>/dev/null)" || merged="" # merged-ok: the one repo-wide list branch_merged --prs-json judges
+  fi
+  if [ -n "$_APPLY_PRS_OPEN" ] && [ -s "$_APPLY_PRS_OPEN" ]; then
+    open="$(cat "$_APPLY_PRS_OPEN" 2>/dev/null)" || open=""
+  else
+    open="$(gh pr list --repo "$url" --state open --limit "$_ORIGIN_PR_LIMIT" \
+      --json headRefName,baseRefName 2>/dev/null)" || open=""
+  fi
   # A full open page may hide the PR that protects a base branch, so the sweep stands down.
   if [ "$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)" = "$_ORIGIN_PR_LIMIT" ]; then
     echo "     SKIP origin sweep: ${_ORIGIN_PR_LIMIT}+ open PRs, an unread one could need a branch"; return 0
   fi
   local heads_out protect mnames mfile b tip verdict nl=$'\n'
+  if [ "$_APPLY_ORIGIN_HEADS_OK" = 1 ]; then
+    heads_out="$_APPLY_ORIGIN_HEADS_CACHE"
+  else
+    heads_out="$(_origin_heads_ref_list "$repo" "$fetch_ok")" || {
+      echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
+    }
+  fi
   if ! printf '%s' "$merged" | jq -e 'type == "array"' >/dev/null 2>&1 \
-     || ! printf '%s' "$open" | jq -e 'type == "array" and all(.[]; (.headRefName | type) == "string" and (.baseRefName | type) == "string")' >/dev/null 2>&1 \
-     || ! heads_out="$(git -C "$repo" ls-remote --heads origin 2>/dev/null)"; then
+     || ! printf '%s' "$open" | jq -e 'type == "array" and all(.[]; (.headRefName | type) == "string" and (.baseRefName | type) == "string")' >/dev/null 2>&1; then
     echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
   fi
   # One "<name> <tip>" line per eligible branch. The merged-ness of each is branch_merged's answer on
@@ -933,7 +1086,7 @@ _apply_origin_branches() {
 
 
 _apply_repo() {
-  local repo="$1" ghs="$2"
+  local repo="$1" ghs="$2" ghs_file="${3:-}" ghs_pid="${4:-}"
   _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
   echo "== ${repo}"
   local fetch_succeeded=1
@@ -944,6 +1097,13 @@ _apply_repo() {
     else
       echo "     (fetch failed; every delete is skipped)"
     fi
+  fi
+
+  if [ -z "$ghs" ] && [ -n "$ghs_file" ]; then
+    [ -n "$ghs_pid" ] && wait "$ghs_pid" 2>/dev/null || true
+    ghs="$(cat "$ghs_file" 2>/dev/null)"
+    [ -n "$ghs" ] || ghs="$(_gh_state)"
+    export _WRAP_GH_STATE="$ghs"
   fi
 
   local def
@@ -970,6 +1130,8 @@ _apply_repo() {
   # --pull-only runs the fetch + pull stage alone: no worktree, branch, archive, origin-branch,
   # stray-line, or stray-commit write.
   if [ "$PULL_ONLY" != 1 ]; then
+    _apply_batch_prs_init "$repo" "$def" "$fetch_succeeded" "$ghs"
+    _wt_busy_snap_init
     if [ "$NO_PULL" = 1 ] && [ -z "$OWN_SET" ]; then
       # A step 0 stop tidies the session's own worktrees only: an unscoped sweep would
       # delete other live sessions' merged worktrees and branches.
@@ -997,7 +1159,9 @@ _apply_repo() {
     # Under --own it considers only the branches the named worktrees held: a wrap's default
     # cleanup is the current session, and other sessions' merged heads wait for a plain
     # apply or --worktrees run. The same proof applies (merged PR at the exact tip, no open PR).
-    _apply_origin_branches "$repo" "$def" "$ghs"
+    _apply_origin_branches "$repo" "$def" "$ghs" "$fetch_succeeded"
+    _wt_busy_snap_clear
+    _apply_batch_prs_clear
 
     # Any checked-out branch: the incident state is a shared main checkout sitting on a
     # feature branch while a session writes the board there.
@@ -1102,9 +1266,30 @@ cmd_apply() {
   done
   [ "$APPLY" = 1 ] && MODE="APPLY"
   # Every gh reader is a sweep --pull-only turns off, so skip the auth probe with them.
-  local ghs=""; [ "$PULL_ONLY" = 1 ] || ghs="$(_gh_state)"
+  # Overlap `_gh_state` with the first repo's `git fetch --prune` when running multiple steps.
+  local ghs="" ghs_file="" ghs_pid=""
+  if [ "$PULL_ONLY" != 1 ]; then
+    if [ -n "${_WRAP_GH_STATE:-}" ]; then
+      ghs="$_WRAP_GH_STATE"
+    else
+      ghs_file="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || ghs_file=""
+      if [ -n "$ghs_file" ]; then
+        ( _gh_state > "$ghs_file" ) &
+        ghs_pid="$!"
+      else
+        ghs="$(_gh_state)"
+        export _WRAP_GH_STATE="$ghs"
+      fi
+    fi
+  fi
   i=1
-  while [ "$i" -le "$count" ]; do _apply_repo "${repos[$i]}" "$ghs"; i=$(( i + 1 )); done
+  while [ "$i" -le "$count" ]; do
+    _apply_repo "${repos[$i]}" "$ghs" "$ghs_file" "$ghs_pid"
+    ghs="${_WRAP_GH_STATE:-$ghs}"; ghs_pid=""
+    i=$(( i + 1 ))
+  done
+  [ -n "$ghs_pid" ] && wait "$ghs_pid" 2>/dev/null || true
+  [ -n "$ghs_file" ] && rm -f "$ghs_file"
   echo "== ${MODE} complete. PR merges, deploy dispatch and board rows stay with the command."
   [ "$FAILURES" = 0 ] || return 2
   return 0
