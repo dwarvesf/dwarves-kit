@@ -169,7 +169,7 @@ _sweep_one_repo() {
   local fetch_err first_err def cur rows_file rows_arr err_line=""
   : > "$out_human"
   [ -z "$stale_msg" ] || printf '== %s: %s\n' "$repo" "$stale_msg" >> "$out_human"
-  if ! fetch_err="$(git -C "$repo" fetch --prune -q 2>&1)"; then
+  if [ "${NO_FETCH:-0}" != 1 ] && ! fetch_err="$(git -C "$repo" fetch --prune -q 2>&1)"; then
     first_err="$(printf '%s\n' "$fetch_err" | awk 'NF { print; exit }')"
     [ -n "$first_err" ] || first_err="exit non-zero"
     printf '== %s: ERROR git fetch failed: %s\n' "$repo" "$first_err" >> "$out_human"
@@ -228,6 +228,7 @@ _sweep_one_repo() {
 
 cmd_sweep() {
   APPLY=0; WORKTREES=0; MODE="DRY-RUN"; FAILURES=0
+  NO_FETCH=0
   OWN_SET=""; OWN_SEEN=""; OWN_BRANCHES=""; OWN_N=0
   ARCHIVE_UNMERGED=0; ARCHIVE_WORKTREES=0; PULL_ONLY=0; NO_PULL=0
 
@@ -238,11 +239,18 @@ cmd_sweep() {
       --apply) APPLY=1 ;;
       --worktrees) WORKTREES=1 ;;
       --json) json_out=1 ;;
+      --no-fetch) NO_FETCH=1 ;;
       -*) echo "wrap.sh sweep: unknown flag '$arg'" >&2; return 1 ;;
       *) _reject_packed sweep "$arg" || return 1
          roots[$nroots]="$arg"; nroots=$(( nroots + 1 )) ;;
     esac
   done
+
+  # --no-fetch reads the refs already on disk (a report for a read-only caller such as
+  # `wrap session`); stale refs may never back a removal, so it is dry-run only.
+  if [ "$NO_FETCH" = 1 ] && [ "$APPLY" = 1 ]; then
+    echo "wrap.sh sweep: --no-fetch is dry-run only (drop --apply)" >&2; return 1
+  fi
 
   if [ "$nroots" -eq 0 ]; then
     local cfg_roots r

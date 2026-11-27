@@ -447,6 +447,15 @@ chk "fix1 crashed worker exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk "fix1 crashed worker emits valid JSON with error row and summary.errors=1" \
   "$(sw_validate_json "$SW_CRASH" && jq -e '.summary.errors == 1 and (.repos[0].error | type == "string" and length > 0)' "$SW_CRASH" >/dev/null 2>&1; echo $?)"
 
+# 5) --no-fetch: a dry run that reads refs on disk and writes no FETCH_HEAD; refused with --apply
+rm -f "$L_REPO/.git/FETCH_HEAD"
+SW_NF="$TMPD/sweep-nofetch.json"
+"$WRAP" sweep --json --no-fetch --worktrees "$L_REPO" > "$SW_NF" 2>/dev/null; rc=$?
+chk "no-fetch dry run exits 0 with valid JSON" "$([ "$rc" -eq 0 ] && sw_validate_json "$SW_NF"; echo $?)"
+chk "no-fetch dry run writes no FETCH_HEAD" "$([ ! -e "$L_REPO/.git/FETCH_HEAD" ]; echo $?)"
+"$WRAP" sweep --apply --no-fetch "$L_REPO" >/dev/null 2>&1; rc=$?
+chk "no-fetch with --apply is refused (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+
 echo
 if [ "$FAIL" -gt 0 ]; then echo "test-wrap-sweep: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
 echo "test-wrap-sweep: all $PASS passed"
