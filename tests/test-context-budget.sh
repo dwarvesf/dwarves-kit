@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # test-context-budget.sh -- sequence tests for the context-budget UserPromptSubmit
-# hook (SPEC-255, percentage rewrite). Each step writes a synthetic transcript whose
-# last main-chain assistant turn carries a chosen context size (and optionally a
-# model id), runs the hook, and asserts whether it spoke (a systemMessage on stdout)
-# or stayed silent.
+# hook (SPEC-255). Each step writes a synthetic transcript whose last main-chain
+# assistant turn carries a chosen context size (and optionally a model id), runs the
+# hook, and asserts whether it spoke (a systemMessage on stdout) or stayed silent.
 #
-# Default window is 200000 tokens; KIT_CTX_WARN_PCT=65 (130000 tokens) and
-# KIT_CTX_STRONG_PCT=70 (140000 tokens) unless a case overrides them.
+# Default mode is absolute tokens: KIT_CTX_WARN_TOKENS=200000 and
+# KIT_CTX_STRONG_TOKENS=250000, whatever the window. The legacy cases further down
+# set KIT_CTX_WARN_PCT=65 / KIT_CTX_STRONG_PCT=70 explicitly, which switches the hook
+# back to percent-of-window thresholds (default window 200000).
 #
 # Hermetic: HOME points at a fresh temp dir, so real state (~/.cache, ~/.claude)
 # is never touched.
@@ -19,7 +20,7 @@ HOOK="$KIT_DIR/hooks/context-budget.sh"
 _tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-context-budget-tests.XXXXXX")" || exit 1
 trap 'rm -rf "$_tmp"' EXIT
 export HOME="$_tmp"
-unset KIT_CTX_WARN_PCT KIT_CTX_STRONG_PCT KIT_CTX_WINDOW
+unset KIT_CTX_WARN_PCT KIT_CTX_STRONG_PCT KIT_CTX_WINDOW KIT_CTX_WARN_TOKENS KIT_CTX_STRONG_TOKENS ANTHROPIC_MODEL
 # The state dir comes from the kit's data-path resolver: pin every input so a real host's XDG dirs
 # or operator kit.toml are never read or written.
 unset XDG_STATE_HOME XDG_CACHE_HOME XDG_CONFIG_HOME KIT_DATA_ROOT
@@ -80,9 +81,96 @@ step() {
     fi
 }
 
+tone() {
+    local label="$1" want="$2" session="$3" tr="$4" ctx
+    ctx=$(jq -cn --arg s "$session" --arg t "$tr" '{session_id:$s, transcript_path:$t, prompt:"continue"}' \
+        | bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')
+    if printf '%s' "$ctx" | grep -q "$want"; then
+        PASS=$((PASS + 1)); printf '  PASS %-50s has %s\n' "$label" "$want"
+    else
+        FAIL=$((FAIL + 1)); printf '  FAIL %-50s missing %s\n' "$label" "$want"; printf '       ctx: %s\n' "$ctx"
+    fi
+}
+
+# nopct <label> <session> <transcript>: the hook speaks and neither message carries a '%'.
+nopct() {
+    local label="$1" session="$2" tr="$3" out
+    out=$(jq -cn --arg s "$session" --arg t "$tr" '{session_id:$s, transcript_path:$t, prompt:"continue"}' \
+        | bash "$HOOK" 2>/dev/null)
+    if [ -n "$out" ] && ! printf '%s' "$out" | grep -q '%' && printf '%s' "$out" | grep -q 'k tokens'; then
+        PASS=$((PASS + 1)); printf '  PASS %-50s tokens, no %%\n' "$label"
+    else
+        FAIL=$((FAIL + 1)); printf '  FAIL %-50s want tokens and no %%\n' "$label"; printf '       out: %s\n' "$out"
+    fi
+}
+
+echo "== Case A: absolute token thresholds by default (bare opus id, no window file) =="
+TA="$HOME/.claude/projects/p/a1.jsonl"
+transcript "$TA" 199999 claude-opus-5-5; step "A.1 199999 silent"                   silent a1 "$TA"
+transcript "$TA" 200000 claude-opus-5-5; step "A.2 200000 warns once"               speak  a1 "$TA"
+transcript "$TA" 210000 claude-opus-5-5; step "A.3 210k again, same threshold"      silent a1 "$TA"
+transcript "$TA" 249999 claude-opus-5-5; step "A.4 249999 still under strong"       silent a1 "$TA"
+transcript "$TA" 250000 claude-opus-5-5; step "A.5 250000 strong once"              speak  a1 "$TA"
+transcript "$TA" 300000 claude-opus-5-5; step "A.6 300k again, same threshold"      silent a1 "$TA"
+transcript "$TA" 150000 claude-opus-5-5; step "A.7 drop under 200k clears state"    silent a1 "$TA"
+transcript "$TA" 200000 claude-opus-5-5; step "A.8 re-cross 200k warns again"       speak  a1 "$TA"
+
+echo "== Case B: the old false ceilings no longer fire =="
+TB="$HOME/.claude/projects/p/b1.jsonl"
+transcript "$TB" 148000 claude-opus-5-5; step "B.1 148k (old 74% ceiling) silent"   silent b1 "$TB"
+transcript "$TB" 154000 claude-opus-5-5; step "B.2 154k (old 77% ceiling) silent"   silent b1 "$TB"
+TB3="$HOME/.claude/projects/p/b3.jsonl"
+transcript "$TB3" 148000 claude-opus-5-5
+KIT_CTX_WINDOW=200000 step "B.3 KIT_CTX_WINDOW alone keeps absolute mode, 148k silent" silent b3 "$TB3"
+TB4="$HOME/.claude/projects/p/b4.jsonl"
+transcript "$TB4" 200000 claude-opus-5-5
+mkdir -p "$BUDGET_DIR"; echo 1000000 > "$BUDGET_DIR/b4.window"
+step "B.4 1M window file ignored in absolute mode, 200k warns" speak b4 "$TB4"
+
+echo "== Case C: messages print tokens, not a percentage =="
+TC="$HOME/.claude/projects/p/c1.jsonl"
+transcript "$TC" 205000 claude-opus-5-5; nopct "C.1 warn message" c1 "$TC"
+transcript "$TC" 260000 claude-opus-5-5; nopct "C.2 strong message" c1 "$TC"
+TC3="$HOME/.claude/projects/p/c3.jsonl"
+transcript "$TC3" 205000 claude-opus-5-5; tone "C.3 warn names the 200k budget" "200k budget" c3 "$TC3"
+transcript "$TC3" 260000 claude-opus-5-5; tone "C.4 strong names the 250k ceiling" "250k ceiling" c3 "$TC3"
+
+echo "== Case D: token thresholds come from env, bad values fail open =="
+TD="$HOME/.claude/projects/p/d1.jsonl"
+transcript "$TD" 120000 claude-opus-5-5
+KIT_CTX_WARN_TOKENS=100000 KIT_CTX_STRONG_TOKENS=150000 step "D.1 120k with warn=100k speaks" speak d1 "$TD"
+TD2="$HOME/.claude/projects/p/d2.jsonl"
+transcript "$TD2" 300000 claude-opus-5-5
+KIT_CTX_WARN_TOKENS=250000 KIT_CTX_STRONG_TOKENS=200000 step "D.2 warn >= strong fails open" silent d2 "$TD2"
+KIT_CTX_WARN_TOKENS=20k step "D.3 non-numeric warn fails open" silent d2 "$TD2"
+KIT_CTX_WARN_TOKENS=0 step "D.4 zero warn fails open" silent d2 "$TD2"
+KIT_CTX_WARN_TOKENS=200000 KIT_CTX_STRONG_TOKENS=200000 step "D.5 warn = strong fails open" silent d2 "$TD2"
+TD6="$HOME/.claude/projects/p/d6.jsonl"
+transcript "$TD6" 160000 claude-opus-5-5
+KIT_CTX_WARN_TOKENS=100000 KIT_CTX_STRONG_TOKENS=150000 tone "D.6 STRONG_TOKENS=150000 at 160k escalates" "150k ceiling" d6 "$TD6"
+TD7="$HOME/.claude/projects/p/d7.jsonl"
+transcript "$TD7" 120000 claude-opus-5-5
+KIT_CTX_WARN_TOKENS=090000 KIT_CTX_STRONG_TOKENS=0150000 tone "D.7 leading zeros read as base 10 (90k)" "90k budget" d7 "$TD7"
+
+echo "== Case E: negative control, explicit percentage vars restore the old behavior =="
+TE="$HOME/.claude/projects/p/e1.jsonl"
+transcript "$TE" 148000 claude-opus-5-5
+KIT_CTX_STRONG_PCT=70 KIT_CTX_WINDOW=200000 tone "E.1 148k is 74% of 200k: old CEILING returns" "CONTEXT CEILING" e1 "$TE"
+TE2="$HOME/.claude/projects/p/e2.jsonl"
+transcript "$TE2" 140000 claude-opus-5-5
+KIT_CTX_WARN_PCT=65 KIT_CTX_WINDOW=200000 step "E.2 WARN_PCT alone switches to pct mode: 140k speaks" speak e2 "$TE2"
+TE3="$HOME/.claude/projects/p/e3.jsonl"
+transcript "$TE3" 65000 claude-opus-5-5
+KIT_CTX_WARN_PCT=65 KIT_CTX_WINDOW=100001 step "E.3 pct rounds up: 65000 < 65% of 100001, silent" silent e3 "$TE3"
+transcript "$TE3" 65001 claude-opus-5-5
+KIT_CTX_WARN_PCT=65 KIT_CTX_WINDOW=100001 step "E.4 pct rounds up: 65001 >= 65% of 100001, speaks" speak e3 "$TE3"
+
+# The legacy percentage cases below all run with the percentage vars set explicitly.
+export KIT_CTX_WARN_PCT=65 KIT_CTX_STRONG_PCT=70
+
 T="$HOME/.claude/projects/p/s1.jsonl"
 
-echo "== Case 1: fixture percentages (default 200k window) =="
+echo "== Case 1 (legacy pct): fixture percentages (default 200k window) =="
 transcript "$T" 100000; step "1.1 50% (100k) silent"            silent s1 "$T"
 transcript "$T" 132000; step "1.2 66% (132k) speaks once"        speak  s1 "$T"
 transcript "$T" 132000; step "1.3 66% again, same threshold"     silent s1 "$T"
@@ -148,16 +236,6 @@ echo junk > "$BUDGET_DIR/s7i.window"
 step "7.9 junk window file ignored: falls back to 200k, 83% speaks" speak s7i "$T7i"
 
 echo "== Case 8: threshold 0 (warn) is advisory, threshold 1 (strong) is a directive =="
-tone() {
-    local label="$1" want="$2" session="$3" tr="$4" ctx
-    ctx=$(jq -cn --arg s "$session" --arg t "$tr" '{session_id:$s, transcript_path:$t, prompt:"continue"}' \
-        | bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')
-    if printf '%s' "$ctx" | grep -q "$want"; then
-        PASS=$((PASS + 1)); printf '  PASS %-50s has %s\n' "$label" "$want"
-    else
-        FAIL=$((FAIL + 1)); printf '  FAIL %-50s missing %s\n' "$label" "$want"; printf '       ctx: %s\n' "$ctx"
-    fi
-}
 T8="$HOME/.claude/projects/p/s8.jsonl"
 transcript "$T8" 132000
 tone "8.1 66%, warn threshold, advisory" "CONTEXT BUDGET" s8 "$T8"
