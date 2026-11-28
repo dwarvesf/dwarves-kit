@@ -206,14 +206,20 @@ def add_rows(path, specs, section=None):
         return add_rows_locked(path, specs, section)
 
 
+USAGE = ("usage: board_add.py add <board.md> <title> [--mid VALUE]... [--notes TEXT] "
+         "[--status STATE] [--section HEADING]\n")
+
+
 def _usage():
-    sys.stderr.write(
-        "usage: board_add.py add <board.md> <title> [--mid VALUE]... [--notes TEXT] "
-        "[--status STATE] [--section HEADING]\n")
+    sys.stderr.write(USAGE)
     return 64
 
 
 def main(argv):
+    flags = argv[:argv.index("--")] if "--" in argv else argv
+    if argv[:1] == ["add"] and ("--help" in flags or "-h" in flags):
+        sys.stdout.write(USAGE)
+        return 0
     if len(argv) < 3 or argv[0] != "add":
         return _usage()
     path, rest = argv[1], argv[2:]

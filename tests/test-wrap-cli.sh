@@ -29,6 +29,34 @@ out="$("$WRAP" apply 2>&1)"; rc=$?
 chk "apply with no repo exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 out="$("$WRAP" merge 2>&1)"; rc=$?
 chk "merge with no repo exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+# A usage refusal keeps its usage line and exit 64, then one hint line names the right form.
+HR="$TMPD/hint-roots"; mkdir -p "$HR/hintrepo" "$HR/plain"; git -C "$HR/hintrepo" init -q
+mkdir -p "$TMPD/hintcfg"; printf '[wrap]\nroots = "%s"\n' "$HR" > "$TMPD/hintcfg/kit.toml"
+HRP="$(cd "$HR/hintrepo" && pwd -P)"  # git prints the physical path
+out="$(cd "$HR/hintrepo" && "$WRAP" apply --worktrees 2>&1)"
+chk_has "apply with no repo keeps the usage line" "$out" "usage: wrap.sh apply"
+chk_has "apply with no repo names this checkout's repo" "$out" "never defaults to the current directory. This checkout's repo is $HRP"
+git -C "$HR/hintrepo" commit -q --allow-empty -m init
+git -C "$HR/hintrepo" worktree add -q -b hint-wt "$HR/hint-wt" 2>/dev/null
+mkdir -p "$HR/otherrepo"; git -C "$HR/otherrepo" init -q
+out="$(cd "$HR/otherrepo" && "$WRAP" apply --own "$HR/hint-wt" 2>&1)"
+chk_has "apply --own with no repo names the worktree's repo, not the cwd's" "$out" "The --own worktree's repo is $HRP"
+chk "apply --own with no repo never names the cwd's repo" "$(grep -q 'otherrepo' <<<"$out"; [ $? -eq 1 ]; echo $?)"
+out="$(cd "$HR/plain" && "$WRAP" merge 2>&1)"
+chk_has "merge with no repo, outside a checkout, still says why" "$out" "wrap.sh merge: no <repo> given; it never defaults to the current directory"
+out="$("$WRAP" merge "$HR/hintrepo" "$HR/plain" 2>&1)"
+chk "merge with two repos prints no no-repo hint" "$(grep -q 'no <repo> given' <<<"$out"; [ $? -eq 1 ]; echo $?)"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/hintcfg" "$WRAP" start hintrepo feat/x 2>&1)"; rc=$?
+chk "start with a repo name exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+chk_has "start with a repo name points at its path" "$out" "did you mean $HR/hintrepo?"
+out="$(KIT_CONFIG_OPERATOR="$TMPD/hintcfg" "$WRAP" merge --pr 1 nosuchrepo 2>&1)"
+chk_has "merge with an unknown name says <repo> is a path" "$out" "wrap.sh merge: <repo> is a path to a checkout, not a name"
+out="$("$WRAP" start feat/x 2>&1)"
+chk_has "start with one argument shows the order" "$out" "it takes <repo> then <branch>, as in: wrap start <repo> 'feat/x'"
+out="$("$WRAP" land 2>&1)"
+chk_has "land with no worktree names wrap start" "$out" "wrap.sh land: no <worktree> given; wrap start <repo> <branch> makes one"
+out="$("$WRAP" land "$HR/plain/nope" 2>&1)"
+chk_has "land with a non-worktree names the right verbs" "$out" "land takes a worktree path; wrap start <repo> <branch> makes one"
 out="$("$WRAP" log 2>&1)"; rc=$?
 chk "log with no text exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
 out="$("$WRAP" knowledge-root 2>&1)"; rc=$?

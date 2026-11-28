@@ -17,6 +17,7 @@
 #   AC8  hostile status, section and title text cannot forge rows, headings or cells
 #   AC10 board-normalize pads short rows without losing an id; the kit board lints clean
 #   AC9  suffixed headings, legend tables, ids above 999, git-history floor, batch order
+#   AC11 `add --help` prints usage and exits 0; an unknown verb is named before the usage line
 #
 # Run: bash tests/test-board-add.sh
 
@@ -267,6 +268,15 @@ chk "states needs no board" "$([ "$(bl "$NOBOARD" states | head -1)" = "queued" 
 chk "lint <file> reads its own file, not the default board" "$([ "$(bl "$NOBOARD" lint "$FX")" = "(no lint findings)" ]; echo $?)"
 printf '| ID-3 | dup | s | t | normal | queued |\n| ID-3 | dup | s | t | normal | shipped |\n' >> "$FX"
 chk_has "dedupe-all <file> sweeps its own file with no default board" "$(bl "$NOBOARD" dedupe-all "$FX" 2>&1)" "ID-3"
+
+# AC11 a help request and an unknown verb get the right form instead of a bare refusal
+out="$(python3 "$KIT_DIR/lib/board/board_add.py" add --help 2>&1)"; rc=$?
+chk_has "add --help prints the add usage" "$out" "usage: board_add.py add <board.md> <title>"
+chk_has "add --help exits 0" "rc=$rc" "rc=0"
+out="$(bl "$FX" show ID-1 2>&1)"; rc=$?
+chk_has "an unknown verb is named, with the read verb" "$out" "backlog.sh: unknown verb 'show' (to read one row: get <ID-NNN>)"
+chk_has "an unknown verb keeps the usage line and exit 64" "$out rc=$rc" "usage: backlog.sh {"
+chk_has "an unknown verb exits 64" "rc=$rc" "rc=64"
 
 echo ""
 echo "== $TOTAL run, $PASS passed, $FAIL failed =="

@@ -986,6 +986,7 @@ copied standalone).
 adapter directory: <KIT>/lib/adapters (KIT_ADAPTERS_DIR replaces it; the verbs a manifest declares run from there)
 rc	0
 ### unknown verb
+backlog.sh: unknown verb 'bogusverb' (to read one row: get <ID-NNN>)
 usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}
 rc	64
 ### engine without --apps

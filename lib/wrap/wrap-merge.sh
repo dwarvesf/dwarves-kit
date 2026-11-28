@@ -1057,7 +1057,8 @@ cmd_merge() {
     esac
     [ -n "$slug" ] || { echo "wrap.sh merge: --repo wants <owner>/<name>" >&2; return 64; }
   else
-    [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--rebase-stacked] [--with-ci] [--verify <cmd>] <repo> | --repo <owner>/<name>" >&2; return 64; }
+    [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] [--no-pull] [--pr N] [--rebase-stacked] [--with-ci] [--verify <cmd>] <repo> | --repo <owner>/<name>" >&2
+      [ "$count" -eq 0 ] && _hint_no_repo merge; return 64; }
   fi
   if [ "$rebase_stacked" = 1 ]; then
     [ -n "$pr_only" ] || { echo "wrap.sh merge: --rebase-stacked needs --pr N, the one PR it may rewrite" >&2; return 64; }
@@ -1067,7 +1068,7 @@ cmd_merge() {
     '') ;;
     *[!0-9]*) echo "wrap.sh merge: --pr wants a PR number" >&2; return 64 ;;
   esac
-  [ -n "$slug" ] || _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; return 64; }
+  [ -n "$slug" ] || _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; _hint_repo merge "$repo"; return 64; }
   # Naming a PR under --apply promises it merged: a chained `&& deploy` reads exit 0 as merged.
   local skip_rc=0
   [ "$do_apply" = 1 ] && [ -n "$pr_only" ] && skip_rc="$WRAP_MERGE_NOT_MERGED_RC"

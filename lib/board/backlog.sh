@@ -451,7 +451,8 @@ main() {
     add)        add_row "$@" ;;
     states)     states "$@" ;;
     machine)    machine ;;
-    *) echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}" >&2; return 64 ;;
+    *) echo "backlog.sh: unknown verb '${sub}' (to read one row: get <ID-NNN>)" >&2
+       echo "usage: backlog.sh {board|next|get <ID-NNN>|row <ID-NNN>|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|lint [file]|add [--notes T] [--status S] [--section H] [--] <title>|states [--class C]|machine}" >&2; return 64 ;;
   esac
 }
 
