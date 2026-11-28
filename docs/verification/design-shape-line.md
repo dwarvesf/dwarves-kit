@@ -76,6 +76,8 @@ test-affected: 7 selected, 7 pass, 0 cached, 0 fail, 0 timeout, 0 uncovered
 Verdict: PASS
 ```
 
+Both Output blocks omit one trailing line, a sign-off the operator's global instructions add to every reply.
+
 ## Not proven
 - One probe per side on one toy problem, model sonnet; the line's quality across problems is not measured.
 - The interactive `AskUserQuestion` path was not driven; the probe ran headless.
