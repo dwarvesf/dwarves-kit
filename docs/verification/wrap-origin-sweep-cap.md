@@ -55,10 +55,10 @@ Verdict: PASS
 ## Negative control
 
 ```text
-Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap-sweep.sh" "git show HEAD^:lib/wrap/wrap-apply.sh > lib/wrap/wrap-apply.sh"
+Command: bash lib/gate/negctl.sh "$PWD" "bash tests/test-wrap-sweep.sh" "git show 19cfc11f:lib/wrap/wrap-apply.sh > lib/wrap/wrap-apply.sh"
 Exit: 0
 Output:
-Mutation: git show HEAD^:lib/wrap/wrap-apply.sh > lib/wrap/wrap-apply.sh
+Mutation: git show 19cfc11f:lib/wrap/wrap-apply.sh > lib/wrap/wrap-apply.sh
 Changed: lib/wrap/wrap-apply.sh
 Exit: 1 (under mutation, RED expected)
 Output:
@@ -78,7 +78,7 @@ Exit: 0 (green after restore)
 Verdict: PASS
 ```
 
-The mutation replaced only `lib/wrap/wrap-apply.sh` with its pre-fix revision while keeping the new large-origin regression test. The suite went red, the file was restored, and the suite went green again.
+The mutation replaced only `lib/wrap/wrap-apply.sh` with its pre-fix revision while keeping the new large-origin regression test. `19cfc11f` is the revision `HEAD^` named when the control ran. The suite went red, the file was restored, and the suite went green again.
 
 ## Not proven
 
