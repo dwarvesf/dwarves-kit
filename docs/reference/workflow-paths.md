@@ -490,7 +490,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] SessionStart / backlog-stage --surface -> intake-sweep -> staging file (conv, config-gated)` |
 | `[E] UserPromptSubmit -> context-hints -> temporal + keyword skill hints (conv, terminal)` |
 | `[E] UserPromptSubmit -> prose-rag -> prior-note injection, opt-in PROSE_RAG_INJECT=1 (conv)` |
-| `[E] UserPromptSubmit -> context-budget -> warn once per threshold as live context passes a share of the window (adv, terminal)` |
+| `[E] UserPromptSubmit -> context-budget -> warn once per threshold as live context passes an absolute token budget (adv, terminal)` |
 | `[E] PreToolUse Bash -> safety-gate -> HARD block destructive Bash / push-to-main / force-push` |
 | `[E] PreToolUse Bash -> ship-gate -> HARD block a push onto a default branch; with proof_of_done / lane_gates on, ship without recorded proof/gates` |
 | `[E] PreToolUse Bash -> commit-format -> HARD block non-conventional commit subjects (when [gate] commit_format is on)` |
