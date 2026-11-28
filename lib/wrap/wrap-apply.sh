@@ -1280,6 +1280,17 @@ _apply_batch_prs_clear() {
   _APPLY_ORIGIN_HEADS_OK=0
 }
 
+_apply_origin_sweep_max() {
+  local max
+  max="$(kit_config_get_root wrap.origin_sweep_max 500)"
+  case "$max" in ''|*[!0-9]*) max=500 ;; esac
+  printf '%s\n' "$max"
+}
+
+_apply_origin_head_count() {
+  printf '%s' "$1" | awk 'NF { n++ } END { print n + 0 }'
+}
+
 _apply_batch_prs_init() {
   local repo="$1" def="$2" fetch_ok="$3" ghs="$4" want_closed="${5:-0}"
   _apply_batch_prs_clear
@@ -1289,17 +1300,28 @@ _apply_batch_prs_init() {
   [ -n "$remote_url" ] || remote_url="$(_origin_url "$repo")"
   _gh_owner_repo "$remote_url" >/dev/null 2>&1 || return 0
 
-  local nl=$'\n' cand="" b tip
+  local nl=$'\n'
+  local cand="" local_names="$nl" b tip heads_n=0 remote_max=500 include_remote=0
   for b in $(git -C "$repo" for-each-ref --format='%(refname:lstrip=2)' refs/heads/ 2>/dev/null); do
     case "$b" in "$def"|main|master|"") continue ;; esac
+    local_names="${local_names}${b}${nl}"
     cand="${cand}${b}${nl}"
   done
   if _APPLY_ORIGIN_HEADS_CACHE="$(_origin_heads_ref_list "$repo" "$fetch_ok")"; then
     _APPLY_ORIGIN_HEADS_OK=1
+    heads_n="$(_apply_origin_head_count "$_APPLY_ORIGIN_HEADS_CACHE")"
+    remote_max="$(_apply_origin_sweep_max)"
+    [ "$heads_n" -le "$remote_max" ] && include_remote=1
     while IFS=$'\t' read -r tip b; do
       b="${b#refs/heads/}"
       [ -n "$tip" ] && [ -n "$b" ] && [ "$b" != "$def" ] || continue
-      cand="${cand}${b}${nl}"
+      if [ "$include_remote" = 1 ]; then
+        cand="${cand}${b}${nl}"
+      else
+        case "$local_names" in
+          *"$nl$b$nl"*) cand="${cand}${b}${nl}" ;;
+        esac
+      fi
     done <<< "$_APPLY_ORIGIN_HEADS_CACHE"
   fi
 
@@ -1361,6 +1383,19 @@ _apply_origin_branches() {
   esac
   [ "$ghs" = "ok" ] || { echo "     SKIP origin sweep: $(_gh_note "$ghs")"; return 0; }
   url="$(_origin_url "$repo")"
+  local heads_out protect mnames mfile b tip verdict nl=$'\n' heads_n=0 origin_max=500
+  if [ "$_APPLY_ORIGIN_HEADS_OK" = 1 ]; then
+    heads_out="$_APPLY_ORIGIN_HEADS_CACHE"
+  else
+    heads_out="$(_origin_heads_ref_list "$repo" "$fetch_ok")" || {
+      echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
+    }
+  fi
+  heads_n="$(_apply_origin_head_count "$heads_out")"
+  origin_max="$(_apply_origin_sweep_max)"
+  if [ "$heads_n" -gt "$origin_max" ]; then
+    echo "     SKIP origin sweep: ${heads_n} remote heads over cap"; return 0
+  fi
   # A failed read leaves its list empty, which is no JSON array, so the sweep skips.
   if [ -n "$_APPLY_PRS_MERGED" ] && [ -s "$_APPLY_PRS_MERGED" ]; then
     merged="$(cat "$_APPLY_PRS_MERGED" 2>/dev/null)" || merged=""
@@ -1376,14 +1411,6 @@ _apply_origin_branches() {
   # A full open page may hide the PR that protects a base branch, so the sweep stands down.
   if [ "$(printf '%s' "$open" | jq -r 'length' 2>/dev/null)" = "$_ORIGIN_PR_LIMIT" ]; then
     echo "     SKIP origin sweep: ${_ORIGIN_PR_LIMIT}+ open PRs, an unread one could need a branch"; return 0
-  fi
-  local heads_out protect mnames mfile b tip verdict nl=$'\n'
-  if [ "$_APPLY_ORIGIN_HEADS_OK" = 1 ]; then
-    heads_out="$_APPLY_ORIGIN_HEADS_CACHE"
-  else
-    heads_out="$(_origin_heads_ref_list "$repo" "$fetch_ok")" || {
-      echo "     SKIP origin sweep: origin's branches or PRs could not be read"; return 0
-    }
   fi
   if ! printf '%s' "$merged" | jq -e 'type == "array"' >/dev/null 2>&1 \
      || ! printf '%s' "$open" | jq -e 'type == "array" and all(.[]; (.headRefName | type) == "string" and (.baseRefName | type) == "string")' >/dev/null 2>&1; then

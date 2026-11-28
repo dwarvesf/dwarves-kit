@@ -264,8 +264,8 @@ _session_checkout_json() {
   branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
   ahead=""; behind=""
   if [ -n "$def" ]; then
-    ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
-    behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)"
+    ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)" # merged-ok: ahead/behind counts are session facts, never a deletion proof
+    behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)" # merged-ok: ahead/behind counts are session facts, never a deletion proof
   fi
   case "$ahead" in ''|*[!0-9]*) ahead=null ;; esac
   case "$behind" in ''|*[!0-9]*) behind=null ;; esac
@@ -408,11 +408,11 @@ EOF_SESSION_PRS
 
   me="$(gh api user --jq .login 2>/dev/null)"
   merged_raw="$(gh pr list --repo "$url" --state merged --limit 20 \
-    --json number,title,headRefName,mergedAt,mergeCommit,author 2>/dev/null)"
+    --json number,title,headRefName,mergedAt,mergeCommit,author 2>/dev/null)" # merged-ok: recent merged PRs are deploy-report facts, never a deletion proof
   if [ -n "$merged_raw" ] && [ -n "$me" ]; then
     merged="$(printf '%s' "$merged_raw" | jq -c --arg me "$me" \
       '[.[] | select((.author.login // "") | ascii_downcase == ($me | ascii_downcase))]
-       | .[0:5] | map({number,title,headRefName,mergedAt,merge_sha:(.mergeCommit.oid // null)})' 2>/dev/null)"
+       | .[0:5] | map({number,title,headRefName,mergedAt,merge_sha:(.mergeCommit.oid // null)})' 2>/dev/null)" # merged-ok: recent merged PR fields are deploy-report facts, never a deletion proof
   fi
   [ -n "$merged" ] || merged='[]'
   merged="$(printf '%s' "$merged" | jq -c --arg slug "$slug" \
@@ -454,7 +454,7 @@ _session_sweep_text_readonly() {
       [ -n "$b" ] || continue
       merged=unknown
       if [ -n "$def" ] && git -C "$repo" rev-parse --verify -q "refs/remotes/origin/$def" >/dev/null 2>&1; then
-        if git -C "$repo" merge-base --is-ancestor "$b" "refs/remotes/origin/$def" >/dev/null 2>&1; then
+        if git -C "$repo" merge-base --is-ancestor "$b" "refs/remotes/origin/$def" >/dev/null 2>&1; then # merged-ok: read-only branch fact in the no-fetch fallback, never a deletion proof
           merged=yes
         else
           merged=no

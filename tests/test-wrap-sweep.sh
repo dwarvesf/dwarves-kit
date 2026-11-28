@@ -111,6 +111,53 @@ chk "speed: fallback produces identical output to batched path" "$([ "$out_gql" 
 chk "speed: fallback invoked gh pr list --state merged" "$([ "$(printf '%s\n' "$calls_fb" | grep -c 'pr list.*--state merged')" -ge 1 ]; echo $?)"
 
 # ===========================================================================
+echo "=== 02 origin cap: huge origin skips origin rows, local verdicts unchanged ==="
+# ===========================================================================
+R_BIG="$TMPD_P/big-origin"
+B_BIG="$(sw_mk_repo "$R_BIG" "o/big")"
+git -C "$R_BIG" checkout -q -b feat/big-merged main
+echo bm > "$R_BIG/bm.txt"; git -C "$R_BIG" add bm.txt; git -C "$R_BIG" commit -qm "feat: big merged"
+git -C "$R_BIG" checkout -q main
+git -C "$R_BIG" merge -q --no-ff --no-edit feat/big-merged
+git -C "$R_BIG" checkout -q -b feat/big-wt main
+echo bw > "$R_BIG/bw.txt"; git -C "$R_BIG" add bw.txt; git -C "$R_BIG" commit -qm "feat: big wt"
+git -C "$R_BIG" checkout -q main
+git -C "$R_BIG" merge -q --no-ff --no-edit feat/big-wt
+git -C "$R_BIG" push -q origin main
+git -C "$R_BIG" worktree add -q "$TMPD_P/wt-big" feat/big-wt
+git -C "$R_BIG" checkout -q -b feat/big-open main
+echo bo > "$R_BIG/bo.txt"; git -C "$R_BIG" add bo.txt; git -C "$R_BIG" commit -qm "feat: big open"
+git -C "$R_BIG" checkout -q main
+BIG_MAIN_SHA="$(git -C "$B_BIG" rev-parse refs/heads/main)"
+{
+  big_i=1
+  while [ "$big_i" -le 2000 ]; do
+    printf 'update refs/heads/noise/%s %s\n' "$big_i" "$BIG_MAIN_SHA"
+    big_i=$(( big_i + 1 ))
+  done
+} | git -C "$B_BIG" update-ref --stdin
+
+: > "$GH_STUB_CALLS"
+SW_BIG="$TMPD/sweep-big.json"
+SW_BIG_ERR="$TMPD/sweep-big.err"
+GH_STUB_GRAPHQL=1 GH_STUB_OPEN_PRS='[]' GH_STUB_MERGED_ALL='[]' \
+  "$WRAP" sweep --json --worktrees "$R_BIG" > "$SW_BIG" 2> "$SW_BIG_ERR"; rc=$?
+big_heads="$(git -C "$R_BIG" for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ 2>/dev/null | awk '$0 != "HEAD" { n++ } END { print n + 0 }')"
+chk "origin cap sweep exits 0" "$rc"
+chk "origin cap sweep JSON validates" "$(sw_validate_json "$SW_BIG"; echo $?)"
+chk_has "origin cap prints the exact skip line" "$(cat "$SW_BIG_ERR")" "SKIP origin sweep: ${big_heads} remote heads over cap"
+chk "origin cap emits no origin rows" \
+  "$(jq -e '[.repos[0].rows[] | select(.kind == "origin_branch")] | length == 0' "$SW_BIG" >/dev/null 2>&1; echo $?)"
+chk "origin cap still marks the merged local branch would_remove" \
+  "$(jq -e '.repos[0].rows[] | select(.kind == "branch" and .branch == "feat/big-merged") | .verdict == "would_remove"' "$SW_BIG" >/dev/null 2>&1; echo $?)"
+chk "origin cap still keeps the unmerged local branch" \
+  "$(jq -e '.repos[0].rows[] | select(.kind == "branch" and .branch == "feat/big-open") | .verdict == "keep"' "$SW_BIG" >/dev/null 2>&1; echo $?)"
+chk "origin cap still marks the merged worktree would_remove" \
+  "$(jq -e '.repos[0].rows[] | select(.kind == "worktree" and .branch == "feat/big-wt") | .verdict == "would_remove"' "$SW_BIG" >/dev/null 2>&1; echo $?)"
+chk "origin cap bounds the batched lookup to one GraphQL call" \
+  "$([ "$(grep -c '^api graphql' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+
+# ===========================================================================
 echo "=== 02 discovery: depth 0/1/2, non-repo, wrap.sweep_roots fence ==="
 # ===========================================================================
 EST="$TMPD_P/estate"
