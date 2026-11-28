@@ -536,6 +536,11 @@ delete_merged_remote_branches = true  # [impl] step 5. true = `wrap apply --appl
                                  #        false = report `N merged branches left on origin` and
                                  #        delete nothing. `merge` never passes --delete-branch, so
                                  #        this is the only pass that clears merged heads on origin.
+origin_sweep_max = 500           # [impl] step 5. Maximum remote heads the origin-branch sweep
+                                 #        walks. Above the cap it prints `SKIP origin sweep: N remote
+                                 #        heads over cap` and emits no origin rows, so a fork with a
+                                 #        huge branch inventory only adds keeps. Resolved with
+                                 #        `kit_config_get_root` (operator or kit-root `kit.toml` only).
 archive_worktree_min_age_hours = 72  # [impl] step 5, only with `wrap apply --archive-worktrees`
                                  #        (opt-in, the operator names it). A worktree is a
                                  #        candidate only when idle at least this many hours: the
