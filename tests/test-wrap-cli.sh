@@ -36,6 +36,12 @@ HRP="$(cd "$HR/hintrepo" && pwd -P)"  # git prints the physical path
 out="$(cd "$HR/hintrepo" && "$WRAP" apply --worktrees 2>&1)"
 chk_has "apply with no repo keeps the usage line" "$out" "usage: wrap.sh apply"
 chk_has "apply with no repo names this checkout's repo" "$out" "never defaults to the current directory. This checkout's repo is $HRP"
+git -C "$HR/hintrepo" commit -q --allow-empty -m init
+git -C "$HR/hintrepo" worktree add -q -b hint-wt "$HR/hint-wt" 2>/dev/null
+mkdir -p "$HR/otherrepo"; git -C "$HR/otherrepo" init -q
+out="$(cd "$HR/otherrepo" && "$WRAP" apply --own "$HR/hint-wt" 2>&1)"
+chk_has "apply --own with no repo names the worktree's repo, not the cwd's" "$out" "The --own worktree's repo is $HRP"
+chk "apply --own with no repo never names the cwd's repo" "$(grep -q 'otherrepo' <<<"$out"; [ $? -eq 1 ]; echo $?)"
 out="$(cd "$HR/plain" && "$WRAP" merge 2>&1)"
 chk_has "merge with no repo, outside a checkout, still says why" "$out" "wrap.sh merge: no <repo> given; it never defaults to the current directory"
 out="$("$WRAP" merge "$HR/hintrepo" "$HR/plain" 2>&1)"

@@ -9,13 +9,15 @@ source "${BASH_SOURCE[0]%/*}/../gate/branch-merged.sh" || { echo "FATAL: lib/gat
 
 _is_repo() { [ -e "$1/.git" ] || git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
 
-# _hint_no_repo <verb> -- the line after a usage refusal that got no <repo>: <repo> never
-# defaults to the current directory, so name this checkout's main repo when there is one.
+# _hint_no_repo <verb> [<path>] -- the line after a usage refusal that got no <repo>: <repo>
+# never defaults to the current directory. Name the main repo that holds <path> (an --own
+# worktree), else the current directory's, so the hint never points at another repo.
 _hint_no_repo() {
-  local common
-  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  local common where="This checkout's"
+  [ -n "${2:-}" ] && where="The --own worktree's"
+  common="$(git -C "${2:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   case "$common" in
-    */.git) echo "wrap.sh $1: no <repo> given; it never defaults to the current directory. This checkout's repo is ${common%/.git}" >&2 ;;
+    */.git) echo "wrap.sh $1: no <repo> given; it never defaults to the current directory. ${where} repo is ${common%/.git}" >&2 ;;
     *) echo "wrap.sh $1: no <repo> given; it never defaults to the current directory" >&2 ;;
   esac
 }

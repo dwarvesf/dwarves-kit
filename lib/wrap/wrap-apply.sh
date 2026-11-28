@@ -1710,7 +1710,7 @@ cmd_apply() {
     echo "wrap.sh apply: --tips-file '${TIPS_OVERRIDE}' is not an existing file" >&2; return 64
   fi
   if [ "$want_under" = 1 ]; then _expand_bare_under apply || return 64; fi
-  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; _hint_no_repo apply; return 64; }
+  [ "$count" -ge 1 ] || [ "$nu" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] [--archive-unmerged] [--archive-worktrees] [--pull-only|--no-pull] [--own <path>]... [--under <root>]... <repo> [<repo>...]" >&2; _hint_no_repo apply "${OWN_PATHS[1]:-}"; return 64; }
   while [ "$i" -le "$nu" ]; do _add_under "${unders[$i]}"; i=$(( i + 1 )); done
   # Canonicalise the own set once: the worktree loop compares against `pwd -P`
   # paths, so the same normalisation must apply to the names the operator typed.
