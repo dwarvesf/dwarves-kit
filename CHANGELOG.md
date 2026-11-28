@@ -5,6 +5,7 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- Command prompt (`/kit:design` Step 1, additive, no new gate): beside the one-sentence restatement, the design beat now writes `Shape: <problem without this system's names> -> <field> -> <standard tool>` before approaches are compared, checks the operator's shape catalog when one exists, and opens `### Approaches considered` with that line. Proof: `docs/verification/design-shape-line.md`.
 - Command surface (`wrap sweep`, additive, NO default change): `bin/wrap sweep [--apply] [--worktrees] [--json] [<root>...]` discovers repos under given roots (or `wrap.sweep_roots`), acquires a per-repo lock under `${XDG_STATE_HOME:-$HOME/.local/state}/wrap/locks/<sha1>`, and runs the apply cleanup logic in parallel with a `wrap-sweep/1` JSON report (`--json`) and exit codes `0|1|2|3`. Added root-only seam `wrap.workspace_rm` (empty by default), called as `<cmd> <worktree> <repo>` with a 20s timeout after worktree removal under `wrap apply --apply --worktrees`, `wrap sweep --apply --worktrees`, and `wrap land`. `wrap land` and `wrap merge --apply` also run `wrap sweep --apply --worktrees <repo>` after a verified merge.
 - Performance (`wrap apply`, no behavior change): batched per-repo GraphQL PR lookups (chunked 40 branches per query with fallback to `gh pr list` on error/truncation), reading `refs/remotes/origin/*` directly after `fetch --prune`, caching `_gh_state` once per run overlapped with `fetch`, and reusing a lazy `lsof` snapshot per repo.
 
