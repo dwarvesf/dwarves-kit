@@ -69,8 +69,10 @@ cmd_start() {
     esac
   done
   [ "$seen_repo" = 1 ] && [ "$seen_branch" = 1 ] \
-    || { echo "usage: wrap.sh start <repo> <branch> [--existing] [--pick <branch>]... [--carry [<path>...]]" >&2; return 64; }
-  _is_repo "$repo" || { echo "wrap.sh start: ${repo} is not a git repo" >&2; return 64; }
+    || { echo "usage: wrap.sh start <repo> <branch> [--existing] [--pick <branch>]... [--carry [<path>...]]" >&2
+         [ "$seen_repo" = 1 ] && echo "wrap.sh start: got one argument; it takes <repo> then <branch>, as in: wrap start <repo> '${repo}'" >&2
+         return 64; }
+  _is_repo "$repo" || { echo "wrap.sh start: ${repo} is not a git repo" >&2; _hint_repo start "$repo"; return 64; }
   # git records a worktree fully resolved, so the printed path resolves the same way.
   repo="$(cd "$repo" 2>/dev/null && pwd -P)" \
     || { echo "wrap.sh start: ${repo} does not resolve" >&2; return 64; }

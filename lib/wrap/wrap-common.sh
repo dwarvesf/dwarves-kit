@@ -9,6 +9,33 @@ source "${BASH_SOURCE[0]%/*}/../gate/branch-merged.sh" || { echo "FATAL: lib/gat
 
 _is_repo() { [ -e "$1/.git" ] || git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
 
+# _hint_no_repo <verb> -- the line after a usage refusal that got no <repo>: <repo> never
+# defaults to the current directory, so name this checkout's main repo when there is one.
+_hint_no_repo() {
+  local common
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  case "$common" in
+    */.git) echo "wrap.sh $1: no <repo> given; it never defaults to the current directory. This checkout's repo is ${common%/.git}" >&2 ;;
+    *) echo "wrap.sh $1: no <repo> given; it never defaults to the current directory" >&2 ;;
+  esac
+}
+
+# _hint_repo <verb> <arg> -- the line after "<arg> is not a git repo" when <arg> is a bare
+# name: <repo> is a path, so name the one checkout of that name under wrap.roots, if any.
+_hint_repo() {
+  local root hit="" n=0
+  case "$2" in */*|"") return 0 ;; esac
+  for root in $(kit_config_get_root wrap.roots ""); do
+    root="${root/#\~/$HOME}"
+    if [ -e "$root/$2/.git" ]; then hit="$root/$2"; n=$(( n + 1 )); fi
+  done
+  if [ "$n" -eq 1 ]; then
+    echo "wrap.sh $1: <repo> is a path, not a name; did you mean ${hit}?" >&2
+  else
+    echo "wrap.sh $1: <repo> is a path to a checkout, not a name" >&2
+  fi
+}
+
 
 _ref_exists() { git -C "$1" show-ref --verify --quiet "$2"; }
 

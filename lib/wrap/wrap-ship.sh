@@ -127,7 +127,7 @@ _ship_run() {
       *$'\n'*) echo "wrap.sh ship: --proof-override reason must be one line" >&2; return 64 ;;
     esac
   fi
-  _is_repo "$repo" || { echo "wrap.sh ship: ${repo} is not a git repo" >&2; return 64; }
+  _is_repo "$repo" || { echo "wrap.sh ship: ${repo} is not a git repo" >&2; _hint_repo ship "$repo"; return 64; }
   repo="$(cd "$repo" 2>/dev/null && pwd -P)" \
     || { echo "wrap.sh ship: ${repo} does not resolve" >&2; return 64; }
   message_file="$(_ship_abs "$message_file")"

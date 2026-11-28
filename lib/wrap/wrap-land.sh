@@ -431,7 +431,7 @@ cmd_land() {
   fi
   for wt in "${wts[@]}"; do
     _reject_packed land "$wt" || { echo "LAND: refused (preflight, exit 64)"; return 64; }
-    _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; echo "LAND: refused (preflight, exit 64)"; return 64; }
+    _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; echo "wrap.sh land: land takes a worktree path; wrap start <repo> <branch> makes one, and wrap merge --pr N <repo> merges an open PR" >&2; echo "LAND: refused (preflight, exit 64)"; return 64; }
   done
   tmp="$(mktemp "${TMPDIR:-/tmp}/kit.XXXXXX")" || { echo "wrap.sh land: mktemp failed" >&2; echo "LAND: refused (preflight, exit 1)"; return 1; }
 
@@ -542,8 +542,9 @@ _land_run() {
     [ "$verify_given" -eq 0 ] || { echo "wrap.sh land: --draft cannot combine with --verify" >&2; return 64; }
     [ "$nopull_given" -eq 0 ] || { echo "wrap.sh land: --draft cannot combine with --no-pull" >&2; return 64; }
   fi
-  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify <cmd>] [--draft]" >&2; return 64; }
-  _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; return 64; }
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh land <worktree> [--title T] [--body-file F] [--with-ci] [--no-pull] [--verify <cmd>] [--draft]" >&2
+    [ "$count" -eq 0 ] && echo "wrap.sh land: no <worktree> given; wrap start <repo> <branch> makes one" >&2; return 64; }
+  _is_repo "$wt" || { echo "wrap.sh land: ${wt} is not a git worktree" >&2; echo "wrap.sh land: land takes a worktree path; wrap start <repo> <branch> makes one, and wrap merge --pr N <repo> merges an open PR" >&2; return 64; }
   if [ -n "$body_file" ] && [ ! -f "$body_file" ]; then
     echo "wrap.sh land: --body-file '${body_file}' is not an existing file" >&2; return 64
   fi
