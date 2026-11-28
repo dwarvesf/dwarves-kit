@@ -23,7 +23,10 @@
 # 1000000 for a "1m" marker (case-insensitive) on .message.model, the configured model
 # (ANTHROPIC_MODEL or settings `.model`) or the transcript's model-identity attachment
 # (.attachment.identity.modelId), or when live context already exceeds 200000.
-# KIT_CTX_WINDOW alone does not switch modes.
+# KIT_CTX_WINDOW alone does not switch modes. The window file
+# (<state dir>/<session_id>.window) comes from an operator statusline outside the kit,
+# which writes Claude Code's context_window_size there; only this mode reads it. The
+# notices print tokens in this mode too, never "N% of its window".
 #
 # Either way, each threshold fires once per session until context drops back under the
 # warn threshold (e.g. after /compact or /clear), which clears the state so the next
@@ -49,12 +52,15 @@ if [ -n "${KIT_CTX_WARN_PCT:-}${KIT_CTX_STRONG_PCT:-}" ]; then
     WARN_PCT=${KIT_CTX_WARN_PCT:-65}
     STRONG_PCT=${KIT_CTX_STRONG_PCT:-70}
     case "$WARN_PCT$STRONG_PCT" in *[!0-9]*) exit 0 ;; esac
+    WARN_PCT=$(( 10#$WARN_PCT )) STRONG_PCT=$(( 10#$STRONG_PCT ))
     [ "$WARN_PCT" -gt 0 ] && [ "$WARN_PCT" -lt "$STRONG_PCT" ] && [ "$STRONG_PCT" -le 100 ] || exit 0
 else
     PCT_MODE=0
     WARN_AT=${KIT_CTX_WARN_TOKENS:-200000}
     STRONG_AT=${KIT_CTX_STRONG_TOKENS:-250000}
     case "$WARN_AT$STRONG_AT" in *[!0-9]*) exit 0 ;; esac
+    # Force base 10: a leading zero (090000) would otherwise read as octal in $(( )).
+    WARN_AT=$(( 10#$WARN_AT )) STRONG_AT=$(( 10#$STRONG_AT ))
     [ "$WARN_AT" -gt 0 ] && [ "$WARN_AT" -lt "$STRONG_AT" ] || exit 0
 fi
 
@@ -105,7 +111,8 @@ if [ "$PCT_MODE" -eq 1 ]; then
         # Usage past 200k proves the window is bigger, whatever the model id says.
         [ "$CTX" -gt 200000 ] && WINDOW=1000000
     fi
-    case "$WINDOW" in *[!0-9]*) exit 0 ;; esac
+    case "$WINDOW" in ''|*[!0-9]*) exit 0 ;; esac
+    WINDOW=$(( 10#$WINDOW ))
     [ "$WINDOW" -gt 0 ] || exit 0
     # Percent thresholds become token thresholds (rounded up, so CTX >= AT matches
     # CTX*100 >= PCT*WINDOW exactly); the rest of the hook is mode-blind.

@@ -143,11 +143,27 @@ TD2="$HOME/.claude/projects/p/d2.jsonl"
 transcript "$TD2" 300000 claude-opus-5-5
 KIT_CTX_WARN_TOKENS=250000 KIT_CTX_STRONG_TOKENS=200000 step "D.2 warn >= strong fails open" silent d2 "$TD2"
 KIT_CTX_WARN_TOKENS=20k step "D.3 non-numeric warn fails open" silent d2 "$TD2"
+KIT_CTX_WARN_TOKENS=0 step "D.4 zero warn fails open" silent d2 "$TD2"
+KIT_CTX_WARN_TOKENS=200000 KIT_CTX_STRONG_TOKENS=200000 step "D.5 warn = strong fails open" silent d2 "$TD2"
+TD6="$HOME/.claude/projects/p/d6.jsonl"
+transcript "$TD6" 160000 claude-opus-5-5
+KIT_CTX_WARN_TOKENS=100000 KIT_CTX_STRONG_TOKENS=150000 tone "D.6 STRONG_TOKENS=150000 at 160k escalates" "150k ceiling" d6 "$TD6"
+TD7="$HOME/.claude/projects/p/d7.jsonl"
+transcript "$TD7" 120000 claude-opus-5-5
+KIT_CTX_WARN_TOKENS=090000 KIT_CTX_STRONG_TOKENS=0150000 tone "D.7 leading zeros read as base 10 (90k)" "90k budget" d7 "$TD7"
 
 echo "== Case E: negative control, explicit percentage vars restore the old behavior =="
 TE="$HOME/.claude/projects/p/e1.jsonl"
 transcript "$TE" 148000 claude-opus-5-5
 KIT_CTX_STRONG_PCT=70 KIT_CTX_WINDOW=200000 tone "E.1 148k is 74% of 200k: old CEILING returns" "CONTEXT CEILING" e1 "$TE"
+TE2="$HOME/.claude/projects/p/e2.jsonl"
+transcript "$TE2" 140000 claude-opus-5-5
+KIT_CTX_WARN_PCT=65 KIT_CTX_WINDOW=200000 step "E.2 WARN_PCT alone switches to pct mode: 140k speaks" speak e2 "$TE2"
+TE3="$HOME/.claude/projects/p/e3.jsonl"
+transcript "$TE3" 65000 claude-opus-5-5
+KIT_CTX_WARN_PCT=65 KIT_CTX_WINDOW=100001 step "E.3 pct rounds up: 65000 < 65% of 100001, silent" silent e3 "$TE3"
+transcript "$TE3" 65001 claude-opus-5-5
+KIT_CTX_WARN_PCT=65 KIT_CTX_WINDOW=100001 step "E.4 pct rounds up: 65001 >= 65% of 100001, speaks" speak e3 "$TE3"
 
 # The legacy percentage cases below all run with the percentage vars set explicitly.
 export KIT_CTX_WARN_PCT=65 KIT_CTX_STRONG_PCT=70
